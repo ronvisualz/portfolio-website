@@ -2,17 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>topper. — VFX & Motion Graphics Studio</title>
-<link rel="icon" type="image/svg+xml" href="assets/topper_icon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>document.documentElement.classList.add('js')</script>
+<title>Topper Digital — VFX and motion design studio, Lisbon</title>
+<meta name="description" content="Boutique VFX and motion design studio in Lisbon, working worldwide. Idents, title sequences, visual effects and 3D for film, broadcast and digital.">
+<link rel="icon" type="image/svg+xml" href="assets/brand/topper-icon-black.svg">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Topper Digital — VFX and motion design studio, Lisbon">
+<meta property="og:site_name" content="Topper Digital">
+<meta property="og:description" content="Boutique VFX and motion design studio in Lisbon, working worldwide.">
+<meta property="og:image" content="https://topperdigital.xyz/assets/brand/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="preload" href="assets/fonts/FuturaNowHeadline-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face {
   font-family: 'Futura Now Headline';
-  src: url('assets/fonts/FuturaNowHeadlineBold.ttf') format('truetype');
+  src: url('assets/fonts/FuturaNowHeadline-Bold.woff2') format('woff2');
   font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Futura Now Headline';
+  src: url('assets/fonts/FuturaNowHeadline-Light.woff2') format('woff2');
+  font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
@@ -20,975 +36,1028 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --black:   #111111;
-  --white:   #FAFAF8;
-  --ink:     rgba(17,17,17,0.82);
-  --gray:    rgba(17,17,17,0.4);
-  --hairline: rgba(17,17,17,0.1);
+  /* topper. brand tokens */
+  --ink: #000000; --paper: #FFFFFF; --grey: #EEEEEE; --rule: #EEEEEE;
+  --pink: #FBAE9C; --light-blue: #81CFE3; --yellow: #FFC718;
+  --blue: #2F77B1; --red: #E02727; --green: #2A7928;
+  --pad: 32px;            /* space-6, desktop and tablet gutter */
+  --nav-h: 80px;
+  --bar-h: 64px;
+  --font: 'Futura Now Headline', Futura, 'Century Gothic', sans-serif;
 
-  /* topper. brand palette */
-  --coral:   #FBAE9C;
-  --sky:     #81CFE3;
-  --yellow:  #FFC718;
-  --blue:    #2F77B1;
-  --red:     #E02727;
-  --green:   #2A7928;
-  --paper:   #EEEEEE;
-
-  --accent:  var(--coral); /* current section accent, updated by JS */
-  --pad:     clamp(1.25rem, 4vw, 2.5rem);   /* universal side padding */
-
-  /* the topper mark — clip-path traced directly from topper_icon.svg
-     (crown, flared brim, and the concave shoulder notches). Every UI
-     icon that uses var(--t-mark) inherits this exact silhouette. */
+  /* the topper hat, as a clip-path (crown, flared brim, shoulder notches) */
   --t-mark: polygon(74.8% 58.6%, 74.2% 0%, 25.2% 0%, 25.2% 58.7%, 23.4% 61.4%, 21.8% 61.6%, 3.9% 58.2%, 0.8% 59%, 0% 99.6%, 100% 99.5%, 100% 62.1%, 99.1% 58.9%, 96% 58.2%, 78.1% 61.6%, 75.3% 60.3%, 74.8% 58.6%);
+}
+@media (max-width: 600px) {
+  :root { --pad: 16px; --nav-h: 64px; --bar-h: 56px; }
 }
 
 html, body {
-  width: 100%; height: 100%;
-  overflow: hidden;
-  background: #FFFFFF;
-  color: var(--black);
-  font-family: 'Space Mono', monospace;
-  touch-action: none;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 24px;
+  overflow: auto;
+  -webkit-text-size-adjust: 100%;
+}
+body { transition: background-color 400ms ease; }
+body[data-ground="yellow"] { background: var(--yellow); }
+
+::selection { background: var(--yellow); color: var(--ink); }
+body[data-ground="yellow"] ::selection { background: var(--ink); color: var(--paper); }
+
+a { color: inherit; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
-::selection { background: var(--accent); color: var(--black); }
-
-/* ── CANVAS — fills entire screen, always behind UI ── */
-#canvas {
-  position: fixed; inset: 0;
-  width: 100%; height: 100%;
-  display: block;
-  touch-action: none;
-  cursor: grab;
-  z-index: 1;
+/* ── Type ── */
+h1, h2 {
+  font-weight: 700; letter-spacing: -0.025em; text-wrap: balance;
+  font-size: 48px; line-height: 52px;
 }
-#canvas:active { cursor: grabbing; }
-
-/* ── GRID RULES ── */
-.rule { position: fixed; pointer-events: none; z-index: 3; background: var(--hairline); }
-.rule-top    { top: 5.5rem; left: 0; right: 0; height: 1px; }
-.rule-bottom { bottom: 5rem; left: 0; right: 0; height: 1px; }
-
-/* ── NAV ── */
-nav {
-  position: fixed; top: 0; left: 0; right: 0;
-  z-index: 20;
-  display: flex; justify-content: space-between; align-items: flex-end;
-  padding: 1.4rem var(--pad) 0;
-  height: 5.5rem;
-  border-bottom: 1px solid var(--hairline);
-  pointer-events: none;
+h1 { font-size: 96px; line-height: 104px; }
+h2 { font-size: 64px; line-height: 72px; }
+.subheading { font-size: 24px; line-height: 28px; font-weight: 700; letter-spacing: -0.025em; }
+.lead { font-size: 24px; line-height: 32px; font-weight: 300; max-width: 600px; }
+.body { font-size: 16px; line-height: 24px; font-weight: 300; max-width: 600px; }
+.caption { font-size: 12px; line-height: 16px; font-weight: 300; }
+@media (max-width: 1023px) {
+  h1 { font-size: 64px; line-height: 72px; }
+  h2 { font-size: 48px; line-height: 52px; }
 }
-nav > * { pointer-events: auto; }
+@media (max-width: 600px) {
+  h1, h2 { font-size: 48px; line-height: 52px; }
+  .subheading { font-size: 16px; line-height: 24px; }
+  .lead { font-size: 16px; line-height: 24px; }
+}
+/* Headings are only focused by script (screen-reader landmark after a step change), never tabbed to. */
+h1:focus-visible, h2:focus-visible { outline: 0; }
 
-.logo {
-  display: flex;
-  align-items: center;
-  padding-bottom: 0.45rem;
-}
-.logo svg {
-  height: clamp(1.1rem, 2.2vw, 1.5rem);
-  width: auto;
-  display: block;
-}
-.nav-contact {
-  font-size: clamp(0.55rem, 1.1vw, 0.65rem);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--gray);
-  text-decoration: none;
-  padding-bottom: 0.45rem;
-  transition: color 0.3s ease;
-}
-.nav-contact:hover { color: var(--accent); }
-
-/* ── BOTTOM BAR ── */
-#bottom-bar {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  z-index: 20;
-  height: 5rem;
-  border-top: 1px solid var(--hairline);
+/* ── Header ── */
+.site-nav {
   display: flex; align-items: center; justify-content: space-between;
+  height: var(--nav-h);
   padding: 0 var(--pad);
-  pointer-events: none;
+  border-bottom: 1px solid var(--rule);
+  transition: border-color 400ms ease;
 }
-#bottom-bar > * { pointer-events: auto; }
+.logo { display: block; line-height: 0; }
+.logo img { height: 32px; width: auto; display: block; }
+.nav-contact { font-size: 16px; line-height: 24px; font-weight: 300; text-decoration: none; }
+.nav-contact:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+@media (max-width: 600px) { .logo img { height: 24px; } }
 
-.hint {
-  font-size: clamp(0.5rem, 1vw, 0.6rem);
-  letter-spacing: 0.12em;
-  color: var(--gray);
+/* ── Stops (all copy lives in the HTML) ── */
+.stop { padding: 48px var(--pad); }
+.stop + .stop { border-top: 1px solid var(--rule); }
+.stop-copy { margin-top: 24px; }
+.stop-copy .lead + .body { margin-top: 12px; }
+.stop-photo { display: block; width: min(420px, 100%); height: auto; aspect-ratio: 4 / 5; object-fit: cover; margin-top: 24px; }
+html:not(.js) #contact { background: var(--yellow); }
+
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
+.btn {
+  display: inline-flex; align-items: center; height: 48px; padding: 0 24px;
+  background: #000; color: #FFF; border: 0; border-radius: 0; box-shadow: none;
+  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 700; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+.btn:hover { background: var(--yellow); color: #000; }
+.btn:active { background: #000; color: #FFF; }
+.link-strong {
+  font-size: 16px; line-height: 24px; font-weight: 700;
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px;
+}
+.link-strong:hover { text-decoration: none; }
+html:not(.js) .btn { display: none; }
+
+.services { list-style: none; display: flex; flex-direction: column; gap: 16px; }
+.services .subheading { display: block; margin-bottom: 4px; }
+.services .svc-line { font-size: 16px; line-height: 24px; max-width: 600px; }
+
+.contact-email {
+  display: inline-block; margin-top: 24px;
+  font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.025em;
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
+  overflow-wrap: anywhere;
+}
+.contact-email:hover { text-decoration: none; }
+.contact-social {
+  display: table; margin-top: 16px;
+  font-size: 24px; line-height: 32px; font-weight: 300;
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
+}
+.contact-social:hover { text-decoration: none; }
+@media (max-width: 600px) {
+  .contact-email { font-size: 24px; line-height: 28px; }
+  .contact-social { font-size: 16px; line-height: 24px; }
 }
 
-/* Section dots — tiny topper "T" marks instead of circles */
-.dots { display: flex; gap: 0.85rem; align-items: center; }
-.dot {
-  width: 10px; height: 9px;
-  clip-path: var(--t-mark);
-  background: rgba(17,17,17,0.18);
-  transition: background 0.3s, transform 0.3s;
-  cursor: pointer;
-}
-.dot.active { background: var(--accent); transform: scale(1.55); }
-.dot:hover:not(.active) { background: rgba(17,17,17,0.45); }
+/* JS-only furniture is off until the page is enhanced */
+#canvas, .hat-fallback, #work-wrap, #bottom-bar { display: none; }
 
-/* ════════════════════════════════════════════
-   CONTENT LAYER — sits above canvas (z:10)
-   Left ~55% → text | Right ~45% → model shows through
-   ════════════════════════════════════════════ */
-#content {
-  position: fixed;
-  top: 5.5rem; bottom: 5rem;
-  left: 0; right: 0;
-  z-index: 10;
-  pointer-events: none;
+/* ═══════════════════════════════════════════════
+   ENHANCED (JS) — one full-screen stage
+   ═══════════════════════════════════════════════ */
+html.js, html.js body { height: 100%; overflow: hidden; touch-action: pinch-zoom; }
+
+html.js #canvas {
+  display: block;
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 1; cursor: grab; touch-action: pinch-zoom;
+}
+html.js #canvas:active { cursor: grabbing; }
+html.js body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+
+html.js .site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 20; }
+body[data-ground="yellow"] .site-nav { border-bottom-color: transparent; }
+
+html.js #content {
+  position: fixed; top: var(--nav-h); bottom: var(--bar-h); left: 0; right: 0;
+  z-index: 10; pointer-events: none;
+}
+
+html.js .stop {
+  position: absolute; inset: 0;
   display: grid;
   grid-template-columns: minmax(0, 55%) 1fr;
   grid-template-rows: auto 1fr auto;
   padding: 0 var(--pad);
-  gap: 0;
-}
-
-/* ── TOP-LEFT: face index label + big title ── */
-#face-index {
-  grid-column: 1;
-  grid-row: 1;
-  padding-top: clamp(1.5rem, 3vh, 2.5rem);
-}
-#fi-title {
-  font-family: 'Futura Now Headline', sans-serif;
-  font-weight: 700;
-  font-size: clamp(3.5rem, 8vw, 7rem);
-  line-height: 0.88;
-  letter-spacing: -0.01em;
-  color: var(--black);
-  max-width: 130%;
-}
-
-/* spacer row — pushes body text to bottom */
-#spacer { grid-column: 1; grid-row: 2; }
-
-/* ── BOTTOM-LEFT: body copy ── */
-#face-text {
-  grid-column: 1;
-  grid-row: 3;
-  padding-bottom: clamp(1.2rem, 2.5vh, 2rem);
-  width: min(100%, 48vw);
-  position: relative;
-  min-height: 5rem;
-}
-
-.fblock {
-  position: absolute;
-  bottom: 0; left: 0;
-  width: 100%;
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.4s ease, transform 0.4s ease;
-  will-change: opacity, transform;
-}
-.fblock.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.fblock-body {
-  font-size: clamp(0.7rem, 1.3vw, 0.85rem);
-  line-height: 1.85;
-  color: var(--ink);
-}
-
-/* ════════════════════════════════════════════
-   WORK PANEL — the "window" that rises on the
-   final section, holding the portfolio carousel
-   ════════════════════════════════════════════ */
-#work-panel {
-  position: fixed;
-  z-index: 15;
-  right: var(--pad);
-  top: calc(5.5rem + clamp(1rem, 3vh, 2rem));
-  bottom: calc(5rem + clamp(1rem, 3vh, 2rem));
-  width: min(600px, 46vw);
-  display: flex; flex-direction: column;
-  background: #FFFFFF;
-  border: 1px solid rgba(17,17,17,0.14);
-  box-shadow: 0 30px 80px -20px rgba(17,17,17,0.18);
-  transform: translateY(calc(100% + 8rem));
-  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  border: 0;
+  opacity: 0; visibility: hidden; transform: translateY(8px);
   pointer-events: none;
-  overflow: hidden;
+  /* outgoing: fade out first, then hide */
+  transition: opacity 160ms ease-in, transform 0s linear 160ms, visibility 0s linear 160ms;
 }
-#work-panel.open { transform: none; pointer-events: auto; }
+html.js .stop.is-active {
+  opacity: 1; visibility: visible; transform: none;
+  /* incoming: waits for the outgoing step (160ms), then fades and rises */
+  transition: opacity 240ms ease-out 160ms, transform 240ms ease-out 160ms, visibility 0s linear 0s;
+}
+html.js.no-anim .stop, html.js.no-anim .stop.is-active { transition: none; }
+html.js .stop a, html.js .stop button { pointer-events: auto; }
 
-.wp-head {
+html.js .stop-head { grid-column: 1; grid-row: 1; padding-top: 48px; }
+html.js .stop-copy { grid-column: 1; grid-row: 3; padding-bottom: 48px; margin-top: 0; }
+html.js .stop-photo {
+  grid-column: 2; grid-row: 1 / 4; align-self: center; justify-self: center;
+  width: min(420px, 32vw); max-height: calc(100% - 96px); margin-top: 0;
+}
+
+/* ── Bottom bar + step navigation ── */
+html.js #bottom-bar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0.9rem 1.1rem;
-  border-bottom: 1px solid var(--hairline);
-  flex: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  height: var(--bar-h);
+  padding: 0 var(--pad);
+  border-top: 1px solid var(--rule);
+  transition: border-color 400ms ease;
+  pointer-events: none;
 }
-.wp-title {
-  font-size: 0.58rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--gray);
-  display: flex; align-items: center; gap: 0.55em;
+body[data-ground="yellow"] #bottom-bar { border-top-color: transparent; }
+#bottom-bar > * { pointer-events: auto; }
+
+.bar-left { font-size: 16px; line-height: 24px; font-weight: 300; }
+.bar-step { display: none; font-weight: 700; }
+.hint-coarse { display: none; }
+@media (pointer: coarse) { .hint-fine { display: none; } .hint-coarse { display: inline; } }
+
+.stops-nav { display: flex; align-items: center; gap: 32px; }
+.dot {
+  position: relative;
+  display: inline-flex; align-items: center;
+  min-height: 44px; padding: 0;
+  background: none; border: 0; border-radius: 0;
+  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 300; color: var(--ink);
+  cursor: pointer;
+  -webkit-appearance: none; appearance: none;
 }
-.wp-title::before {
-  content: '';
-  width: 0.55rem; height: 0.55rem;
-  clip-path: var(--t-mark);
-  background: var(--accent);
-  flex: none;
+.dot-hat {
+  flex: none; width: 12px; aspect-ratio: 211.621 / 205.738;
+  margin-right: 8px;
+  background: #000; clip-path: var(--t-mark);
+  visibility: hidden;
 }
-.wp-counter {
-  font-size: 0.58rem;
-  letter-spacing: 0.18em;
-  color: var(--gray);
-  font-variant-numeric: tabular-nums;
+.dot[aria-current="step"] .dot-hat { visibility: visible; }
+.dot:hover .dot-label,
+.dot[aria-current="step"] .dot-label {
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
 
-/* Carousel track */
+@media (max-width: 600px) {
+  .bar-step { display: block; }
+  .bar-left.has-hint .bar-step { display: none; }
+  .stops-nav { gap: 0; }
+  .dot { width: 44px; height: 44px; justify-content: center; }
+  .dot-label {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; text-decoration: none;
+  }
+  .dot:hover .dot-label { text-decoration: none; }
+  .dot-hat { width: 10px; margin: 0; visibility: visible; }
+  .dot[aria-current="step"] .dot-hat { width: 18px; }
+}
+
+/* ── Work panel ── */
+html.js #work-wrap {
+  display: flex; align-items: center; justify-content: flex-end;
+  position: fixed; top: var(--nav-h); bottom: var(--bar-h); left: 0; right: 0;
+  z-index: 15; padding: 0 var(--pad);
+  pointer-events: none;
+}
+#work-panel {
+  display: flex; flex-direction: column;
+  width: min(640px, 46vw);
+  background: #FFF; border: 1px solid #000; border-radius: 0; box-shadow: none;
+  overflow: hidden;
+  visibility: hidden;
+  transform: translateY(100vh);
+  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.85s;
+  touch-action: pinch-zoom;
+}
+#work-panel.open {
+  visibility: visible; transform: none; pointer-events: auto;
+  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s;
+}
+html.no-anim #work-panel { transition: none; }
+
 #work-track {
-  flex: 1;
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
-  scrollbar-width: none;          /* Firefox */
+  display: flex; flex: 1; min-height: 0;
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  scrollbar-width: none;
+  touch-action: pan-x pinch-zoom;
 }
 #work-track::-webkit-scrollbar { display: none; }
-
 .work-slide {
-  flex: none;
-  width: 100%;
-  height: 100%;
+  flex: none; width: 100%;
   scroll-snap-align: start;
   display: flex; flex-direction: column;
-  padding: 1.1rem;
-  gap: 0.8rem;
+  padding: 24px;
 }
 .work-slide video {
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-  object-fit: cover;
-  background: var(--paper);
-  border: 1px solid var(--hairline);
-  display: block;
-  border-radius: 2px;
+  display: block; width: 100%;
+  aspect-ratio: 16 / 9; object-fit: cover;
+  background: var(--grey);
+  border: 0; border-radius: 0;
 }
-.work-meta { flex: none; display: flex; justify-content: space-between; align-items: baseline; }
-.work-name {
-  font-family: 'Futura Now Headline', sans-serif;
-  font-weight: 700;
-  font-size: clamp(1rem, 1.8vw, 1.4rem);
-  line-height: 1;
-}
-.work-tag {
-  font-size: 0.55rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gray);
-}
+.work-meta { margin-top: 16px; }
+.work-tag { display: block; }
 
-/* Carousel controls */
 .wp-foot {
   flex: none;
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0.8rem 1.1rem;
-  border-top: 1px solid var(--hairline);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid var(--rule);
 }
-.wp-hint { font-size: 0.52rem; letter-spacing: 0.15em; color: var(--gray); text-transform: uppercase; }
-.wp-btns { display: flex; gap: 0.5rem; }
+.wp-counter { font-size: 16px; line-height: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.wp-btns { display: flex; gap: 8px; }
 .wp-btn {
-  width: 2.1rem; height: 2.1rem;
-  border: 1px solid rgba(17,17,17,0.2);
-  background: transparent;
-  color: var(--black);
-  font-family: inherit;
-  font-size: 0.85rem;
+  height: 48px; padding: 0 16px;
+  background: #FFF; color: #000;
+  border: 1px solid #000; border-radius: 0; box-shadow: none;
+  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 700;
   cursor: pointer;
-  transition: background 0.25s, border-color 0.25s;
+  -webkit-appearance: none; appearance: none;
 }
-.wp-btn:hover { background: var(--accent); border-color: transparent; }
+.wp-btn:hover:not(:disabled) { background: #000; color: #FFF; }
+.wp-btn:disabled { border-color: rgba(0, 0, 0, 0.3); cursor: default; }
 
-/* ══════════════════════════════
-   RESPONSIVE BREAKPOINTS
-   ══════════════════════════════ */
+/* ── Fallback hat (no WebGL / three.js blocked) ── */
+html.js.no-webgl .hat-fallback {
+  display: block; position: fixed; z-index: 5; pointer-events: none;
+  width: 280px; height: auto;
+  top: calc(var(--nav-h) + (100% - var(--nav-h) - var(--bar-h)) / 2);
+  left: calc(var(--pad) + (100% - 2 * var(--pad)) * 0.775);
+  transform: translate(-50%, -50%);
+}
+html.js.no-webgl body[data-stop="work"] .hat-fallback,
+html.js.no-webgl body[data-stop="approach"] .hat-fallback { display: none; }
+html.js.no-webgl #canvas { display: none; }
+@media (max-width: 600px) { html.js.no-webgl .hat-fallback { display: none; } }
 
-/* Tablet — text col slightly wider */
-@media (max-width: 900px) {
-  #content { grid-template-columns: minmax(0, 65%) 1fr; }
-  #face-text { width: min(100%, 60vw); }
-  #work-panel { width: min(520px, 60vw); }
+/* ── Tablet ── */
+@media (min-width: 601px) and (max-width: 1023px) {
+  html.js #work-panel { width: min(640px, 46vw); }
 }
 
-/* Mobile — single column; work panel becomes a bottom sheet */
+/* ── Mobile ── */
 @media (max-width: 600px) {
-  #content { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
-  #face-index, #spacer { grid-column: 1; }
-  #face-text { grid-column: 1; width: 100%; padding-right: 1rem; }
-  #fi-title { font-size: clamp(2.8rem, 14vw, 4.5rem); max-width: 100%; }
-  .fblock-body { font-size: 0.75rem; line-height: 1.8; }
+  html.js .stop { grid-template-columns: minmax(0, 1fr); }
+  html.js .stop-head { padding-top: 24px; }
+  html.js .stop-copy { padding-bottom: 24px; }
+  html.js .stop-photo, .stop-photo { display: none; }
 
-  #work-panel {
-    left: 0.75rem; right: 0.75rem;
-    width: auto;
-    top: auto;
-    height: min(64vh, 30rem);
-    bottom: calc(5rem + 0.75rem);
+  /* Work: only the headline; the panel takes the rest of the screen */
+  #work .stop-copy {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap;
   }
+  html.js #work-wrap { justify-content: stretch; align-items: stretch; }
+  html.js #work-panel { width: 100%; }
+  .work-slide { justify-content: center; }
+
+  .services li { display: block; }
+  .services .subheading, .services .svc-line { display: inline; margin: 0; }
+  .services .subheading::after { content: ":"; }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  body, .site-nav, #bottom-bar { transition: none; }
+  html.js .stop, html.js .stop.is-active { transition: none; transform: none; }
+  #work-panel, #work-panel.open { transition: none; transform: none; opacity: 0; }
+  #work-panel.open { opacity: 1; }
+  #work-track { scroll-behavior: auto; }
 }
 </style>
 </head>
 <body>
 
-<canvas id="canvas"></canvas>
+<canvas id="canvas" aria-hidden="true"></canvas>
 
-<div class="rule rule-top"></div>
-<div class="rule rule-bottom"></div>
-
-<nav>
-  <div class="logo" aria-label="topper.">
-    <svg viewBox="245 244 352 106" xmlns="http://www.w3.org/2000/svg">
-      <path fill="#81CFE3" d="M285.55,292.79c0-3.92.71-7.54,2.14-10.85,1.42-3.31,3.42-6.18,5.98-8.61,2.56-2.42,5.61-4.33,9.13-5.72,3.52-1.39,7.38-2.08,11.59-2.08s8.06.68,11.59,2.03c3.52,1.35,6.57,3.24,9.13,5.67,2.56,2.42,4.55,5.33,5.98,8.71,1.42,3.39,2.14,7.11,2.14,11.17s-.71,7.79-2.14,11.17c-1.42,3.39-3.42,6.29-5.98,8.71-2.56,2.42-5.62,4.31-9.18,5.67-3.56,1.35-7.47,2.03-11.75,2.03s-7.96-.68-11.48-2.03c-3.52-1.35-6.55-3.24-9.08-5.67-2.53-2.42-4.5-5.36-5.93-8.82-1.42-3.46-2.14-7.25-2.14-11.39ZM301.04,293c0,4.42,1.21,7.93,3.63,10.53,2.42,2.6,5.66,3.9,9.72,3.9s7.3-1.3,9.72-3.9c2.42-2.6,3.63-6.08,3.63-10.42s-1.21-7.73-3.63-10.37c-2.42-2.64-5.66-3.96-9.72-3.96s-7.3,1.32-9.72,3.96c-2.42,2.64-3.63,6.06-3.63,10.26Z"/>
-      <path fill="#FFC718" d="M366.6,266.91l-.11,6.09h.11c2.42-2.49,4.98-4.38,7.69-5.67,2.7-1.28,5.69-1.92,8.97-1.92,3.77,0,7.21.73,10.3,2.19,3.1,1.46,5.75,3.44,7.96,5.93,2.21,2.5,3.9,5.42,5.07,8.77,1.17,3.35,1.76,6.95,1.76,10.8s-.61,7.32-1.82,10.64c-1.21,3.31-2.92,6.22-5.13,8.71-2.21,2.5-4.84,4.46-7.9,5.88-3.06,1.42-6.44,2.14-10.14,2.14-3.35,0-6.39-.61-9.13-1.82-2.74-1.21-5.29-3.1-7.63-5.67h-.11c.14,1.64.21,3.14.21,4.49v28.33h-15.48v-78.9h15.38ZM365.85,293c0,2,.32,3.87.96,5.61.64,1.75,1.56,3.26,2.78,4.54,1.21,1.28,2.65,2.3,4.32,3.05,1.67.75,3.51,1.12,5.5,1.12s3.91-.36,5.55-1.07c1.64-.71,3.02-1.71,4.16-2.99,1.14-1.28,2.03-2.8,2.67-4.54.64-1.75.96-3.62.96-5.61,0-4.28-1.16-7.77-3.47-10.48-2.31-2.71-5.57-4.06-9.77-4.06s-7.44,1.35-9.93,4.06c-2.49,2.71-3.74,6.17-3.74,10.37Z"/>
-      <path fill="#2F77B1" d="M431.62,266.91l-.11,6.09h.11c2.42-2.49,4.98-4.38,7.69-5.67,2.7-1.28,5.69-1.92,8.97-1.92,3.77,0,7.21.73,10.3,2.19,3.1,1.46,5.75,3.44,7.96,5.93,2.21,2.5,3.9,5.42,5.07,8.77,1.17,3.35,1.76,6.95,1.76,10.8s-.61,7.32-1.82,10.64c-1.21,3.31-2.92,6.22-5.13,8.71-2.21,2.5-4.84,4.46-7.9,5.88-3.06,1.42-6.44,2.14-10.14,2.14-3.35,0-6.39-.61-9.13-1.82-2.74-1.21-5.29-3.1-7.63-5.67h-.11c.14,1.64.21,3.14.21,4.49v28.33h-15.48v-78.9h15.38ZM430.87,293c0,2,.32,3.87.96,5.61.64,1.75,1.56,3.26,2.78,4.54,1.21,1.28,2.65,2.3,4.32,3.05,1.67.75,3.51,1.12,5.5,1.12s3.91-.36,5.55-1.07c1.64-.71,3.02-1.71,4.16-2.99,1.14-1.28,2.03-2.8,2.67-4.54.64-1.75.96-3.62.96-5.61,0-4.28-1.16-7.77-3.47-10.48-2.31-2.71-5.57-4.06-9.77-4.06s-7.44,1.35-9.93,4.06c-2.49,2.71-3.74,6.17-3.74,10.37Z"/>
-      <path fill="#E02727" d="M504.76,265.52c4.06,0,7.7.64,10.94,1.92,3.24,1.28,6,3.14,8.28,5.56,2.28,2.42,4.04,5.36,5.29,8.82,1.24,3.46,1.87,7.36,1.87,11.71v2.78h-37.37c.28,3.85,1.41,6.93,3.36,9.25,1.96,2.32,4.75,3.47,8.38,3.47,2.49,0,4.64-.6,6.46-1.82,1.82-1.21,3.43-3.1,4.86-5.67l13.56,4.49c-2.35,4.92-5.73,8.59-10.14,11.01-4.41,2.42-9.4,3.64-14.95,3.64-4.06,0-7.74-.64-11.05-1.92-3.31-1.28-6.18-3.12-8.6-5.51-2.42-2.39-4.29-5.27-5.61-8.66-1.32-3.38-1.98-7.18-1.98-11.39s.66-8.02,1.98-11.44c1.32-3.42,3.15-6.32,5.5-8.71,2.35-2.39,5.16-4.24,8.44-5.56,3.27-1.32,6.87-1.98,10.78-1.98ZM494.41,286.16h21.04c-.36-2.85-1.46-5.06-3.31-6.63-1.85-1.57-4.24-2.35-7.15-2.35s-5.18.82-6.99,2.46c-1.82,1.64-3.01,3.81-3.58,6.52Z"/>
-      <path fill="#2A7928" d="M539.14,266.91h15.48l-.21,5.35h.32c1.99-2.42,3.93-4.15,5.82-5.19,1.89-1.03,4.29-1.55,7.21-1.55,2.28,0,4.88.79,7.79,2.35l-4.16,14.86c-1.14-.78-2.28-1.41-3.42-1.87-1.14-.46-2.39-.7-3.74-.7-6.41,0-9.61,4.56-9.61,13.69v25.34h-15.48v-52.28Z"/>
-      <path fill="#111111" d="M573.42,311.92c0-2.57.92-4.67,2.78-6.31,1.85-1.64,4.02-2.46,6.51-2.46s4.66.82,6.51,2.46c1.85,1.64,2.78,3.74,2.78,6.31s-.93,4.67-2.78,6.31c-1.85,1.64-4.02,2.46-6.51,2.46s-4.66-.82-6.51-2.46c-1.85-1.64-2.78-3.74-2.78-6.31Z"/>
-      <rect fill="#FBAE9C" x="258.19" y="287.97" width="15.48" height="31.22"/>
-      <path fill="#111111" d="M274.66,268.33v-18.87s-.96,0-.96,0h-15.48s0,18.87,0,18.87c0,.6-.54,1.05-1.13.94l-6.06-1.11c-.59-.11-1.13.35-1.13.94v12.53h33.1v-12.53c0-.6-.54-1.05-1.13-.94l-6.06,1.11c-.59.11-1.13-.35-1.13-.94Z"/>
-    </svg>
-  </div>
+<header class="site-nav">
+  <a href="#studio" class="logo" aria-label="topper. home"><img src="assets/brand/topper-wordmark-black.svg" alt="topper." width="114" height="32"></a>
   <a href="mailto:info@topperdigital.xyz" class="nav-contact">info@topperdigital.xyz</a>
-</nav>
+</header>
 
-<!-- Main content grid -->
-<div id="content">
-  <div id="face-index">
-    <div id="fi-title">Topper<br>Digital</div>
-  </div>
-  <div id="spacer"></div>
-  <div id="face-text"><!-- blocks injected by JS --></div>
-</div>
-
-<!-- Portfolio "window" — rises on the final section -->
-<div id="work-panel" aria-hidden="true">
-  <div class="wp-head">
-    <div class="wp-title">Selected Work</div>
-    <div class="wp-counter" id="wp-counter">01 / 06</div>
-  </div>
-  <div id="work-track"><!-- slides injected by JS --></div>
-  <div class="wp-foot">
-    <div class="wp-hint">Scroll or drag the reel</div>
-    <div class="wp-btns">
-      <button class="wp-btn" id="wp-prev" aria-label="Previous project">←</button>
-      <button class="wp-btn" id="wp-next" aria-label="Next project">→</button>
+<main id="content">
+  <section class="stop" id="studio" data-hat="#FFC718" data-label="Studio">
+    <div class="stop-head">
+      <h1 tabindex="-1">The trick is the craft.</h1>
     </div>
-  </div>
+    <div class="stop-copy">
+      <p class="lead">We are a boutique VFX and motion design studio in Lisbon, working worldwide. Idents, title sequences, visual effects and 3D for film, broadcast and digital.</p>
+      <div class="actions">
+        <button class="btn" type="button" data-goto="work">See the work</button>
+        <a class="link-strong" href="mailto:info@topperdigital.xyz?subject=New%20project">Start a project</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="stop" id="work" data-hat="#FBAE9C" data-label="Work">
+    <div class="stop-head">
+      <h2 tabindex="-1">Selected work.</h2>
+    </div>
+    <div class="stop-copy">
+      <p class="body">Idents, title sequences and VFX breakdowns from recent projects.</p>
+    </div>
+  </section>
+
+  <section class="stop" id="services" data-hat="#81CFE3" data-label="Services">
+    <div class="stop-head">
+      <h2 tabindex="-1">What we make.</h2>
+    </div>
+    <div class="stop-copy">
+      <ul class="services">
+        <li>
+          <h3 class="subheading">Idents &amp; brand motion</h3>
+          <p class="svc-line">Logos and channels that move with rhythm and timing.</p>
+        </li>
+        <li>
+          <h3 class="subheading">Title sequences</h3>
+          <p class="svc-line">Openings that set the tone for film and broadcast.</p>
+        </li>
+        <li>
+          <h3 class="subheading">Visual effects</h3>
+          <p class="svc-line">Shots that read as real, even when they aren't.</p>
+        </li>
+        <li>
+          <h3 class="subheading">3D</h3>
+          <p class="svc-line">Lighting, material and weight, grounded in physical logic.</p>
+        </li>
+        <li>
+          <h3 class="subheading">Real-time &amp; generative</h3>
+          <p class="svc-line">Engines and generative tools, in service of the idea.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="stop" id="approach" data-hat="#2F77B1" data-label="Approach">
+    <div class="stop-head">
+      <h2 tabindex="-1">Concept first. Then craft.</h2>
+    </div>
+    <div class="stop-copy">
+      <p class="lead">Every project starts with an idea and becomes its own visual language. We build it frame by frame, with hand-crafted design and technical precision, from script to final pixel.</p>
+      <p class="body">New tools are part of the kit: real-time engines, generative and AI-assisted pipelines. Always in service of the vision, never instead of it.</p>
+    </div>
+    <img class="stop-photo" src="assets/brand/magician.jpg" alt="A magician in black tie, photographed in black and white" width="720" height="900" loading="lazy">
+  </section>
+
+  <section class="stop" id="contact" data-hat="#000000" data-label="Contact" data-ground="yellow">
+    <div class="stop-head">
+      <h2 tabindex="-1">Let's talk.</h2>
+    </div>
+    <div class="stop-copy">
+      <p class="lead">Based in Lisbon. Working worldwide.</p>
+      <a class="contact-email" href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a>
+      <a class="contact-social" href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram</a>
+    </div>
+  </section>
+
+  <img class="hat-fallback" src="assets/brand/topper-icon-black.svg" alt="" width="212" height="206">
+</main>
+
+<!-- Portfolio "window" — rises on the Work step -->
+<div id="work-wrap">
+  <section id="work-panel" aria-label="Selected work reel" inert>
+    <div id="work-track"><!-- slides injected by JS --></div>
+    <div class="wp-foot">
+      <div class="wp-counter" id="wp-counter">1 / 6</div>
+      <div class="wp-btns">
+        <button class="wp-btn" id="wp-prev" type="button" aria-label="Previous project">Prev</button>
+        <button class="wp-btn" id="wp-next" type="button" aria-label="Next project">Next</button>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div id="bottom-bar">
-  <div class="hint">DRAG TO EXPLORE</div>
-  <div class="dots" id="dots"></div>
+  <div class="bar-left has-hint" id="bar-left">
+    <span class="hint" id="hint" aria-hidden="true"><span class="hint-fine">Scroll to explore</span><span class="hint-coarse">Swipe up to explore</span></span>
+    <span class="bar-step" id="bar-step" aria-hidden="true">Studio</span>
+  </div>
+  <nav id="dots" class="stops-nav" aria-label="Sections">
+    <button class="dot" type="button" data-stop="0" aria-current="step"><span class="dot-hat" aria-hidden="true"></span><span class="dot-label">Studio</span></button>
+    <button class="dot" type="button" data-stop="1"><span class="dot-hat" aria-hidden="true"></span><span class="dot-label">Work</span></button>
+    <button class="dot" type="button" data-stop="2"><span class="dot-hat" aria-hidden="true"></span><span class="dot-label">Services</span></button>
+    <button class="dot" type="button" data-stop="3"><span class="dot-hat" aria-hidden="true"></span><span class="dot-label">Approach</span></button>
+    <button class="dot" type="button" data-stop="4"><span class="dot-hat" aria-hidden="true"></span><span class="dot-label">Contact</span></button>
+  </nav>
 </div>
 
+<div class="sr-only" id="live" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+// ════════════════════════════════════════════════════
+//  STEPS, INPUT, WORK REEL — no dependency on three.js,
+//  so navigation keeps working if WebGL or the CDN fails.
+// ════════════════════════════════════════════════════
+
+// OWNER: replace name/tag with real project data (title, client or format, year).
+// Optional `poster: 'assets/portfolio/work-01.jpg'` per item; without it a brand-colour poster is generated.
+const PORTFOLIO = [
+  { name: "Brand Ident",     tag: "Motion, 2026",    src: "assets/portfolio/work-01.mp4" },
+  { name: "Title Sequence",  tag: "Film, 2026",      src: "assets/portfolio/work-02.mp4" },
+  { name: "VFX Breakdown",   tag: "VFX, 2025",       src: "assets/portfolio/work-03.mp4" },
+  { name: "Motion Study",    tag: "R&D, 2025",       src: "assets/portfolio/work-04.mp4" },
+  { name: "Commercial",      tag: "Broadcast, 2025", src: "assets/portfolio/work-05.mp4" },
+  { name: "Show Package",    tag: "Broadcast, 2024", src: "assets/portfolio/work-06.mp4" }
+];
+
+(function () {
+  'use strict';
+  const root = document.documentElement, body = document.body;
+  root.classList.add('no-anim');
+
+  const $ = (s) => document.querySelector(s);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const reducedMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const mobileMQ  = window.matchMedia('(max-width: 600px)');
+
+  // ── Stops, read from the HTML ──
+  const stopEls = Array.from(document.querySelectorAll('.stop'));
+  const N = stopEls.length;
+  const stops = stopEls.map((el) => ({
+    el, id: el.id, hat: el.dataset.hat, label: el.dataset.label, ground: el.dataset.ground || '',
+    head: el.querySelector('.stop-head'), copy: el.querySelector('.stop-copy'),
+    heading: el.querySelector('h1, h2')
+  }));
+  const dots    = Array.from(document.querySelectorAll('#dots .dot'));
+  const live    = $('#live');
+  const barLeft = $('#bar-left');
+  const barStep = $('#bar-step');
+  const hintEl  = $('#hint');
+  const bar     = $('#bottom-bar');
+  const content = $('#content');
+
+  const idFromHash = () => stops.findIndex((s) => '#' + s.id === location.hash);
+  let active = Math.max(0, idFromHash());
+  const listeners = [];
+
+  const T = window.topper = {
+    N, stops, dragStep: 0,
+    get active() { return active; },
+    goTo: (i, o) => goTo(i, o),
+    onStep: (fn) => listeners.push(fn),
+    reduced: () => reducedMQ.matches,
+    isMobile: () => mobileMQ.matches,
+    target: () => (N > 1 ? clamp((active + T.dragStep) / (N - 1), 0, 1) : 0),
+    relayout: () => layoutPanel()
+  };
+
+  // ── Hint ("Scroll to explore" until the first move, for the session) ──
+  let hintDone = false;
+  try { hintDone = sessionStorage.getItem('topper-hint') === '1'; } catch (e) {}
+  function dismissHint() {
+    if (hintDone && !hintEl.parentNode) return;
+    hintDone = true;
+    try { sessionStorage.setItem('topper-hint', '1'); } catch (e) {}
+    if (hintEl.parentNode) hintEl.remove();
+    barLeft.classList.remove('has-hint');
+  }
+  if (hintDone || active !== 0) dismissHint();
+
+  // ── Apply the active step to the DOM ──
+  function render() {
+    stops.forEach((s, k) => {
+      const on = k === active;
+      s.el.classList.toggle('is-active', on);
+      s.el.toggleAttribute('inert', !on);
+      if (on) s.el.removeAttribute('aria-hidden'); else s.el.setAttribute('aria-hidden', 'true');
+    });
+    dots.forEach((d, k) => {
+      if (k === active) d.setAttribute('aria-current', 'step'); else d.removeAttribute('aria-current');
+    });
+    const s = stops[active];
+    body.dataset.stop = s.id;
+    if (s.ground) body.dataset.ground = s.ground; else delete body.dataset.ground;
+    barStep.textContent = s.label;
+    setPanelOpen(s.id === 'work');
+    layoutPanel();
+  }
+
+  function writeHash() {
+    try { history.replaceState(null, '', '#' + stops[active].id); } catch (e) {}
+  }
+
+  function goTo(i, o) {
+    o = o || {};
+    i = clamp(i, 0, N - 1);
+    T.dragStep = 0;
+    if (i === active) return;
+    active = i;
+    if (!o.fromHash) writeHash();
+    dismissHint();
+    render();
+    live.textContent = 'Step ' + (active + 1) + ' of ' + N + ': ' + stops[active].label;
+    if (o.focus) { try { stops[active].heading.focus({ preventScroll: true }); } catch (e) {} }
+    listeners.forEach((fn) => fn(active));
+  }
+
+  dots.forEach((d) => d.addEventListener('click', () => goTo(parseInt(d.dataset.stop, 10), { focus: true })));
+  document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
+    const k = stops.findIndex((s) => s.id === b.dataset.goto);
+    if (k >= 0) goTo(k, { focus: true });
+  }));
+  $('.logo').addEventListener('click', (e) => { e.preventDefault(); goTo(0, { focus: true }); });
+  window.addEventListener('hashchange', () => {
+    const k = idFromHash();
+    if (k >= 0) goTo(k, { fromHash: true, focus: true });
+  });
+
+  // ════════ Work reel ════════
+  const wrap    = $('#work-wrap');
+  const panel   = $('#work-panel');
+  const track   = $('#work-track');
+  const counter = $('#wp-counter');
+  const prevBtn = $('#wp-prev');
+  const nextBtn = $('#wp-next');
+
+  const BRAND_POSTERS = [
+    ['#FBAE9C', '#000000'], ['#81CFE3', '#000000'], ['#FFC718', '#000000'],
+    ['#2F77B1', '#FFFFFF'], ['#E02727', '#FFFFFF'], ['#2A7928', '#FFFFFF']
+  ];
+  // The real hat, from assets/brand/topper-icon-black.svg (viewBox 0 0 211.621 205.738)
+  const HAT_PATH = 'M158.375 120.637L158.375 0L53.25 0L53.25 120.637C53.25 124.469 49.773 127.367 46.004 126.676L7.25 119.578C3.477 118.887 0 121.781 0 125.617L0 205.738L211.621 205.738L211.621 125.617C211.621 121.781 208.148 118.887 204.375 119.578L165.621 126.676C161.852 127.367 158.375 124.469 158.375 120.637Z';
+  function makePoster(i) {
+    const c = BRAND_POSTERS[i % BRAND_POSTERS.length];
+    const W = 800, H = 450, hw = W * 0.25, s = hw / 211.621, hh = 205.738 * s;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
+      '<rect width="' + W + '" height="' + H + '" fill="' + c[0] + '"/>' +
+      '<path fill="' + c[1] + '" transform="translate(' + ((W - hw) / 2) + ',' + ((H - hh) / 2) + ') scale(' + s + ')" d="' + HAT_PATH + '"/>' +
+      '</svg>';
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+
+  const slides = [], videos = [];
+  PORTFOLIO.forEach((p, i) => {
+    const slide = document.createElement('div');
+    slide.className = 'work-slide';
+    slide.setAttribute('role', 'group');
+    slide.setAttribute('aria-label', (i + 1) + ' of ' + PORTFOLIO.length);
+
+    const v = document.createElement('video');
+    v.muted = true; v.defaultMuted = true; v.setAttribute('muted', '');
+    v.loop = true; v.playsInline = true; v.setAttribute('playsinline', '');
+    v.controls = true;
+    v.preload = i === 0 ? 'metadata' : 'none';
+    v.poster = p.poster || makePoster(i);
+    v.setAttribute('aria-label', p.name + ', ' + p.tag);
+    const src = document.createElement('source');
+    src.src = p.src; src.type = 'video/mp4';
+    // A missing file keeps the poster and drops the dead controls instead of breaking the layout.
+    src.addEventListener('error', () => v.removeAttribute('controls'));
+    v.appendChild(src);
+
+    const meta = document.createElement('div');
+    meta.className = 'work-meta';
+    const name = document.createElement('p'); name.className = 'subheading'; name.textContent = p.name;
+    const tag = document.createElement('p'); tag.className = 'caption work-tag'; tag.textContent = p.tag;
+    meta.append(name, tag);
+
+    slide.append(v, meta);
+    track.appendChild(slide);
+    slides.push(slide); videos.push(v);
+  });
+
+  let slideIdx = 0;
+  function playSafe(v) { try { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} }
+  function syncVideo() {
+    const isWork = stops[active].id === 'work';
+    videos.forEach((v, k) => {
+      if (isWork && !reducedMQ.matches && k === slideIdx) playSafe(v); else v.pause();
+    });
+  }
+  function setSlide(i) {
+    i = clamp(i, 0, PORTFOLIO.length - 1);
+    slideIdx = i;
+    counter.textContent = (i + 1) + ' / ' + PORTFOLIO.length;
+    const lastFocus = document.activeElement;
+    prevBtn.disabled = i === 0;
+    nextBtn.disabled = i === PORTFOLIO.length - 1;
+    if (lastFocus && lastFocus.disabled) (lastFocus === prevBtn ? nextBtn : prevBtn).focus({ preventScroll: true });
+    slides.forEach((s, k) => s.toggleAttribute('inert', k !== i));
+    videos[i].preload = 'metadata';
+    syncVideo();
+  }
+  function goToSlide(i) {
+    i = clamp(i, 0, PORTFOLIO.length - 1);
+    setSlide(i);
+    track.scrollTo({ left: i * track.clientWidth, behavior: reducedMQ.matches ? 'auto' : 'smooth' });
+  }
+  prevBtn.addEventListener('click', () => goToSlide(slideIdx - 1));
+  nextBtn.addEventListener('click', () => goToSlide(slideIdx + 1));
+  let scrollTimer = 0;
+  track.addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+      if (i !== slideIdx) setSlide(i);
+    }, 90);
+  }, { passive: true });
+
+  function setPanelOpen(open) {
+    panel.classList.toggle('open', open);
+    panel.toggleAttribute('inert', !open);
+    if (open) panel.removeAttribute('aria-hidden'); else panel.setAttribute('aria-hidden', 'true');
+    syncVideo();
+  }
+
+  // Mobile: the panel fills the space between the Work title and the bottom bar.
+  function layoutPanel() {
+    if (!mobileMQ.matches) { wrap.style.top = ''; wrap.style.bottom = ''; return; }
+    const ws = stops.find((s) => s.id === 'work');
+    const c = content.getBoundingClientRect();
+    const headBottom = c.top + ws.head.offsetTop + ws.head.offsetHeight;
+    wrap.style.top = (headBottom + 16) + 'px';
+    wrap.style.bottom = (window.innerHeight - bar.getBoundingClientRect().top + 16) + 'px';
+  }
+
+  // ════════ Input: wheel, swipe/drag, keys ════════
+  let wheelAcc = 0, wheelLocked = false, wheelIdle = 0;
+  window.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) return;                          // pinch-zoom on trackpads
+    const overReel   = e.target.closest && e.target.closest('#work-track');
+    const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey;
+    if (overReel && horizontal) {
+      e.preventDefault();
+      track.scrollLeft += e.deltaX || e.deltaY;
+      return;
+    }
+    e.preventDefault();
+    clearTimeout(wheelIdle);
+    wheelIdle = setTimeout(() => { wheelLocked = false; wheelAcc = 0; }, 250);
+    if (wheelLocked) return;
+    wheelAcc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    if (Math.abs(wheelAcc) >= 60) { goTo(active + Math.sign(wheelAcc)); wheelLocked = true; wheelAcc = 0; }
+  }, { passive: false });
+
+  const NO_DRAG = 'video, button, a, input, textarea, select, [contenteditable]';
+  let drag = null;
+  function endDrag() { drag = null; T.dragStep = 0; body.classList.remove('dragging'); }
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!e.isPrimary) { endDrag(); return; }        // second finger: leave it to pinch-zoom
+    if (e.target.closest && e.target.closest(NO_DRAG)) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, inTrack: !!(e.target.closest && e.target.closest('#work-track')), dead: false, decided: false };
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id || drag.dead) return;
+    if (e.pointerType === 'mouse' && e.buttons === 0) { endDrag(); return; }
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.decided && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      drag.decided = true;
+      if (drag.inTrack && Math.abs(dx) > Math.abs(dy)) { drag.dead = true; T.dragStep = 0; return; }
+    }
+    if (Math.abs(dy) > 6) body.classList.add('dragging');
+    T.dragStep = Math.abs(dx) > Math.abs(dy) ? 0 : clamp(-dy / (window.innerHeight * 0.5), -0.4, 0.4);
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag, dx = e.clientX - d.x, dy = e.clientY - d.y;
+    endDrag();
+    if (!d.dead && Math.abs(dy) >= 50 && Math.abs(dy) > Math.abs(dx)) goTo(active + (dy < 0 ? 1 : -1));
+  });
+  window.addEventListener('pointercancel', endDrag);
+  window.addEventListener('blur', endDrag);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t.closest && t.closest('video, input, textarea, [contenteditable]')) return;
+    const isWork = stops[active].id === 'work';
+    let handled = true;
+    switch (e.key) {
+      case 'ArrowDown': case 'PageDown': goTo(active + 1, { focus: true }); break;
+      case 'ArrowUp':   case 'PageUp':   goTo(active - 1, { focus: true }); break;
+      case ' ': case 'Spacebar':
+        if (t.closest && t.closest('button, a')) { handled = false; break; }
+        goTo(active + (e.shiftKey ? -1 : 1), { focus: true }); break;
+      case 'Home': goTo(0, { focus: true }); break;
+      case 'End':  goTo(N - 1, { focus: true }); break;
+      case 'ArrowRight': if (isWork) goToSlide(slideIdx + 1); else goTo(active + 1, { focus: true }); break;
+      case 'ArrowLeft':  if (isWork) goToSlide(slideIdx - 1); else goTo(active - 1, { focus: true }); break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
+  });
+
+  reducedMQ.addEventListener && reducedMQ.addEventListener('change', syncVideo);
+
+  // ── Resize / fonts ──
+  let rsz = 0;
+  function onResize() {
+    layoutPanel();
+    track.scrollTo({ left: slideIdx * track.clientWidth, behavior: 'auto' });
+    listeners.forEach((fn) => fn(active, true));
+  }
+  window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(onResize, 100); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(onResize);
+
+  // ── Start ──
+  setSlide(0);
+  render();
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('no-anim')));
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 // ════════════════════════════════════════════════════
-//  FACE DATA
+//  THE HAT — three.js. Everything here is optional:
+//  if WebGL or the CDN is unavailable, html.no-webgl
+//  swaps in a static hat and the steps keep working.
 // ════════════════════════════════════════════════════
-const FACES = [
-  {
-    label: "Identity",
-    title: "topper.",
-    body:  "We are a boutique VFX and motion graphics studio. Craft-driven. Concept-first. Built for film, broadcast, and digital — from script to final pixel.",
-    accent: "--coral"
-  },
-  {
-    label: "Craft",
-    title: "Made\nWith Care",
-    body:  "Every frame is deliberate. We combine hand-crafted design with technical precision — treating each project as its own visual language.",
-    accent: "--sky"
-  },
-  {
-    label: "Motion",
-    title: "Always\nMoving",
-    body:  "Motion is our native tongue. Title sequences, brand idents, visual effects — we bring still ideas to life through movement, rhythm, and timing.",
-    accent: "--yellow"
-  },
-  {
-    label: "Dimension",
-    title: "Three\nDimensions",
-    body:  "Depth is not decoration. Our 3D work is grounded in physical logic — lighting, material, weight — so it reads as real even when it isn't.",
-    accent: "--blue"
-  },
-  {
-    label: "Technology",
-    title: "Future\nReady",
-    body:  "We work at the intersection of art and technology. Real-time engines, generative tools, AI-assisted pipelines — in service of the vision, never instead of it.",
-    accent: "--red"
-  },
-  {
-    label: "Contact",
-    title: "Let's\nTalk",
-    body:  "Based in Lisbon. Working worldwide. Reach us at info@topperdigital.xyz — or find us wherever great work happens.",
-    accent: "--green"
-  },
-  {
-    label: "Portfolio",
-    title: "Selected\nWork",
-    body:  "The proof is in the pixels. A rotating reel of recent projects — idents, title sequences, and VFX breakdowns.",
-    accent: "--black"
+(function () {
+  'use strict';
+  const root = document.documentElement;
+  const T = window.topper;
+  if (!T) return;
+  let raf = 0;
+
+  function webglAvailable() {
+    try {
+      const c = document.createElement('canvas');
+      const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) return false;
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return true;
+    } catch (e) { return false; }
   }
-];
 
-// Resolved hex values for the three.js side (CSS vars aren't readable by WebGL)
-const ACCENT_HEX = {
-  "--coral":  0xFBAE9C,
-  "--sky":    0x81CFE3,
-  "--yellow": 0xFFC718,
-  "--blue":   0x2F77B1,
-  "--red":    0xE02727,
-  "--green":  0x2A7928,
-  "--black":  0x111111
-};
+  try {
+    if (!window.THREE) throw new Error('three.js did not load');
+    if (!webglAvailable()) throw new Error('WebGL unavailable');
 
-const PALETTE     = [0xFBAE9C, 0x81CFE3, 0xFFC718, 0x2F77B1, 0xE02727, 0x2A7928];
-const PALETTE_CSS = ["#FBAE9C", "#81CFE3", "#FFC718", "#2F77B1", "#E02727", "#2A7928"];
-
-// ════════════════════════════════════════════════════
-//  PORTFOLIO DATA — swap the src paths for real files.
-//  Posters are generated brand-color placeholders; you
-//  can also point `poster:` at real thumbnails.
-// ════════════════════════════════════════════════════
-const PORTFOLIO = [
-  { name: "Brand Ident",     tag: "Motion / 2026", src: "assets/portfolio/work-01.mp4" },
-  { name: "Title Sequence",  tag: "Film / 2026",   src: "assets/portfolio/work-02.mp4" },
-  { name: "VFX Breakdown",   tag: "VFX / 2025",    src: "assets/portfolio/work-03.mp4" },
-  { name: "Motion Study",    tag: "R&D / 2025",    src: "assets/portfolio/work-04.mp4" },
-  { name: "Commercial",      tag: "Broadcast / 2025", src: "assets/portfolio/work-05.mp4" },
-  { name: "Show Package",    tag: "Broadcast / 2024", src: "assets/portfolio/work-06.mp4" }
-];
-
-// Placeholder poster: brand color field + white T mark + index
-function makePoster(colorCss, i) {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">` +
-    `<rect width="800" height="450" fill="${colorCss}"/>` +
-    `<path fill="rgba(255,255,255,0.92)" transform="translate(355,140) scale(0.9)" ` +
-    `d="M32 0 H68 V63 L100 82 V150 H0 V82 L32 63 Z"/>` +
-    `<text x="400" y="330" text-anchor="middle" font-family="monospace" font-size="20" ` +
-    `letter-spacing="6" fill="rgba(255,255,255,0.9)">0${i + 1}</text>` +
-    `</svg>`;
-  return 'data:image/svg+xml,' + encodeURIComponent(svg);
-}
-
-// ════════════════════════════════════════════════════
-//  BUILD DOM
-// ════════════════════════════════════════════════════
-const dotsEl   = document.getElementById('dots');
-const faceText = document.getElementById('face-text');
-const fiTitle  = document.getElementById('fi-title');
-const panel    = document.getElementById('work-panel');
-const track    = document.getElementById('work-track');
-const counter  = document.getElementById('wp-counter');
-const dotEls   = [];
-const blockEls = [];
-
-FACES.forEach((f, i) => {
-  const d = document.createElement('div');
-  d.className = 'dot' + (i === 0 ? ' active' : '');
-  d.addEventListener('click', () => jumpTo(i));
-  dotsEl.appendChild(d);
-  dotEls.push(d);
-
-  const b = document.createElement('div');
-  b.className = 'fblock' + (i === 0 ? ' visible' : '');
-  b.innerHTML = `<div class="fblock-body">${f.body}</div>`;
-  faceText.appendChild(b);
-  blockEls.push(b);
-});
-
-// Portfolio slides
-PORTFOLIO.forEach((p, i) => {
-  const slide = document.createElement('div');
-  slide.className = 'work-slide';
-  slide.innerHTML =
-    `<video controls playsinline preload="none" poster="${makePoster(PALETTE_CSS[i % 6], i)}">` +
-    `<source src="${p.src}" type="video/mp4"></video>` +
-    `<div class="work-meta"><div class="work-name">${p.name}</div>` +
-    `<div class="work-tag">${p.tag}</div></div>`;
-  track.appendChild(slide);
-});
-const videos = track.querySelectorAll('video');
-
-// Carousel navigation
-let slideIdx = 0;
-function goToSlide(i) {
-  slideIdx = Math.max(0, Math.min(PORTFOLIO.length - 1, i));
-  track.scrollTo({ left: slideIdx * track.clientWidth, behavior: 'smooth' });
-}
-document.getElementById('wp-prev').addEventListener('click', () => goToSlide(slideIdx - 1));
-document.getElementById('wp-next').addEventListener('click', () => goToSlide(slideIdx + 1));
-
-track.addEventListener('scroll', () => {
-  const i = Math.round(track.scrollLeft / track.clientWidth);
-  if (i !== slideIdx) {
-    slideIdx = i;
-    counter.textContent = String(i + 1).padStart(2, '0') + ' / ' + String(PORTFOLIO.length).padStart(2, '0');
-  }
-}, { passive: true });
-
-const WORK_IDX = FACES.length - 1;
-let currentFaceIdx = 0;
-
-function setFace(idx) {
-  if (idx === currentFaceIdx) return;
-  currentFaceIdx = idx;
-  dotEls.forEach((d, i)   => d.classList.toggle('active',  i === idx));
-  blockEls.forEach((b, i) => b.classList.toggle('visible', i === idx));
-  const f = FACES[idx];
-  fiTitle.innerHTML = f.title.replace(/\n/g, '<br>');
-  document.documentElement.style.setProperty('--accent', `var(${f.accent})`);
-  targetIconColor.setHex(idx === WORK_IDX ? 0x111111 : ACCENT_HEX[f.accent]);
-
-  // Portfolio window rises on the final face
-  const isWork = idx === WORK_IDX;
-  panel.classList.toggle('open', isWork);
-  panel.setAttribute('aria-hidden', String(!isWork));
-  if (!isWork) videos.forEach(v => v.pause());
-}
-
-// ════════════════════════════════════════════════════
-//  THREE.JS — SCENE
-// ════════════════════════════════════════════════════
-const canvas   = document.getElementById('canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-
-const scene  = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 0.2, 8.5);
-
-// ── LIGHTING — tuned for a flat "painted" cel look, not realism.
-// A soft key sets the toon light direction; generous ambient lifts the
-// shadow band so the flat brand colours stay legible on pure white.
-scene.add(new THREE.AmbientLight(0xffffff, 0.60));
-const key = new THREE.DirectionalLight(0xffffff, 0.90);
-key.position.set(-3, 5, 6);
-scene.add(key);
-const fill = new THREE.DirectionalLight(0xffffff, 0.28);
-fill.position.set(4, 1, 3);
-scene.add(fill);
-
-const targetIconColor = new THREE.Color(0xFBAE9C);
-
-// ════════════════════════════════════════════════════
-//  THE MARK IN 3D — a smooth extrusion of the actual
-//  topper icon. We take the exact SVG silhouette of the
-//  logo, give it depth with a soft rounded bevel, and
-//  spin it about the vertical (up) axis like a turntable
-//  so each colour face swings past you as you scroll.
-// ════════════════════════════════════════════════════
-
-// Trace of assets/topper_icon.svg mapped into 3D space.
-// SVG is Y-down; we flip Y and recentre so the mark stands
-// upright and revolves about its own middle.
-const SVG_CX = 420.94, SVG_CY = 292.735, SVG_S = 0.0097;
-const MX = x => (x - SVG_CX) * SVG_S;
-const MY = y => -(y - SVG_CY) * SVG_S;
-
-function markShape() {
-  const s = new THREE.Shape();
-  s.moveTo(MX(473.57), MY(310.52));
-  s.lineTo(MX(473.57), MY(189.74));
-  s.lineTo(MX(368.32), MY(189.74));
-  s.lineTo(MX(368.32), MY(310.52));
-  s.bezierCurveTo(MX(368.32), MY(314.36), MX(364.84), MY(317.26), MX(361.06), MY(316.57));
-  s.lineTo(MX(322.26), MY(309.46));
-  s.bezierCurveTo(MX(318.48), MY(308.77), MX(315.00), MY(311.67), MX(315.00), MY(315.51));
-  s.lineTo(MX(315.00), MY(395.73));
-  s.lineTo(MX(526.88), MY(395.73));
-  s.lineTo(MX(526.88), MY(315.51));
-  s.bezierCurveTo(MX(526.88), MY(311.67), MX(523.40), MY(308.77), MX(519.62), MY(309.46));
-  s.lineTo(MX(480.82), MY(316.57));
-  s.bezierCurveTo(MX(477.04), MY(317.26), MX(473.56), MY(314.36), MX(473.56), MY(310.52));
-  s.closePath();
-  return s;
-}
-
-// Smooth solid: the extruded logo with a soft bevelled edge
-// that catches the toon light. Centred on all axes so it
-// revolves cleanly about its own middle.
-const markGeo = new THREE.ExtrudeGeometry(markShape(), {
-  depth:          0.34,
-  bevelEnabled:   true,
-  bevelThickness: 0.05,
-  bevelSize:      0.045,
-  bevelSegments:  4,
-  curveSegments:  24
-});
-markGeo.center();
-
-// ════════════════════════════════════════════════════
-//  HALFTONE SHADER — the "paint" stays a flat brand
-//  colour, but the shadows and highlights are rendered as
-//  screen-space halftone dots (ben-day / comic screentone)
-//  instead of smooth or cel banding. Darker dots deepen
-//  the shadow side; white dots sparkle the lit side. The
-//  dot grid is fixed in screen space, so the pattern reads
-//  like print as the mark turns beneath it.
-// ════════════════════════════════════════════════════
-const halftoneMats = [];
-function makeHalftoneMaterial(hex) {
-  const m = new THREE.ShaderMaterial({
-    extensions: { derivatives: true },   // fwidth() for crisp dot edges (WebGL1)
-    uniforms: {
-      uColor:      { value: new THREE.Color(hex) },
-      uDotPx:      { value: 5.0 * renderer.getPixelRatio() }, // dot spacing, device px
-      uHalfHeight: { value: 1.05 },                            // model half-height
-      uLightA:     { value: new THREE.Vector3(-3, 5, 6) },     // key direction
-      uLightB:     { value: new THREE.Vector3( 4, 1, 3) },     // fill direction
-      uAmbient:    { value: 0.22 }
-    },
-    vertexShader: `
-      varying vec3  vN;
-      varying float vH;
-      void main() {
-        vN = normalize(mat3(modelMatrix) * normal);  // world normal (uniform scale)
-        vH = position.y;                             // object-space height for tonal ramp
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: `
-      precision highp float;
-      uniform vec3  uColor;
-      uniform float uDotPx, uHalfHeight, uAmbient;
-      uniform vec3  uLightA, uLightB;
-      varying vec3  vN;
-      varying float vH;
-
-      // Screen-space halftone dot mask for a given coverage
-      // (0 = no dot, 1 = solid). angle keeps the two grids from aligning.
-      float halftone(vec2 fc, float angleDeg, float sizePx, float coverage) {
-        if (coverage <= 0.001) return 0.0;
-        float a = radians(angleDeg);
-        mat2 R = mat2(cos(a), -sin(a), sin(a), cos(a));
-        vec2 p    = (R * fc) / sizePx;
-        vec2 cell = fract(p) - 0.5;
-        float d   = length(cell) * 2.0;        // 0 at centre → ~1.414 at corner
-        float r   = coverage * 1.5;            // dot radius grows with coverage
-        float aa  = fwidth(d) + 0.02;
-        return 1.0 - smoothstep(r - aa, r + aa, d);
-      }
-
-      void main() {
-        vec3  N = normalize(vN);
-        float diffKey  = max(dot(N, normalize(uLightA)), 0.0);
-        float diffFill = max(dot(N, normalize(uLightB)), 0.0);
-
-        // Keep the tone centred so the visible face carries BOTH bands at
-        // once — highlight dots up top, shadow dots below — a real halftone
-        // gradient rather than one flat mid-tone.
-        float lit = uAmbient + 0.30 * diffKey + 0.10 * diffFill;
-        lit += (vH / uHalfHeight) * 0.18;      // top-lit ramp → dot gradient across flat faces
-        lit  = clamp(lit, 0.0, 1.0);
-
-        vec3 base   = uColor;
-        vec3 shadow = uColor * 0.45;           // darker ink, same hue → stronger contrast
-
-        // Peak coverage capped so the densest dots stay separated
-        // (radius tops out ~0.9 in cell units) — dense, but never a blob.
-        const float MAX_COV = 0.60;
-        float shadowCov = smoothstep(0.48, 0.10, lit) * MAX_COV;   // narrow dead zone at ~0.5
-        float highCov   = smoothstep(0.52, 0.90, lit) * MAX_COV;
-
-        vec3 col = base;
-        col = mix(col, shadow,    halftone(gl_FragCoord.xy, 18.0, uDotPx, shadowCov));
-        col = mix(col, vec3(1.0), halftone(gl_FragCoord.xy, 72.0, uDotPx, highCov) * 0.8);
-
-        gl_FragColor = vec4(col, 1.0);         // solid alpha → clean silhouette mask
-      }`
-  });
-  halftoneMats.push(m);
-  return m;
-}
-
-// One mark = a single solid mesh painted by the halftone shader.
-// No geometry-based outline: the silhouette line is drawn in screen
-// space at compositing time, so it only ever appears where the model
-// meets the background — never on an interior edge.
-function buildMark(material) {
-  const grp = new THREE.Group();
-  grp.add(new THREE.Mesh(markGeo, material));
-  return grp;
-}
-
-const sculpture = new THREE.Group();
-scene.add(sculpture);
-
-// Hero mark — nested groups: heroSpin turns about the vertical
-// axis inside heroGroup, which only carries scale/placement.
-// Its paint colour animates toward the active section accent,
-// so every quarter-turn to a new section reveals a new palette hue.
-const heroMat   = makeHalftoneMaterial(0xFBAE9C);
-const heroColor = new THREE.Color(0xFBAE9C);   // JS-side colour, lerped → uColor
-const heroSpin  = buildMark(heroMat);
-const heroGroup = new THREE.Group();
-heroGroup.scale.setScalar(1.25);
-heroGroup.add(heroSpin);
-sculpture.add(heroGroup);
-
-// Base pose — slight forward tilt so the mark reads with depth
-const BASE_X = 0.16, BASE_Y = -0.12, BASE_Z = 0;
-sculpture.rotation.set(BASE_X, BASE_Y, BASE_Z);
-
-// Position model toward the right half of the screen on desktop
-function positionSculpture() {
-  const isMobile = window.innerWidth <= 600;
-  const isTablet = window.innerWidth <= 900 && !isMobile;
-  sculpture.position.x = isMobile ? 0.3 : isTablet ? 0.8 : 1.6;
-  sculpture.position.y = isMobile ? 0.4 : 0.05;
-}
-positionSculpture();
-
-// ════════════════════════════════════════════════════
-//  SILHOUETTE OUTLINE — screen space, background-only.
-//  The scene is rendered to an offscreen buffer, then a
-//  fullscreen pass draws a black line ONLY where the
-//  model's coverage (alpha) borders the transparent
-//  background. Interior faces are all fully covered, so no
-//  line can ever appear inside the model — it exists purely
-//  to separate the paint from the white page.
-// ════════════════════════════════════════════════════
-const OUTLINE_PX = 3.4;   // outline width in CSS px
-function makeRT() {
-  const pr = renderer.getPixelRatio();
-  return new THREE.WebGLRenderTarget(
-    Math.max(2, Math.floor(window.innerWidth  * pr)),
-    Math.max(2, Math.floor(window.innerHeight * pr)),
-    { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat }
-  );
-}
-let sceneRT = makeRT();
-
-const fsCam   = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const fsScene = new THREE.Scene();
-const composeMat = new THREE.ShaderMaterial({
-  transparent: true,
-  depthTest: false,
-  depthWrite: false,
-  uniforms: {
-    tScene: { value: sceneRT.texture },
-    uTexel: { value: new THREE.Vector2(1 / sceneRT.width, 1 / sceneRT.height) },
-    uThick: { value: OUTLINE_PX * renderer.getPixelRatio() },
-    uInk:   { value: new THREE.Color(0x111111) }
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-  fragmentShader: `
-    precision highp float;
-    uniform sampler2D tScene;
-    uniform vec2  uTexel;
-    uniform float uThick;
-    uniform vec3  uInk;
-    varying vec2  vUv;
-    void main() {
-      vec4 c = texture2D(tScene, vUv);
-      if (c.a > 0.5) { gl_FragColor = c; return; }   // inside the model → keep shading
-      // background pixel: is the model within uThick? then it's the border.
-      float near = 0.0;
-      for (int i = 0; i < 16; i++) {
-        float t = 6.2831853 * float(i) / 16.0;
-        vec2  o = vec2(cos(t), sin(t)) * uThick * uTexel;
-        near = max(near, texture2D(tScene, vUv + o).a);
-      }
-      if (near > 0.5) gl_FragColor = vec4(uInk, 1.0);  // ink line hugging the silhouette
-      else discard;                                     // stays transparent → page shows
-    }`
-});
-const fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), composeMat);
-fsQuad.frustumCulled = false;
-fsScene.add(fsQuad);
-
-function resizeRT() {
-  const pr = renderer.getPixelRatio();
-  sceneRT.setSize(Math.max(2, Math.floor(window.innerWidth  * pr)),
-                  Math.max(2, Math.floor(window.innerHeight * pr)));
-  composeMat.uniforms.uTexel.value.set(1 / sceneRT.width, 1 / sceneRT.height);
-  composeMat.uniforms.uThick.value = OUTLINE_PX * pr;
-  halftoneMats.forEach(m => { m.uniforms.uDotPx.value = 5.0 * pr; });
-}
-
-function renderFrame() {
-  renderer.setRenderTarget(sceneRT);
-  renderer.clear();
-  renderer.render(scene, camera);
-  renderer.setRenderTarget(null);
-  renderer.clear();
-  renderer.render(fsScene, fsCam);
-}
-
-// One full turn per section, so the mark lands facing front —
-// showing off a fresh palette colour — at every stop.
-const TOTAL_ROTATION = Math.PI * 2 * (FACES.length - 1);
-
-let progress   = 0;
-let targetProg = 0;
-let targetDepth = 0;      // sculpture recedes when the work panel is open
-let depth       = 0;
-
-let hoverX = 0, hoverY = 0;
-
-let touching    = false;
-let touchStartY = 0;
-let progAtTouch = 0;
-
-const DRAG_PX = () => window.innerHeight * 2.2;
-const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-function clamp01(v) { return Math.max(0, Math.min(1, v)); }
-
-function applyProgress(p) {
-  progress = p;
-  const idx = Math.min(FACES.length - 1, Math.round(p * (FACES.length - 1)));
-  setFace(idx);
-  targetDepth = (idx === WORK_IDX) ? -3.2 : 0;
-}
-
-// Wheel — attached to window so it keeps working when the work panel
-// overlays the canvas. VERTICAL wheel ALWAYS navigates sections, so you
-// can always scroll back up. Only a clearly-horizontal gesture over the
-// reel scrubs the carousel (trackpad swipe / shift-wheel).
-window.addEventListener('wheel', (e) => {
-  const overReel   = e.target.closest && e.target.closest('#work-track');
-  const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-  if (overReel && horizontal) {
-    e.preventDefault();
-    track.scrollLeft += e.deltaX;
-    return;
-  }
-  e.preventDefault();
-  const delta = e.deltaMode === 1 ? e.deltaY * 0.05 : e.deltaY * 0.0004;
-  targetProg = clamp01(targetProg + delta);
-}, { passive: false });
-
-// Unified drag — Pointer Events cover mouse, touch, and pen
-canvas.addEventListener('pointerdown', (e) => {
-  touching    = true;
-  touchStartY = e.clientY;
-  progAtTouch = targetProg;
-  canvas.setPointerCapture(e.pointerId);
-});
-
-canvas.addEventListener('pointermove', (e) => {
-  if (touching) {
-    targetProg = clamp01(progAtTouch + (touchStartY - e.clientY) / DRAG_PX());
-  } else if (e.pointerType === 'mouse' && !REDUCED_MOTION) {
-    hoverX = (e.clientX / window.innerWidth  - 0.5) * 0.3;
-    hoverY = (e.clientY / window.innerHeight - 0.5) * 0.3;
-  }
-});
-
-canvas.addEventListener('pointerup',     () => { touching = false; });
-canvas.addEventListener('pointercancel', () => { touching = false; });
-
-// Keyboard — Up/Down step sections; Left/Right drive the reel when open
-window.addEventListener('keydown', (e) => {
-  const panelOpen = currentFaceIdx === WORK_IDX;
-  if (e.key === 'ArrowDown' || (!panelOpen && e.key === 'ArrowRight')) {
-    jumpTo(Math.min(FACES.length - 1, currentFaceIdx + 1));
-  } else if (e.key === 'ArrowUp' || (!panelOpen && e.key === 'ArrowLeft')) {
-    jumpTo(Math.max(0, currentFaceIdx - 1));
-  } else if (panelOpen && e.key === 'ArrowRight') {
-    goToSlide(slideIdx + 1);
-  } else if (panelOpen && e.key === 'ArrowLeft') {
-    goToSlide(slideIdx - 1);
-  }
-});
-
-function jumpTo(idx) {
-  targetProg = idx / (FACES.length - 1);
-}
-
-// Resize — debounced so rapid resize events don't thrash the renderer
-let resizeTimer = 0;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+    const canvas   = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 2, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    resizeRT();
-    positionSculpture();
-    needsRender = true;
-  }, 100);
-});
+    renderer.setClearColor(0x000000, 0);
 
-// ════════════════════════════════════════════════════
-//  RENDER LOOP — renders only while something is moving.
-//  Once progress, colors, depth, and parallax settle, the
-//  GPU goes idle. Any interaction wakes it instantly.
-// ════════════════════════════════════════════════════
-let needsRender = true;
-let lastHX = 0, lastHY = 0;
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0.2, 8.5);
 
-function colorSettled(c, t) {
-  return Math.abs(c.r - t.r) < 0.002 && Math.abs(c.g - t.g) < 0.002 && Math.abs(c.b - t.b) < 0.002;
-}
+    // ── The mark in 3D: the actual topper icon, extruded ──
+    const SVG_CX = 420.94, SVG_CY = 292.735, SVG_S = 0.0097;
+    const MX = x => (x - SVG_CX) * SVG_S;
+    const MY = y => -(y - SVG_CY) * SVG_S;
 
-function animate() {
-  requestAnimationFrame(animate);
+    function markShape() {
+      const s = new THREE.Shape();
+      s.moveTo(MX(473.57), MY(310.52));
+      s.lineTo(MX(473.57), MY(189.74));
+      s.lineTo(MX(368.32), MY(189.74));
+      s.lineTo(MX(368.32), MY(310.52));
+      s.bezierCurveTo(MX(368.32), MY(314.36), MX(364.84), MY(317.26), MX(361.06), MY(316.57));
+      s.lineTo(MX(322.26), MY(309.46));
+      s.bezierCurveTo(MX(318.48), MY(308.77), MX(315.00), MY(311.67), MX(315.00), MY(315.51));
+      s.lineTo(MX(315.00), MY(395.73));
+      s.lineTo(MX(526.88), MY(395.73));
+      s.lineTo(MX(526.88), MY(315.51));
+      s.bezierCurveTo(MX(526.88), MY(311.67), MX(523.40), MY(308.77), MX(519.62), MY(309.46));
+      s.lineTo(MX(480.82), MY(316.57));
+      s.bezierCurveTo(MX(477.04), MY(317.26), MX(473.56), MY(314.36), MX(473.56), MY(310.52));
+      s.closePath();
+      return s;
+    }
 
-  // Smooth progress toward target
-  const smoothed = progress + (targetProg - progress) * 0.08;
-  if (Math.abs(smoothed - progress) > 0.00001) {
-    applyProgress(smoothed);
-    needsRender = true;
+    const markGeo = new THREE.ExtrudeGeometry(markShape(), {
+      depth: 0.34, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.045, bevelSegments: 4, curveSegments: 24
+    });
+    markGeo.center();
+
+    // Flat brand colour on the caps (group 0), solid black on the walls (group 1):
+    // a die-cut stamp of the logo. No lights, no shading, no outline.
+    const capMat  = new THREE.MeshBasicMaterial({ color: new THREE.Color(T.stops[T.active].hat) });
+    const sideMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+    const sculpture = new THREE.Group();
+    scene.add(sculpture);
+    const heroSpin  = new THREE.Group();
+    heroSpin.add(new THREE.Mesh(markGeo, [capMat, sideMat]));
+    const heroGroup = new THREE.Group();
+    heroGroup.scale.setScalar(1.25);
+    heroGroup.add(heroSpin);
+    sculpture.add(heroGroup);
+
+    const BASE_X = 0.16, BASE_Y = -0.12, BASE_Z = 0;
+    sculpture.rotation.set(BASE_X, BASE_Y, BASE_Z);
+
+    // ── Placement ──
+    // Desktop/tablet: right-hand column. Mobile: fitted into the free band
+    // between the active step's title block and its copy block.
+    let baseX = 1.6;
+    function fitHat() {
+      const w = window.innerWidth, h = window.innerHeight;
+      const mobile = w <= 600;
+      if (!mobile) {
+        heroGroup.visible = true;
+        if (w < 1280) {
+          // Tablet and small desktop: fit the hat inside the right-hand column
+          // so it never runs into the copy or off the edge.
+          const pxPerUnit = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z);
+          const pad = 32, colW = 0.45 * (w - 2 * pad);
+          const cx = pad + 0.55 * (w - 2 * pad) + colW / 2;
+          const navH = document.getElementById('content').getBoundingClientRect().top;
+          const stageMid = navH + (h - navH - document.getElementById('bottom-bar').offsetHeight) / 2;
+          heroGroup.scale.setScalar(Math.min(1.25, (colW - 32) / (2.06 * pxPerUnit)));
+          baseX = (cx - w / 2) / pxPerUnit;
+          sculpture.position.y = camera.position.y + (h / 2 - stageMid) / pxPerUnit;
+          return;
+        }
+        heroGroup.scale.setScalar(1.25);
+        baseX = 1.6;
+        sculpture.position.y = 0.05;
+        return;
+      }
+      const s = T.stops[T.active];
+      baseX = 0;
+      if (s.id === 'work' || !s.copy || !s.head) { heroGroup.visible = false; return; }
+      const pxPerUnit = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z);
+      const c = document.getElementById('content').getBoundingClientRect();
+      const top = c.top + s.head.offsetTop + s.head.offsetHeight + 16;
+      const bottom = c.top + s.copy.offsetTop - 16;
+      const bandH = bottom - top;
+      const targetPx = Math.min(bandH, w * 0.6);     // hat is about as wide as tall (2.06 x 2.0 units)
+      heroGroup.scale.setScalar(Math.max(0.01, targetPx / (2.06 * pxPerUnit)));
+      // camera looks straight down -z from y = camera.position.y
+      sculpture.position.y = camera.position.y + (h / 2 - (top + bandH / 2)) / pxPerUnit;
+      heroGroup.visible = bandH >= 140;
+    }
+
+    // ── Motion state ──
+    let progress = T.target();
+    let targetDepth = 0, depth = 0;
+    let hoverX = 0, hoverY = 0, lastHX = 0, lastHY = 0;
+    let needsRender = true;
+
+    // Horizontal home: the right-hand column, except on Work where the hat
+    // recedes to sit exactly behind the middle of the reel (nothing peeks out).
+    function homeX() {
+      if (T.stops[T.active].id === 'work' && !T.isMobile()) {
+        const p = document.getElementById('work-panel').getBoundingClientRect();
+        if (!p.width) return baseX;
+        const pxPerUnit = window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z);
+        const persp = camera.position.z / (camera.position.z + 3.2);   // scale at the receded depth
+        return (p.left + p.width / 2 - window.innerWidth / 2) / (pxPerUnit * persp);
+      }
+      return baseX;
+    }
+    let xCur = 0, xTarget = 0;
+
+    function receding() {
+      const id = T.stops[T.active].id;
+      return (id === 'work' || id === 'approach') && !T.isMobile();
+    }
+    T.onStep((i, resized) => {
+      targetDepth = receding() ? -3.2 : 0;
+      fitHat();
+      xTarget = homeX();
+      if (T.reduced()) { depth = targetDepth; xCur = xTarget; }
+      if (resized) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      needsRender = true;
+    });
+    targetDepth = receding() ? -3.2 : 0;
+    depth = targetDepth;
+    fitHat();
+    xCur = xTarget = homeX();
+    sculpture.position.x = xCur;
+
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse' && !T.reduced() && e.buttons === 0) {
+        hoverX = (e.clientX / window.innerWidth  - 0.5) * 0.3;
+        hoverY = (e.clientY / window.innerHeight - 0.5) * 0.3;
+      }
+    });
+    if (window.matchMedia) {
+      const rm = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const onRM = () => { if (rm.matches) { hoverX = hoverY = 0; depth = targetDepth; } needsRender = true; };
+      rm.addEventListener && rm.addEventListener('change', onRM);
+    }
+
+    // ── Render-on-demand loop: draws only while something moves ──
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      const reduced = T.reduced();
+      const tgt = T.target();
+
+      if (reduced) {
+        if (progress !== tgt) { progress = tgt; needsRender = true; }
+        if (depth !== targetDepth) { depth = targetDepth; needsRender = true; }
+        if (xCur !== xTarget) { xCur = xTarget; needsRender = true; }
+        if (hoverX || hoverY) { hoverX = hoverY = 0; needsRender = true; }
+      } else {
+        if (progress !== tgt) {
+          progress = Math.abs(tgt - progress) < 2e-4 ? tgt : progress + (tgt - progress) * 0.08;
+          needsRender = true;
+        }
+        if (depth !== targetDepth) {
+          depth = Math.abs(targetDepth - depth) < 0.001 ? targetDepth : depth + (targetDepth - depth) * 0.06;
+          needsRender = true;
+        }
+        if (xCur !== xTarget) {
+          xCur = Math.abs(xTarget - xCur) < 0.001 ? xTarget : xCur + (xTarget - xCur) * 0.06;
+          needsRender = true;
+        }
+        if (hoverX !== lastHX || hoverY !== lastHY) { lastHX = hoverX; lastHY = hoverY; needsRender = true; }
+      }
+
+      if (needsRender) {
+        const s = progress * (T.N - 1);
+        // Half a turn per step: the symmetric mark lands front-on at every stop.
+        heroSpin.rotation.y = reduced ? 0 : -Math.PI * s;
+        sculpture.rotation.set(BASE_X + hoverY * 0.6, BASE_Y + hoverX, BASE_Z);
+        sculpture.position.z = depth;
+        sculpture.position.x = xCur;
+
+        // The trick: the cap colour changes while the hat is edge-on, so there is
+        // never a visible blend. Edge-on is when the cap faces 90 degrees from the
+        // line to the camera; the offset below accounts for the base tilt, the
+        // hat's off-centre position and hover parallax.
+        let idx = Math.round(s);
+        if (!reduced) {
+          const toCam = Math.atan2(camera.position.x - sculpture.position.x, camera.position.z - sculpture.position.z);
+          idx = Math.round(s + (toCam - sculpture.rotation.y) / Math.PI);
+        }
+        idx = Math.max(0, Math.min(T.N - 1, idx));
+        capMat.color.set(T.stops[idx].hat);
+
+        renderer.render(scene, camera);
+        needsRender = false;
+      }
+    }
+    raf = requestAnimationFrame(frame);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+      else if (!raf) { needsRender = true; raf = requestAnimationFrame(frame); }
+    });
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      cancelAnimationFrame(raf); raf = 0;
+      root.classList.add('no-webgl');
+    });
+  } catch (err) {
+    cancelAnimationFrame(raf);
+    root.classList.add('no-webgl');
   }
-
-  // Hero paint colour drifts toward the active section accent
-  if (!colorSettled(heroColor, targetIconColor)) {
-    heroColor.lerp(targetIconColor, 0.07);
-    if (colorSettled(heroColor, targetIconColor)) heroColor.copy(targetIconColor);
-    heroMat.uniforms.uColor.value.copy(heroColor);
-    needsRender = true;
-  }
-
-  // Sculpture recedes behind the work panel
-  if (Math.abs(depth - targetDepth) > 0.001) {
-    depth += (targetDepth - depth) * 0.06;
-    needsRender = true;
-  }
-
-  // Parallax changed?
-  if (hoverX !== lastHX || hoverY !== lastHY) {
-    lastHX = hoverX; lastHY = hoverY;
-    needsRender = true;
-  }
-
-  if (needsRender) {
-    // The mark turns about the vertical (up) axis — like a logo on
-    // a slow turntable — so its painted face sweeps toward you as
-    // you scroll, landing front-on with a new colour each section.
-    heroSpin.rotation.y = -TOTAL_ROTATION * progress;
-    sculpture.rotation.x = BASE_X + hoverY * 0.6;
-    sculpture.rotation.y = BASE_Y + hoverX;
-    sculpture.rotation.z = BASE_Z;
-    sculpture.position.z = depth;
-    renderFrame();
-    needsRender = false;
-  }
-}
-
-applyProgress(0);
-animate();
+})();
 </script>
 </body>
 </html>
