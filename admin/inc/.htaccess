@@ -1,0 +1,3 @@
+# Nothing in inc/ is ever served directly — it is include-only.
+# Even if PHP stops executing, config.php cannot be downloaded.
+Require all denied

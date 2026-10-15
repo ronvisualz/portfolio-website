@@ -1,0 +1,28 @@
+# topper. admin — server-level guards
+
+# Never let this section into a search index.
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+# Force HTTPS (PHP re-checks this too).
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# No directory listings, ever.
+Options -Indexes
+
+# Block anything that isn't a page we intend to serve.
+<FilesMatch "\.(sql|md|log|ini|json|lock|bak|old|swp)$">
+  Require all denied
+</FilesMatch>
+
+# Hidden files (.htaccess, .env, .git…)
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+ErrorDocument 403 /admin/index.php

@@ -1,0 +1,4 @@
+# Real credentials live only on the server — copy config.example.php to config.php there.
+admin/inc/config.php
+.DS_Store
+*.log
