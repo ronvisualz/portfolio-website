@@ -20,6 +20,10 @@
   d.style.setProperty('--fg', g[1]);
   d.style.setProperty('--rule', g[2]);
   if (g[1] === '#FFFFFF') d.setAttribute('data-ink', 'white');
+  // fluid scale above 1440px: type, spacing, bars and buttons grow together (never below 1, at most 1.75)
+  function sc() { return Math.max(1, Math.min(1.75, innerWidth / 1440, innerHeight / 810)); }
+  d.style.setProperty('--sc', sc().toFixed(4));
+  window.addEventListener('resize', function () { d.style.setProperty('--sc', sc().toFixed(4)); });
   try {
     if (!h && !sessionStorage.getItem('topper-intro') && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) d.classList.add('intro');
   } catch (e) {
@@ -59,9 +63,11 @@
   --ink: #000000; --paper: #FFFFFF; --grey: #EEEEEE;
   --pink: #FBAE9C; --light-blue: #81CFE3; --yellow: #FFC718;
   --blue: #2F77B1; --red: #E02727; --green: #2A7928;
-  --pad: 32px;
-  --nav-h: 80px;
-  --bar-h: 64px;
+  --sc: 1; --u: calc(1px * var(--sc));      /* 1 unit; grows above 1440px wide (see head script) */
+  --pad: calc(32 * var(--u));
+  --nav-h: calc(80 * var(--u));
+  --bar-h: calc(64 * var(--u));
+  --colc: 0.775;                            /* centre of the right-hand column, as a fraction of the content width */
   --font: 'Futura Now Headline', Futura, 'Century Gothic', sans-serif;
 
   /* live ground / ink (set by script per step) */
@@ -78,7 +84,7 @@
   --t-mark: polygon(74.8% 58.6%, 74.2% 0%, 25.2% 0%, 25.2% 58.7%, 23.4% 61.4%, 21.8% 61.6%, 3.9% 58.2%, 0.8% 59%, 0% 99.6%, 100% 99.5%, 100% 62.1%, 99.1% 58.9%, 96% 58.2%, 78.1% 61.6%, 75.3% 60.3%, 74.8% 58.6%);
 }
 html[data-ink="white"] { --btn-text: #000000; }
-@media (max-width: 600px) {
+@media (max-width: 600px) and (min-height: 521px) {
   :root { --pad: 16px; --nav-h: 64px; --bar-h: 56px; }
 }
 
@@ -87,8 +93,8 @@ html, body {
   color: var(--fg);
   font-family: var(--font);
   font-weight: 300;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: calc(16 * var(--u));
+  line-height: calc(24 * var(--u));
   overflow: auto;
   -webkit-text-size-adjust: 100%;
 }
@@ -110,17 +116,17 @@ h1, h2 {
   font-weight: 700; letter-spacing: -0.025em; text-wrap: balance;
   font-size: 48px; line-height: 52px;
 }
-h1 { font-size: 96px; line-height: 104px; }
-h2 { font-size: 64px; line-height: 72px; }
-.subheading { font-size: 24px; line-height: 28px; font-weight: 700; letter-spacing: -0.025em; }
-.lead { font-size: 24px; line-height: 32px; font-weight: 300; max-width: 600px; }
-.body { font-size: 16px; line-height: 24px; font-weight: 300; max-width: 600px; }
-.caption { font-size: 12px; line-height: 16px; font-weight: 300; }
+h1 { font-size: calc(96 * var(--u)); line-height: calc(104 * var(--u)); }
+h2 { font-size: calc(64 * var(--u)); line-height: calc(72 * var(--u)); }
+.subheading { font-size: calc(24 * var(--u)); line-height: calc(28 * var(--u)); font-weight: 700; letter-spacing: -0.025em; }
+.lead { font-size: calc(24 * var(--u)); line-height: calc(32 * var(--u)); font-weight: 300; max-width: calc(600 * var(--u)); }
+.body { font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 300; max-width: calc(600 * var(--u)); }
+.caption { font-size: calc(12 * var(--u)); line-height: calc(16 * var(--u)); font-weight: 300; }
 @media (max-width: 1023px) {
   h1 { font-size: 64px; line-height: 72px; }
   h2 { font-size: 48px; line-height: 52px; }
 }
-@media (max-width: 600px) {
+@media (max-width: 600px) and (min-height: 521px) {
   h1, h2 { font-size: 48px; line-height: 52px; }
   .subheading { font-size: 16px; line-height: 24px; }
   .lead { font-size: 16px; line-height: 24px; }
@@ -141,62 +147,62 @@ h1:focus-visible, h2:focus-visible { outline: 0; }
   color: var(--fg);
 }
 .logo { position: relative; display: block; line-height: 0; }
-.logo img { height: 32px; width: auto; display: block; }
+.logo img { height: calc(32 * var(--u)); width: auto; display: block; }
 .logo .wm-white { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity calc(160ms * var(--ts)) linear; }
 .logo .wm-black { transition: opacity calc(160ms * var(--ts)) linear; }
 html[data-ink="white"] .logo .wm-white { opacity: 1; }
 html[data-ink="white"] .logo .wm-black { opacity: 0; }
-.nav-contact { font-size: 16px; line-height: 24px; font-weight: 300; text-decoration: none; color: inherit; }
+.nav-contact { font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 300; text-decoration: none; color: inherit; }
 .nav-contact:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
-@media (max-width: 600px) { .logo img { height: 24px; } }
+@media (max-width: 600px) and (min-height: 521px) { .logo img { height: 24px; } }
 
 /* ── Stops (all copy lives in the HTML) ── */
-.stop { padding: 48px var(--pad); }
+.stop { padding: calc(48 * var(--u)) var(--pad); }
 .stop + .stop { border-top: 1px solid var(--grey); }
-.stop-copy { margin-top: 24px; }
-.stop-copy .lead + .body { margin-top: 12px; }
-.stop-photo { display: block; width: min(420px, 100%); height: auto; aspect-ratio: 4 / 5; object-fit: cover; margin-top: 24px; }
+.stop-copy { margin-top: calc(24 * var(--u)); }
+.stop-copy .lead + .body { margin-top: calc(12 * var(--u)); }
+.stop-photo { display: block; width: min(calc(420 * var(--u)), 100%); height: auto; aspect-ratio: 4 / 5; object-fit: cover; margin-top: calc(24 * var(--u)); }
 html:not(.js) #work { background: #000; color: #FFF; }
 html:not(.js) .stop-head h1 .line, html:not(.js) .stop-head h2 .line { display: inline; }
 .hat-row-fallback { display: none; }
 
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: calc(24 * var(--u)); margin-top: calc(24 * var(--u)); }
 .btn {
-  display: inline-flex; align-items: center; height: 48px; padding: 0 24px;
+  display: inline-flex; align-items: center; height: calc(48 * var(--u)); padding: 0 calc(24 * var(--u));
   background: var(--fg); color: var(--btn-text); border: 0; border-radius: 0; box-shadow: none;
-  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 700; cursor: pointer;
+  font-family: inherit; font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 700; cursor: pointer;
   -webkit-appearance: none; appearance: none;
   overflow: hidden;
 }
 .btn-roll { display: inline-block; position: relative; transition: transform calc(300ms * var(--ts)) var(--ease-in-out-cubic); }
-.btn-roll::after { content: attr(data-text); position: absolute; left: 0; top: calc(100% + 12px); }   /* +12px: the second label starts below the 48px button, so only one label ever shows */
-.btn:hover .btn-roll, .btn:focus-visible .btn-roll { transform: translateY(calc(-100% - 12px)); }
+.btn-roll::after { content: attr(data-text); position: absolute; left: 0; top: calc(100% + 12 * var(--u)); }   /* +12px: the second label starts below the 48px button, so only one label ever shows */
+.btn:hover .btn-roll, .btn:focus-visible .btn-roll { transform: translateY(calc(-100% - 12 * var(--u))); }
 .btn:active { transform: scale(0.97); transition: transform calc(80ms * var(--ts)); }
 .link-strong {
-  font-size: 16px; line-height: 24px; font-weight: 700;
+  font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 700;
   text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px;
 }
 .link-strong:hover { text-decoration: none; }
 html:not(.js) .btn { display: none; }
 
-.services { list-style: none; display: flex; flex-direction: column; gap: 16px; }
-.services .subheading { display: block; margin-bottom: 4px; }
-.services .svc-line { font-size: 16px; line-height: 24px; max-width: 600px; }
+.services { list-style: none; display: flex; flex-direction: column; gap: calc(16 * var(--u)); }
+.services .subheading { display: block; margin-bottom: calc(4 * var(--u)); }
+.services .svc-line { font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); max-width: calc(600 * var(--u)); }
 
 .contact-email {
-  display: inline-block; margin-top: 24px;
-  font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.025em;
+  display: inline-block; margin-top: calc(24 * var(--u));
+  font-size: calc(32 * var(--u)); line-height: calc(36 * var(--u)); font-weight: 700; letter-spacing: -0.025em;
   text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
   overflow-wrap: anywhere;
 }
 .contact-email:hover { text-decoration: none; }
 .contact-social {
-  display: table; margin-top: 16px;
-  font-size: 24px; line-height: 32px; font-weight: 300;
+  display: table; margin-top: calc(16 * var(--u));
+  font-size: calc(24 * var(--u)); line-height: calc(32 * var(--u)); font-weight: 300;
   text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
 .contact-social:hover { text-decoration: none; }
-@media (max-width: 600px) {
+@media (max-width: 600px) and (min-height: 521px) {
   .contact-email { font-size: 24px; line-height: 28px; }
   .contact-social { font-size: 16px; line-height: 24px; }
 }
@@ -249,16 +255,17 @@ html.js .stop {
 html.js .stop.is-active { visibility: visible; }
 html.js .stop a, html.js .stop button { pointer-events: auto; }
 
-html.js .stop-head { grid-column: 1; grid-row: 1; padding-top: 48px; }
-html.js .stop-copy { grid-column: 1; grid-row: 3; padding-bottom: 48px; margin-top: 0; }
+html.js .stop-text { display: contents; }
+html.js .stop-head { grid-column: 1; grid-row: 1; padding-top: calc(48 * var(--u)); }
+html.js .stop-copy { grid-column: 1; grid-row: 3; padding-bottom: calc(48 * var(--u)); margin-top: 0; }
 html.js .stop-photo { display: none; }
 html.js.no-webgl .stop-photo {
   display: block;
   grid-column: 2; grid-row: 1 / 4; align-self: center; justify-self: center;
-  width: min(420px, 32vw); max-height: calc(100% - 96px); margin-top: 0;
+  width: min(calc(420 * var(--u)), 32vw); max-height: calc(100% - 96 * var(--u)); margin-top: 0;
 }
 html.js.no-webgl body[data-stop="approach"] .stop-photo { display: block; }
-#work .stop-copy .body { max-width: 400px; }
+#work .stop-copy .body { max-width: calc(400 * var(--u)); }
 
 /* kinetic type: lines rise out of their masks; copy fades up behind them */
 html.js .line > span { transform: translateY(110%); }
@@ -293,30 +300,40 @@ html.js #bottom-bar {
 }
 #bottom-bar > * { pointer-events: auto; }
 
-.bar-left { font-size: 16px; line-height: 24px; font-weight: 300; }
+.bar-left { font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 300; white-space: nowrap; }
 .bar-step { display: none; font-weight: 700; }
-.hint-coarse { display: none; }
+.hint-coarse, .hint-short-fine, .hint-short-coarse { display: none; }
 @media (pointer: coarse) { .hint-fine { display: none; } .hint-coarse { display: inline; } }
+/* very narrow screens: a shorter hint keeps the bar on one line */
+@media (max-width: 399px) {
+  .hint-fine, .hint-coarse { display: none !important; }
+  .hint-short-fine { display: inline; }
+}
+@media (max-width: 399px) and (pointer: coarse) {
+  .hint-short-fine { display: none; }
+  .hint-short-coarse { display: inline; }
+}
 
-.stops-nav { position: relative; display: flex; align-items: center; gap: 32px; }
+.stops-nav { position: relative; display: flex; align-items: center; gap: calc(32 * var(--u)); }
 .dot {
   position: relative;
   display: inline-flex; align-items: center;
   min-height: 44px; padding: 0;
   background: none; border: 0; border-radius: 0;
-  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 300; color: inherit;
+  font-family: inherit; font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 300; color: inherit;
   cursor: pointer;
   -webkit-appearance: none; appearance: none;
 }
 .dot-hat {
-  flex: none; width: 12px; aspect-ratio: 211.621 / 205.738;
-  margin-right: 8px;
+  flex: none; width: calc(12 * var(--u)); aspect-ratio: 211.621 / 205.738;
+  margin-right: calc(8 * var(--u));
   background: currentColor; clip-path: var(--t-mark);
   visibility: hidden;
+  display: none;
 }
 .nav-hat {
   position: absolute; left: 0; top: 50%;
-  width: 12px; aspect-ratio: 211.621 / 205.738; margin-top: -6px;
+  width: calc(12 * var(--u)); aspect-ratio: 211.621 / 205.738; margin-top: calc(-6 * var(--u));
   background: currentColor; clip-path: var(--t-mark);
   transform: translateX(var(--nx, 0px));
   transition: transform calc(450ms * var(--ts)) var(--ease-out-expo);
@@ -326,9 +343,7 @@ html.js #bottom-bar {
 .dot[aria-current="step"] .dot-label {
   text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
-@media (min-width: 601px) { .dot-hat { display: none; } }
-
-@media (max-width: 600px) {
+@media (max-width: 600px) and (min-height: 521px) {
   .nav-hat { display: none; }
   .bar-step { display: block; }
   .bar-left.has-hint .bar-step { display: none; }
@@ -339,7 +354,7 @@ html.js #bottom-bar {
     clip: rect(0, 0, 0, 0); white-space: nowrap; text-decoration: none;
   }
   .dot:hover .dot-label { text-decoration: none; }
-  .dot-hat { width: 10px; margin: 0; visibility: visible; }
+  .dot-hat { display: block; width: 10px; margin: 0; visibility: visible; }
   .dot[aria-current="step"] .dot-hat { width: 18px; }
 }
 
@@ -352,8 +367,8 @@ html.js #work-wrap {
   pointer-events: none;
 }
 #work-panel {
-  display: flex; flex-direction: column; gap: 16px;
-  width: min(1040px, 64vw, calc((100vh - var(--nav-h) - var(--bar-h) - 120px) * 16 / 9));
+  display: flex; flex-direction: column; gap: calc(16 * var(--u));
+  width: min(calc(1040 * var(--u)), 64vw, calc((100vh - var(--nav-h) - var(--bar-h) - 120 * var(--u)) * 16 / 9));
   background: none; border: 0; box-shadow: none;
   visibility: hidden;
   touch-action: pinch-zoom;
@@ -368,18 +383,18 @@ html.js #work-wrap {
   background: #000; border: 0; border-radius: 0;
 }
 .reel-meta {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: calc(16 * var(--u)); flex-wrap: wrap;
   opacity: 0; transition: opacity calc(300ms * var(--ts)) linear;
 }
 .is-meta-in .reel-meta, #work-panel.is-meta-in .reel-meta { opacity: 1; }
-.reel-ctl { display: flex; align-items: center; gap: 16px; margin-left: auto; }
-.wp-counter { font-size: 16px; line-height: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.wp-btns { display: flex; gap: 8px; }
+.reel-ctl { display: flex; align-items: center; gap: calc(16 * var(--u)); margin-left: auto; }
+.wp-counter { font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 700; font-variant-numeric: tabular-nums; }
+.wp-btns { display: flex; gap: calc(8 * var(--u)); }
 .wp-btn {
-  height: 48px; padding: 0 16px;
+  height: calc(48 * var(--u)); padding: 0 calc(16 * var(--u));
   background: transparent; color: #FFF;
   border: 1px solid #FFF; border-radius: 0; box-shadow: none;
-  font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 700;
+  font-family: inherit; font-size: calc(16 * var(--u)); line-height: calc(24 * var(--u)); font-weight: 700;
   cursor: pointer;
   -webkit-appearance: none; appearance: none;
 }
@@ -389,9 +404,9 @@ html.js #work-wrap {
 /* ── Fallback hat + hat row (no WebGL / three.js blocked) ── */
 html.js.no-webgl .hat-fallback {
   display: block; position: fixed; z-index: 5; pointer-events: none;
-  width: 280px; height: auto;
+  width: min(calc(280 * var(--u)), 70vh); height: auto;
   top: calc(var(--nav-h) + (100% - var(--nav-h) - var(--bar-h)) / 2);
-  left: calc(var(--pad) + (100% - 2 * var(--pad)) * 0.775);
+  left: calc(var(--pad) + (100% - 2 * var(--pad)) * var(--colc));
   transform: translate(-50%, -50%);
 }
 html.js.no-webgl body[data-stop="work"] .hat-fallback,
@@ -401,10 +416,10 @@ html.js.no-webgl #canvas { display: none; }
 html.js.no-webgl .hat-row-fallback {
   display: flex; align-items: center; justify-content: center;
   grid-column: 1 / -1; grid-row: 2;
-  width: min(100%, 1200px); justify-self: center; gap: calc(100% / 29);
+  width: min(100%, calc(1200 * var(--u))); justify-self: center; gap: calc(100% / 29);
 }
 .hat-row-fallback svg { flex: 0 0 calc(100% * 4 / 29); height: auto; }
-@media (max-width: 600px) { html.js.no-webgl .hat-fallback { display: none; } }
+@media (max-width: 600px) and (min-height: 521px) { html.js.no-webgl .hat-fallback { display: none; } }
 
 /* ── Tablet ── */
 @media (min-width: 601px) and (max-width: 1023px) {
@@ -412,7 +427,7 @@ html.js.no-webgl .hat-row-fallback {
 }
 
 /* ── Mobile ── */
-@media (max-width: 600px) {
+@media (max-width: 600px) and (min-height: 521px) {
   html.js .stop { grid-template-columns: minmax(0, 1fr); }
   html.js .stop-head { padding-top: 24px; }
   html.js .stop-copy { padding-bottom: 24px; }
@@ -430,6 +445,54 @@ html.js.no-webgl .hat-row-fallback {
   .services .subheading, .services .svc-line { display: inline; margin: 0; }
   .services .subheading::after { content: ":"; }
 }
+
+/* ── Short viewports (landscape phones, small windows): compact two-column layout ──
+   Text on the left (it scrolls inside its own column if a step still can't fit, never under the bars),
+   the hat or the reel on the right, fitted to the stage height. */
+@media (max-height: 520px) {
+  :root { --pad: 24px; --nav-h: 48px; --bar-h: 44px; --colc: 0.8; }
+  .logo img { height: 24px; }
+  h1 { font-size: 36px; line-height: 40px; }
+  h2 { font-size: 32px; line-height: 36px; }
+  .subheading { font-size: 16px; line-height: 20px; }
+  .lead { font-size: 16px; line-height: 24px; max-width: none; }
+  .body { font-size: 14px; line-height: 20px; max-width: none; }
+  .nav-contact, .bar-left, .dot { font-size: 14px; line-height: 20px; }
+  .stops-nav { gap: 20px; }
+  .dot-hat, .nav-hat { width: 10px; }
+  .nav-hat { margin-top: -5px; }
+  .actions { gap: 20px; margin-top: 12px; }
+  .btn { height: 36px; padding: 0 16px; font-size: 14px; line-height: 20px; }
+  .btn-roll::after { top: calc(100% + 8px); }
+  .btn:hover .btn-roll, .btn:focus-visible .btn-roll { transform: translateY(calc(-100% - 8px)); }
+  .link-strong { font-size: 14px; line-height: 20px; }
+  .services { gap: 8px; }
+  .services li { display: block; }
+  .services { gap: 6px; }
+  .services .subheading, .services .svc-line { display: inline; margin: 0; font-size: 14px; line-height: 18px; }
+  .services .subheading::after { content: ":"; }
+  .contact-email { font-size: 24px; line-height: 28px; margin-top: 12px; }
+  .contact-social { font-size: 16px; line-height: 24px; margin-top: 8px; }
+  .wp-btn { height: 36px; padding: 0 12px; font-size: 14px; line-height: 20px; }
+  .wp-counter { font-size: 14px; line-height: 20px; }
+  .reel-ctl { gap: 12px; }
+  html.js .stop { grid-template-columns: minmax(0, 60%) 1fr; }
+  html.js .stop-text {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
+    grid-column: 1; grid-row: 1 / 4; min-height: 0;
+    overflow-y: hidden; overscroll-behavior: contain; scrollbar-width: thin;
+    pointer-events: auto;
+  }
+  html.js .stop-text.is-scroll { overflow-y: auto; }
+  html.js #services { grid-template-columns: minmax(0, 68%) 1fr; }
+  html.js .stop-text.is-scroll { touch-action: pan-y pinch-zoom; }
+  html.js .stop-head { padding-top: 12px; }
+  html.js .stop-copy { padding-bottom: 12px; }
+  html.js .stop-photo { width: min(calc(420 * var(--u)), 32vw); }
+  #work .stop-copy .body { max-width: min(240px, 26vw); }
+  .hat-row-fallback { margin-top: 0; }
+}
+@media (max-height: 520px) and (max-width: 639px) { .bar-left .hint { display: none; } }
 
 /* ── Reduced motion: every change is instant; no roll, no band ── */
 @media (prefers-reduced-motion: reduce) {
@@ -453,76 +516,86 @@ html.js.no-webgl .hat-row-fallback {
 
 <main id="content">
   <section class="stop" id="studio" data-bg="#FFFFFF" data-fg="#000000" data-hat="#2F77B1" data-label="Studio">
-    <div class="stop-head">
-      <h1 tabindex="-1"><span class="line" style="--i:0"><span>The trick is</span></span> <span class="line" style="--i:1"><span>the craft.</span></span></h1>
-    </div>
-    <div class="stop-copy">
-      <p class="lead">We are a boutique VFX and motion design studio in Lisbon, working worldwide. Idents, title sequences, visual effects and 3D for film, broadcast and digital.</p>
-      <div class="actions">
-        <button class="btn" type="button" data-goto="work"><span class="btn-roll" data-text="See the work">See the work</span></button>
-        <a class="link-strong" href="mailto:info@topperdigital.xyz?subject=New%20project">Start a project</a>
+    <div class="stop-text">
+      <div class="stop-head">
+        <h1 tabindex="-1"><span class="line" style="--i:0"><span>The trick is</span></span> <span class="line" style="--i:1"><span>the craft.</span></span></h1>
+      </div>
+      <div class="stop-copy">
+        <p class="lead">We are a boutique VFX and motion design studio in Lisbon, working worldwide. Idents, title sequences, visual effects and 3D for film, broadcast and digital.</p>
+        <div class="actions">
+          <button class="btn" type="button" data-goto="work"><span class="btn-roll" data-text="See the work">See the work</span></button>
+          <a class="link-strong" href="mailto:info@topperdigital.xyz?subject=New%20project">Start a project</a>
+        </div>
       </div>
     </div>
   </section>
 
   <section class="stop" id="work" data-bg="#000000" data-fg="#FFFFFF" data-hat="#2F77B1" data-label="Work">
-    <div class="stop-head">
-      <h2 tabindex="-1"><span class="line" style="--i:0"><span>Selected work.</span></span></h2>
-    </div>
-    <div class="stop-copy">
-      <p class="body">Idents, title sequences and VFX breakdowns from recent projects.</p>
+    <div class="stop-text">
+      <div class="stop-head">
+        <h2 tabindex="-1"><span class="line" style="--i:0"><span>Selected work.</span></span></h2>
+      </div>
+      <div class="stop-copy">
+        <p class="body">Idents, title sequences and VFX breakdowns from recent projects.</p>
+      </div>
     </div>
   </section>
 
   <section class="stop" id="services" data-bg="#FFFFFF" data-fg="#000000" data-hat="#2A7928" data-label="Services">
-    <div class="stop-head">
-      <h2 tabindex="-1"><span class="line" style="--i:0"><span>What we make.</span></span></h2>
-    </div>
-    <div class="stop-copy">
-      <ul class="services">
-        <li>
-          <h3 class="subheading">Idents &amp; brand motion</h3>
-          <p class="svc-line">Logos and channels that move with rhythm and timing.</p>
-        </li>
-        <li>
-          <h3 class="subheading">Title sequences</h3>
-          <p class="svc-line">Openings that set the tone for film and broadcast.</p>
-        </li>
-        <li>
-          <h3 class="subheading">Visual effects</h3>
-          <p class="svc-line">Shots that read as real, even when they aren't.</p>
-        </li>
-        <li>
-          <h3 class="subheading">3D</h3>
-          <p class="svc-line">Lighting, material and weight, grounded in physical logic.</p>
-        </li>
-        <li>
-          <h3 class="subheading">Real-time &amp; generative</h3>
-          <p class="svc-line">Engines and generative tools, in service of the idea.</p>
-        </li>
-      </ul>
+    <div class="stop-text">
+      <div class="stop-head">
+        <h2 tabindex="-1"><span class="line" style="--i:0"><span>What we make.</span></span></h2>
+      </div>
+      <div class="stop-copy">
+        <ul class="services">
+          <li>
+            <h3 class="subheading">Idents &amp; brand motion</h3>
+            <p class="svc-line">Logos and channels that move with rhythm and timing.</p>
+          </li>
+          <li>
+            <h3 class="subheading">Title sequences</h3>
+            <p class="svc-line">Openings that set the tone for film and broadcast.</p>
+          </li>
+          <li>
+            <h3 class="subheading">Visual effects</h3>
+            <p class="svc-line">Shots that read as real, even when they aren't.</p>
+          </li>
+          <li>
+            <h3 class="subheading">3D</h3>
+            <p class="svc-line">Lighting, material and weight, grounded in physical logic.</p>
+          </li>
+          <li>
+            <h3 class="subheading">Real-time &amp; generative</h3>
+            <p class="svc-line">Engines and generative tools, in service of the idea.</p>
+          </li>
+        </ul>
+      </div>
     </div>
   </section>
 
   <section class="stop" id="approach" data-bg="#FFFFFF" data-fg="#000000" data-hat="photo" data-label="Approach">
-    <div class="stop-head">
-      <h2 tabindex="-1"><span class="line" style="--i:0"><span>Concept first.</span></span> <span class="line" style="--i:1"><span>Then craft.</span></span></h2>
-    </div>
-    <div class="stop-copy">
-      <p class="lead">Every project starts with an idea and becomes its own visual language. We build it frame by frame, with hand-crafted design and technical precision, from script to final pixel.</p>
-      <p class="body">New tools are part of the kit: real-time engines, generative and AI-assisted pipelines. Always in service of the vision, never instead of it.</p>
+    <div class="stop-text">
+      <div class="stop-head">
+        <h2 tabindex="-1"><span class="line" style="--i:0"><span>Concept first.</span></span> <span class="line" style="--i:1"><span>Then craft.</span></span></h2>
+      </div>
+      <div class="stop-copy">
+        <p class="lead">Every project starts with an idea and becomes its own visual language. We build it frame by frame, with hand-crafted design and technical precision, from script to final pixel.</p>
+        <p class="body">New tools are part of the kit: real-time engines, generative and AI-assisted pipelines. Always in service of the vision, never instead of it.</p>
+      </div>
     </div>
     <img class="stop-photo" src="assets/brand/magician.jpg" alt="A magician in black tie, photographed in black and white" width="720" height="900" loading="lazy">
   </section>
 
   <section class="stop" id="contact" data-bg="#FFFFFF" data-fg="#000000" data-hat="row" data-label="Contact">
-    <div class="stop-head">
-      <h2 tabindex="-1"><span class="line" style="--i:0"><span>Let's talk.</span></span></h2>
-    </div>
-    <div class="stop-copy">
-      <p class="lead">Based in Lisbon. Working worldwide.</p>
-      <a class="contact-email" href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a>
-      <a class="contact-social" href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram</a>
+    <div class="stop-text">
+      <div class="stop-head">
+        <h2 tabindex="-1"><span class="line" style="--i:0"><span>Let's talk.</span></span></h2>
+      </div>
+      <div class="stop-copy">
+        <p class="lead">Based in Lisbon. Working worldwide.</p>
+        <a class="contact-email" href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a>
+        <a class="contact-social" href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram</a>
+      </div>
     </div>
     <div class="hat-row-fallback" aria-hidden="true">
       <svg viewBox="0 0 211.621 205.738"><use href="#hat-shape" fill="#FBAE9C"/></svg>
@@ -561,7 +634,7 @@ html.js.no-webgl .hat-row-fallback {
 
 <div id="bottom-bar">
   <div class="bar-left has-hint" id="bar-left">
-    <span class="hint" id="hint" aria-hidden="true"><span class="hint-fine">Scroll to explore</span><span class="hint-coarse">Swipe up to explore</span></span>
+    <span class="hint" id="hint" aria-hidden="true"><span class="hint-fine">Scroll to explore</span><span class="hint-coarse">Swipe up to explore</span><span class="hint-short-fine">Scroll</span><span class="hint-short-coarse">Swipe up</span></span>
     <span class="bar-step" id="bar-step" aria-hidden="true">Studio</span>
   </div>
   <nav id="dots" class="stops-nav" aria-label="Sections">
@@ -603,7 +676,8 @@ const PORTFOLIO = [
   const $ = (s) => document.querySelector(s);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const reducedMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const mobileMQ  = window.matchMedia('(max-width: 600px)');
+  const mobileMQ  = window.matchMedia('(max-width: 600px) and (min-height: 521px)');   // phones in portrait
+  const shortMQ   = window.matchMedia('(max-height: 520px)');                           // landscape phones, small windows
 
   // ── Easing (same curves as the CSS tokens) ──
   const easeInOutCubic = (t) => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -648,6 +722,9 @@ const PORTFOLIO = [
     emit: (evt, a) => { (handlers[evt] || []).forEach((fn) => fn(a)); },
     reduced: () => reducedMQ.matches,
     isMobile: () => mobileMQ.matches,
+    isShort: () => shortMQ.matches,
+    unit: () => parseFloat(root.style.getPropertyValue('--sc')) || 1,
+    pad: () => parseFloat(getComputedStyle(stopEls[0]).paddingLeft) || 32,
     busy: () => !!tr,
     target: () => (N > 1 ? clamp((active + T.dragStep) / (N - 1), 0, 1) : 0),
     relayout: () => layoutPanel(),
@@ -732,10 +809,12 @@ const PORTFOLIO = [
   function fallbackRect() {
     const f = $('.hat-fallback');
     if (f && getComputedStyle(f).display !== 'none') { const b = f.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }
-    const w = window.innerWidth, h = window.innerHeight, pad = mobileMQ.matches ? 16 : 32;
-    const navH = mobileMQ.matches ? 64 : 80, barH = mobileMQ.matches ? 56 : 64;
-    const cx = mobileMQ.matches ? w / 2 : pad + (w - 2 * pad) * 0.775, cy = navH + (h - navH - barH) / 2;
-    return { x: cx - 140, y: cy - 136, w: 280, h: 272 };
+    const w = window.innerWidth, h = window.innerHeight, pad = T.pad(), K = T.unit();
+    const navH = $('.site-nav').offsetHeight, barH = bar.offsetHeight;
+    const colc = parseFloat(getComputedStyle(root).getPropertyValue('--colc')) || 0.775;
+    const cx = mobileMQ.matches ? w / 2 : pad + (w - 2 * pad) * colc, cy = navH + (h - navH - barH) / 2;
+    const fw = Math.min(280 * K, 0.7 * h);
+    return { x: cx - fw / 2, y: cy - fw * 0.486, w: fw, h: fw * 0.971 };
   }
 
   // ── Hint ("Scroll to explore" until the first move, for the session) ──
@@ -783,7 +862,7 @@ const PORTFOLIO = [
     const d = dots[shown];
     if (!d || mobileMQ.matches) return;
     if (instant) root.classList.add('snap');
-    navHat.style.setProperty('--nx', (d.offsetLeft - 20) + 'px');
+    navHat.style.setProperty('--nx', (d.offsetLeft - navHat.offsetWidth - (shortMQ.matches ? 6 : 8 * T.unit())) + 'px');
     if (instant) { void navHat.offsetWidth; root.classList.remove('snap'); }
   }
 
@@ -869,6 +948,9 @@ const PORTFOLIO = [
     live.textContent = 'Step ' + (to + 1) + ' of ' + N + ': ' + D.label;
     if (o.focus) { try { D.heading.focus({ preventScroll: true }); } catch (e) {} }
     layoutPanel();
+    const col = D.el.querySelector('.stop-text');
+    if (col) col.scrollTop = 0;
+    updateScrollCols();
     T.emit('covered', { from, to });
   }
 
@@ -1038,12 +1120,41 @@ const PORTFOLIO = [
 
   // The frame takes the active clip's own ratio (full panel width, height capped to the free space);
   // anything that still doesn't fill it is letterboxed / pillarboxed on the black ground.
+  // Desktop and tablet: the reel takes the largest width that fits the stage height and never runs
+  // under the "Selected work." title or its copy (when they would overlap vertically).
+  function layoutReel() {
+    if (mobileMQ.matches) { panel.style.width = ''; return; }
+    const K = T.unit(), W = window.innerWidth, H = window.innerHeight, pad = T.pad(), short = shortMQ.matches;
+    const stageH = wrap.clientHeight, metaH = meta.offsetHeight;
+    const gap = parseFloat(getComputedStyle(panel).rowGap) || 16;
+    const navH = $('.site-nav').offsetHeight, barH = bar.offsetHeight;
+    let base;
+    if (W <= 1023) base = Math.min(720, 0.6 * W);
+    else base = Math.min(1040 * K, 0.64 * W, (H - navH - barH - 120 * K) * 16 / 9);
+    if (short) base = Math.min(base, (stageH - metaH - gap - 8) * 16 / 9);
+    const ws = stops.find((x) => x.id === 'work');
+    const titleSpan = ws.heading.querySelector('.line > span'), body = ws.copy.querySelector('.body');
+    const titleW = titleSpan ? titleSpan.getBoundingClientRect().width : 0;
+    const titleBottom = ws.head.getBoundingClientRect().bottom;
+    const bodyR = body ? body.getBoundingClientRect() : null;
+    const r = reel.ratios[reel.cur] || 16 / 9;
+    const stageTop = content.getBoundingClientRect().top;
+    const probe = (w) => { const fh = Math.min(stageH - metaH - gap, w / r), bh = fh + gap + metaH, top = stageTop + (stageH - bh) / 2; return { top, bottom: top + bh }; };
+    const g = probe(base);
+    let free = Infinity;
+    const gapX = 32 * K;
+    if (g.top < titleBottom + 16) free = Math.min(free, W - 2 * pad - titleW - gapX);
+    if (bodyR && bodyR.width > 2 && g.bottom > bodyR.top - 16) free = Math.min(free, W - 2 * pad - bodyR.width - gapX);
+    panel.style.width = Math.max(Math.min(220, base), Math.min(base, free)) + 'px';
+  }
   function fitFrame() {
-    const availH = wrap.clientHeight - meta.offsetHeight - 16;
+    layoutReel();
+    const gap = parseFloat(getComputedStyle(panel).rowGap) || 16;
+    const availH = wrap.clientHeight - meta.offsetHeight - gap;
     const w = frame.clientWidth || (window.innerWidth - 32);
     const r = reel.ratios[reel.cur] || 16 / 9;
     frame.style.aspectRatio = 'auto';
-    frame.style.height = Math.max(120, Math.min(availH, w / r)) + 'px';
+    frame.style.height = Math.max(100, Math.min(availH, w / r)) + 'px';
   }
   prevBtn.addEventListener('click', () => reel.set(reel.cur - 1));
   nextBtn.addEventListener('click', () => reel.set(reel.cur + 1));
@@ -1052,14 +1163,13 @@ const PORTFOLIO = [
   function layoutPanel() {
     if (!mobileMQ.matches) { wrap.style.top = ''; wrap.style.bottom = ''; return; }
     const ws = stops.find((s) => s.id === 'work');
-    const c = content.getBoundingClientRect();
-    const headBottom = c.top + ws.head.offsetTop + ws.head.offsetHeight;
+    const headBottom = ws.head.getBoundingClientRect().bottom;
     wrap.style.top = (headBottom + 16) + 'px';
     wrap.style.bottom = (window.innerHeight - bar.getBoundingClientRect().top + 16) + 'px';
   }
 
   // ════════ Input: wheel, swipe/drag, keys ════════
-  let wheelAcc = 0, wheelLocked = false, wheelIdle = 0;
+  let wheelAcc = 0, wheelLocked = false, wheelIdle = 0, colScrolledAt = -1e9;
   let hAcc = 0, hLocked = false, hIdle = 0;
   window.addEventListener('wheel', (e) => {
     if (e.ctrlKey) return;                          // pinch-zoom on trackpads
@@ -1073,6 +1183,15 @@ const PORTFOLIO = [
       hAcc += (e.deltaX || e.deltaY) * (e.deltaMode === 1 ? 16 : 1);
       if (Math.abs(hAcc) >= 60) { reel.set(reel.cur + Math.sign(hAcc)); hLocked = true; hAcc = 0; }
       return;
+    }
+    // short screens: a step whose copy doesn't fit scrolls inside its own column first
+    const col = e.target.closest && e.target.closest('.stop-text.is-scroll');
+    if (col && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+      const down = e.deltaY > 0;
+      const atEnd = down ? col.scrollTop + col.clientHeight >= col.scrollHeight - 1 : col.scrollTop <= 0;
+      const now = performance.now();
+      if (!atEnd) { colScrolledAt = now; return; }                 // native scroll
+      if (now - colScrolledAt < 300) { colScrolledAt = now; e.preventDefault(); return; }   // inertia of the same gesture
     }
     e.preventDefault();
     clearTimeout(wheelIdle);
@@ -1157,12 +1276,26 @@ const PORTFOLIO = [
 
   // ── Resize / fonts ──
   let rsz = 0;
+  function updateScrollCols() {
+    stops.forEach((s) => {
+      const col = s.el.querySelector('.stop-text');
+      if (!col) return;
+      // measured without transforms (the entrance animation offsets would inflate scrollHeight)
+      const hd = col.querySelector('.stop-head'), cp = col.querySelector('.stop-copy');
+      const need = hd.offsetHeight + cp.offsetHeight + 12;
+      const scrolls = shortMQ.matches && need > col.clientHeight + 1;
+      col.classList.toggle('is-scroll', scrolls);
+    });
+  }
   function onResize() {
     layoutPanel();
     fitFrame();
+    updateScrollCols();
     updateNavHat(true);
     T.emit('resize');
   }
+  mobileMQ.addEventListener && mobileMQ.addEventListener('change', onResize);
+  shortMQ.addEventListener && shortMQ.addEventListener('change', onResize);
   window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(onResize, 100); });
   T.fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready.then(onResize) : Promise.resolve();
 
@@ -1220,7 +1353,7 @@ const PORTFOLIO = [
 
     const E = T.ease, tween = T.tween;
     const canvas   = document.getElementById('canvas');
-    const mobileNow = () => window.innerWidth <= 600;
+    const mobileNow = () => T.isMobile();
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 2, alpha: true, powerPreference: 'high-performance' });
     const pixelRatio = () => Math.min(window.devicePixelRatio, mobileNow() ? 1.5 : 2);
     renderer.setPixelRatio(pixelRatio());
@@ -1321,21 +1454,27 @@ const PORTFOLIO = [
     // Mobile: fitted into the free band between the step's title block and its copy block.
     function placement(idx) {
       const w = window.innerWidth, h = window.innerHeight, s = T.stops[idx];
-      const mobile = w <= 600, k = ppu();
+      const mobile = T.isMobile(), short = T.isShort(), k = ppu(), pad = T.pad();
+      const barTop = document.getElementById('bottom-bar').getBoundingClientRect().top;
+      const sTop = stageTop(), stageH = barTop - sTop;
       if (!mobile) {
         const mult = s.id === 'approach' ? 1.35 : 1;
-        if (w < 1280) {
-          const pad = 32, colW = 0.45 * (w - 2 * pad), cx = pad + 0.55 * (w - 2 * pad) + colW / 2;
-          const navH = stageTop(), stageMid = navH + (h - navH - document.getElementById('bottom-bar').offsetHeight) / 2;
-          const base = Math.min(1.25, (colW - 32) / (2.06 * k));
-          const scale = mult > 1 ? Math.min(base * mult, (colW - 8) / (2.06 * k)) : base;
-          return { x: pxToWorldX(cx), y: pxToWorldY(stageMid), scale, visible: true };
+        if (w < 1280 || short || w / h < 1.45) {
+          // text column on the left, hat fitted inside the right-hand column
+          const hr = s.head.getBoundingClientRect();
+          const left = hr.width > 2 ? hr.right : pad + 0.55 * (w - 2 * pad);
+          const colW = Math.max(120, w - pad - left), cx = left + colW / 2;
+          const stageMid = sTop + stageH / 2;
+          const fitW = (colW - (short ? 44 : 32)) / (2.06 * k);
+          const base = short ? Math.min(fitW, 0.78 * stageH / (2.0 * k)) : Math.min(1.25, fitW);
+          const scale = mult > 1 ? Math.min(base * mult, (colW - (short ? 24 : 8)) / (2.06 * k), short ? 0.8 * stageH / (2.0 * k) : 1e9) : base;
+          return { x: pxToWorldX(cx), y: pxToWorldY(stageMid), scale: Math.max(0.05, scale), visible: true };
         }
-        return { x: 1.6, y: 0.05, scale: 1.25 * mult, visible: true };
+        return { x: w / h, y: 0.05, scale: 1.25 * mult, visible: true };   // x = W/H keeps the 1440x900 composition at any 16:10 to 21:9 window
       }
       if (s.id === 'work' || !s.copy || !s.head) return { x: 0, y: 0.05, scale: 1, visible: false };
-      const top = stageTop() + s.head.offsetTop + s.head.offsetHeight + 16;
-      const bottom = stageTop() + s.copy.offsetTop - 16;
+      const top = s.head.getBoundingClientRect().bottom + 16;
+      const bottom = s.copy.getBoundingClientRect().top - 16;
       const bandH = bottom - top;
       const targetPx = Math.min(bandH, w * 0.6);
       return { x: 0, y: pxToWorldY(top + bandH / 2), scale: Math.max(0.01, targetPx / (2.06 * k)), visible: bandH >= 140 };
@@ -1414,12 +1553,13 @@ const PORTFOLIO = [
 
     // ── Contact: one hat becomes six ──
     function rowLayout() {
-      const w = window.innerWidth, mobile = w <= 600, pad = mobile ? 16 : 32, k = ppu();
+      const w = window.innerWidth, pad = T.pad(), K = T.unit(), k = ppu();
       const s = T.stops.find((x) => x.id === 'contact');
-      const top = stageTop() + s.head.offsetTop + s.head.offsetHeight + 24;
-      const bottom = stageTop() + s.copy.offsetTop - 24;
+      const vg = T.isShort() ? 12 : 24 * K;
+      const top = s.head.getBoundingClientRect().bottom + vg;
+      const bottom = s.copy.getBoundingClientRect().top - vg;
       const bandH = Math.max(40, bottom - top);
-      const W = Math.min(w - 2 * pad, 1200);
+      const W = Math.min(w - 2 * pad, 1200 * K);
       let wpx = W / 7.25;
       const hpx = wpx * (BBH / BBW);
       if (hpx > bandH * 0.8) wpx = bandH * 0.8 * (BBW / BBH);
