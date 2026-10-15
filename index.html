@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>
 /* Progressive enhancement + first-paint ground (no flash): runs before any CSS paints. */
 (function () {
@@ -419,7 +419,6 @@ html.js.no-webgl .hat-row-fallback {
   width: min(100%, calc(1200 * var(--u))); justify-self: center; gap: calc(100% / 29);
 }
 .hat-row-fallback svg { flex: 0 0 calc(100% * 4 / 29); height: auto; }
-@media (max-width: 600px) and (min-height: 521px) { html.js.no-webgl .hat-fallback { display: none; } }
 
 /* ── Tablet ── */
 @media (min-width: 601px) and (max-width: 1023px) {
@@ -431,7 +430,6 @@ html.js.no-webgl .hat-row-fallback {
   html.js .stop { grid-template-columns: minmax(0, 1fr); }
   html.js .stop-head { padding-top: 24px; }
   html.js .stop-copy { padding-bottom: 24px; }
-  html.js.no-webgl .stop-photo { display: none; }
 
   /* Work: only the headline; the reel takes the rest of the screen */
   #work .stop-copy {
@@ -444,6 +442,103 @@ html.js.no-webgl .hat-row-fallback {
   .services li { display: block; }
   .services .subheading, .services .svc-line { display: inline; margin: 0; }
   .services .subheading::after { content: ":"; }
+}
+
+/* ── Portrait phones (round 3) ──
+   Everything below lives inside the portrait-phone query (or is inert outside it). */
+.nav-count, .reel-progress, .reel-taps, .reel-chip { display: none; }
+.m-join { display: inline-block; vertical-align: top; }
+@media (max-width: 600px) and (min-height: 521px) {
+  /* M1 frame: safe areas, stable height, chrome sizes */
+  :root {
+    --pad: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    --nav-h: calc(56px + env(safe-area-inset-top));
+    --bar-h: calc(64px + env(safe-area-inset-bottom));
+  }
+  html.js, html.js body { height: 100vh; height: 100svh; }
+  html.js #canvas { height: 100vh; height: 100svh; }
+  .site-nav { padding-top: env(safe-area-inset-top); }
+  html.js #bottom-bar { padding: 0 0 env(safe-area-inset-bottom); }
+
+  /* M2 header: wordmark + step counter */
+  .nav-contact { display: none; }
+  .nav-count { display: block; position: relative; min-width: 72px; height: 24px; text-align: right; font-size: 16px; line-height: 24px; font-weight: 300; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .nc-hint, .nc-main { position: absolute; right: 0; top: 0; transition: opacity calc(200ms * var(--ts)) linear; }
+  .nc-main { opacity: 1; }
+  .nc-hint { opacity: 0; pointer-events: none; }
+  .nav-count.has-hint .nc-hint { opacity: 1; }
+  .nav-count.has-hint .nc-main { opacity: 0; }
+  .nc-roll { display: inline-block; position: relative; height: 24px; width: 1.25em; overflow: hidden; vertical-align: top; text-align: right; }
+  .nc-cur { position: absolute; right: 0; top: 0; font-weight: 700; transition: transform calc(300ms * var(--ts)) var(--ease-out-expo); }
+
+  /* M3 poster headlines and readable copy */
+  h1, h2 { font-size: min(15vw, 72px); line-height: 1.04; letter-spacing: -0.025em; }
+  .m-join { display: block; }
+  .lead { font-size: 20px; line-height: 28px; }
+  html.js .stop-head { padding-top: 12px; }
+  html.js .stop-copy { padding-bottom: 16px; }
+
+  /* M5 thumb-zone actions */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+  .btn { height: 56px; justify-content: center; padding: 0 12px; }
+  .btn-roll::after { top: calc(100% + 20px); }
+  .btn:hover .btn-roll, .btn:focus-visible .btn-roll { transform: translateY(calc(-100% - 20px)); }
+  .link-strong { display: flex; align-items: center; justify-content: center; height: 56px; padding: 0 12px; border: 2px solid currentColor; text-decoration: none; font-size: 16px; }
+  .link-strong:hover, .link-strong:active { background: var(--fg); color: var(--btn-text); text-decoration: none; }
+  .contact-email { display: flex; align-items: center; justify-content: center; height: 56px; margin-top: 20px; background: var(--fg); color: var(--btn-text); font-size: 18px; line-height: 24px; letter-spacing: 0; text-decoration: none; }
+  .contact-social { display: flex; align-items: center; justify-content: center; height: 56px; margin-top: 8px; border: 2px solid currentColor; font-size: 16px; line-height: 24px; font-weight: 700; text-decoration: none; }
+  .contact-email:hover, .contact-social:hover { text-decoration: none; }
+
+  /* M9 press feedback */
+  .btn:active, .link-strong:active, .contact-email:active, .contact-social:active, .dot:active, .wp-btn:active { transform: scale(0.96); transition: transform 80ms linear; }
+
+  /* M6 tab bar */
+  .bar-left { display: none !important; }
+  .stops-nav { width: 100%; gap: 0; }
+  .nav-hat { display: block; width: 16px; margin-top: 0; top: 13px; }
+  .dot { flex: 1 1 0; width: auto; height: 64px; padding-top: 35px; flex-direction: column; justify-content: flex-start; align-items: center; gap: 0; }
+  .dot-label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: nowrap; font-size: 12px; line-height: 16px; text-decoration: none; }
+  .dot:hover .dot-label { text-decoration: none; }
+  .dot-hat, .dot[aria-current="step"] .dot-hat { display: none; }
+  .dot[aria-current="step"] .dot-label { font-weight: 700; text-decoration: none; }
+
+  /* M7 Work: full-bleed reel */
+  html.js #work-wrap { padding: 0; justify-content: stretch; align-items: flex-end; }
+  #work-panel { gap: 16px; }
+  .reel-slide video { object-fit: cover; }
+  .reel-meta { padding: 0 var(--pad); flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 8px; }
+  .reel-info .subheading { font-size: 24px; line-height: 28px; }
+  .reel-ctl { margin-left: 0; width: 100%; justify-content: space-between; }
+  .reel-progress { display: flex; gap: 4px; position: absolute; top: 12px; left: 12px; right: 12px; z-index: 100001; pointer-events: none; }
+  .reel-progress i { position: relative; flex: 1 1 0; height: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.4); }
+  .reel-progress i.is-past { background: #FFF; }
+  .reel-progress b { position: absolute; inset: 0; background: #FFF; transform: scaleX(0); transform-origin: 0 50%; }
+  .reel-progress i.is-cur b { transform: scaleX(var(--p, 0)); }
+  .reel-taps { display: flex; position: absolute; inset: 0; z-index: 100000; -webkit-tap-highlight-color: transparent; }
+  .reel-taps div { height: 100%; }
+  .reel-taps div[data-zone="prev"], .reel-taps div[data-zone="next"] { flex: 3 1 0; }
+  .reel-taps div[data-zone="watch"] { flex: 4 1 0; }
+  .reel-chip { display: block; position: absolute; left: 12px; bottom: 12px; z-index: 100001; padding: 4px 8px; background: #000; color: #FFF; font-size: 12px; line-height: 16px; font-weight: 700; pointer-events: none; }
+  .reel-chip.is-off { display: none; }
+
+  /* M8 Contact as a poster: the SVG fallback grid (WebGL uses a 3x2 layout in script) */
+  html.js.no-webgl .hat-row-fallback { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: calc((100vw - 2 * var(--pad)) / 14); row-gap: calc((100vw - 2 * var(--pad)) / 14); align-content: center; align-self: center; width: 100%; }
+  html.js.no-webgl .hat-row-fallback svg { width: 100%; flex: none; }
+
+  /* M10 no-WebGL: the static hat / photo take the hero band */
+  html.js.no-webgl .hat-fallback { transform: none; width: var(--fb-w, 0px); height: auto; left: var(--fb-x, 0px); top: var(--fb-y, 0px); }
+  html.js.no-webgl .stop-photo { display: block; position: fixed; z-index: 5; grid-area: auto; margin: 0; max-height: none; align-self: auto; justify-self: auto; width: var(--fb-w, 0px); height: var(--fb-h, 0px); left: var(--fb-x, 0px); top: var(--fb-y, 0px); }
+  html.js.no-webgl.fb-off .hat-fallback, html.js.no-webgl.fb-off .stop-photo { display: none !important; }
+}
+/* short portrait phones (360x640 class): a slightly tighter reel meta keeps the frame at 260px or more */
+@media (max-width: 600px) and (min-height: 521px) and (max-height: 700px) {
+  #work-panel { gap: 12px; }
+  .reel-info .subheading { font-size: 20px; line-height: 24px; }
+  .reel-meta { gap: 6px; }
+  .wp-btn { height: 44px; }
+}
+@media (max-width: 600px) and (min-height: 521px) and (prefers-reduced-motion: reduce) {
+  .btn:active, .link-strong:active, .contact-email:active, .contact-social:active, .dot:active, .wp-btn:active { transform: none; opacity: 0.8; }
 }
 
 /* ── Short viewports (landscape phones, small windows): compact two-column layout ──
@@ -512,6 +607,7 @@ html.js.no-webgl .hat-row-fallback {
 <header class="site-nav">
   <a href="#studio" class="logo" aria-label="topper. home"><img class="wm-black" src="assets/brand/topper-wordmark-black.svg" alt="topper." width="114" height="32"><img class="wm-white" src="assets/brand/topper-wordmark-white.svg" alt="" width="114" height="32" aria-hidden="true"></a>
   <a href="mailto:info@topperdigital.xyz" class="nav-contact">info@topperdigital.xyz</a>
+  <span class="nav-count has-hint" id="nav-count" aria-hidden="true"><span class="nc-hint">Swipe up</span><span class="nc-main"><span class="nc-roll"><span class="nc-cur">01</span></span> / 05</span></span>
 </header>
 
 <main id="content">
@@ -533,7 +629,7 @@ html.js.no-webgl .hat-row-fallback {
   <section class="stop" id="work" data-bg="#000000" data-fg="#FFFFFF" data-hat="#2F77B1" data-label="Work">
     <div class="stop-text">
       <div class="stop-head">
-        <h2 tabindex="-1"><span class="line" style="--i:0"><span>Selected work.</span></span></h2>
+        <h2 tabindex="-1"><span class="line m-join" style="--i:0"><span>Selected</span></span> <span class="line m-join" style="--i:1"><span>work.</span></span></h2>
       </div>
       <div class="stop-copy">
         <p class="body">Idents, title sequences and VFX breakdowns from recent projects.</p>
@@ -544,7 +640,7 @@ html.js.no-webgl .hat-row-fallback {
   <section class="stop" id="services" data-bg="#FFFFFF" data-fg="#000000" data-hat="#2A7928" data-label="Services">
     <div class="stop-text">
       <div class="stop-head">
-        <h2 tabindex="-1"><span class="line" style="--i:0"><span>What we make.</span></span></h2>
+        <h2 tabindex="-1"><span class="line m-join" style="--i:0"><span>What we</span></span> <span class="line m-join" style="--i:1"><span>make.</span></span></h2>
       </div>
       <div class="stop-copy">
         <ul class="services">
@@ -615,7 +711,11 @@ html.js.no-webgl .hat-row-fallback {
 <!-- The screening room — opens through a hat-shaped iris on the Work step -->
 <div id="work-wrap">
   <section id="work-panel" aria-label="Selected work reel" inert>
-    <div class="reel-frame" id="reel-frame"><!-- slides injected by JS --></div>
+    <div class="reel-frame" id="reel-frame"><!-- slides injected by JS -->
+      <div class="reel-progress" id="reel-progress" aria-hidden="true"></div>
+      <div class="reel-taps" id="reel-taps" aria-hidden="true"><div data-zone="prev"></div><div data-zone="watch"></div><div data-zone="next"></div></div>
+      <span class="reel-chip" id="reel-chip" aria-hidden="true">Tap to watch</span>
+    </div>
     <div class="reel-meta" id="reel-meta">
       <div class="reel-info">
         <p class="subheading" id="reel-name"></p>
@@ -700,6 +800,8 @@ const PORTFOLIO = [
   const barLeft = $('#bar-left');
   const barStep = $('#bar-step');
   const hintEl  = $('#hint');
+  const navCount = $('#nav-count');
+  const ncRoll  = navCount.querySelector('.nc-roll');
   const bar     = $('#bottom-bar');
   const content = $('#content');
   const wipes   = [$('#wipe'), $('#wipe2')];
@@ -727,7 +829,7 @@ const PORTFOLIO = [
     pad: () => parseFloat(getComputedStyle(stopEls[0]).paddingLeft) || 32,
     busy: () => !!tr,
     target: () => (N > 1 ? clamp((active + T.dragStep) / (N - 1), 0, 1) : 0),
-    relayout: () => layoutPanel(),
+    relayout: () => { layoutPanel(); layoutFallback(); },
     ease: { easeInOutCubic, easeOutExpo, easeOutBack, easeInQuart, linear },
     hatRect: null, tween: null, after: null, runIntro: null, tipHero: null
   };
@@ -825,6 +927,7 @@ const PORTFOLIO = [
     try { sessionStorage.setItem('topper-hint', '1'); } catch (e) {}
     if (hintEl.parentNode) hintEl.remove();
     barLeft.classList.remove('has-hint');
+    navCount.classList.remove('has-hint');
   }
   if (hintDone || active !== 0) dismissHint();
 
@@ -860,9 +963,11 @@ const PORTFOLIO = [
 
   function updateNavHat(instant) {
     const d = dots[shown];
-    if (!d || mobileMQ.matches) return;
+    if (!d) return;
     if (instant) root.classList.add('snap');
-    navHat.style.setProperty('--nx', (d.offsetLeft - navHat.offsetWidth - (shortMQ.matches ? 6 : 8 * T.unit())) + 'px');
+    // phones: the hat sits centred above the active tab label; elsewhere it sits left of the label
+    const x = mobileMQ.matches ? d.offsetLeft + d.offsetWidth / 2 - navHat.offsetWidth / 2 : d.offsetLeft - navHat.offsetWidth - (shortMQ.matches ? 6 : 8 * T.unit());
+    navHat.style.setProperty('--nx', x + 'px');
     if (instant) { void navHat.offsetWidth; root.classList.remove('snap'); }
   }
 
@@ -872,11 +977,32 @@ const PORTFOLIO = [
   const PASS_COLOR = { studio: '#2F77B1', services: '#81CFE3', approach: '#E02727', contact: '#2A7928' };
   const POUR_DELAY = 60, POUR_DUR = 680, BAND_LAG = 140;
 
+  // Haptics (phones only, never more than once per 150ms; iOS ignores it)
+  let lastBuzz = 0;
+  T.buzz = () => {
+    if (!mobileMQ.matches || reducedMQ.matches || !navigator.vibrate) return;
+    const n = performance.now(); if (n - lastBuzz < 150) return; lastBuzz = n;
+    try { navigator.vibrate(8); } catch (e) {}
+  };
+  // Step counter in the phone header: the old number rolls out, the new one rolls in
+  function updateCount(from, to, instant) {
+    const txt = '0' + (to + 1);
+    const cur = ncRoll.lastElementChild;
+    if (!cur || cur.textContent === txt) return;
+    if (instant || reducedMQ.matches || !mobileMQ.matches || from === to) { ncRoll.querySelectorAll('.nc-cur').forEach((n, k, a) => { if (k < a.length - 1) n.remove(); }); cur.textContent = txt; cur.style.transform = ''; return; }
+    const dir = to > from ? 1 : -1;
+    const nw = document.createElement('span'); nw.className = 'nc-cur'; nw.textContent = txt; nw.style.transform = 'translateY(' + (dir * 100) + '%)';
+    ncRoll.appendChild(nw); void nw.offsetWidth;
+    cur.style.transform = 'translateY(' + (-dir * 100) + '%)'; nw.style.transform = 'translateY(0)';
+    setTimeout(() => cur.remove(), 340 * timeScale);
+  }
+
   function goTo(i, o) {
     o = o || {};
     i = clamp(i, 0, N - 1);
     T.dragStep = 0;
     if (i === active) return;
+    if (o.haptic) T.buzz();
     settle();                          // a running transition jumps to its end state first
     const from = shown;
     active = i;
@@ -945,6 +1071,8 @@ const PORTFOLIO = [
     D.el.classList.add('is-in');
     if (D.id === 'work') { reel.prepare(); setPanelOpen(true); } else if (F.id !== 'work') { /* panel already closed */ }
     writeHash();
+    updateCount(from, to);
+    layoutFallback();
     live.textContent = 'Step ' + (to + 1) + ' of ' + N + ': ' + D.label;
     if (o.focus) { try { D.heading.focus({ preventScroll: true }); } catch (e) {} }
     layoutPanel();
@@ -962,13 +1090,14 @@ const PORTFOLIO = [
 
   $('#dots').addEventListener('click', (e) => {
     const d = e.target.closest('.dot'); if (!d) return;
-    goTo(parseInt(d.dataset.stop, 10), { focus: true });
+    goTo(parseInt(d.dataset.stop, 10), { focus: true, haptic: true });
   });
   document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
     const k = stops.findIndex((s) => s.id === b.dataset.goto);
-    if (k >= 0) goTo(k, { focus: true });
+    if (k >= 0) goTo(k, { focus: true, haptic: true });
   }));
-  $('.logo').addEventListener('click', (e) => { e.preventDefault(); goTo(0, { focus: true }); });
+  $('.logo').addEventListener('click', (e) => { e.preventDefault(); goTo(0, { focus: true, haptic: true }); });
+  document.querySelectorAll('.btn, .link-strong, .contact-email, .contact-social').forEach((el) => el.addEventListener('click', () => T.buzz()));
   window.addEventListener('hashchange', () => {
     const k = idFromHash();
     if (k >= 0) goTo(k, { focus: true });
@@ -1012,7 +1141,7 @@ const PORTFOLIO = [
   }
 
   const reel = {
-    cur: 0, slides: [], videos: [], ratios: [], isOpen: false, anim: null, z: 1,
+    cur: 0, slides: [], videos: [], ratios: [], broken: [], segs: [], isOpen: false, anim: null, z: 1, fs: null, progId: 0,
     geo() {
       const fw = frame.clientWidth, fh = frame.clientHeight, sz = 0.4 * fh;
       const r = { x: fw / 2 - sz / 2, y: fh / 2 - sz / 2, w: sz, h: sz };
@@ -1054,8 +1183,57 @@ const PORTFOLIO = [
     play() {
       if (reducedMQ.matches || !this.isOpen) return;
       playSafe(this.videos[this.cur]);
+      this.progStart();
     },
     pause() { this.videos.forEach((v) => v.pause()); },
+    // phones: story-style progress; only transforms are written, and only while a clip plays
+    updateSegs() {
+      this.segs.forEach((seg, k) => {
+        seg.classList.toggle('is-past', k < this.cur);
+        seg.classList.toggle('is-cur', k === this.cur);
+        seg.firstChild.style.transform = k === this.cur ? 'scaleX(0)' : '';
+      });
+      chipEl.classList.toggle('is-off', !!this.broken[this.cur]);
+      this.progStart();
+    },
+    progStart() {
+      if (this.progId || !mobileMQ.matches) { if (mobileMQ.matches) this.progPaint(); return; }
+      this.progId = requestAnimationFrame(() => { this.progId = 0; this.progTick(); });
+    },
+    progPaint() {
+      const v = this.videos[this.cur], fill = this.segs[this.cur] && this.segs[this.cur].firstChild;
+      if (!fill) return false;
+      let p = 0;
+      if (this.broken[this.cur]) p = 1;                      // a poster only: show the segment full
+      else if (v.duration > 0) p = v.currentTime / v.duration;
+      fill.style.transform = 'scaleX(' + Math.min(1, Math.max(0, p)).toFixed(4) + ')';
+      return !v.paused && !this.broken[this.cur];
+    },
+    progTick() {
+      if (!mobileMQ.matches || !this.isOpen) return;
+      if (this.progPaint()) this.progId = requestAnimationFrame(() => { this.progId = 0; this.progTick(); });
+    },
+    controlsFor(i) { return !this.broken[i] && (!mobileMQ.matches || this.fs === this.videos[i]); },
+    applyControls() { this.videos.forEach((v, i) => { v.controls = this.controlsFor(i); }); },
+    // centre tap: the clip full screen, from the start, with sound and native controls
+    watch() {
+      const v = this.videos[this.cur];
+      if (this.broken[this.cur] || !v) return;
+      this.fs = v; v.controls = true; v.muted = false;
+      try { v.currentTime = 0; } catch (e) {}
+      playSafe(v);
+      try {
+        if (v.requestFullscreen) { const pr = v.requestFullscreen(); if (pr && pr.catch) pr.catch(() => {}); }
+        else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+        else if (v.webkitRequestFullscreen) v.webkitRequestFullscreen();
+      } catch (e) {}
+    },
+    endWatch() {
+      const v = this.fs; if (!v) return;
+      this.fs = null; v.muted = true; v.controls = this.controlsFor(this.videos.indexOf(v));
+      if (this.isOpen && !reducedMQ.matches) playSafe(v);
+      this.progStart();
+    },
     set(i) {
       i = clamp(i, 0, PORTFOLIO.length - 1);
       if (i === this.cur) return;
@@ -1065,6 +1243,7 @@ const PORTFOLIO = [
       const s = this.slides[i];
       this.videos[prev].pause();
       this.videos[i].preload = 'metadata';
+      T.buzz();
       s.style.zIndex = String(++this.z);
       s.classList.add('is-shown');
       s.removeAttribute('inert');
@@ -1083,6 +1262,7 @@ const PORTFOLIO = [
       prevBtn.disabled = this.cur === 0;
       nextBtn.disabled = this.cur === PORTFOLIO.length - 1;
       if (focused && focused.disabled) (focused === prevBtn ? nextBtn : prevBtn).focus({ preventScroll: true });
+      if (this.segs.length) this.updateSegs();
     }
   };
 
@@ -1098,15 +1278,17 @@ const PORTFOLIO = [
     const v = document.createElement('video');
     v.muted = true; v.defaultMuted = true; v.setAttribute('muted', '');
     v.loop = true; v.playsInline = true; v.setAttribute('playsinline', '');
-    v.controls = true;
+    v.controls = !mobileMQ.matches;
     v.preload = i === 0 ? 'metadata' : 'none';
     v.poster = p.poster || makePoster(i);
     v.setAttribute('aria-label', p.name + ', ' + p.tag);
     const src = document.createElement('source');
     src.src = p.src; src.type = 'video/mp4';
     // A missing file keeps the poster and drops the dead controls instead of breaking the layout.
-    src.addEventListener('error', () => v.removeAttribute('controls'));
+    src.addEventListener('error', () => { reel.broken[i] = true; v.removeAttribute('controls'); if (reel.segs.length) reel.updateSegs(); });
     v.appendChild(src);
+    v.addEventListener('playing', () => { if (i === reel.cur) reel.progStart(); });
+    v.addEventListener('webkitendfullscreen', () => reel.endWatch());
     v.addEventListener('loadedmetadata', () => {
       if (v.videoWidth && v.videoHeight) { reel.ratios[i] = v.videoWidth / v.videoHeight; if (i === reel.cur) fitFrame(); }
     });
@@ -1116,6 +1298,10 @@ const PORTFOLIO = [
     reel.slides.push(slide); reel.videos.push(v); reel.ratios.push(parseRatio(p.ratio));
   });
   reel.slides[0].classList.add('is-shown');
+  const progEl = $('#reel-progress'), chipEl = $('#reel-chip'), tapsEl = $('#reel-taps');
+  PORTFOLIO.forEach(() => { const seg = document.createElement('i'); seg.appendChild(document.createElement('b')); progEl.appendChild(seg); reel.segs.push(seg); });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) reel.endWatch(); });
+  document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) reel.endWatch(); });
   reel.syncMeta();
 
   // The frame takes the active clip's own ratio (full panel width, height capped to the free space);
@@ -1133,8 +1319,10 @@ const PORTFOLIO = [
     else base = Math.min(1040 * K, 0.64 * W, (H - navH - barH - 120 * K) * 16 / 9);
     if (short) base = Math.min(base, (stageH - metaH - gap - 8) * 16 / 9);
     const ws = stops.find((x) => x.id === 'work');
-    const titleSpan = ws.heading.querySelector('.line > span'), body = ws.copy.querySelector('.body');
-    const titleW = titleSpan ? titleSpan.getBoundingClientRect().width : 0;
+    const body = ws.copy.querySelector('.body');
+    let tl = 1e9, tr = -1e9;                       // the whole heading, whichever lines it is split into
+    ws.heading.querySelectorAll('.line > span').forEach((sp) => { const q = sp.getBoundingClientRect(); if (q.width) { tl = Math.min(tl, q.left); tr = Math.max(tr, q.right); } });
+    const titleW = tr > tl ? tr - tl : 0;
     const titleBottom = ws.head.getBoundingClientRect().bottom;
     const bodyR = body ? body.getBoundingClientRect() : null;
     const r = reel.ratios[reel.cur] || 16 / 9;
@@ -1152,7 +1340,8 @@ const PORTFOLIO = [
     const gap = parseFloat(getComputedStyle(panel).rowGap) || 16;
     const availH = wrap.clientHeight - meta.offsetHeight - gap;
     const w = frame.clientWidth || (window.innerWidth - 32);
-    const r = reel.ratios[reel.cur] || 16 / 9;
+    let r = reel.ratios[reel.cur] || 16 / 9;
+    if (mobileMQ.matches) r = Math.min(1, Math.max(0.8, r));      // phones: between 4:5 and 1:1, the clip is cropped to fit
     frame.style.aspectRatio = 'auto';
     frame.style.height = Math.max(100, Math.min(availH, w / r)) + 'px';
   }
@@ -1160,6 +1349,38 @@ const PORTFOLIO = [
   nextBtn.addEventListener('click', () => reel.set(reel.cur + 1));
 
   // Mobile: the reel fills the space between the Work title and the bottom bar.
+  // Phone hero band: the free space between the headline block and the copy block.
+  // Beside-headline fallback (band under 120px): to the right of the last headline line.
+  T.bandHat = function (idx) {
+    const s = stops[idx], w = window.innerWidth, pad = T.pad();
+    const top = s.head.getBoundingClientRect().bottom + 16, bottom = s.copy.getBoundingClientRect().top - 16, bandH = bottom - top;
+    if (bandH >= 120) return { visible: true, cx: w / 2, cy: top + bandH / 2, size: Math.min(bandH, 0.72 * w) };
+    const lines = s.head.querySelectorAll('.line');
+    const ln = lines[lines.length - 1];
+    if (ln) {
+      const span = ln.firstElementChild, lr = ln.getBoundingClientRect();   // the mask box, so entrance transforms don't skew it
+      const textR = lr.left + span.offsetWidth, textH = span.offsetHeight, textB = lr.top + textH;
+      const free = w - pad - textR - 16, size = Math.min(free, 1.6 * textH);
+      if (size >= 72) return { visible: true, cx: w - pad - size / 2, cy: textB - size / 2, size };
+    }
+    return { visible: false, cx: w / 2, cy: top + bandH / 2, size: 0 };
+  };
+  function layoutFallback() {
+    const fbVars = ['--fb-w', '--fb-h', '--fb-x', '--fb-y'];
+    if (!root.classList.contains('no-webgl') || !mobileMQ.matches) { root.classList.remove('fb-off'); fbVars.forEach((k) => root.style.removeProperty(k)); return; }
+    const id = stops[shown].id;
+    const b = (id === 'work' || id === 'contact') ? { visible: false } : T.bandHat(shown);
+    if (!b.visible) { root.classList.add('fb-off'); return; }
+    root.classList.remove('fb-off');
+    if (id === 'approach') {          // no hat to put the photo in: the photo itself takes the band (4:5)
+      const h = b.size, w = h * 0.8;
+      root.style.setProperty('--fb-w', w + 'px'); root.style.setProperty('--fb-h', h + 'px');
+      root.style.setProperty('--fb-x', (b.cx - w / 2) + 'px'); root.style.setProperty('--fb-y', (b.cy - h / 2) + 'px');
+    } else {
+      root.style.setProperty('--fb-w', b.size + 'px');
+      root.style.setProperty('--fb-x', (b.cx - b.size / 2) + 'px'); root.style.setProperty('--fb-y', (b.cy - b.size * 0.486) + 'px');
+    }
+  }
   function layoutPanel() {
     if (!mobileMQ.matches) { wrap.style.top = ''; wrap.style.bottom = ''; return; }
     const ws = stops.find((s) => s.id === 'work');
@@ -1204,8 +1425,26 @@ const PORTFOLIO = [
   const NO_DRAG = 'button, a, input, textarea, select, [contenteditable]';
   let drag = null;
   T.justDragged = false;
-  function endDrag() { drag = null; T.dragStep = 0; body.classList.remove('dragging'); }
+
+  // Phones: while a vertical drag is live the active step follows the finger a little (rubber band).
+  let rubbing = false;
+  function rubberEls() {
+    const s = stops[shown], list = [s.head, s.copy];
+    if (s.id === 'work') list.push(panel);
+    return list;
+  }
+  function setRubber(px, animate) {
+    if (!rubbing && !px) return;
+    rubberEls().forEach((el) => {
+      el.style.transition = animate ? 'transform calc(300ms * var(--ts)) var(--ease-out-expo)' : 'none';
+      el.style.transform = px ? 'translateY(' + px.toFixed(1) + 'px)' : '';
+    });
+    rubbing = !!px;
+    if (!px && animate) setTimeout(() => rubberEls().forEach((el) => { if (!rubbing) el.style.transition = ''; }), 320 * timeScale);
+  }
+  function endDrag() { drag = null; T.dragStep = 0; body.classList.remove('dragging'); if (rubbing) setRubber(0, true); }
   window.addEventListener('pointerdown', (e) => {
+    cancelPeek();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (!e.isPrimary) { endDrag(); return; }        // second finger: leave it to pinch-zoom
     const t = e.target;
@@ -1222,18 +1461,55 @@ const PORTFOLIO = [
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.abs(dx) > 6 || Math.abs(dy) > 6) drag.moved = true;
     if (Math.abs(dy) > 6) body.classList.add('dragging');
-    T.dragStep = Math.abs(dx) > Math.abs(dy) ? 0 : clamp(-dy / (window.innerHeight * 0.5), -0.4, 0.4);
+    const vertical = Math.abs(dx) <= Math.abs(dy);
+    T.dragStep = vertical ? clamp(-dy / (window.innerHeight * 0.5), -0.4, 0.4) : 0;
+    if (mobileMQ.matches && !reducedMQ.matches && !tr) {
+      if (vertical && Math.abs(dy) > 6) setRubber(clamp(dy * 0.25, -40, 40), false); else if (rubbing) setRubber(0, true);
+    }
   });
   window.addEventListener('pointerup', (e) => {
     if (!drag || e.pointerId !== drag.id) return;
     const d = drag, dx = e.clientX - d.x, dy = e.clientY - d.y;
     T.justDragged = d.moved;
-    endDrag();
+    endDrag();                                       // springs the rubber band back (300ms) on a short drag
+    if (d.inFrame && !d.moved && mobileMQ.matches && stops[shown].id === 'work') {   // phone reel: tap zones
+      const fr = frame.getBoundingClientRect(), fx = (e.clientX - fr.left) / Math.max(1, fr.width);
+      if (fx < 0.3) reel.set(reel.cur - 1); else if (fx > 0.7) reel.set(reel.cur + 1); else reel.watch();
+      return;
+    }
     if (d.inFrame && Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) { reel.set(reel.cur + (dx < 0 ? 1 : -1)); return; }
-    if (Math.abs(dy) >= 50 && Math.abs(dy) > Math.abs(dx)) goTo(active + (dy < 0 ? 1 : -1));
+    if (Math.abs(dy) >= 50 && Math.abs(dy) > Math.abs(dx)) goTo(active + (dy < 0 ? 1 : -1), { haptic: true });
   });
   window.addEventListener('pointercancel', endDrag);
   window.addEventListener('blur', endDrag);
+
+  // First-visit peek (phones, Studio, once per session): the text and the hat nudge up and back, twice 500ms
+  let peekTimer = 0, peekTw = [];
+  T.peekPx = 0;
+  function setPeek(px) {
+    T.peekPx = px;
+    const s = stops[0];
+    [s.head, s.copy].forEach((el) => { el.style.transition = 'none'; el.style.transform = px ? 'translateY(' + (-px).toFixed(2) + 'px)' : ''; });
+  }
+  function cancelPeek() {
+    if (peekTimer) { try { sessionStorage.setItem('topper-peek', '1'); } catch (e) {} }   // a touch before it plays: the visitor already knows
+    clearTimeout(peekTimer); peekTimer = 0;
+    if (peekTw.length) { peekTw.forEach((t) => { t.dead = true; const k = tweens.indexOf(t); if (k >= 0) tweens.splice(k, 1); }); peekTw = []; setPeek(0); }
+  }
+  function schedulePeek(delayMs) {
+    clearTimeout(peekTimer);
+    if (!mobileMQ.matches || reducedMQ.matches) return;
+    try { if (sessionStorage.getItem('topper-peek')) return; } catch (e) {}
+    peekTimer = setTimeout(() => {
+      peekTimer = 0;
+      if (shown !== 0 || tr || !mobileMQ.matches || reducedMQ.matches) return;
+      try { sessionStorage.setItem('topper-peek', '1'); } catch (e) {}
+      peekTw = [
+        tween({ dur: 500, ease: easeInOutCubic, update: (e) => setPeek(16 * e) }),
+        tween({ delay: 500, dur: 500, ease: easeInOutCubic, update: (e) => setPeek(16 * (1 - e)), done: () => { peekTw = []; setPeek(0); } })
+      ];
+    }, delayMs * timeScale);
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1269,6 +1545,7 @@ const PORTFOLIO = [
     root.classList.remove('intro');                 // nav and bar fade in (300 to 700ms)
     tween({ delay: 150, done: () => stops[shown].el.classList.add('is-in') });
     tween({ delay: 1500, done: () => root.classList.remove('intro-run') });
+    schedulePeek(1510 + 2500);
   };
   if (root.classList.contains('intro')) {
     setTimeout(() => T.runIntro(), 1500 * timeScale);   // failsafe: never hold the page longer than 1.5s
@@ -1289,6 +1566,8 @@ const PORTFOLIO = [
   }
   function onResize() {
     layoutPanel();
+    layoutFallback();
+    reel.applyControls();
     fitFrame();
     updateScrollCols();
     updateNavHat(true);
@@ -1311,7 +1590,10 @@ const PORTFOLIO = [
       if (!reducedMQ.matches) setTimeout(() => reel.play(), 300);
     }
     if (root.classList.contains('intro')) { /* held until T.runIntro() */ }
-    else { root.classList.add('snap'); s.el.classList.add('is-in'); void root.offsetWidth; root.classList.remove('snap'); }
+    else { root.classList.add('snap'); s.el.classList.add('is-in'); void root.offsetWidth; root.classList.remove('snap'); if (s.id === 'studio') schedulePeek(2500); }
+    updateCount(shown, shown, true);
+    layoutFallback();
+    reel.applyControls(); reel.updateSegs();
     updateNavHat(true);
   }
 })();
@@ -1344,6 +1626,7 @@ const PORTFOLIO = [
     cancelAnimationFrame(raf); raf = 0;
     T.webgl = false;
     root.classList.add('no-webgl');
+    if (T.relayout) T.relayout();
     if (T.runIntro) T.runIntro();
   }
 
@@ -1473,11 +1756,10 @@ const PORTFOLIO = [
         return { x: w / h, y: 0.05, scale: 1.25 * mult, visible: true };   // x = W/H keeps the 1440x900 composition at any 16:10 to 21:9 window
       }
       if (s.id === 'work' || !s.copy || !s.head) return { x: 0, y: 0.05, scale: 1, visible: false };
-      const top = s.head.getBoundingClientRect().bottom + 16;
-      const bottom = s.copy.getBoundingClientRect().top - 16;
-      const bandH = bottom - top;
-      const targetPx = Math.min(bandH, w * 0.6);
-      return { x: 0, y: pxToWorldY(top + bandH / 2), scale: Math.max(0.01, targetPx / (2.06 * k)), visible: bandH >= 140 };
+      // the hero of the free band (or, when the band is too short, beside the headline's last line)
+      const b = T.bandHat(idx);
+      if (!b.visible) return { x: 0, y: 0.05, scale: 1, visible: false };
+      return { x: pxToWorldX(b.cx), y: pxToWorldY(b.cy), scale: Math.max(0.01, b.size / (2.06 * k)), visible: true };
     }
 
     // The hat's home rest rect on screen (front-on, home position): origin of the pour.
@@ -1559,6 +1841,14 @@ const PORTFOLIO = [
       const top = s.head.getBoundingClientRect().bottom + vg;
       const bottom = s.copy.getBoundingClientRect().top - vg;
       const bandH = Math.max(40, bottom - top);
+      if (T.isMobile()) {
+        // phones: a poster of two rows of three (pink, light-blue, yellow / blue, red, green)
+        const W2 = w - 2 * pad, ar = BBH / BBW, band = Math.max(40, bottom - top);
+        let wp = W2 / 3.5;
+        if (2 * wp * ar + wp / 4 > 0.9 * band) wp = (0.9 * band) / (2 * ar + 0.25);
+        const g = wp / 4, hh = wp * ar, xs = (w - (3 * wp + 2 * g)) / 2 + wp / 2, cy0 = top + band / 2 - (hh + g) / 2;
+        return row.map((_, i) => ({ x: pxToWorldX(xs + (i % 3) * (wp + g)), y: pxToWorldY(cy0 + Math.floor(i / 3) * (hh + g)), scale: (wp / k) / BBW }));
+      }
       const W = Math.min(w - 2 * pad, 1200 * K);
       let wpx = W / 7.25;
       const hpx = wpx * (BBH / BBW);
@@ -1638,8 +1928,10 @@ const PORTFOLIO = [
     }
     canvas.addEventListener('click', (e) => {
       if (T.justDragged) { T.justDragged = false; return; }
-      if (T.reduced() || T.busy() || !hero.root.visible) return;
-      if (pick([hero], e.clientX, e.clientY)) tip(hero, 1);
+      if (T.reduced() || T.busy()) return;
+      if (rowActive && rowReady) { const h = pick(row, e.clientX, e.clientY); if (h && !h.tipping) { tip(h, 1); T.buzz(); } return; }
+      if (!hero.root.visible) return;
+      if (pick([hero], e.clientX, e.clientY)) { tip(hero, 1); T.buzz(); }
     });
 
     // ── Step handlers ──
@@ -1722,7 +2014,7 @@ const PORTFOLIO = [
         tween({ delay: 950, done: () => { introState = 'done'; tip(hero, 1, true); loadPhotoSoon(); } });
       }
 
-      sculpture.position.set(home.x, home.y + swayY + introY, 0);
+      sculpture.position.set(home.x, home.y + swayY + introY + (T.peekPx ? T.peekPx / ppu() : 0), 0);
       sculpture.rotation.set(BASE_X + curX, BASE_Y + curY + swayR, 0);
       hero.root.scale.setScalar(Math.max(0.0001, scaleCur * heroMul));
       hero.spin.rotation.y = (reduced ? 0 : -Math.PI * s) + introSpin;
