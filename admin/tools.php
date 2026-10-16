@@ -20,11 +20,11 @@ $tools = [
         'open'    => 'topperfarm://open',
         'local'   => 'http://localhost:8765/',
         'steps'   => [
-            'Carregue em <b>Instalar</b> e abra o ZIP descarregado: botão direito → <b>Extrair tudo</b>.',
-            'Na pasta extraída, faça duplo clique em <b>Instalar.bat</b>. Só é preciso uma vez por computador (e outra vez para atualizar).',
-            'A partir daí, <b>Abrir</b> arranca o programa. O browser pergunta se pode abrir o “topper. Render Farm”: aceite e marque “permitir sempre”.',
+            'Carregue em <b>Instalar</b> e abra o ficheiro descarregado (clique nele na barra de transferências do browser).',
+            'Se o browser perguntar, escolha <b>Manter</b>. Se o Windows avisar, <b>Mais informações → Executar mesmo assim</b>. O resto é automático, incluindo o Python se faltar, e o programa abre no fim.',
+            'Daí em diante é só <b>Abrir</b>. Na primeira vez o browser pergunta se pode abrir o “topper. Render Farm”: aceite e marque “permitir sempre”.',
         ],
-        'needs'   => 'Windows, Python 3.10–3.14 (python.org, com “Add python.exe to PATH”) e o Blender. A primeira vez demora um ou dois minutos a preparar.',
+        'needs'   => 'Windows e o Blender. Para atualizar, carregue outra vez em Instalar; as suas chaves e definições ficam guardadas.',
     ],
 ];
 
@@ -51,13 +51,11 @@ render_flashes();
     <?php foreach ($t['steps'] as $s): ?><li><?= $s /* texto fixo desta página */ ?></li><?php endforeach; ?>
   </ol>
   <div class="flash err js-open-help" hidden style="margin:1.1rem 0 0;line-height:1.55">
-    Não abriu nada? Então o programa ainda não está instalado neste computador: faça os passos 1 e 2.
-    Se já os fez, carregue nas teclas <b>Windows + R</b>, escreva <b>topperfarm://open</b> e Enter:
-    se aparecer um erro, corra outra vez o <b>Instalar.bat</b> e envie uma captura do que ele mostrar.
+    Não abriu nada? Então ainda não está instalado neste computador: carregue em <b>Instalar</b> e abra o ficheiro descarregado.
+    Se já o fez, envie uma captura da janela preta do instalador.
   </div>
   <p class="muted" style="font-size:0.75rem;margin:0.9rem 0 0;line-height:1.5">
     Precisa de: <?= e($t['needs']) ?>
-    Se “Abrir” não fizer nada, ainda não foi instalado neste computador.
     Já está aberto? <a href="<?= e($t['local']) ?>" target="_blank" rel="noopener">Ir para o programa</a>.
   </p>
 </section>

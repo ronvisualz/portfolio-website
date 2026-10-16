@@ -7,3 +7,4 @@ admin/inc/config.php
 assets/fonts/
 # Built by tools/renderfarm/build.sh and uploaded to the server only
 admin/downloads/*.zip
+admin/downloads/*.cmd
