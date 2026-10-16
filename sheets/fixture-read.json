@@ -1,0 +1,276 @@
+{
+  "ok": true,
+  "at": "2026-10-16T12:40:00Z",
+  "tabs": {
+    "Trabalhos": {
+      "header": [
+        "Ano",
+        "Mês",
+        "Nome",
+        "Tipo",
+        "Budget (s/ IVA)",
+        "Internacional",
+        "Fatura com IVA",
+        "Gastos manuais",
+        "Pago",
+        "Notas",
+        "Budget (c/ IVA)",
+        "Gastos",
+        "Lucro"
+      ],
+      "computed": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true
+      ],
+      "rows": [
+        {
+          "Ano": 2026,
+          "Mês": "Junho",
+          "Nome": "Trabalho A",
+          "Tipo": "Edição",
+          "Budget (s/ IVA)": 400,
+          "Internacional": true,
+          "Fatura com IVA": false,
+          "Gastos manuais": 0,
+          "Pago": false,
+          "Notas": "",
+          "Budget (c/ IVA)": 400,
+          "Gastos": 0,
+          "Lucro": 400,
+          "_row": 2
+        },
+        {
+          "Ano": 2026,
+          "Mês": "Julho",
+          "Nome": "Trabalho B",
+          "Tipo": "Animação 3D",
+          "Budget (s/ IVA)": 7000,
+          "Internacional": false,
+          "Fatura com IVA": true,
+          "Gastos manuais": "",
+          "Pago": false,
+          "Notas": "",
+          "Budget (c/ IVA)": 8610,
+          "Gastos": 5862.5,
+          "Lucro": 1137.5,
+          "_row": 3
+        },
+        {
+          "Ano": 2026,
+          "Mês": "Julho",
+          "Nome": "Trabalho C",
+          "Tipo": "Produção Completa",
+          "Budget (s/ IVA)": 18000,
+          "Internacional": true,
+          "Fatura com IVA": false,
+          "Gastos manuais": "",
+          "Pago": true,
+          "Notas": "",
+          "Budget (c/ IVA)": 18000,
+          "Gastos": 9765,
+          "Lucro": 8235,
+          "_row": 4
+        }
+      ]
+    },
+    "Equipa": {
+      "header": [
+        "Trabalho",
+        "Pessoa",
+        "Função",
+        "Valor",
+        "Tipo de IVA",
+        "Fechado",
+        "Contacto",
+        "Notas",
+        "Valor s/ IVA",
+        "IVA",
+        "Total"
+      ],
+      "computed": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true
+      ],
+      "rows": [
+        {
+          "Trabalho": "Trabalho C",
+          "Pessoa": "Pessoa 1",
+          "Função": "Diretor de Fotografia",
+          "Valor": 1500,
+          "Tipo de IVA": "Acresce IVA",
+          "Fechado": true,
+          "Contacto": "pessoa@example.com",
+          "Notas": "",
+          "Valor s/ IVA": 1500,
+          "IVA": 345,
+          "Total": 1845,
+          "_row": 2
+        },
+        {
+          "Trabalho": "Trabalho C",
+          "Pessoa": "",
+          "Função": "Location",
+          "Valor": 800,
+          "Tipo de IVA": "Sem IVA",
+          "Fechado": true,
+          "Contacto": "",
+          "Notas": "Nota de exemplo",
+          "Valor s/ IVA": 800,
+          "IVA": 0,
+          "Total": 800,
+          "_row": 3
+        },
+        {
+          "Trabalho": "Trabalho B",
+          "Pessoa": "Pessoa 2",
+          "Função": "Realizador / 3D Artist",
+          "Valor": 1000,
+          "Tipo de IVA": "Sem IVA",
+          "Fechado": false,
+          "Contacto": "",
+          "Notas": "",
+          "Valor s/ IVA": 1000,
+          "IVA": 0,
+          "Total": 1000,
+          "_row": 4
+        }
+      ]
+    },
+    "Custos empresa": {
+      "header": [
+        "Ano",
+        "Mês",
+        "Nome",
+        "Valor",
+        "Tipo de IVA",
+        "Pago",
+        "Notas",
+        "Valor s/ IVA",
+        "IVA",
+        "Total"
+      ],
+      "computed": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true
+      ],
+      "rows": [
+        {
+          "Ano": 2026,
+          "Mês": "Junho",
+          "Nome": "Logo",
+          "Valor": 200,
+          "Tipo de IVA": "Sem IVA",
+          "Pago": true,
+          "Notas": "Nota de exemplo",
+          "Valor s/ IVA": 200,
+          "IVA": 0,
+          "Total": 200,
+          "_row": 2
+        },
+        {
+          "Ano": 2027,
+          "Mês": "Janeiro",
+          "Nome": "Contabilidade",
+          "Valor": 246,
+          "Tipo de IVA": "IVA incluído",
+          "Pago": false,
+          "Notas": "",
+          "Valor s/ IVA": 200,
+          "IVA": 46,
+          "Total": 246,
+          "_row": 3
+        }
+      ]
+    },
+    "Leads": {
+      "header": [
+        "Nome",
+        "Tipo",
+        "Contactos (redes / site)",
+        "Telefone",
+        "Fase",
+        "Serviço",
+        "Prioridade",
+        "Detalhe",
+        "Porquê abordar",
+        "Email",
+        "Notas",
+        "Último toque"
+      ],
+      "computed": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "rows": [
+        {
+          "Nome": "Lead 1",
+          "Tipo": "Produtora",
+          "Contactos (redes / site)": "https://www.instagram.com/exemplo1/ | https://exemplo1.example",
+          "Telefone": "+351 900 000 001",
+          "Fase": "Novo",
+          "Serviço": "Ambos",
+          "Prioridade": "Alta",
+          "Detalhe": "Descrição de exemplo",
+          "Porquê abordar": "Motivo de exemplo",
+          "Email": "lead1@example.com",
+          "Notas": "",
+          "Último toque": "",
+          "_row": 2
+        },
+        {
+          "Nome": "Lead 2",
+          "Tipo": "Produtora, VFX company",
+          "Contactos (redes / site)": "https://www.instagram.com/exemplo2/ | https://exemplo2.example",
+          "Telefone": "",
+          "Fase": "Contactado",
+          "Serviço": "VFX / 3D",
+          "Prioridade": "Média",
+          "Detalhe": "Descrição de exemplo",
+          "Porquê abordar": "Motivo de exemplo",
+          "Email": "lead2@example.com",
+          "Notas": "Nota de exemplo",
+          "Último toque": "2026-10-03",
+          "_row": 3
+        }
+      ]
+    }
+  }
+}

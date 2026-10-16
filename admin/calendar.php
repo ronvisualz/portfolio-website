@@ -166,7 +166,8 @@ $semanas = (int)ceil(((int)$first->format('N') - 1 + (int)$first->format('t')) /
       </td>
       <td>
         <?php if ($ev['project_id']): ?>
-          <a href="/admin/project.php?id=<?= (int)$ev['project_id'] ?>"><?= e($ev['job_name']) ?></a>
+          <?php /* Os trabalhos vivem agora na folha Google: encontram-se pelo nome. */ ?>
+          <a href="/admin/project.php?n=<?= e(rawurlencode((string)$ev['job_name'])) ?>"><?= e($ev['job_name']) ?></a>
         <?php else: ?>
           <span class="muted">—</span>
         <?php endif; ?>

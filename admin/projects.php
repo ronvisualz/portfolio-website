@@ -1,213 +1,263 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require __DIR__ . '/inc/sheet.php';
 $user = require_login();
 
-$s   = settings($pdo);
-$vat = (float)($s['vat_rate'] ?? 23);
+// Tudo o que esta página mostra e grava vive na folha Google:
+// separadores Trabalhos, Equipa e Custos empresa. A taxa é a das fórmulas.
+$vat = SHEET_VAT;
+
+/** O ano e o mês que vêm de um formulário. */
+function form_year(string $key): int {
+    $y = (int)($_POST[$key] ?? date('Y'));
+    return ($y >= 2000 && $y <= 2100) ? $y : (int)date('Y');
+}
+function form_month(string $key): string {
+    return sheet_month_out(((int)($_POST[$key] ?? 0)) ?: null);
+}
+function form_vat_mode(): string {
+    $mode = (string)($_POST['vat_mode'] ?? 'plus');
+    return isset(VAT_MODES[$mode]) ? $mode : 'plus';
+}
+
+/**
+ * A chave com que a folha confirma que a linha ainda é a mesma:
+ * Equipa → Trabalho + Função; Custos empresa → Nome.
+ */
+function cost_match(): array {
+    return ($_POST['src'] ?? '') === 'company'
+        ? ['Nome' => (string)($_POST['k_name'] ?? '')]
+        : ['Trabalho' => (string)($_POST['k_job'] ?? ''), 'Função' => (string)($_POST['k_role'] ?? '')];
+}
+function cost_tab(): string {
+    return ($_POST['src'] ?? '') === 'company' ? 'Custos empresa' : 'Equipa';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
-    $do  = $_POST['do'] ?? '';
-    $tab = (string)($_POST['tab'] ?? 'todos');
+    $do   = $_POST['do'] ?? '';
+    $tab  = (string)($_POST['tab'] ?? 'todos');
     $back = '/admin/projects.php?tab=' . urlencode($tab);
+    $row  = (int)($_POST['row'] ?? 0);
+    $name = (string)($_POST['name_key'] ?? '');
 
     if ($do === 'create') {
-        // Se o valor escrito já trazia IVA lá dentro, tira-se agora:
-        // na base de dados o budget fica sempre limpo.
-        $gross = isset($_POST['amount_includes_vat']);
-        $st = $pdo->prepare(
-            "INSERT INTO projects (year, name, kind, type_label, start_month, budget_net,
-                                   is_international, has_vat, expenses_mode,
-                                   expenses_manual, is_paid, notes)
-             VALUES (?,?,'job',?,?,?,?,?,'crew',0,?,?)"
-        );
-        $st->execute([
-            (int)($_POST['year'] ?? date('Y')),
-            trim((string)($_POST['name'] ?? '')) ?: 'Sem nome',
-            trim((string)($_POST['type_label'] ?? '')),
-            ((int)($_POST['start_month'] ?? 0)) ?: null,
-            net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
-            isset($_POST['is_international']) ? 1 : 0,
-            isset($_POST['has_vat']) ? 1 : 0,
-            isset($_POST['is_paid']) ? 1 : 0,
-            trim((string)($_POST['notes'] ?? '')),
-        ]);
-        flash('Trabalho criado.');
+        $new = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
+        sheet_try(function () use ($new, $vat) {
+            // O nome é a chave que liga o trabalho às linhas da Equipa.
+            if (sheet_job_by_name(sheet_data(true), $new)) {
+                throw new SheetException('Já existe um trabalho chamado «' . $new . '». Escolha outro nome.');
+            }
+            // Se o valor escrito já trazia IVA lá dentro, tira-se agora:
+            // na folha o budget fica sempre limpo.
+            $gross = isset($_POST['amount_includes_vat']);
+            sheet_append('Trabalhos', [
+                'Ano'             => form_year('year'),
+                'Mês'             => form_month('start_month'),
+                'Nome'            => sheet_text($new),
+                'Tipo'            => sheet_text((string)($_POST['type_label'] ?? '')),
+                'Budget (s/ IVA)' => net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
+                'Internacional'   => isset($_POST['is_international']),
+                'Fatura com IVA'  => isset($_POST['has_vat']),
+                'Gastos manuais'  => '',          // soma a Equipa
+                'Pago'            => isset($_POST['is_paid']),
+                'Notas'           => sheet_text((string)($_POST['notes'] ?? '')),
+            ]);
+        }, 'Trabalho criado.');
         redirect($back);
     }
 
     if ($do === 'toggle_paid') {
-        $pdo->prepare('UPDATE projects SET is_paid = 1 - is_paid WHERE id = ?')
-            ->execute([(int)($_POST['id'] ?? 0)]);
+        $to = ($_POST['to'] ?? '') === '1';
+        sheet_try(fn() => sheet_update('Trabalhos', $row, ['Nome' => $name], ['Pago' => $to]),
+                  $to ? 'Marcado como recebido.' : 'Marcado como por receber.');
         redirect($back);
     }
 
     if ($do === 'toggle_vat') {
-        $pdo->prepare('UPDATE projects SET has_vat = 1 - has_vat WHERE id = ?')
-            ->execute([(int)($_POST['id'] ?? 0)]);
+        $to = ($_POST['to'] ?? '') === '1';
+        sheet_try(fn() => sheet_update('Trabalhos', $row, ['Nome' => $name], ['Fatura com IVA' => $to]),
+                  $to ? 'Fatura com IVA.' : 'Fatura sem IVA.');
         redirect($back);
     }
 
     if ($do === 'delete') {
-        $pdo->prepare('DELETE FROM projects WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
-        flash('Trabalho eliminado.');
+        // A folha apaga também as linhas da Equipa deste trabalho.
+        sheet_try(fn() => sheet_delete('Trabalhos', $row, ['Nome' => $name]), 'Trabalho eliminado.');
         redirect($back);
     }
 
     // ── custos ──────────────────────────────────────────────
     // O mesmo formulário serve os dois: se escolher um trabalho,
-    // o custo entra na lista dele; se escolher «Empresa», fica na
-    // estrutura, que existe mesmo sem trabalhos.
-    if ($do === 'add_cost') {
-        $mode = (string)($_POST['vat_mode'] ?? 'plus');
-        if (!isset(VAT_MODES[$mode])) $mode = 'plus';
-        $name  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
+    // o custo entra na Equipa dele; se escolher «Empresa», vai para
+    // Custos empresa, a estrutura que existe mesmo sem trabalhos.
+    if ($do === 'add_cost' || $do === 'save_cost') {
+        $mode  = form_vat_mode();
+        $what  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
         $value = money_in($_POST['amount'] ?? 0);
-        $jobId = (int)($_POST['project_id'] ?? 0);
+        $job   = trim((string)($_POST['job'] ?? ''));
+        $paid  = isset($_POST['is_paid']);
+        $edit  = $do === 'save_cost';
+        $src   = $edit ? (($_POST['src'] ?? '') === 'company' ? 'company' : 'job') : ($job !== '' ? 'job' : 'company');
 
-        if ($jobId > 0) {
-            $pdo->prepare(
-                'INSERT INTO crew (project_id, person, role, fee, vat_mode, notes)
-                 VALUES (?,?,?,?,?,?)'
-            )->execute([
-                $jobId,
-                trim((string)($_POST['person'] ?? '')),
-                $name,
-                $value,
-                $mode,
-                trim((string)($_POST['notes'] ?? '')),
-            ]);
-            flash('Custo acrescentado ao trabalho.');
+        if ($src === 'job') {
+            sheet_try(function () use ($job, $what, $value, $mode, $paid, $edit, $row) {
+                if (!sheet_job_by_name(sheet_data(true), $job)) {
+                    throw new SheetException('O trabalho «' . $job . '» já não existe na folha. Recarregue a página.');
+                }
+                $values = [
+                    'Trabalho'    => sheet_text($job),
+                    'Pessoa'      => sheet_text((string)($_POST['person'] ?? '')),
+                    'Função'      => sheet_text($what),
+                    'Valor'       => $value,           // tal como foi escrito
+                    'Tipo de IVA' => sheet_vat_label($mode),
+                    'Fechado'     => $paid,
+                    'Notas'       => sheet_text((string)($_POST['notes'] ?? '')),
+                ];
+                if ($edit) sheet_update('Equipa', $row, cost_match(), $values);
+                else       sheet_append('Equipa', $values + ['Contacto' => '']);
+            }, $edit ? 'Custo guardado.' : 'Custo acrescentado ao trabalho.');
         } else {
-            $pdo->prepare(
-                'INSERT INTO company_costs (year, month, name, amount, vat_mode, is_paid, notes)
-                 VALUES (?,?,?,?,?,?,?)'
-            )->execute([
-                (int)($_POST['year'] ?? date('Y')),
-                ((int)($_POST['month'] ?? 0)) ?: null,
-                $name,
-                $value,
-                $mode,
-                isset($_POST['is_paid']) ? 1 : 0,
-                trim((string)($_POST['notes'] ?? '')),
-            ]);
-            flash('Custo da empresa acrescentado.');
+            $values = [
+                'Ano'         => form_year('year'),
+                'Mês'         => form_month('month'),
+                'Nome'        => sheet_text($what),
+                'Valor'       => $value,
+                'Tipo de IVA' => sheet_vat_label($mode),
+                'Pago'        => $paid,
+                'Notas'       => sheet_text((string)($_POST['notes'] ?? '')),
+            ];
+            sheet_try(fn() => $edit ? sheet_update('Custos empresa', $row, cost_match(), $values)
+                                    : sheet_append('Custos empresa', $values),
+                      $edit ? 'Custo guardado.' : 'Custo da empresa acrescentado.');
         }
         redirect('/admin/projects.php?tab=custos');
     }
 
     if ($do === 'set_cost_vat') {
-        $mode = (string)($_POST['vat_mode'] ?? 'plus');
-        if (!isset(VAT_MODES[$mode])) $mode = 'plus';
-        $table = ($_POST['src'] ?? '') === 'company' ? 'company_costs' : 'crew';
-        $pdo->prepare("UPDATE {$table} SET vat_mode = ? WHERE id = ?")
-            ->execute([$mode, (int)($_POST['id'] ?? 0)]);
+        $mode = form_vat_mode();
+        sheet_try(fn() => sheet_update(cost_tab(), $row, cost_match(), ['Tipo de IVA' => sheet_vat_label($mode)]),
+                  'IVA do custo: ' . VAT_MODES[$mode] . '.');
         redirect('/admin/projects.php?tab=custos');
     }
 
     if ($do === 'toggle_cost_state') {
-        if (($_POST['src'] ?? '') === 'company') {
-            $pdo->prepare('UPDATE company_costs SET is_paid = 1 - is_paid WHERE id = ?')
-                ->execute([(int)($_POST['id'] ?? 0)]);
-        } else {
-            $pdo->prepare('UPDATE crew SET is_confirmed = 1 - is_confirmed WHERE id = ?')
-                ->execute([(int)($_POST['id'] ?? 0)]);
-        }
+        $to  = ($_POST['to'] ?? '') === '1';
+        $col = ($_POST['src'] ?? '') === 'company' ? 'Pago' : 'Fechado';
+        sheet_try(fn() => sheet_update(cost_tab(), $row, cost_match(), [$col => $to]),
+                  $col === 'Pago' ? ($to ? 'Custo pago.' : 'Custo por pagar.')
+                                  : ($to ? 'Custo fechado.' : 'Custo em aberto.'));
         redirect('/admin/projects.php?tab=custos');
     }
 
     if ($do === 'delete_cost') {
-        $table = ($_POST['src'] ?? '') === 'company' ? 'company_costs' : 'crew';
-        $pdo->prepare("DELETE FROM {$table} WHERE id = ?")->execute([(int)($_POST['id'] ?? 0)]);
-        flash('Custo eliminado.');
+        sheet_try(fn() => sheet_delete(cost_tab(), $row, cost_match()), 'Custo eliminado.');
         redirect('/admin/projects.php?tab=custos');
     }
+
+    redirect($back);
 }
 
 $tabs = ['todos' => 'Trabalhos', 'custos' => 'Custos', 'iva' => 'IVA'];
 $tab  = (string)($_GET['tab'] ?? 'todos');
 if (!isset($tabs[$tab])) $tab = 'todos';
 
-// Sem filtro de ano: cada linha diz o seu mês/ano.
-$rows = $pdo->query(
-    "SELECT * FROM projects WHERE kind = 'job' ORDER BY year DESC, COALESCE(start_month, 13), id"
-)->fetchAll();
-
-$items = [];
-$inNet = 0.0; $jobCost = 0.0; $vatOut = 0.0; $vatIn = 0.0;
-
-foreach ($rows as $p) {
-    $cost = project_expenses($pdo, $p);
-    $vOut = project_vat_out($p, $vat);
-    $vIn  = project_vat_in($pdo, $p, $vat);
-
-    $inNet   += (float)$p['budget_net'];
-    $jobCost += $cost;
-    $vatOut  += $vOut;
-    $vatIn   += $vIn;
-
-    $items[] = [
-        'p'       => $p,
-        'net'     => (float)$p['budget_net'],
-        'cost'    => $cost,
-        'vat_out' => $vOut,
-        'vat_in'  => $vIn,
-        'profit'  => (float)$p['budget_net'] - $cost,
-        'intl'    => (int)$p['is_international'] === 1,
-        'when'    => month_year((int)$p['start_month'], (int)$p['year']),
-    ];
+$d = null; $sheetErr = null;
+try {
+    $d = sheet_data();
+} catch (SheetException $e) {
+    $sheetErr = $e;
 }
 
-// ── todas as linhas de custo, das duas origens ──────────────
+// Sem filtro de ano: cada linha diz o seu mês/ano.
+$items = [];
+$inNet = 0.0; $jobCost = 0.0; $vatOut = 0.0; $vatIn = 0.0;
 $costLines = [];
-foreach ($items as $i) {
-    if ($i['p']['expenses_mode'] !== 'crew') continue;
-    $cq = $pdo->prepare('SELECT * FROM crew WHERE project_id = ? ORDER BY sort_order, id');
-    $cq->execute([(int)$i['p']['id']]);
-    foreach ($cq->fetchAll() as $c) {
+$companyNet = 0.0; $companyVat = 0.0;
+
+if ($d) {
+    foreach ($d['jobs'] as $p) {
+        $inNet   += $p['budget_net'];
+        $jobCost += $p['expenses'];     // [c] Gastos
+        $vatOut  += $p['vat_out'];
+        $vatIn   += $p['vat_in'];
+        $items[] = [
+            'p'       => $p,
+            'net'     => $p['budget_net'],
+            'cost'    => $p['expenses'],
+            'vat_out' => $p['vat_out'],
+            'vat_in'  => $p['vat_in'],
+            'profit'  => $p['profit'],  // [c] Lucro
+            'intl'    => $p['is_international'],
+            'when'    => month_year($p['start_month'], $p['year']),
+        ];
+    }
+
+    // ── todas as linhas de custo, das duas origens ──────────
+    foreach ($items as $i) {
+        if ($i['p']['expenses_mode'] !== 'crew') continue;
+        foreach (sheet_job_crew($d, $i['p']['name']) as $c) {
+            $costLines[] = [
+                'src'   => 'job',
+                'id'    => $c['row'],
+                'name'  => $c['role'] ?: ($c['person'] ?: '—'),
+                'who'   => $c['person'],
+                'ref'   => $i['p']['name'],
+                'refrow'=> $i['p']['row'],
+                'when'  => $i['when'],
+                'raw'   => $c['fee'],
+                'mode'  => $c['vat_mode'],
+                'net'   => $c['net'],
+                'vat'   => $c['vat'],
+                'total' => $c['total'],
+                'on'    => $c['is_confirmed'],
+                'label' => 'Fechado',
+                'keys'  => ['k_job' => $c['job'], 'k_role' => $c['role']],
+                'c'     => $c,
+            ];
+        }
+    }
+    // Linhas da Equipa cujo trabalho não existe (nome mudado à mão na folha):
+    // aparecem, para não ficarem esquecidas, mas não contam em total nenhum.
+    foreach ($d['crew'] as $c) {
+        if ($c['job_row'] !== null) continue;
         $costLines[] = [
-            'src'   => 'job',
-            'id'    => (int)$c['id'],
-            'name'  => $c['role'] ?: ($c['person'] ?: '—'),
-            'who'   => $c['person'],
-            'ref'   => $i['p']['name'],
-            'refid' => (int)$i['p']['id'],
-            'when'  => $i['when'],
-            'raw'   => (float)$c['fee'],
+            'src' => 'job', 'id' => $c['row'], 'name' => $c['role'] ?: ($c['person'] ?: '—'),
+            'who' => $c['person'], 'ref' => $c['job'], 'refrow' => 0, 'when' => '—',
+            'raw' => $c['fee'], 'mode' => $c['vat_mode'], 'net' => $c['net'], 'vat' => $c['vat'],
+            'total' => $c['total'], 'on' => $c['is_confirmed'], 'label' => 'Fechado',
+            'keys' => ['k_job' => $c['job'], 'k_role' => $c['role']], 'c' => $c,
+        ];
+    }
+
+    foreach ($d['company'] as $c) {
+        $companyNet += $c['net'];
+        $companyVat += $c['vat'];
+        $costLines[] = [
+            'src'   => 'company',
+            'id'    => $c['row'],
+            'name'  => $c['name'],
+            'who'   => '',
+            'ref'   => null,
+            'refrow'=> 0,
+            'when'  => month_year($c['start_month'], $c['year']),
+            'raw'   => $c['amount'],
             'mode'  => $c['vat_mode'],
-            'net'   => cost_net($c, $vat),
-            'vat'   => cost_vat($c, $vat),
-            'on'    => (int)$c['is_confirmed'] === 1,
-            'label' => 'Fechado',
+            'net'   => $c['net'],
+            'vat'   => $c['vat'],
+            'total' => $c['total'],
+            'on'    => $c['is_paid'],
+            'label' => 'Pago',
+            'keys'  => ['k_name' => $c['name']],
+            'c'     => $c,
         ];
     }
 }
 
-$company     = company_costs($pdo, $vat);
-$companyNet  = 0.0; $companyVat = 0.0;
-foreach ($company as $c) {
-    $companyNet += $c['net'];
-    $companyVat += $c['vat'];
-    $costLines[] = [
-        'src'   => 'company',
-        'id'    => (int)$c['id'],
-        'name'  => $c['name'],
-        'who'   => '',
-        'ref'   => null,
-        'refid' => 0,
-        'when'  => month_year($c['month'] === null ? null : (int)$c['month'], (int)$c['year']),
-        'raw'   => (float)$c['amount'],
-        'mode'  => $c['vat_mode'],
-        'net'   => $c['net'],
-        'vat'   => $c['vat'],
-        'on'    => (int)$c['is_paid'] === 1,
-        'label' => 'Pago',
-    ];
-}
-
 $outNet = round($jobCost + $companyNet, 2);
 $vatIn  = round($vatIn + $companyVat, 2);
+$vatOut = round($vatOut, 2);
 $vatBalance = round($vatOut - $vatIn, 2);
 
 // Linha à espera de confirmação para ser eliminada.
@@ -215,19 +265,27 @@ $pendingDelete = (int)($_GET['del'] ?? 0);
 $pendingCost   = (string)($_GET['delcost'] ?? '');
 $pendingItem   = null;
 foreach ($items as $i) {
-    if ((int)$i['p']['id'] === $pendingDelete) { $pendingItem = $i; break; }
+    if ($i['p']['row'] === $pendingDelete) { $pendingItem = $i; break; }
 }
 if ($pendingItem === null) $pendingDelete = 0;
 
+// Custo a ser editado no formulário de baixo.
+$editKey  = (string)($_GET['editcost'] ?? '');
+$editLine = null;
+foreach ($costLines as $c) {
+    if ($c['src'] . ':' . $c['id'] === $editKey) { $editLine = $c; break; }
+}
+
 render_header('Carteira', 'projects');
 render_flashes();
+echo sheet_status_line($d);
 
 /** Uma caixa que guarda sozinha ao ser clicada. */
 function tickbox(array $hidden, bool $on, string $label): string {
     ob_start(); ?>
     <form method="post" style="display:inline">
       <?= csrf_field() ?>
-      <?php foreach ($hidden as $k => $v): ?>
+      <?php foreach ($hidden + ['to' => $on ? '0' : '1'] as $k => $v): ?>
         <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$v) ?>">
       <?php endforeach; ?>
       <input type="checkbox" class="tick" onchange="this.form.submit()"
@@ -253,14 +311,22 @@ function vat_select(array $hidden, string $current): string {
     </form>
     <?php return (string)ob_get_clean();
 }
+
+function job_url(array $p): string {
+    return '/admin/project.php?row=' . $p['row'] . '&n=' . rawurlencode($p['name']);
+}
 ?>
 
 <h1>Carteira</h1>
 
+<?php if ($sheetErr): ?>
+  <?= sheet_error_box($sheetErr) ?>
+<?php render_footer(); exit; endif; ?>
+
 <?php if ($pendingItem): ?>
   <div class="flash err">
     Eliminar «<b><?= e($pendingItem['p']['name']) ?></b>»?
-    Apaga também todos os custos deste trabalho. Não há como desfazer —
+    Apaga também todos os custos deste trabalho (as linhas dele na Equipa). Não há como desfazer —
     confirme na linha marcada abaixo.
   </div>
 <?php endif; ?>
@@ -293,10 +359,11 @@ function vat_select(array $hidden, string $current): string {
   <?php if (!$items): ?>
     <tr><td colspan="9" class="empty">Ainda não há trabalhos. Acrescente o primeiro abaixo.</td></tr>
   <?php endif; ?>
-  <?php foreach ($items as $i): $p = $i['p']; $pid = (int)$p['id']; ?>
+  <?php foreach ($items as $i): $p = $i['p']; $pid = $p['row'];
+        $keys = ['row' => $pid, 'name_key' => $p['name'], 'tab' => 'todos']; ?>
     <tr class="<?= $pendingDelete === $pid ? 'pending' : '' ?>">
       <td>
-        <a href="/admin/project.php?id=<?= $pid ?>"><?= e($p['name']) ?></a>
+        <a href="<?= e(job_url($p)) ?>"><?= e($p['name'] !== '' ? $p['name'] : '(sem nome)') ?></a>
         <?php if ($i['intl']): ?><span class="chip">Intl.</span><?php endif; ?>
         <?php if ($p['type_label']): ?>
           <div class="muted" style="font-size:0.62rem"><?= e($p['type_label']) ?></div>
@@ -306,15 +373,16 @@ function vat_select(array $hidden, string $current): string {
       <td class="num"><?= eur($i['net']) ?></td>
       <td class="num <?= $i['vat_out'] > 0 ? '' : 'muted' ?>"><?= $i['vat_out'] > 0 ? eur($i['vat_out']) : '—' ?></td>
       <td class="num <?= $i['vat_in'] > 0 ? 'neg' : 'muted' ?>"><?= $i['vat_in'] > 0 ? eur($i['vat_in']) : '—' ?></td>
-      <td class="mid"><?= tickbox(['do'=>'toggle_vat','id'=>$pid,'tab'=>'todos'], has_vat($p), 'Coletei IVA ao cliente') ?></td>
+      <td class="mid"><?= tickbox(['do' => 'toggle_vat'] + $keys, has_vat($p), 'Coletei IVA ao cliente') ?></td>
       <td class="num b <?= $i['profit'] < 0 ? 'neg' : 'pos' ?>"><?= eur($i['profit']) ?></td>
-      <td class="mid"><?= tickbox(['do'=>'toggle_paid','id'=>$pid,'tab'=>'todos'], (int)$p['is_paid'] === 1, 'Recebido') ?></td>
+      <td class="mid"><?= tickbox(['do' => 'toggle_paid'] + $keys, $p['is_paid'], 'Recebido') ?></td>
       <td class="num nowrap">
         <?php if ($pendingDelete === $pid): ?>
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="id" value="<?= $pid ?>">
+            <input type="hidden" name="row" value="<?= $pid ?>">
+            <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
             <input type="hidden" name="tab" value="todos">
             <button class="btn danger sm" type="submit">Sim, eliminar</button>
           </form>
@@ -344,11 +412,9 @@ function vat_select(array $hidden, string $current): string {
       </div>
       <div class="field">
         <label for="type_label">Tipo de trabalho</label>
-        <input type="text" id="type_label" name="type_label" list="types" placeholder="Edição">
-        <datalist id="types">
-          <option value="Edição"><option value="Animação 3D"><option value="Produção Completa">
-          <option value="Fotografia"><option value="Direção Criativa">
-        </datalist>
+        <select id="type_label" name="type_label">
+          <?= sheet_options(JOB_TYPES, '', '—') ?>
+        </select>
       </div>
       <div class="field">
         <label for="start_month">Mês</label>
@@ -406,38 +472,44 @@ function vat_select(array $hidden, string $current): string {
   <?php if (!$costLines): ?>
     <tr><td colspan="10" class="empty">Ainda não há custos. Acrescente o primeiro abaixo.</td></tr>
   <?php endif; ?>
-  <?php foreach ($costLines as $c): $key = $c['src'] . ':' . $c['id']; ?>
-    <tr class="<?= $pendingCost === $key ? 'pending' : '' ?>">
+  <?php foreach ($costLines as $c): $key = $c['src'] . ':' . $c['id'];
+        $hid = ['src' => $c['src'], 'row' => $c['id']] + $c['keys']; ?>
+    <tr class="<?= $pendingCost === $key || $editKey === $key ? 'pending' : '' ?>">
       <td class="b"><?= e($c['name']) ?>
         <?php if ($c['who']): ?>
           <div class="muted" style="font-size:0.62rem"><?= e($c['who']) ?></div>
         <?php endif; ?>
       </td>
       <td>
-        <?php if ($c['ref'] !== null): ?>
-          <a href="/admin/project.php?id=<?= $c['refid'] ?>"><?= e($c['ref']) ?></a>
-        <?php else: ?>
+        <?php if ($c['ref'] === null): ?>
           <span class="chip exp">Empresa</span>
+        <?php elseif ($c['refrow'] > 0): ?>
+          <a href="<?= e('/admin/project.php?row=' . $c['refrow'] . '&n=' . rawurlencode($c['ref'])) ?>"><?= e($c['ref']) ?></a>
+        <?php else: ?>
+          <?= e($c['ref'] ?: '—') ?>
+          <div class="muted" style="font-size:0.62rem">trabalho não encontrado — não conta</div>
         <?php endif; ?>
       </td>
       <td class="nowrap"><?= e($c['when']) ?></td>
       <td class="num"><?= eur($c['raw']) ?></td>
-      <td><?= vat_select(['do'=>'set_cost_vat','src'=>$c['src'],'id'=>$c['id']], $c['mode']) ?></td>
+      <td><?= vat_select(['do' => 'set_cost_vat'] + $hid, $c['mode']) ?></td>
       <td class="num"><?= eur($c['net']) ?></td>
       <td class="num <?= $c['vat'] > 0 ? '' : 'muted' ?>"><?= $c['vat'] > 0 ? eur($c['vat']) : '—' ?></td>
-      <td class="num b"><?= eur($c['net'] + $c['vat']) ?></td>
-      <td class="mid"><?= tickbox(['do'=>'toggle_cost_state','src'=>$c['src'],'id'=>$c['id']], $c['on'], $c['label']) ?></td>
+      <td class="num b"><?= eur($c['total']) ?></td>
+      <td class="mid"><?= tickbox(['do' => 'toggle_cost_state'] + $hid, $c['on'], $c['label']) ?></td>
       <td class="num nowrap">
         <?php if ($pendingCost === $key): ?>
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="delete_cost">
-            <input type="hidden" name="src" value="<?= e($c['src']) ?>">
-            <input type="hidden" name="id" value="<?= $c['id'] ?>">
+            <?php foreach ($hid as $k => $v): ?>
+              <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$v) ?>">
+            <?php endforeach; ?>
             <button class="btn danger sm" type="submit">Sim, eliminar</button>
           </form>
           <a class="lnk" href="/admin/projects.php?tab=custos">Cancelar</a>
         <?php else: ?>
+          <a class="lnk" href="/admin/projects.php?tab=custos&amp;editcost=<?= e($key) ?>#custo">Editar</a>
           <a class="lnk del" href="/admin/projects.php?tab=custos&amp;delcost=<?= e($key) ?>">Eliminar</a>
         <?php endif; ?>
       </td>
@@ -458,69 +530,104 @@ function vat_select(array $hidden, string $current): string {
 </table>
 </div>
 
-<details class="panel" style="margin-top:2rem">
+<?php
+  // O formulário serve para acrescentar e para editar.
+  $ec  = $editLine['c'] ?? null;
+  $eSrc = $editLine['src'] ?? '';
+  $fMode  = $ec['vat_mode'] ?? 'plus';
+  $fMonth = $eSrc === 'company' ? ($ec['start_month'] ?? 0) : (int)date('n');
+  $fYear  = $eSrc === 'company' ? $ec['year'] : (int)date('Y');
+?>
+<details class="panel" id="custo" style="margin-top:2rem" <?= $editLine ? 'open' : '' ?>>
   <summary style="cursor:pointer;font-size:0.62rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gray)">
-    Adicionar custo
+    <?= $editLine ? 'Editar custo' : 'Adicionar custo' ?>
   </summary>
   <form method="post" style="margin-top:1.2rem">
     <?= csrf_field() ?>
-    <input type="hidden" name="do" value="add_cost">
+    <?php if ($editLine): ?>
+      <input type="hidden" name="do" value="save_cost">
+      <input type="hidden" name="src" value="<?= e($eSrc) ?>">
+      <input type="hidden" name="row" value="<?= (int)$editLine['id'] ?>">
+      <?php foreach ($editLine['keys'] as $k => $v): ?>
+        <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$v) ?>">
+      <?php endforeach; ?>
+    <?php else: ?>
+      <input type="hidden" name="do" value="add_cost">
+    <?php endif; ?>
     <div class="grid">
+      <?php if ($eSrc !== 'company'): ?>
       <div class="field">
         <label for="cref">Referente a</label>
-        <select id="cref" name="project_id">
-          <option value="0">A empresa — custo de estrutura</option>
+        <select id="cref" name="job">
+          <?php if (!$editLine): ?><option value="">A empresa — custo de estrutura</option><?php endif; ?>
           <?php foreach ($items as $i): ?>
-            <option value="<?= (int)$i['p']['id'] ?>"><?= e($i['p']['name']) ?></option>
+            <option value="<?= e($i['p']['name']) ?>" <?= $ec && $ec['job'] === $i['p']['name'] ? 'selected' : '' ?>><?= e($i['p']['name']) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
+      <?php endif; ?>
       <div class="field">
         <label for="cname">O que é</label>
-        <input type="text" id="cname" name="name" required placeholder="Contabilidade / Diretor de Fotografia">
+        <input type="text" id="cname" name="name" required placeholder="Contabilidade / Diretor de Fotografia"
+               value="<?= e($ec ? ($eSrc === 'company' ? $ec['name'] : $ec['role']) : '') ?>">
       </div>
+      <?php if ($eSrc !== 'company'): ?>
       <div class="field">
         <label for="cperson">Quem (só em trabalhos)</label>
-        <input type="text" id="cperson" name="person" placeholder="Nome">
+        <input type="text" id="cperson" name="person" placeholder="Nome" value="<?= e($ec['person'] ?? '') ?>">
       </div>
+      <?php endif; ?>
       <div class="field">
         <label for="camount">Valor (€)</label>
-        <input type="text" id="camount" name="amount" inputmode="decimal" placeholder="0,00" required>
+        <input type="text" id="camount" name="amount" inputmode="decimal" placeholder="0,00" required
+               value="<?= $ec ? number_format($eSrc === 'company' ? $ec['amount'] : $ec['fee'], 2, ',', '') : '' ?>">
       </div>
       <div class="field">
         <label for="cvat">O valor que escrevi</label>
         <select id="cvat" name="vat_mode">
-          <option value="plus" selected>Não inclui IVA — acrescem <?= number_format($vat, 0) ?>%</option>
-          <option value="incl">Já inclui IVA</option>
-          <option value="none">Não tem IVA</option>
+          <option value="plus" <?= $fMode === 'plus' ? 'selected' : '' ?>>Não inclui IVA — acrescem <?= number_format($vat, 0) ?>%</option>
+          <option value="incl" <?= $fMode === 'incl' ? 'selected' : '' ?>>Já inclui IVA</option>
+          <option value="none" <?= $fMode === 'none' ? 'selected' : '' ?>>Não tem IVA</option>
         </select>
       </div>
+      <?php if ($eSrc !== 'job'): ?>
       <div class="field">
-        <label for="cmonth">Mês (só na empresa)</label>
+        <label for="cmonth">Mês<?= $editLine ? '' : ' (só na empresa)' ?></label>
         <select id="cmonth" name="month">
           <option value="">—</option>
           <?php foreach (MONTHS_PT as $i => $m): ?>
-            <option value="<?= $i ?>" <?= $i === (int)date('n') ? 'selected' : '' ?>><?= $m ?></option>
+            <option value="<?= $i ?>" <?= $i === $fMonth ? 'selected' : '' ?>><?= $m ?></option>
           <?php endforeach; ?>
         </select>
       </div>
       <div class="field">
-        <label for="cyear">Ano (só na empresa)</label>
-        <input type="number" id="cyear" name="year" value="<?= (int)date('Y') ?>" min="2020" max="2100">
+        <label for="cyear">Ano<?= $editLine ? '' : ' (só na empresa)' ?></label>
+        <input type="number" id="cyear" name="year" value="<?= (int)$fYear ?>" min="2020" max="2100">
       </div>
+      <?php endif; ?>
       <div class="field wide">
         <label for="cnotes">Notas</label>
-        <input type="text" id="cnotes" name="notes">
+        <input type="text" id="cnotes" name="notes" value="<?= e($ec['notes'] ?? '') ?>">
       </div>
     </div>
     <div class="actions">
-      <label class="check"><input type="checkbox" name="is_paid"> Já está pago</label>
+      <?php if ($eSrc === 'company'): ?>
+        <label class="check"><input type="checkbox" name="is_paid" <?= $ec['is_paid'] ? 'checked' : '' ?>> Já está pago</label>
+      <?php elseif ($eSrc === 'job'): ?>
+        <label class="check"><input type="checkbox" name="is_paid" <?= $ec['is_confirmed'] ? 'checked' : '' ?>> Fechado</label>
+      <?php else: ?>
+        <label class="check"><input type="checkbox" name="is_paid"> Já está pago (na empresa) / fechado (num trabalho)</label>
+      <?php endif; ?>
     </div>
     <div class="actions">
-      <button class="btn" type="submit">Adicionar custo</button>
+      <button class="btn" type="submit"><?= $editLine ? 'Guardar custo' : 'Adicionar custo' ?></button>
+      <?php if ($editLine): ?>
+        <a class="btn ghost" href="/admin/projects.php?tab=custos">Cancelar</a>
+      <?php else: ?>
       <span class="muted" style="font-size:0.68rem">
         Num custo de trabalho a data é a do trabalho; o mês e o ano acima só contam na empresa.
       </span>
+      <?php endif; ?>
     </div>
   </form>
 </details>

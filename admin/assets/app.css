@@ -317,3 +317,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .ev { font-size: 0.58rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ── origem dos dados (folha Google) ───────────── */
+.sheetline {
+  font-size: 0.66rem; letter-spacing: 0.08em; color: var(--gray);
+  margin: 0 0 1.1rem;
+}
+.sheetline a { text-decoration: none; font-weight: 700; }
+.sheetline a:hover { text-decoration: underline; }

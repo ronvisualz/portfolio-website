@@ -1,5 +1,9 @@
 # Real credentials live only on the server — copy config.example.php to config.php there.
 admin/inc/config.php
+# Ligação à folha Google (token) — copie sheet_config.example.php para sheet_config.php no servidor.
+admin/inc/sheet_config.php
+# Cache das leituras da folha.
+admin/inc/cache/
 .DS_Store
 *.log
 
