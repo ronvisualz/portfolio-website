@@ -43,13 +43,18 @@ render_flashes();
     </div>
     <div class="nowrap" style="display:flex;gap:0.5rem">
       <a class="btn ghost sm" href="<?= e($t['install']) ?>">Instalar</a>
-      <a class="btn sm" href="<?= e($t['open']) ?>">Abrir</a>
+      <a class="btn sm js-open" href="<?= e($t['open']) ?>">Abrir</a>
     </div>
   </div>
 
   <ol style="margin:1.2rem 0 0;padding-left:1.2rem;line-height:1.7;font-size:0.85rem">
     <?php foreach ($t['steps'] as $s): ?><li><?= $s /* texto fixo desta página */ ?></li><?php endforeach; ?>
   </ol>
+  <div class="flash err js-open-help" hidden style="margin:1.1rem 0 0;line-height:1.55">
+    Não abriu nada? Então o programa ainda não está instalado neste computador: faça os passos 1 e 2.
+    Se já os fez, carregue nas teclas <b>Windows + R</b>, escreva <b>topperfarm://open</b> e Enter:
+    se aparecer um erro, corra outra vez o <b>Instalar.bat</b> e envie uma captura do que ele mostrar.
+  </div>
   <p class="muted" style="font-size:0.75rem;margin:0.9rem 0 0;line-height:1.5">
     Precisa de: <?= e($t['needs']) ?>
     Se “Abrir” não fizer nada, ainda não foi instalado neste computador.
@@ -58,4 +63,17 @@ render_flashes();
 </section>
 <?php endforeach; ?>
 
+<script>
+// Um link topperfarm:// que o Windows não conhece não dá erro nenhum: o browser
+// simplesmente não faz nada. Se a página não perder o foco logo a seguir
+// (sinal de que o programa abriu), mostramos como resolver.
+document.querySelectorAll('.js-open').forEach(function (a) {
+  a.addEventListener('click', function () {
+    var help = a.closest('section').querySelector('.js-open-help'), left = false;
+    var onBlur = function () { left = true; };
+    window.addEventListener('blur', onBlur, { once: true });
+    setTimeout(function () { window.removeEventListener('blur', onBlur); if (!left) help.hidden = false; }, 2500);
+  });
+});
+</script>
 <?php render_footer();
