@@ -22,6 +22,7 @@ function render_header(string $title, string $active = ''): void {
         'projects'  => ['Carteira',  '/admin/projects.php'],
         'calendar'  => ['Calendário','/admin/calendar.php'],
         'leads'     => ['Leads',     '/admin/leads.php'],
+        'tools'     => ['Tools',     '/admin/tools.php'],
     ];
     ?><!DOCTYPE html>
 <html lang="pt">
