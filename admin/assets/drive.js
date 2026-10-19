@@ -72,16 +72,53 @@
     });
   }
 
+
+  // Pastas arrastadas: percorre a árvore e guarda o caminho relativo de cada ficheiro.
+  function walk(entries) {
+    var files = [], dirs = [];
+    function readAll(reader) {
+      return new Promise(function (res, rej) {
+        var out = [];
+        (function next() {
+          reader.readEntries(function (batch) {
+            if (!batch.length) return res(out);
+            out = out.concat(Array.prototype.slice.call(batch)); next();
+          }, rej);
+        })();
+      });
+    }
+    function visit(en, path) {
+      if (en.isFile) {
+        return new Promise(function (res) {
+          en.file(function (f) {
+            if (!/^(\.DS_Store|Thumbs\.db|desktop\.ini)$/i.test(f.name)) { files.push(f); dirs.push(path); }
+            res();
+          }, function () { res(); });
+        });
+      }
+      if (en.isDirectory) {
+        var p = path + en.name + '/';
+        return readAll(en.createReader()).then(function (kids) {
+          return kids.reduce(function (pr, k) { return pr.then(function () { return visit(k, p); }); }, Promise.resolve());
+        });
+      }
+      return Promise.resolve();
+    }
+    return entries.reduce(function (pr, en) { return pr.then(function () { return visit(en, ''); }); }, Promise.resolve())
+      .then(function () { return { files: files, dirs: dirs }; });
+  }
+
   // ── fila de envios ──────────────────────────────────────
   var queue = document.getElementById('drive-queue');
   var pending = [], running = 0, uploadedAny = false;
 
-  function addFiles(list) {
+  function addFiles(list, dirs) {
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
+      var sub = (dirs && dirs[i]) || '';
       var li = el('li', 'dq-item');
       var top = el('div', 'dq-top');
-      top.appendChild(el('span', 'dq-name', f.name));
+      top.appendChild(el('span', 'dq-name', sub + f.name));
       var st = el('span', 'dq-status muted', size(f.size) + ' · em espera');
       top.appendChild(st);
       var cancel = el('button', 'btn ghost sm', 'Cancelar');
@@ -90,7 +127,7 @@
       li.appendChild(top);
       var bar = el('div', 'dq-bar'); var fill = el('div', 'dq-fill'); bar.appendChild(fill); li.appendChild(bar);
       queue.appendChild(li);
-      var job = { file: f, li: li, st: st, fill: fill, btn: cancel, xhrs: new Set(), cancelled: false, mp: null };
+      var job = { file: f, prefix: PREFIX + sub, li: li, st: st, fill: fill, btn: cancel, xhrs: new Set(), cancelled: false, mp: null };
       cancel.addEventListener('click', cancelJob.bind(null, job));
       pending.push(job);
     }
@@ -131,7 +168,7 @@
   function run(job) {
     var f = job.file;
     status(job, size(f.size) + ' · a preparar…', 0);
-    var sk = 'r2mp:' + PREFIX + '\u0000' + f.name + '\u0000' + f.size + '\u0000' + f.lastModified;
+    var sk = 'r2mp:' + job.prefix + '\u0000' + f.name + '\u0000' + f.size + '\u0000' + f.lastModified;
     var saved = load(sk);
     var start = saved
       ? api({ do: 'mp_parts', key: saved.key, uploadId: saved.uploadId }).then(function (j) {
@@ -143,7 +180,7 @@
       : sign(false);
 
     function sign(overwrite) {
-      return api({ do: 'sign', prefix: PREFIX, name: f.name, type: f.type || '', size: f.size, overwrite: overwrite }).then(function (j) {
+      return api({ do: 'sign', prefix: job.prefix, name: f.name, type: f.type || '', size: f.size, overwrite: overwrite }).then(function (j) {
         if (!j.ok && j.exists && !job.cancelled) {
           if (window.confirm('Já existe «' + f.name + '» nesta pasta. Substituir?')) return sign(true);
           var e = new Error('Não enviado (já existia).'); e.quiet = true; throw e;
@@ -252,7 +289,24 @@
     ['dragleave', 'drop'].forEach(function (t) {
       drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); });
     });
-    drop.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+    drop.addEventListener('drop', function (e) {
+      var dt = e.dataTransfer;
+      if (!dt) return;
+      var items = dt.items, entries = [];
+      if (items && items.length && items[0].webkitGetAsEntry) {
+        for (var i = 0; i < items.length; i++) {
+          var en = items[i].kind === 'file' ? items[i].webkitGetAsEntry() : null;
+          if (en) entries.push(en);
+        }
+      }
+      if (!entries.length) { if (dt.files.length) addFiles(dt.files); return; }
+      say('A ler as pastas…', '');
+      walk(entries).then(function (r) {
+        if (!r.files.length) { say('Não encontrei ficheiros nessa pasta.', 'err'); return; }
+        say(r.files.length + ' ficheiro(s) em fila.', 'ok');
+        addFiles(r.files, r.dirs);
+      }, function () { say('Não foi possível ler a pasta arrastada.', 'err'); });
+    });
   }
   // Largar fora da zona não abre o ficheiro no separador.
   window.addEventListener('dragover', function (e) { e.preventDefault(); });
