@@ -9,3 +9,5 @@ admin/inc/cache/
 
 # Licensed font files (Futura Now Headline, Monotype) are deployed to the server only, never committed.
 assets/fonts/
+# Cloudflare R2 (Drive) — copie r2_config.example.php para r2_config.php no servidor.
+admin/inc/r2_config.php

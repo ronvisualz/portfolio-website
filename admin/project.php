@@ -64,12 +64,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $crewKey = ['Trabalho' => $p['name'], 'Função' => (string)($_POST['k_role'] ?? '')];
     $crewRow = (int)($_POST['crew_row'] ?? 0);
 
-    // A pasta do trabalho no Drive: criada (se faltar) só quando se carrega no botão.
+    // A pasta do trabalho no Drive (R2): criada (se faltar) só quando se carrega no botão.
     if ($do === 'drive_folder') {
+        $year = $p['year'] ?: (int)date('Y');
+        $name = $p['name'] !== '' ? $p['name'] : 'Sem nome';
+        if (!r2_config()) redirect('/admin/drive.php');   // mostra os passos de configuração
         try {
-            $folder = drive_project($p['name'] !== '' ? $p['name'] : 'Sem nome', $p['year'] ?: (int)date('Y'));
-            redirect('/admin/drive.php?f=' . rawurlencode((string)$folder['id']));
-        } catch (SheetException $e) {
+            redirect(drive_page(drive_project($name, $year)));
+        } catch (R2Exception $e) {
             flash('Não foi possível abrir a pasta no Drive. ' . $e->getMessage(), 'err');
             redirect($here);
         }
