@@ -14,7 +14,7 @@ require_once __DIR__ . '/r2.php';
 
 /** As pastas de topo (aparecem sempre na raiz, mesmo sem marcador). */
 const DRIVE_ROOTS = ['Empresa/', 'Projetos/', 'Showreel e Portfolio/'];
-const DRIVE_PROJECT_SUBS = ['Vídeos', 'Faturas', 'Documentos'];
+const DRIVE_PROJECT_SUBS = [];   // por agora sem subpastas: os ficheiros ficam soltos na pasta do projeto
 
 /** drive.php?p=<prefixo> (com extras já codificados, «&a=b»). */
 function drive_page(string $p, string $extra = ''): string {
