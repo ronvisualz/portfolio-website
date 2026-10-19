@@ -1,0 +1,16 @@
+/* Paginação das tabelas — acompanha .tabs / .lnk de app.css. */
+.pager {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: 0.5rem; margin: 0.9rem 0 0;
+  font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray);
+}
+.pager .pg-btn {
+  display: inline-block; padding: 0.45rem 0.8rem;
+  border: 1px solid var(--hairline); color: var(--ink); text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pager a.pg-btn:hover { color: var(--black); background: var(--sky); border-color: var(--black); }
+.pager .pg-btn.off { color: var(--faint); cursor: default; }
+.pager .pg-at { color: var(--black); font-weight: 700; }
+.pager .pg-sep { color: var(--faint); }
+@media (max-width: 560px) { .pager { justify-content: center; } }

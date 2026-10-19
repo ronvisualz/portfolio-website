@@ -13,9 +13,19 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
+
+/** MySQL em produção; SQLite só na bancada de testes local. */
+function db_is_sqlite(PDO $pdo): bool {
+    return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+}
 
 function db_has_table(PDO $pdo, string $table): bool {
+    if (db_is_sqlite($pdo)) {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?");
+        $st->execute([$table]);
+        return (int)$st->fetchColumn() > 0;
+    }
     $st = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.tables
           WHERE table_schema = DATABASE() AND table_name = ?'
@@ -25,6 +35,12 @@ function db_has_table(PDO $pdo, string $table): bool {
 }
 
 function db_has_column(PDO $pdo, string $table, string $column): bool {
+    if (db_is_sqlite($pdo)) {
+        foreach ($pdo->query('PRAGMA table_info(' . $pdo->quote($table) . ')')->fetchAll() as $c) {
+            if ($c['name'] === $column) return true;
+        }
+        return false;
+    }
     $st = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.columns
           WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
@@ -33,7 +49,13 @@ function db_has_column(PDO $pdo, string $table, string $column): bool {
     return (int)$st->fetchColumn() > 0;
 }
 
-function run_migrations(PDO $pdo): void {
+/**
+ * $from é a versão que a base tinha. Os passos 01–05 já estavam
+ * todos feitos numa base na versão 5, por isso só correm abaixo dela.
+ */
+function run_migrations(PDO $pdo, int $from = 0): void {
+
+  if ($from < 5) {
 
     // ── 01 · «Tem IVA» em cada registo ──────────────────────
     if (!db_has_column($pdo, 'projects', 'has_vat')) {
@@ -130,8 +152,90 @@ function run_migrations(PDO $pdo): void {
         }
     }
 
-    $pdo->prepare(
-        "INSERT INTO settings (skey, svalue) VALUES ('schema_version', ?)
-         ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)"
-    )->execute([(string)SCHEMA_VERSION]);
+  } // fim dos passos 01–05
+
+    // ── 06 · equipa e tarefas ───────────────────────────────
+    //
+    // Só cria o que falta. As tabelas antigas não são tocadas, e a
+    // equipa só é semeada quando a tabela está vazia.
+    migrate_tasks($pdo);
+
+    if (db_is_sqlite($pdo)) {
+        $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")
+            ->execute([(string)SCHEMA_VERSION]);
+    } else {
+        $pdo->prepare(
+            "INSERT INTO settings (skey, svalue) VALUES ('schema_version', ?)
+             ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)"
+        )->execute([(string)SCHEMA_VERSION]);
+    }
+}
+
+/** As cinco cores da equipa, da paleta da casa. Novos membros repetem o ciclo. */
+const TEAM_COLORS = ['#81CFE3', '#FBAE9C', '#FFC718', '#9CCB8F', '#B9A6E3'];
+
+function migrate_tasks(PDO $pdo): void {
+    $lite = db_is_sqlite($pdo);
+
+    if (!db_has_table($pdo, 'team_members')) {
+        $pdo->exec($lite
+            ? "CREATE TABLE team_members (
+                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name       TEXT    NOT NULL,
+                 color      TEXT    NOT NULL DEFAULT '',
+                 position   INTEGER NOT NULL DEFAULT 0,
+                 created_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+               )"
+            : "CREATE TABLE team_members (
+                 id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                 name       VARCHAR(120) NOT NULL,
+                 color      VARCHAR(16)  NOT NULL DEFAULT '',
+                 position   INT          NOT NULL DEFAULT 0,
+                 created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+
+    if ((int)$pdo->query('SELECT COUNT(*) FROM team_members')->fetchColumn() === 0) {
+        $ins = $pdo->prepare('INSERT INTO team_members (name, color, position) VALUES (?,?,?)');
+        $seed = ['Diogo Vasconcelos', 'Rodrigo Nicolau', 'Valdir Furtado', 'Guilherme Albano', 'Santiago Apolónio'];
+        foreach ($seed as $i => $name) {
+            $ins->execute([$name, TEAM_COLORS[$i], $i + 1]);
+        }
+    }
+
+    if (!db_has_table($pdo, 'tasks')) {
+        $pdo->exec($lite
+            ? "CREATE TABLE tasks (
+                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                 title       TEXT    NOT NULL,
+                 description TEXT    NULL,
+                 member_id   INTEGER NULL REFERENCES team_members(id) ON DELETE SET NULL,
+                 job_name    TEXT    NOT NULL DEFAULT '',
+                 due_date    TEXT    NULL,
+                 priority    TEXT    NOT NULL DEFAULT 'media',
+                 status      TEXT    NOT NULL DEFAULT 'todo',
+                 position    INTEGER NOT NULL DEFAULT 0,
+                 created_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                 updated_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+               )"
+            : "CREATE TABLE tasks (
+                 id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                 title       VARCHAR(200) NOT NULL,
+                 description TEXT         NULL,
+                 member_id   INT UNSIGNED NULL,
+                 job_name    VARCHAR(160) NOT NULL DEFAULT '',
+                 due_date    DATE         NULL,
+                 priority    ENUM('alta','media','baixa') NOT NULL DEFAULT 'media',
+                 status      ENUM('todo','doing','review','done') NOT NULL DEFAULT 'todo',
+                 position    INT          NOT NULL DEFAULT 0,
+                 created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                 updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                 CONSTRAINT fk_task_member FOREIGN KEY (member_id)
+                   REFERENCES team_members(id) ON DELETE SET NULL,
+                 INDEX idx_stack (member_id, position),
+                 INDEX idx_due (due_date)
+               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
 }

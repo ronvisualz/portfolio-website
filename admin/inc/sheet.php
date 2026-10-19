@@ -133,7 +133,7 @@ function sheet_link(): string {
  * (CURLOPT_POSTREDIR = 0, o comportamento por omissão), que é exatamente o
  * que o Google espera — o POST já foi executado e o GET vai buscar a resposta.
  */
-function sheet_call(string $method, array $params): array {
+function sheet_call(string $method, array $params, int $timeout = 20): array {
     $cfg = sheet_config();
     if (!function_exists('curl_init')) {
         throw new SheetException('Este servidor não tem a extensão cURL do PHP ativa, que é precisa para falar com a folha Google.');
@@ -157,7 +157,7 @@ function sheet_call(string $method, array $params): array {
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS      => 5,
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_ENCODING       => '',
         CURLOPT_USERAGENT      => 'topper-admin/1.0',
     ];

@@ -19,9 +19,9 @@ function render_header(string $title, string $active = ''): void {
     $u = current_user();
     $nav = [
         'dashboard' => ['Painel',    '/admin/dashboard.php'],
-        'projects'  => ['Carteira',  '/admin/projects.php'],
         'calendar'  => ['Calendário','/admin/calendar.php'],
         'leads'     => ['Leads',     '/admin/leads.php'],
+        'drive'     => ['Drive',     '/admin/drive.php'],
         'tools'     => ['Tools',     '/admin/tools.php'],
     ];
     ?><!DOCTYPE html>

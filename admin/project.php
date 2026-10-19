@@ -2,6 +2,7 @@
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/drive.php';
 $user = require_login();
 
 // Um trabalho é uma linha do separador Trabalhos: project.php?row=5.
@@ -20,7 +21,7 @@ function job_fail(string $html, ?array $d): void {
     render_header('Carteira', 'projects');
     render_flashes();
     echo sheet_status_line($d);
-    echo '<h1>Carteira</h1><div class="sub"><a href="/admin/projects.php?tab=todos">← Carteira</a></div>';
+    echo '<h1>Carteira</h1><div class="sub"><a href="/admin/dashboard.php#carteira">← Painel</a></div>';
     echo $html;
     render_footer();
     exit;
@@ -45,7 +46,7 @@ if ($want !== '' && (!$p || $p['name'] !== $want)) {
 if (!$p) {
     http_response_code(404);
     job_fail('<div class="flash err">Este trabalho não está na folha (pode ter sido apagado ou mudado de nome). '
-           . '<a href="/admin/projects.php?tab=todos">Voltar à Carteira</a></div>', $d);
+           . '<a href="/admin/dashboard.php#carteira">Voltar ao Painel</a></div>', $d);
 }
 $id   = $p['row'];
 $here = job_page($id, $p['name']);
@@ -62,6 +63,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $crewKey = ['Trabalho' => $p['name'], 'Função' => (string)($_POST['k_role'] ?? '')];
     $crewRow = (int)($_POST['crew_row'] ?? 0);
+
+    // A pasta do trabalho no Drive: criada (se faltar) só quando se carrega no botão.
+    if ($do === 'drive_folder') {
+        try {
+            $folder = drive_project($p['name'] !== '' ? $p['name'] : 'Sem nome', $p['year'] ?: (int)date('Y'));
+            redirect('/admin/drive.php?f=' . rawurlencode((string)$folder['id']));
+        } catch (SheetException $e) {
+            flash('Não foi possível abrir a pasta no Drive. ' . $e->getMessage(), 'err');
+            redirect($here);
+        }
+    }
 
     if ($do === 'save_project') {
         $name  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
@@ -173,10 +185,18 @@ echo sheet_status_line($d);
 
 <h1><?= e($p['name'] !== '' ? $p['name'] : '(sem nome)') ?></h1>
 <div class="sub">
-  <a href="/admin/projects.php?tab=todos">← Carteira</a>
+  <a href="/admin/dashboard.php#carteira">← Painel</a>
   · <?= e($p['type_label'] ?: 'Trabalho') ?>
   · <?= month_name($p['start_month']) ?> <?= $p['year'] ?: '' ?>
 </div>
+
+<form method="post" class="actions" style="margin:-0.8rem 0 1.6rem">
+  <?= csrf_field() ?>
+  <input type="hidden" name="do" value="drive_folder">
+  <input type="hidden" name="row" value="<?= $id ?>">
+  <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
+  <button class="btn ghost sm" type="submit">Pasta no Drive</button>
+</form>
 
 <div class="stats">
   <div class="stat hero <?= $profit < 0 ? 'neg' : '' ?>">
@@ -465,7 +485,7 @@ echo sheet_status_line($d);
   </p>
   <div class="actions">
     <button class="btn" type="submit">Guardar</button>
-    <a class="btn ghost" href="/admin/projects.php?tab=todos">Voltar</a>
+    <a class="btn ghost" href="/admin/dashboard.php#carteira">Voltar</a>
   </div>
 </form>
 

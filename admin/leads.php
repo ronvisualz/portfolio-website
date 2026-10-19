@@ -2,6 +2,7 @@
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/paginate.php';
 $user = require_login();
 
 // As leads vivem no separador «Leads» da folha Google.
@@ -11,7 +12,7 @@ const STAGES = LEAD_STAGES;
 /** Os filtros atuais, para voltar a eles depois de gravar. */
 function lead_filters(array $src): array {
     $f = [];
-    foreach (['q', 'status', 'tipo', 'prio'] as $k) {
+    foreach (['q', 'status', 'tipo', 'prio', 'pl'] as $k) {   // pl = página da tabela
         $v = trim((string)($src[$k] ?? ''));
         if ($v !== '') $f[$k] = $v;
     }
@@ -133,6 +134,13 @@ $pendingLead = (int)($_GET['del'] ?? 0);
 $editLead    = (int)($_GET['edit'] ?? 0);
 $el = ($d && $editLead) ? sheet_lead_by_row($d, $editLead) : null;
 
+// 8 por página (?pl=); uma lead a eliminar/editar abre na página onde está.
+foreach ($rows as $n => $l) {
+    if ($l['row'] === $pendingLead || $l['row'] === $editLead) $_GET['pl'] = intdiv($n, PAGE_SIZE) + 1;
+}
+$pgL = paginate($rows, 'pl');
+if ($pgL['page'] > 1) $filters['pl'] = (string)$pgL['page']; else unset($filters['pl']);
+
 /** Os filtros como campos escondidos, para os formulários de POST. */
 function back_fields(array $f): string {
     $h = '';
@@ -154,6 +162,7 @@ const PRIO_CHIP = ['Alta' => 'no', 'Média' => 'wait', 'Baixa' => ''];
 render_header('Leads', 'leads');
 render_flashes();
 echo sheet_status_line($d);
+echo paginate_css();
 ?>
 
 <h1>Leads</h1>
@@ -190,7 +199,7 @@ echo sheet_status_line($d);
     <?= sheet_options(LEAD_PRIORITIES, $fPrio, 'Todas as prioridades') ?>
   </select>
   <button class="btn sm" type="submit">Filtrar</button>
-  <?php if ($filters): ?><a class="lnk" href="/admin/leads.php">Limpar</a><?php endif; ?>
+  <?php if (array_diff_key($filters, ['pl' => 1])): ?><a class="lnk" href="/admin/leads.php">Limpar</a><?php endif; ?>
 </form>
 
 <div class="tablewrap">
@@ -203,7 +212,7 @@ echo sheet_status_line($d);
   <?php if (!$rows): ?>
     <tr><td colspan="7" class="empty">Nenhuma lead encontrada.</td></tr>
   <?php endif; ?>
-  <?php foreach ($rows as $l): $lid = $l['row']; ?>
+  <?php foreach ($pgL['rows'] as $l): $lid = $l['row']; ?>
     <tr class="<?= $pendingLead === $lid || ($el && $el['row'] === $lid) ? 'pending' : '' ?>">
       <td>
         <span class="b"><?= e($l['name']) ?></span>
@@ -275,6 +284,7 @@ echo sheet_status_line($d);
   </tbody>
 </table>
 </div>
+<?= page_nav($pgL, ['del', 'edit']) ?>
 
 <?php
   $v = $el ?? ['name' => '', 'types' => [], 'contacts' => [], 'phone' => '', 'stage' => 'novo', 'stage_label' => '',

@@ -26,6 +26,7 @@ function handle_(p) {
   if (!p || p.token !== TOKEN) return json_({ ok: false, error: 'token' });
   try {
     if (p.action === 'read') return json_({ ok: true, tabs: readAll_(), at: new Date().toISOString() });
+    if (String(p.action || '').indexOf('drive_') === 0) return json_(drive_(p));
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
@@ -189,4 +190,175 @@ function deleteCrew_(name) {
   for (let i = x.vals.length - 1; i >= 0; i--) {
     if (String(x.vals[i][0]) === name) x.sh.deleteRow(i + 2);
   }
+}
+
+// ── Google Drive ───────────────────────────────────────────
+//
+// Pasta «Topper Digital» e tudo o que está dentro dela. Nenhum pedido
+// chega a ficheiros fora desta pasta: cada id é confirmado subindo pelos
+// pais até à raiz (inside_). Precisa de autorização para o Drive: depois
+// de colar esta versão, correr uma vez a função autorizarDrive no editor.
+
+const ROOT_ID = '11mgqHYd1oqLvOMQdj6C0R-Mgtn9WNXNF';
+const PROJECTS_ID = '1p7VKCw1iZSpb4xFTugX1wzyVLsfSho-a';   // 02 Projetos
+const PROJECT_SUBFOLDERS = ['Vídeos', 'Faturas', 'Documentos'];
+const DRIVE_MAX_BYTES = 25 * 1024 * 1024;
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+/** Correr à mão uma vez, no editor, para dar acesso ao Drive. */
+function autorizarDrive() { return DriveApp.getFolderById(ROOT_ID).getName(); }
+
+function drive_(p) {
+  const a = p.action;
+  if (a === 'drive_list') return driveList_(p);
+  const write = ['drive_mkdir', 'drive_upload', 'drive_project', 'drive_trash'];
+  if (write.indexOf(a) < 0) return { ok: false, error: 'action' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (a === 'drive_mkdir')   return driveMkdir_(p);
+    if (a === 'drive_upload')  return driveUpload_(p);
+    if (a === 'drive_project') return driveProject_(p);
+    return driveTrash_(p);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function validId_(id) { return typeof id === 'string' && /^[A-Za-z0-9_-]{10,100}$/.test(id); }
+
+/** Verdadeiro se o item (pasta ou ficheiro) está dentro da raiz (ou é a raiz). */
+function inside_(item) {
+  if (item.getId() === ROOT_ID) return true;
+  const seen = {};
+  let queue = [item];
+  for (let depth = 0; depth < 30 && queue.length; depth++) {
+    const next = [];
+    for (let i = 0; i < queue.length; i++) {
+      const it = queue[i].getParents();
+      while (it.hasNext()) {
+        const f = it.next(), id = f.getId();
+        if (id === ROOT_ID) return true;
+        if (!seen[id]) { seen[id] = true; next.push(f); }
+      }
+    }
+    queue = next;
+  }
+  return false;
+}
+
+function folder_(id) {
+  if (!id) id = ROOT_ID;
+  if (!validId_(id)) throw new Error('Pasta inválida.');
+  let f;
+  try { f = DriveApp.getFolderById(id); } catch (e) { throw new Error('Pasta não encontrada.'); }
+  if (f.isTrashed() || !inside_(f)) throw new Error('Pasta fora da pasta Topper Digital.');
+  return f;
+}
+
+function cleanName_(n) {
+  n = String(n || '').replace(/[\u0000-\u001f\/\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!n) throw new Error('Falta o nome.');
+  if (n.length > 200) n = n.slice(0, 200);
+  return n;
+}
+
+function folderInfo_(f) {
+  return { id: f.getId(), name: f.getName(), url: f.getUrl(), root: f.getId() === ROOT_ID };
+}
+
+/** Do item até à raiz (raiz primeiro). */
+function breadcrumb_(f) {
+  const out = [];
+  let cur = f;
+  for (let i = 0; i < 30 && cur; i++) {
+    out.unshift({ id: cur.getId(), name: cur.getName() });
+    if (cur.getId() === ROOT_ID) break;
+    const it = cur.getParents();
+    let up = null;
+    while (it.hasNext()) { const x = it.next(); if (inside_(x)) { up = x; break; } }
+    cur = up;
+  }
+  return out;
+}
+
+function driveList_(p) {
+  const f = folder_(p.folder);
+  const kids = [];
+  const fo = f.getFolders();
+  while (fo.hasNext() && kids.length < 1000) {
+    const x = fo.next();
+    kids.push({ id: x.getId(), name: x.getName(), mimeType: FOLDER_MIME, size: 0,
+                modified: x.getLastUpdated().toISOString(), url: x.getUrl(), folder: true });
+  }
+  const fi = f.getFiles();
+  const files = [];
+  while (fi.hasNext() && files.length < 1000) {
+    const x = fi.next();
+    files.push({ id: x.getId(), name: x.getName(), mimeType: x.getMimeType(), size: x.getSize(),
+                 modified: x.getLastUpdated().toISOString(), url: x.getUrl(), folder: false,
+                 thumbnail: 'https://drive.google.com/thumbnail?id=' + x.getId() + '&sz=w200' });
+  }
+  const byName = function (a, b) { return a.name.localeCompare(b.name, 'pt'); };
+  kids.sort(byName); files.sort(byName);
+  return { ok: true, folder: folderInfo_(f), breadcrumb: breadcrumb_(f), children: kids.concat(files),
+           max_bytes: DRIVE_MAX_BYTES };
+}
+
+function child_(parent, name) {
+  const it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : null;
+}
+
+function ensure_(parent, name) { return child_(parent, name) || parent.createFolder(name); }
+
+function driveMkdir_(p) {
+  const parent = folder_(p.parent);
+  const name = cleanName_(p.name);
+  if (child_(parent, name)) throw new Error('Já existe uma pasta chamada «' + name + '» aqui.');
+  return { ok: true, folder: folderInfo_(parent.createFolder(name)) };
+}
+
+function driveUpload_(p) {
+  const parent = folder_(p.parent);
+  const name = cleanName_(p.name);
+  const b64 = String(p.base64 || '');
+  if (!b64) throw new Error('Ficheiro vazio.');
+  if (b64.length * 3 / 4 > DRIVE_MAX_BYTES + 4) {
+    throw new Error('Ficheiro demasiado grande (máximo 25 MB). Para vídeos grandes use «Abrir no Drive» e carregue lá.');
+  }
+  const bytes = Utilities.base64Decode(b64);
+  if (bytes.length > DRIVE_MAX_BYTES) {
+    throw new Error('Ficheiro demasiado grande (máximo 25 MB). Para vídeos grandes use «Abrir no Drive» e carregue lá.');
+  }
+  const mime = /^[\w.+-]+\/[\w.+-]+$/.test(String(p.mimeType || '')) ? p.mimeType : 'application/octet-stream';
+  const file = parent.createFile(Utilities.newBlob(bytes, mime, name));
+  return { ok: true, file: { id: file.getId(), name: file.getName(), url: file.getUrl(), size: file.getSize() } };
+}
+
+function driveProject_(p) {
+  const name = cleanName_(p.name);
+  const year = String(p.year || '').trim();
+  if (!/^(19|20|21)\d\d$/.test(year)) throw new Error('Ano inválido.');
+  const projects = folder_(PROJECTS_ID);
+  const y = ensure_(projects, year);
+  const f = ensure_(y, name);
+  PROJECT_SUBFOLDERS.forEach(function (s) { ensure_(f, s); });
+  return { ok: true, folder: folderInfo_(f) };
+}
+
+function driveTrash_(p) {
+  const id = String(p.id || '');
+  if (!validId_(id) || id === ROOT_ID) throw new Error('Item inválido.');
+  let item = null;
+  try { item = DriveApp.getFileById(id); } catch (e) {
+    try { item = DriveApp.getFolderById(id); } catch (e2) { throw new Error('Item não encontrado.'); }
+  }
+  if (!inside_(item)) throw new Error('Item fora da pasta Topper Digital.');
+  if ([PROJECTS_ID, '1Wk82jckEFqgZEXoARzZ9f0dQPE5P9jse', '1oAdV2liA57M6lAXiPiEY8mpSSvCHADr2',
+       '1LVqXNwxfYx6fE-G7On9GIuYcXYCWffen'].indexOf(id) >= 0) {
+    throw new Error('As pastas principais não podem ir para o lixo.');
+  }
+  item.setTrashed(true);
+  return { ok: true };
 }

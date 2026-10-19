@@ -56,3 +56,32 @@ Apps Script answers with a 302 to script.googleusercontent.com: follow redirects
 (after a POST the redirect target must be fetched with GET).
 
 `sheets/fixture-read.json` is a sample `read` response.
+
+## Drive (same web app, same token)
+
+The script also manages the Google Drive folder **"Topper Digital"**
+(`ROOT_ID = 11mgqHYd1oqLvOMQdj6C0R-Mgtn9WNXNF`; children 01 Empresa, 02 Projetos
+`1p7VKCw1iZSpb4xFTugX1wzyVLsfSho-a`, 03 Faturas, 04 Showreel e Portfolio). Every
+action checks — by walking parents — that the folder/file is inside ROOT; anything
+else fails with `{ok:false,error:"… fora da pasta Topper Digital."}`. Ids must match
+`[A-Za-z0-9_-]{10,100}`. Needs the Drive scope: after pasting, run `autorizarDrive`
+once in the editor and deploy a new version.
+
+GET `{url}?token=…&action=drive_list[&folder=<id>]` (default ROOT) →
+`{ok:true, folder:{id,name,url,root}, breadcrumb:[{id,name}…] (ROOT first),
+children:[{id,name,mimeType,size,modified(ISO),url,folder(bool),thumbnail?}…] (folders first, by name),
+max_bytes}`
+
+POST:
+- `{token, action:"drive_mkdir", parent, name}` → `{ok:true, folder:{id,name,url}}` (fails if a folder with that name exists there)
+- `{token, action:"drive_upload", parent, name, mimeType, base64}` → `{ok:true, file:{id,name,url,size}}`.
+  Max 25 MB decoded (Apps Script payload limits); bigger files must be uploaded in Drive itself
+  ("Abrir no Drive"). The admin checks the size before encoding and never sends bigger files.
+- `{token, action:"drive_project", name, year}` → ensures `02 Projetos/<year>/<name>/` with
+  `Vídeos`, `Faturas`, `Documentos`; idempotent → `{ok:true, folder:{id,name,url}}`.
+  Renaming a job does not rename its folder.
+- `{token, action:"drive_trash", id}` → `{ok:true}` (moves to the Drive trash; ROOT and its
+  four top folders are refused).
+
+An older deployed script answers `{ok:false,error:"action"}` to these; the admin then says
+"Atualize o Code.gs".

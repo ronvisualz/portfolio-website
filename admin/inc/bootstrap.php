@@ -94,7 +94,7 @@ try {
 
 if ($__ver < SCHEMA_VERSION) {
     try {
-        run_migrations($pdo);
+        run_migrations($pdo, $__ver);
     } catch (Throwable $e) {
         http_response_code(500);
         exit('Não foi possível actualizar a base de dados. Contacte o suporte.');
