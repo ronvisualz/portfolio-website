@@ -21,6 +21,7 @@ function render_header(string $title, string $active = ''): void {
         'dashboard' => ['Painel',    '/admin/dashboard.php'],
         'calendar'  => ['Calendário','/admin/calendar.php'],
         'leads'     => ['Leads',     '/admin/leads.php'],
+        'fornecedores' => ['Fornecedores', '/admin/fornecedores.php'],
         'drive'     => ['Drive',     '/admin/drive.php'],
         'tools'     => ['Tools',     '/admin/tools.php'],
     ];

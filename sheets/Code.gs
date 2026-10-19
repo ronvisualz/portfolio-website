@@ -13,7 +13,9 @@
  */
 const TOKEN = '__TOKEN__';
 
-const TABS = ['Trabalhos', 'Equipa', 'Custos empresa', 'Leads'];
+const TABS = ['Trabalhos', 'Equipa', 'Custos empresa', 'Leads', 'Fornecedores'];
+/** Separadores que podem ainda não existir na folha: a leitura salta-os em vez de falhar. */
+const OPTIONAL_TABS = ['Fornecedores'];
 
 function doGet(e)  { return handle_(e.parameter || {}); }
 function doPost(e) {
@@ -112,7 +114,10 @@ function readTab_(name) {
 
 function readAll_() {
   const out = {};
-  TABS.forEach(function (t) { out[t] = readTab_(t); });
+  TABS.forEach(function (t) {
+    if (OPTIONAL_TABS.indexOf(t) >= 0 && !SpreadsheetApp.getActive().getSheetByName(t)) return;
+    out[t] = readTab_(t);
+  });
   return out;
 }
 

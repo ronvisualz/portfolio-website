@@ -45,6 +45,8 @@ const SHEET_COLUMNS = [
     'Leads'          => ['Nome', 'Tipo', 'Contactos (redes / site)', 'Telefone', 'Fase',
                          'Serviço', 'Prioridade', 'Detalhe', 'Porquê abordar', 'Email',
                          'Notas', 'Último toque'],
+    'Fornecedores'   => ['Nome', 'Categoria', 'Serviço', 'Pessoa de contacto', 'Email', 'Telefone',
+                         'Site / redes', 'NIF', 'Tarifa', 'Avaliação', 'Último trabalho', 'Notas'],
 ];
 
 /**
@@ -62,6 +64,10 @@ const JOB_TYPES       = ['Animação 3D', 'VFX', 'Edição', 'Produção Complet
 const LEAD_TYPES      = ['Produtora', 'Agência de Marketing', 'Empresa Particular', 'Realizador', 'VFX company'];
 const LEAD_SERVICES   = ['VFX / 3D', 'Marketing Buddy', 'Ambos'];
 const LEAD_PRIORITIES = ['Alta', 'Média', 'Baixa'];
+const SUPPLIER_CATEGORIES = ['Produção', 'Imagem', 'Som', 'Pós-produção', '3D / VFX', 'Elenco',
+                             'Material / aluguer', 'Locais', 'Software / serviços', 'Outro'];
+/** Avaliação na folha: de «★» a «★★★★★». */
+const SUPPLIER_RATINGS = ['★', '★★', '★★★', '★★★★', '★★★★★'];
 const LEAD_STAGES = [
     'novo'        => 'Novo',
     'contactado'  => 'Contactado',
@@ -390,7 +396,7 @@ function sheet_text(string $s, bool $forceText = false): string {
 
 /**
  * Tudo o que a folha tem, já convertido:
- *   jobs, crew, company, leads, years, fetched
+ *   jobs, crew, company, leads, suppliers (+ suppliers_error), years, fetched
  * $fresh null → segue o ?fresh=1 do endereço.
  */
 function sheet_data(?bool $fresh = null): array {
@@ -527,6 +533,32 @@ function sheet_map(array $read): array {
         ];
     }
 
+    // Fornecedores — separador mais recente: se o Code.gs implementado ainda
+    // não o devolve, as outras páginas continuam a funcionar e só a página
+    // dos fornecedores mostra o aviso (em 'suppliers_error').
+    $suppliers = []; $suppliersErr = null;
+    try {
+        foreach (sheet_tab($read, 'Fornecedores') as $r) {
+            $suppliers[] = [
+                'row'       => (int)$r['_row'],
+                'name'      => sheet_str($r['Nome'] ?? ''),
+                'category'  => sheet_str($r['Categoria'] ?? ''),
+                'service'   => sheet_str($r['Serviço'] ?? ''),
+                'contact'   => sheet_str($r['Pessoa de contacto'] ?? ''),
+                'email'     => sheet_str($r['Email'] ?? ''),
+                'phone'     => sheet_str($r['Telefone'] ?? ''),
+                'links'     => sheet_split(sheet_str($r['Site / redes'] ?? ''), '|'),
+                'nif'       => sheet_str($r['NIF'] ?? ''),
+                'rate'      => sheet_str($r['Tarifa'] ?? ''),
+                'rating'    => sheet_str($r['Avaliação'] ?? ''),
+                'last_job'  => sheet_str($r['Último trabalho'] ?? ''),
+                'notes'     => sheet_str($r['Notas'] ?? ''),
+            ];
+        }
+    } catch (SheetException $e) {
+        $suppliers = []; $suppliersErr = $e->getMessage();
+    }
+
     // Anos com registos, mais o corrente
     $years = [(int)date('Y')];
     foreach ($jobs as $j)    if ($j['year'] > 0) $years[] = $j['year'];
@@ -539,6 +571,8 @@ function sheet_map(array $read): array {
         'crew'    => $crew,
         'company' => $company,
         'leads'   => $leads,
+        'suppliers'       => $suppliers,
+        'suppliers_error' => $suppliersErr,
         'years'   => $years,
         'fetched' => (int)$read['fetched'],
     ];
@@ -581,6 +615,11 @@ function sheet_crew_by_row(array $d, int $row): ?array {
 
 function sheet_company_by_row(array $d, int $row): ?array {
     foreach ($d['company'] as $c) if ($c['row'] === $row) return $c;
+    return null;
+}
+
+function sheet_supplier_by_row(array $d, int $row): ?array {
+    foreach ($d['suppliers'] as $s) if ($s['row'] === $row) return $s;
     return null;
 }
 

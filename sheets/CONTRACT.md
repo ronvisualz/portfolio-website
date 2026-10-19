@@ -1,7 +1,7 @@
 # Admin ↔ Google Sheet contract
 
 The Google Sheet "TOPPER DIGITAL" is the single source of truth for the admin's
-Painel, Carteira (jobs, job crew/costs, company costs, IVA) and Leads.
+Painel, Carteira (jobs, job crew/costs, company costs, IVA), Leads and Fornecedores.
 The admin talks to it through an Apps Script web app (`sheets/Code.gs`).
 The MySQL tables `projects`, `crew`, `company_costs`, `leads` are no longer read or
 written by these pages (do not drop them). Users, login, settings and the Calendar
@@ -31,6 +31,14 @@ VFX company — stored comma-separated, e.g. "Produtora, VFX company") · Contac
 Ganho | Perdido) · Serviço (VFX / 3D | Marketing Buddy | Ambos) · Prioridade (Alta | Média | Baixa) ·
 Detalhe · Porquê abordar · Email · Notas · Último toque ("yyyy-mm-dd" or "")
 
+**Fornecedores** — suppliers / freelancers / rentals (admin page `fornecedores.php`)
+Nome · Categoria (Produção | Imagem | Som | Pós-produção | 3D / VFX | Elenco | Material / aluguer |
+Locais | Software / serviços | Outro) · Serviço · Pessoa de contacto · Email · Telefone (written as
+text, leading apostrophe) · Site / redes (URLs separated by " | ") · NIF (written as text) · Tarifa ·
+Avaliação (★ | ★★ | ★★★ | ★★★★ | ★★★★★ or "") · Último trabalho · Notas. No computed columns.
+Optional tab: if it does not exist yet, `read` simply leaves it out; the admin's other pages keep
+working and only the Fornecedores page asks for it.
+
 VAT is 23% inside the sheet formulas. Use the sheet's computed columns for totals
 (Gastos, Valor s/ IVA, IVA, Budget (c/ IVA)) instead of recomputing them in PHP, so the
 site and the sheet always show the same numbers. VAT on a job's manual costs (no Equipa
@@ -49,7 +57,7 @@ POST `{url}` with JSON body:
 - `{token, action:"delete", tab, row, match:{…}}` → `{ok:true}`
 `match` is checked before writing: if the row no longer holds those values (someone edited the
 sheet meanwhile) the call fails with `{ok:false,error:"A folha mudou entretanto. Recarregue…"}`.
-Always send `match` with the row's key: Trabalhos/Custos empresa/Leads → Nome; Equipa → Trabalho + Função.
+Always send `match` with the row's key: Trabalhos/Custos empresa/Leads/Fornecedores → Nome; Equipa → Trabalho + Função.
 Renaming a job (Trabalhos.Nome) renames its Equipa rows; deleting a job deletes its Equipa rows.
 Computed columns are silently ignored on write. Errors: `{ok:false,error:"…"}`.
 Apps Script answers with a 302 to script.googleusercontent.com: follow redirects
