@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -160,6 +160,12 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // equipa só é semeada quando a tabela está vazia.
     migrate_tasks($pdo);
 
+    // ── 07 · quando a tarefa ficou feita ────────────────────
+    //
+    // Coluna nova, vazia por omissão. As que já estavam feitas ficam
+    // com a última alteração como data, para a coluna «Feito» as ordenar.
+    migrate_done_at($pdo);
+
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")
             ->execute([(string)SCHEMA_VERSION]);
@@ -238,4 +244,13 @@ function migrate_tasks(PDO $pdo): void {
                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
     }
+}
+
+function migrate_done_at(PDO $pdo): void {
+    if (!db_has_table($pdo, 'tasks') || db_has_column($pdo, 'tasks', 'done_at')) return;
+    $pdo->exec(db_is_sqlite($pdo)
+        ? 'ALTER TABLE tasks ADD COLUMN done_at TEXT NULL'
+        : 'ALTER TABLE tasks ADD COLUMN done_at DATETIME NULL AFTER position'
+    );
+    $pdo->exec("UPDATE tasks SET done_at = updated_at WHERE status = 'done' AND done_at IS NULL");
 }

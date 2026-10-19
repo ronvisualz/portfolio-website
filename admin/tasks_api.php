@@ -8,7 +8,11 @@
  *
  *   do=move   id, to (id da pessoa; 0 = Por atribuir), order (ids da
  *             pilha de destino separados por vírgulas, já com a tarefa
- *             no sítio onde foi largada)
+ *             no sítio onde foi largada). to=done → coluna «Feito»:
+ *             fica feita, com a mesma pessoa. Uma feita largada numa
+ *             pilha volta a «A fazer» com essa pessoa.
+ *   do=done   id — o botão «✓ Feito»
+ *   do=reopen id, to (opcional; por omissão a pessoa que a fez)
  */
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/tasks.php';
@@ -37,24 +41,36 @@ if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) {
 
 $do = (string)($_POST['do'] ?? '');
 
-if ($do === 'move') {
+if (in_array($do, ['move', 'done', 'reopen'], true)) {
     $id = (int)($_POST['id'] ?? 0);
-    if (!task_by_id($pdo, $id)) {
+    $task = task_by_id($pdo, $id);
+    if (!$task) {
         api_out(404, ['ok' => false, 'error' => 'Essa tarefa já não existe. Recarregue a página.']);
     }
     $members = team_members($pdo);
-    $to    = task_member_in($_POST['to'] ?? 0, $members);
+    $rawTo = (string)($_POST['to'] ?? '');
+    $toDone = $do === 'done' || ($do === 'move' && $rawTo === 'done');
+    if ($do === 'reopen' && $rawTo === '') $rawTo = (string)(int)$task['member_id'];
+    $to    = $toDone ? task_member_in($task['member_id'], $members) : task_member_in($rawTo, $members);
     $order = array_values(array_filter(array_map('intval', explode(',', (string)($_POST['order'] ?? '')))));
 
     try {
-        $final = task_move($pdo, $id, $to, $order);
+        if ($toDone) {
+            task_done($pdo, $id);
+            $final = [];
+        } else {
+            $final = task_move($pdo, $id, $to, $order);
+        }
     } catch (Throwable $e) {
         error_log('tasks_api: ' . $e->getMessage());
         api_out(500, ['ok' => false, 'error' => 'Não foi possível guardar. Tente outra vez.']);
     }
+    $now = task_by_id($pdo, $id);
     api_out(200, [
         'ok'        => true,
         'id'        => $id,
+        'status'    => $now['status'],
+        'done_at'   => $now['done_at'],
         'member_id' => $to,
         'member'    => $to ? $members[$to]['name'] : 'Por atribuir',
         'order'     => $final,

@@ -98,9 +98,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Essa tarefa já não existe.', 'err');
             redirect($board);
         }
+        if ((string)($_POST['to'] ?? '') === 'done') {
+            task_done($pdo, $id);
+            flash('Tarefa marcada como feita.');
+            redirect($board);
+        }
         $to = task_member_in($_POST['to'] ?? 0, $members);
         task_move($pdo, $id, $to);
         flash('Tarefa movida para ' . ($to ? $members[$to]['name'] : 'Por atribuir') . '.');
+        redirect($board);
+    }
+
+    // «✓ Feito» e «Reabrir» — sem JavaScript, formulários normais.
+    if ($do === 'done_task' || $do === 'reopen_task') {
+        $id = (int)($_POST['id'] ?? 0);
+        $t = task_by_id($pdo, $id);
+        if (!$t) {
+            flash('Essa tarefa já não existe.', 'err');
+            redirect($board);
+        }
+        if ($do === 'done_task') {
+            task_done($pdo, $id);
+            flash('«' . $t['title'] . '» está feita.');
+        } else {
+            $to = task_member_in($t['member_id'], $members);
+            task_reopen($pdo, $id, $to);
+            flash('«' . $t['title'] . '» reaberta' . ($to ? ' para ' . $members[$to]['name'] : '') . '.');
+        }
         redirect($board);
     }
 
@@ -183,15 +207,23 @@ function task_card(array $t, array $members, ?int $person): void {
     $tid = (int)$t['id'];
     $mid = $t['member_id'] !== null ? (int)$t['member_id'] : 0;
     $who = $mid && isset($members[$mid]) ? member_color($members[$mid]) : 'var(--faint)';
-    $late = $t['due_date'] && $t['status'] !== 'done' && $t['due_date'] < date('Y-m-d');
+    $done = $t['status'] === 'done';
+    $late = $t['due_date'] && !$done && $t['due_date'] < date('Y-m-d');
+    $whoName = $mid && isset($members[$mid]) ? first_name($members[$mid]['name']) : 'Sem dono';
+    $hid = function (string $do) use ($tid, $person) {
+        return csrf_field() . '<input type="hidden" name="do" value="' . $do . '">'
+             . '<input type="hidden" name="id" value="' . $tid . '">'
+             . '<input type="hidden" name="p" value="' . (int)$person . '">';
+    };
     ?>
     <article class="card st-<?= e($t['status']) ?> prio-<?= e($t['priority']) ?>" data-id="<?= $tid ?>"
-             data-status="<?= e($t['status']) ?>" style="--who:<?= e($who) ?>">
+             data-status="<?= e($t['status']) ?>" data-mid="<?= $mid ?>" style="--who:<?= e($who) ?>">
       <div class="card-top">
         <span class="grip" aria-hidden="true" title="Arrastar">⠿</span>
         <a class="card-t" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'edit' => $tid])) ?>"><?= e($t['title']) ?></a>
       </div>
       <div class="card-meta">
+        <span class="who-chip" title="Quem fez"><?= e($whoName) ?></span>
         <span class="st"><?= e(TASK_STATUS[$t['status']] ?? $t['status']) ?></span>
         <span class="pr"><?= e(TASK_PRIO[$t['priority']] ?? $t['priority']) ?></span>
         <?php if ($t['due_date']): ?>
@@ -208,13 +240,24 @@ function task_card(array $t, array $members, ?int $person): void {
         <input type="hidden" name="p" value="<?= (int)$person ?>">
         <label class="sr" for="mv-<?= $tid ?>">Mover para…</label>
         <select id="mv-<?= $tid ?>" name="to">
-          <option value="0"<?= $mid === 0 ? ' selected' : '' ?>>Por atribuir</option>
+          <option value="0"<?= !$done && $mid === 0 ? ' selected' : '' ?>>Por atribuir</option>
           <?php foreach ($members as $m): ?>
-            <option value="<?= (int)$m['id'] ?>"<?= $mid === (int)$m['id'] ? ' selected' : '' ?>><?= e($m['name']) ?></option>
+            <option value="<?= (int)$m['id'] ?>"<?= !$done && $mid === (int)$m['id'] ? ' selected' : '' ?>><?= e($m['name']) ?></option>
           <?php endforeach; ?>
+          <option value="done"<?= $done ? ' selected' : '' ?>>Feito</option>
         </select>
         <button class="btn ghost sm" type="submit">Mover</button>
       </form>
+      <div class="card-acts">
+        <form method="post" action="/admin/calendar.php" class="card-done">
+          <?= $hid('done_task') ?>
+          <button class="btn ghost sm" type="submit" title="Marcar como feita">✓ Feito</button>
+        </form>
+        <form method="post" action="/admin/calendar.php" class="card-reopen">
+          <?= $hid('reopen_task') ?>
+          <button class="btn ghost sm" type="submit" title="Voltar a pôr na pilha">Reabrir</button>
+        </form>
+      </div>
     </article>
     <?php
 }
@@ -458,14 +501,16 @@ $all = $pdo->query('SELECT * FROM tasks ORDER BY position, id')->fetchAll();
 $stacks = [0 => []];
 foreach ($members as $mid => $m) $stacks[$mid] = [];
 foreach ($all as $t) {
+    if ($t['status'] === 'done') continue; // essas vão para a coluna «Feito»
     $k = $t['member_id'] !== null && isset($members[(int)$t['member_id']]) ? (int)$t['member_id'] : 0;
     $stacks[$k][] = $t;
 }
 // Pessoa escolhida: só a pilha dela, em grande, com «Por atribuir» ao lado para ir buscar trabalho.
 if ($person) $stacks = [0 => $stacks[0], $person => $stacks[$person]];
 
-$doneCount = count(array_filter($all, fn($t) => $t['status'] === 'done'));
-$showDone  = !empty($_GET['done']);
+// «Feito»: as mais recentes primeiro, TASK_DONE_PAGE de cada vez (?feitas=60 mostra mais).
+$doneLimit = max(TASK_DONE_PAGE, min(5000, (int)($_GET['feitas'] ?? 0)));
+[$doneList, $doneCount] = task_done_list($pdo, $doneLimit, $person);
 $editing   = isset($_GET['edit']) ? task_by_id($pdo, (int)$_GET['edit']) : null;
 $confirmDel = $editing && !empty($_GET['del']);
 $jobNames  = task_job_names();
@@ -477,7 +522,7 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
 
 <div class="sub">
   <?= count($all) ?> <?= count($all) === 1 ? 'tarefa' : 'tarefas' ?>
-  · arraste um cartão pela pega ⠿ para outra pilha, ou use «Mover para…»
+  · arraste um cartão pela pega ⠿ para outra pilha ou para «Feito», ou use «Mover para…»
 </div>
 
 <?php if ($editing): ?>
@@ -569,18 +614,11 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
 </details>
 <?php endif; ?>
 
-<div class="bar">
-  <a class="btn ghost sm" id="toggle-done" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'done' => $showDone ? null : 1])) ?>"
-     data-on="Esconder feitas (<?= $doneCount ?>)" data-off="Mostrar feitas (<?= $doneCount ?>)">
-    <?= $showDone ? 'Esconder' : 'Mostrar' ?> feitas (<?= $doneCount ?>)
-  </a>
-</div>
-
-<div id="board" class="board<?= $showDone ? '' : ' hide-done' ?><?= $person ? ' solo' : '' ?>"
+<div id="board" class="board<?= $person ? ' solo' : '' ?>"
      data-api="/admin/tasks_api.php" data-csrf="<?= e(csrf_token()) ?>">
   <?php foreach ($stacks as $mid => $list):
       $m = $mid ? $members[$mid] : null;
-      $open = count(array_filter($list, fn($t) => $t['status'] !== 'done'));
+      $open = count($list);
   ?>
     <section class="stack<?= $mid ? '' : ' none' ?><?= $person && $mid === $person ? ' big' : '' ?>"
              style="--who:<?= e($m ? member_color($m) : 'var(--paper)') ?>">
@@ -597,6 +635,20 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
       </div>
     </section>
   <?php endforeach; ?>
+  <section class="stack feito" data-total="<?= $doneCount ?>">
+    <header>
+      <span>feito</span>
+      <span class="count" title="Feitas"><?= $doneCount ?></span>
+    </header>
+    <div class="stack-list" data-member="done">
+      <?php foreach ($doneList as $t) task_card($t, $members, $person); ?>
+    </div>
+    <?php if ($doneCount > count($doneList)): ?>
+      <a class="lnk more" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'feitas' => $doneLimit + TASK_DONE_PAGE])) ?>#board">
+        Ver mais (<?= $doneCount - count($doneList) ?> mais antigas)
+      </a>
+    <?php endif; ?>
+  </section>
 </div>
 
 <div class="toast" id="toast" role="alert" aria-live="assertive" hidden></div>
