@@ -13,7 +13,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 require_once __DIR__ . '/r2.php';
 
 /** As pastas de topo (aparecem sempre na raiz, mesmo sem marcador). */
-const DRIVE_ROOTS = ['Empresa/', 'Projetos/', 'Faturas/', 'Showreel e Portfolio/'];
+const DRIVE_ROOTS = ['Empresa/', 'Projetos/', 'Showreel e Portfolio/'];
 const DRIVE_PROJECT_SUBS = ['Vídeos', 'Faturas', 'Documentos'];
 
 /** drive.php?p=<prefixo> (com extras já codificados, «&a=b»). */
