@@ -25,9 +25,42 @@ function drive_page(string $p, string $extra = ''): string {
 }
 
 /** O prefixo da pasta de um trabalho: Projetos/<ano>/<nome>/. */
+/** Nomes das pastas de projeto já usados pela equipa (trabalho na folha → nome da pasta). */
+const DRIVE_PROJECT_ALIASES = [
+    'Wuant The One'   => 'THE_ONE',
+    'Delta Y (Video)' => 'DELTAY',
+    'Casino Solverde' => 'SOLVERDE',
+    'LING'            => 'WIZZY_TEYKAN_DISTANTE',
+    'Richie Campbell' => 'RICHIE_LOYAL',
+];
+
+/** «Casino Solverde» → «CASINO_SOLVERDE». */
+function drive_slug(string $s): string {
+    $t = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
+    $t = strtoupper((string)($t === false ? $s : $t));
+    return trim(preg_replace('/[^A-Z0-9]+/', '_', $t), '_') ?: 'PROJETO';
+}
+
+/** «03_SOLVERDE_PROJECT» → «SOLVERDE». */
+function drive_project_core(string $folder): string {
+    $f = rtrim($folder, '/');
+    $f = preg_replace('/^\d+_/', '', $f);
+    return preg_replace('/_(PROJECT|PROJETO)$/', '', $f);
+}
+
+/**
+ * Pasta do trabalho: «Projetos/NN_NOME_PROJECT/», numerada pela ordem de criação.
+ * Se já existir uma pasta para este trabalho (pelo nome ou pelo alias), usa essa.
+ */
 function drive_project_prefix(string $name, int $year): string {
-    $n = r2_clean_name($name) ?: 'Sem nome';
-    return 'Projetos/' . $year . '/' . $n . '/';
+    $core = DRIVE_PROJECT_ALIASES[$name] ?? drive_slug($name);
+    $max = 0;
+    foreach (r2_list('Projetos/')['folders'] ?? [] as $f) {
+        $leaf = substr(rtrim($f, '/'), strlen('Projetos/'));
+        if (drive_project_core($leaf) === $core) return 'Projetos/' . $leaf . '/';
+        if (preg_match('/^(\d+)_/', $leaf, $m)) $max = max($max, (int)$m[1]);
+    }
+    return 'Projetos/' . sprintf('%02d', $max + 1) . '_' . $core . '_PROJECT/';
 }
 
 /** Cria (se faltar) a pasta do trabalho e as subpastas. Devolve o prefixo. */
