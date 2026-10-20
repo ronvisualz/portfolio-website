@@ -15,6 +15,40 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+// ── IVA de cada custo ───────────────────────────────────────
+//
+// Cada custo guarda o valor TAL COMO FOI ESCRITO, mais aquilo que
+// esse valor é:
+//   none  Sem IVA        1800 →  custo 1800,00   IVA    0,00
+//   plus  + IVA 23%      1800 →  custo 1800,00   IVA  414,00
+//   incl  IVA incluído   1800 →  custo 1463,41   IVA  336,59
+// O custo que conta para o lucro é sempre o valor limpo.
+
+/** A taxa de IVA (settings.vat_rate, 23 por omissão). */
+function vat_rate(PDO $pdo): float {
+    return (float)setting($pdo, 'vat_rate', 23);
+}
+
+/** O valor escrito (costs.amount; aceita também fee). */
+function cost_amount(array $c): float {
+    return (float)($c['amount'] ?? $c['fee'] ?? 0);
+}
+
+/** O que o custo pesa no lucro. */
+function cost_net(array $c, float $rate): float {
+    $v = cost_amount($c);
+    return ($c['vat_mode'] ?? 'plus') === 'incl' ? round($v / (1 + $rate / 100), 2) : $v;
+}
+
+/** O IVA do custo, que se deduz. */
+function cost_vat(array $c, float $rate): float {
+    $v = cost_amount($c);
+    $mode = $c['vat_mode'] ?? 'plus';
+    if ($mode === 'plus') return round($v * $rate / 100, 2);
+    if ($mode === 'incl') return round($v - $v / (1 + $rate / 100), 2);
+    return 0.0;
+}
+
 /** Os custos de um negócio, já com valor limpo, IVA e total. */
 function deal_costs(PDO $pdo, int $dealId, float $rate): array {
     $st = $pdo->prepare('SELECT c.*, ct.name AS contact_name FROM costs c LEFT JOIN contacts ct ON ct.id = c.contact_id

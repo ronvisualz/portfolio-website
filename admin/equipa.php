@@ -40,14 +40,21 @@ function user_input(PDO $pdo, array $actor, ?array $editing): array {
 
     if ($name === '' || mb_strlen($name) > 120)                    return [null, 'Indique o nome (até 120 caracteres).'];
     if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) return [null, 'Email inválido.'];
-    if (!in_array($role, assignable_roles($actor), true))          return [null, 'Papel inválido.'];
+    // A conta de superadmin (info@) cria-se uma vez, por um admin, se ainda não existir.
+    $super = $email === SUPERADMIN_EMAIL;
+    if ($super) {
+        $has = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'superadmin'")->fetchColumn();
+        if ($has > 0 || $editing) return [null, 'Esse email é reservado ao superadmin.'];
+        $role = 'superadmin';
+    } elseif (!in_array($role, assignable_roles($actor), true)) {
+        return [null, 'Papel inválido.'];
+    }
     if (!dept_exists($pdo, $dept))                                  return [null, 'Departamento inválido.'];
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color))                 $color = TEAM_COLORS_ALL[0];
 
     $st = $pdo->prepare('SELECT id FROM users WHERE LOWER(email) = ? AND id <> ?');
     $st->execute([$email, (int)($editing['id'] ?? 0)]);
     if ($st->fetchColumn() !== false) return [null, 'Já existe um utilizador com esse email.'];
-    if ($email === SUPERADMIN_EMAIL)  return [null, 'Esse email é reservado ao superadmin.'];
 
     return [[
         'name' => $name, 'email' => $email, 'role' => $role, 'department_id' => $dept,

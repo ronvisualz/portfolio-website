@@ -389,29 +389,23 @@ para ler/gravar; só a exportação escreve na folha.
 
 ## 10. Estado da execução (20 out 2026)
 
-Os 9 passos da §7 estão implementados no branch `claude/exciting-goodall-mtlx1a`,
-um commit por passo, testados numa bancada local (SQLite). **Nada foi ainda
-publicado no servidor.** Publicar e migrar fazem-se juntos (ver abaixo).
+Os 9 passos da §7 estão feitos e publicados. Entretanto o `main` tinha trazido a folha para o
+MySQL (versão 10: `jobs`, `job_crew`, `company_costs`, `leads`, `suppliers`) e o Drive novo
+(versões 8 e 9). A plataforma entra como **versão 11** por cima disso:
 
-| Passo | Onde |
-|---|---|
-| 1 Base + permissões | `admin/inc/migrate_platform.php` (base v8), `inc/perm.php`, `inc/deals.php` |
-| 2 Equipa | `admin/equipa.php`, `admin/conta.php` |
-| 3 Leads | `admin/leads.php`, `inc/leads.php` |
-| 4 Pipeline | `admin/pipeline.php`, `admin/funis.php`, `inc/pipeline.php` |
-| 5 Negócios + Contactos | `admin/negocios.php`, `admin/negocio.php`, `admin/contactos.php`, `inc/finance.php` |
-| 6 Financeiro, Dashboard, Tarefas, Drive | `admin/financeiro.php`, `admin/dashboard.php`, `admin/calendar.php`, `inc/tasks.php`, `inc/drive.php` |
-| 7 Migração, exportação, backups | `admin/migracao.php`, `inc/migrate_sheet.php`, `inc/export.php`, `inc/cron_run.php`, `sheets/Code.gs` (ação `mirror`) |
-| 8 Formulário do site | `index.html`, `contacto.php` |
-| 9 Menu + abas «Em construção» | `admin/inc/layout.php`, `admin/brevemente.php` |
-
-**Ordem para pôr em produção (no mesmo dia):**
-1. Cópia da folha (Ficheiro › Fazer uma cópia) e cópia da base (phpMyAdmin › Exportar).
-2. Publicar o código no servidor. A base atualiza-se sozinha para a v8 no primeiro acesso.
-3. Publicar o `sheets/Code.gs` novo (Implementar › Gerir implementações › Nova versão).
-4. Entrar como `info@topperdigital.xyz` › Migração: ver o plano, resolver a lista, migrar.
-5. Pôr a folha só de leitura; criar as contas da equipa na aba Equipa (com o mesmo
-   nome que tinham no Calendário, para as tarefas antigas as seguirem).
-6. Marcar os dois cron jobs no hPanel (backup e export, ver `admin/inc/cron_run.php`).
+- **Migração (§5):** em vez de ler a folha, passa os dados da versão 10 para a estrutura nova
+  (`admin/inc/platform_import.php`, página **Migração** ou `php admin/inc/cron_run.php migrate`).
+  As contas de cada trabalho e de cada ano são refeitas e comparadas com as da versão 10;
+  uma diferença de um cêntimo desfaz tudo. As tabelas da versão 10 ficam guardadas.
+  Funil por tipo de trabalho: VFX e Edição → VFX / 3D · Animação 3D → CGI ·
+  Produção Completa e Fotografia → Campanhas (pode mudar-se em cada negócio).
+- **Drive:** o Drive novo (R2, assistente) não foi alterado. A permissão da aba Drive é
+  verificada no `require_login()`; a pasta de cada negócio (`Projetos/<ID>_<NOME>/`) usa as
+  funções do Drive a partir de `inc/deal_drive.php`. O assistente lê os dados de gestão por
+  `inc/data.php`, que agora vem da estrutura nova e respeita as permissões de quem pergunta.
+- **Exportação (§5.7):** em vez do espelho na folha, um botão «Descarregar Excel»
+  (`admin/export.php`, só admins). A folha Google fica como arquivo.
+- **Backups (§5.8):** cópia diária da base para o R2 em `.topper/backups/` (pasta de sistema,
+  invisível no Drive), pelo cron `php admin/inc/cron_run.php backup`.
 
 Continua PENDENTE tudo o que está na §8 e não foi respondido na §9.

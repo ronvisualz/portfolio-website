@@ -35,7 +35,6 @@ function handle_(p) {
       if (p.action === 'update') return json_({ ok: true, row: update_(p) });
       if (p.action === 'append') return json_({ ok: true, row: append_(p) });
       if (p.action === 'delete') { delete_(p); return json_({ ok: true }); }
-      if (p.action === 'mirror') return json_({ ok: true, rows: mirror_(p) });
     } finally {
       SpreadsheetApp.flush();
       lock.releaseLock();
@@ -176,34 +175,6 @@ function delete_(p) {
     if (name) deleteCrew_(name);
   }
   sh.deleteRow(row);
-}
-
-// ── espelho (exportação MySQL → folha) ──────────────────────
-//
-// Desde a migração, a base de dados do admin é a fonte de verdade e a
-// folha é só um espelho para consulta e para o contabilista. O site
-// reescreve por inteiro os separadores «Espelho · …»; só esses. Os
-// separadores originais ficam como estavam no dia da migração.
-
-const MIRROR_PREFIX = 'Espelho · ';
-
-function mirror_(p) {
-  const name = String(p.tab || '');
-  if (name.indexOf(MIRROR_PREFIX) !== 0 || name.length > 80) throw new Error('Separador de espelho inválido.');
-  const header = p.header || [];
-  const rows = p.rows || [];
-  if (!header.length) throw new Error('Sem colunas.');
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  sh.clearContents();
-  const data = [header].concat(rows.map(function (r) {
-    return header.map(function (_, i) { const v = r[i]; return v === null || v === undefined ? '' : v; });
-  }));
-  sh.getRange(1, 1, data.length, header.length).setValues(data);
-  sh.setFrozenRows(1);
-  sh.getRange(1, 1, 1, header.length).setFontWeight('bold');
-  sh.getRange(1, 1).setNote('Exportado do admin em ' + new Date().toLocaleString('pt-PT') + '. Edições aqui não contam: são substituídas na próxima exportação.');
-  return rows.length;
 }
 
 function crewRows_() {

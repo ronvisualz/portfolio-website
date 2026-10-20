@@ -10,7 +10,7 @@
  *
  * Política CORS do bucket (Settings › CORS Policy):
  * [{"AllowedOrigins":["https://topperdigital.xyz"],"AllowedMethods":["GET","PUT","POST","DELETE","HEAD"],
- *   "AllowedHeaders":["*"],"ExposeHeaders":["ETag"],"MaxAgeSeconds":3600}]
+ *   "AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Range"],"MaxAgeSeconds":3600}]
  */
 return [
     'account_id'        => 'COLE_AQUI_O_ACCOUNT_ID',

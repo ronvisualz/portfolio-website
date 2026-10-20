@@ -18,7 +18,11 @@ function css_url(): string {
 /** Separador do menu → aba de permissões. */
 const NAV_TABS = ['calendar' => 'tarefas'];
 
-function render_header(string $title, string $active = ''): void {
+/**
+ * $bodyClass: classe opcional do <body> (ex.: «td-full» nas páginas de ecrã
+ * inteiro, como o Drive, em que a página não rola e o conteúdo rola por dentro).
+ */
+function render_header(string $title, string $active = '', string $bodyClass = ''): void {
     $u = current_user();
     $nav = [
         'dashboard'    => ['Dashboard',       '/admin/dashboard.php'],
@@ -49,7 +53,7 @@ function render_header(string $title, string $active = ''): void {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@600;700&display=swap">
 <link rel="stylesheet" href="<?= css_url() ?>">
 </head>
-<body>
+<body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
 <a class="skip" href="#conteudo">Saltar para o conteúdo</a>
 <div class="app">
 <aside class="rail">
@@ -64,7 +68,7 @@ function render_header(string $title, string $active = ''): void {
     <?php foreach ($nav as $key => [$label, $href]): if (!can(NAV_TABS[$key] ?? $key)) continue; ?>
       <a href="<?= $href ?>" class="<?= $active === $key ? 'on' : '' ?>"><?= $label ?></a>
     <?php endforeach; ?>
-    <?php if (($u['role'] ?? '') === 'superadmin'): ?>
+    <?php if (is_admin()): ?>
       <a href="/admin/migracao.php" class="<?= $active === 'migracao' ? 'on' : '' ?>">Migração</a>
     <?php endif; ?>
   </nav>
@@ -81,6 +85,21 @@ function render_header(string $title, string $active = ''): void {
 </div>
 <main id="conteudo">
 <?php
+    // Até a migração para a plataforma estar feita, os admins são avisados.
+    if (is_admin() && $active !== 'migracao') {
+        global $pdo;
+        try {
+            $done = $pdo->query("SELECT svalue FROM settings WHERE skey = 'platform_migrated_at'")->fetchColumn();
+            $old  = !$done && db_has_table($pdo, 'jobs')
+                 && (int)$pdo->query('SELECT (SELECT COUNT(*) FROM jobs) + (SELECT COUNT(*) FROM leads)')->fetchColumn() > 0;
+        } catch (Throwable $e) {
+            $old = false;
+        }
+        if ($old) {
+            echo '<div class="flash err">Os dados da versão anterior ainda não passaram para a plataforma. '
+               . '<a href="/admin/migracao.php">Abrir a Migração</a></div>';
+        }
+    }
 }
 
 function render_footer(): void {

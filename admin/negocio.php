@@ -4,7 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/leads.php';
 require __DIR__ . '/inc/pipeline.php';
 require __DIR__ . '/inc/finance.php';
-require __DIR__ . '/inc/drive.php';
+require __DIR__ . '/inc/deal_drive.php';
 $user = require_login();
 require_page('negocios');
 

@@ -1,16 +1,11 @@
 # Admin ↔ Google Sheet contract
 
-> **Since the platform migration (docs/ESPECIFICACAO-PLATAFORMA.md §5) MySQL is the single
-> source of truth.** The admin no longer reads or writes the tabs below; `admin/migracao.php`
-> reads them once to migrate. After that the sheet is a read-only mirror: the admin rewrites
-> the tabs `Espelho · Negócios`, `Espelho · Custos`, `Espelho · Leads` and `Espelho · Contactos`
-> with the `mirror` action (nightly via `admin/inc/cron_run.php export`, or the button in
-> Migração). `mirror` only accepts tab names starting with `Espelho · `.
->
-> POST `{token, action:"mirror", tab:"Espelho · …", header:[…], rows:[[…]…]}` → `{ok:true, rows:n}`
-> (clears the tab and writes header + rows; creates the tab if missing).
->
-> The rest of this document describes the sheet as it was before the migration.
+> **Archive.** Since October 2026 the admin no longer reads or writes the sheet. Its data was
+> imported into MySQL (version 10: `jobs`, `job_crew`, `company_costs`, `leads`, `suppliers`)
+> and then moved into the platform tables (version 11: `deals`, `costs`, `contacts`, see
+> `docs/ESPECIFICACAO-PLATAFORMA.md` and `admin/inc/platform_import.php`). The sheet stays as a
+> read-only archive; exports are an Excel download from the admin. This document describes the
+> sheet as it was.
 
 The Google Sheet "TOPPER DIGITAL" is the single source of truth for the admin's
 Painel, Carteira (jobs, job crew/costs, company costs, IVA), Leads and Fornecedores.
