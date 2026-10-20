@@ -455,8 +455,9 @@ function ai_tool_file_info(PDO $pdo, array $in): string {
     }
     try {
         $out['favorite'] = drive_is_fav($pdo, $key);
-        $out['shares'] = array_map(static fn($s) => ['expires' => ai_day($s['exp']) . ' ' . (new DateTimeImmutable('@' . $s['exp']))->setTimezone(new DateTimeZone('Europe/Lisbon'))->format('H:i'),
-                                                     'downloads' => $s['downloads']], drive_shares_active($pdo, $key));
+        $out['shares'] = array_map(static fn($s) => ['expires' => $s['forever'] ? 'sem prazo (até ser revogado)'
+                                                         : ai_day($s['exp']) . ' ' . (new DateTimeImmutable('@' . $s['exp']))->setTimezone(new DateTimeZone('Europe/Lisbon'))->format('H:i'),
+                                                     'password' => $s['protected'], 'downloads' => $s['downloads']], drive_shares_active($pdo, $key));
     } catch (Throwable $e) {
         error_log('ai file_info: ' . $e->getMessage());
     }

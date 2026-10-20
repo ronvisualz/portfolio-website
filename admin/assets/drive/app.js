@@ -181,6 +181,8 @@
     return 'até ' + TD.fmt.day(ts);
   }
   function hoursText(h) { return h % 24 === 0 && h >= 48 ? (h / 24) + ' dias' : h + ' h'; }
+  /** Prazo de um link: «Sem prazo» (pastas) ou «Expira daqui a 5 h». */
+  function shareUntil(s) { return (s.protected ? 'Com password · ' : '') + (s.forever ? 'Sem prazo' : 'Expira ' + untilText(s.exp)); }
   function scrollNearest(box, el, topPad) {
     if (!box || !el) return;
     const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
@@ -296,7 +298,7 @@
     if (v !== 'trash' && v !== 'shared' && S.filter !== 'all') list = list.filter(it => group(it) === S.filter);
     if (v === 'recent') list.sort((a, b) => (a.folder !== b.folder ? (a.folder ? -1 : 1) : (b.t - a.t)));
     else if (v === 'trash') list.sort((a, b) => b.deleted - a.deleted || coll.compare(a.name, b.name));
-    else if (v === 'shared') list.sort((a, b) => a.exp - b.exp);
+    else if (v === 'shared') list.sort((a, b) => (a.share.forever ? 1e15 : a.exp) - (b.share.forever ? 1e15 : b.exp));
     else if (v === 'folder' && S.prefix === '') {
       list.sort((a, b) => {
         const ia = S.roots.indexOf(a.k), ib = S.roots.indexOf(b.k);
@@ -354,7 +356,7 @@
   function nameHtml(it) { return S.view === 'search' ? highlight(it.name, terms()) : esc(it.name); }
   function metaTxt(it) {
     if (S.view === 'trash') return leftTxt(it, true) + ' · apagado ' + TD.fmt.rel(it.deleted) + ' · ' + sizeTxt(it);
-    if (S.view === 'shared') return 'Expira ' + untilText(it.exp) + ' · ' + n(it.share.downloads || 0, 'descarga', 'descargas');
+    if (S.view === 'shared') return shareUntil(it.share) + ' · ' + n(it.share.downloads || 0, 'descarga', 'descargas');
     const parts = [];
     if (flatView()) parts.push(pretty(P.parent(it.k)));
     if (it.folder) parts.push(itemsWord(it.n)); else parts.push(sizeTxt(it));
@@ -404,7 +406,7 @@
         '<button type="button" class="dr-iconbtn danger" data-act="purge" tabindex="-1" aria-label="Apagar de vez" title="Apagar de vez">' + ic('trash') + '</button></span>';
     } else if (v === 'shared') {
       const sh = it.share;
-      h += '<span class="dr-c dr-c-a" title="' + esc(TD.fmt.date(it.exp)) + '">' + esc(untilText(it.exp)) + '</span>' +
+      h += '<span class="dr-c dr-c-a" title="' + esc(sh.forever ? 'Ativo até ser revogado' : TD.fmt.date(it.exp)) + '">' + esc(sh.forever ? 'Sem prazo' : untilText(it.exp)) + '</span>' +
         '<span class="dr-c dr-c-b">' + esc(n(sh.downloads || 0, 'descarga', 'descargas')) + '</span>' +
         '<span class="dr-c dr-c-act"><button type="button" class="dr-mini-btn" data-act="copylink" tabindex="-1">' + ic('link') + '<span>Copiar link</span></button>' +
         '<button type="button" class="dr-iconbtn danger" data-act="revoke" tabindex="-1" aria-label="Revogar o link" title="Revogar o link">' + ic('close') + '</button></span>';
@@ -1587,9 +1589,12 @@
   async function doShare(key, hours, opt) {
     const bad = checkKey(key, true);
     if (bad) return fail(bad, opt);
+    const forever = opt.forever === true;
+    if (forever && !P.isFolder(key)) return fail('Só uma pasta pode ficar partilhada sem prazo.', opt);
     hours = Number(hours);
-    if (!Number.isInteger(hours) || hours < 1 || hours > 168) return fail('Duração inválida (de 1 a 168 horas).', opt);
-    const body = { do: 'share_create', key, hours };
+    if (!forever && (!Number.isInteger(hours) || hours < 1 || hours > 168)) return fail('Duração inválida (de 1 a 168 horas).', opt);
+    const body = forever ? { do: 'share_create', key, forever: true } : { do: 'share_create', key, hours };
+    if (opt.password) body.password = String(opt.password);   // só a interface; as propostas do assistente nunca a levam
     if (opt.includePrivate) body.include_private = true;   // só a interface, depois de a pessoa o marcar
     const j = await TD.api(body);
     if (!j.ok || !j.share) return fail((j && j.error) || 'Não foi possível criar o link.', opt);
@@ -1599,7 +1604,7 @@
     if (S.view === 'shared') rerender();
     scheduleDetails(true);
     TD.bus.emit('drive:changed', { kind: 'share', key, share: sh });
-    const msg = 'Link para «' + P.base(key) + '» criado (válido ' + hoursText(hours) + ').';
+    const msg = 'Link para «' + P.base(key) + '» criado (' + (forever ? 'sem prazo, até o revogar' : 'válido ' + hoursText(hours)) + ').';
     if (!opt.quiet) TD.toast(msg, 'ok', { action: { label: 'Copiar link', fn: () => TD.copyText(sh.url).then(ok => TD.toast(ok ? 'Link copiado.' : 'Não foi possível copiar.', ok ? 'ok' : 'err')) }, ms: 9000 });
     return { ok: true, message: msg, url: sh.url, result: sh };
   }
@@ -1615,7 +1620,7 @@
         case 'rename': return await doTransfer('move', [{ from: pl.from, to: pl.to }], Object.assign({}, opt, { rename: true }));
         case 'mkdir': return await doMkdir(pl.key, opt);
         case 'trash': return await doTrash(pl.items || (pl.key ? [pl.key] : []), opt);
-        case 'share': return await doShare(pl.key, pl.hours, opt);
+        case 'share': return await doShare(pl.key, pl.hours, Object.assign({}, opt, pl.forever === true ? { forever: true } : {}, typeof pl.password === 'string' && pl.password ? { password: pl.password } : {}));
         case 'restore': return await doRestore(pl.ids || (pl.id != null ? [pl.id] : []), opt);
         case 'purge': return await doPurge(pl, opt);
         default: return fail('Ação desconhecida.', opt);
@@ -2162,17 +2167,22 @@
     if (isRoot(key)) { TD.toast('As pastas base não podem ser partilhadas. Partilhe uma subpasta ou os ficheiros.', 'err'); return; }
     // uma pasta com documentos privados lá dentro: diz quais, e só partilha com a caixa marcada
     const priv = it.folder && !privateKey(key) ? S.objects.filter(o => o.k.indexOf(key) === 0 && !P.isFolder(o.k) && privateKey(o.k)).map(o => o.k.slice(key.length)) : [];
-    const opts = [[1, '1 h'], [6, '6 h'], [24, '24 h'], [72, '3 dias'], [168, '7 dias']];
+    // 0 = «Sem prazo» (só pastas); nunca fica guardado como predefinição
+    const opts = [[1, '1 h'], [6, '6 h'], [24, '24 h'], [72, '3 dias'], [168, '7 dias']].concat(it.folder ? [[0, 'Sem prazo']] : []);
     let hours = TD.store.get('drive.shareHours', 24);
-    if (!opts.some(o => o[0] === hours)) hours = 24;
+    if (!opts.some(o => o[0] === hours) || hours === 0) hours = 24;
     TD.dialog.open((box, done) => {
       box.classList.add('dr-dlg', 'dr-share');
       box.setAttribute('aria-label', 'Partilhar «' + it.name + '»');
       box.innerHTML = '<h2 class="td-dialog-title">Partilhar «<span></span>»</h2>' +
-        '<p class="td-dialog-text">Cria um link temporário. Quem o tiver pode descarregar ' + (it.folder ? 'os ficheiros desta pasta' : 'este ficheiro') + ' sem entrar no admin.</p>' +
+        '<p class="td-dialog-text">Cria um link' + (it.folder ? '' : ' temporário') + '. Quem o tiver pode descarregar ' + (it.folder ? 'os ficheiros desta pasta' : 'este ficheiro') + ' sem entrar no admin nem usar password.</p>' +
         '<div class="dr-share-l" id="dr-sh-l">Validade do link</div>' +
         '<div class="dr-share-h" role="radiogroup" aria-labelledby="dr-sh-l"></div>' +
+        (it.folder ? '<div class="dr-share-note" role="note" hidden><b>Sem prazo:</b> o link fica ativo até o revogares. Quem o tiver vê esta pasta e tudo o que lá puseres no futuro. Revoga-o em «Partilhados» ou nos detalhes da pasta.</div>' : '') +
         (priv.length ? '<div class="dr-share-warn" role="note"><b>Esta pasta tem documentos privados.</b><ul></ul><label class="check"><input type="checkbox" data-priv> Partilhar também estes documentos</label></div>' : '') +
+        '<label class="check dr-share-pwl"><input type="checkbox" data-pw> Proteger com password</label>' +
+        '<div class="dr-share-pw" hidden><div class="dr-share-row"><input type="text" data-pwv maxlength="100" autocomplete="off" spellcheck="false" aria-label="Password do link" placeholder="Mínimo 4 caracteres"><button type="button" class="btn ghost sm" data-pwgen>Gerar</button></div>' +
+        '<p class="muted dr-share-pwn">Envia a password a quem recebe o link, por outra via. Não fica guardada em texto: não a consegues ver depois.</p></div>' +
         '<div class="dr-share-out" hidden></div>' +
         '<div class="dr-share-list"></div>' +
         '<div class="td-dialog-actions"><button type="button" class="btn ghost" data-x>Fechar</button><button type="button" class="btn" data-create>' + ic('link') + 'Criar link</button></div>';
@@ -2180,16 +2190,31 @@
       const grp = box.querySelector('.dr-share-h'), out = box.querySelector('.dr-share-out'), lst = box.querySelector('.dr-share-list');
       const create = box.querySelector('[data-create]');
       const privBox = box.querySelector('[data-priv]');
+      const note = box.querySelector('.dr-share-note');
+      const pwOn = box.querySelector('[data-pw]'), pwBox = box.querySelector('.dr-share-pw'), pwIn = box.querySelector('[data-pwv]');
+      const pwOk = () => !pwOn.checked || pwIn.value.length >= 4;
+      const syncCreate = () => { create.disabled = !pwOk() || !!(privBox && !privBox.checked); };
+      pwOn.addEventListener('change', () => { pwBox.hidden = !pwOn.checked; if (pwOn.checked) pwIn.focus(); syncCreate(); });
+      pwIn.addEventListener('input', syncCreate);
+      box.querySelector('[data-pwgen]').onclick = () => {
+        const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789', r = crypto.getRandomValues(new Uint32Array(12));
+        pwIn.value = Array.from(r, v => a[v % a.length]).join('');
+        syncCreate();
+      };
       if (priv.length) {
         const ul = box.querySelector('.dr-share-warn ul');
         priv.slice(0, 5).forEach(r => ul.appendChild(TD.el('li', null, r)));
         if (priv.length > 5) ul.appendChild(TD.el('li', 'muted', 'e mais ' + (priv.length - 5) + '…'));
         create.disabled = true;
-        privBox.addEventListener('change', () => { create.disabled = !privBox.checked; });
+        privBox.addEventListener('change', syncCreate);
       }
       opts.forEach(([h, l]) => {
         const b = TD.el('button', { type: 'button', role: 'radio', class: 'dr-share-o', 'aria-checked': String(h === hours), 'data-h': h }, l);
-        b.onclick = () => { hours = h; grp.querySelectorAll('[role=radio]').forEach(x => x.setAttribute('aria-checked', String(+x.dataset.h === h))); };
+        b.onclick = () => {
+          hours = h;
+          grp.querySelectorAll('[role=radio]').forEach(x => x.setAttribute('aria-checked', String(+x.dataset.h === h)));
+          if (note) note.hidden = h !== 0;
+        };
         grp.appendChild(b);
       });
       function paintList() {
@@ -2202,13 +2227,15 @@
       paintList();
       create.onclick = async () => {
         create.disabled = true; create.textContent = 'A criar…';
-        TD.store.set('drive.shareHours', hours);
-        const r = await run({ kind: 'share', payload: { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked) });
-        create.disabled = !!(privBox && !privBox.checked); create.innerHTML = ic('link') + 'Criar outro link';
+        if (hours !== 0) TD.store.set('drive.shareHours', hours);
+        const pw = pwOn.checked ? pwIn.value : '';
+        const r = await run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw });
+        syncCreate(); create.innerHTML = ic('link') + 'Criar outro link';
         if (!r.ok) { TD.toast(r.message, 'err'); return; }
         out.hidden = false;
-        out.innerHTML = '<label class="dr-share-l" for="dr-sh-url">Link criado · expira ' + esc(TD.fmt.date(r.result.exp)) + '</label><div class="dr-share-row"><input id="dr-sh-url" type="text" readonly><button type="button" class="btn sm" data-copy>' + ic('copy') + 'Copiar</button></div><div class="dr-share-ok" role="status"></div>';
+        out.innerHTML = '<label class="dr-share-l" for="dr-sh-url">Link criado' + (pw ? ' com password' : '') + ' · ' + (r.result.forever ? 'sem prazo' : 'expira ' + esc(TD.fmt.date(r.result.exp))) + '</label><div class="dr-share-row"><input id="dr-sh-url" type="text" readonly><button type="button" class="btn sm" data-copy>' + ic('copy') + 'Copiar</button></div><div class="dr-share-ok" role="status"></div>';
         const inp = out.querySelector('input'); inp.value = r.url;
+        if (pw) { const pe = TD.el('div', 'dr-share-ok'); pe.textContent = 'Password: ' + pw; out.appendChild(pe); }
         const st = out.querySelector('.dr-share-ok');
         const cp = () => TD.copyText(r.url).then(ok => { st.textContent = ok ? 'Copiado para a área de transferência.' : 'Selecione e copie o link.'; });
         out.querySelector('[data-copy]').onclick = cp;
@@ -2224,7 +2251,7 @@
     const row = TD.el('div', 'dr-sh-row');
     const u = String(s.url || '');
     row.innerHTML = '<span class="dr-sh-i">' + ic('link') + '</span><span class="dr-sh-t"><span class="dr-sh-u" title="' + esc(u) + '">…' + esc(u.slice(-12)) + '</span>' +
-      '<span class="dr-sh-m">Expira ' + esc(untilText(s.exp)) + ' · ' + esc(n(s.downloads || 0, 'descarga', 'descargas')) + '</span></span>' +
+      '<span class="dr-sh-m">' + esc(shareUntil(s)) + ' · ' + esc(n(s.downloads || 0, 'descarga', 'descargas')) + '</span></span>' +
       '<button type="button" class="btn ghost sm" data-c>Copiar</button><button type="button" class="dr-iconbtn danger" data-r aria-label="Revogar este link" title="Revogar">' + ic('close') + '</button>';
     row.querySelector('[data-c]').onclick = () => copyLink(u);
     row.querySelector('[data-r]').onclick = async () => { await revoke([s.id]); if (after) after(); };

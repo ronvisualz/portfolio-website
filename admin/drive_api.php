@@ -29,7 +29,7 @@
  *   trash        key, id?  |  keys[]   ·   trash_list   ·   restore id, on_conflict?  |  ids[], on_conflict?
  *   purge        id  |  ids[]   ·   purge_all          → apagar de vez
  *   fav          key, on   ·   recent key
- *   share_create key, hours   ·   share_list key?   ·   share_revoke id
+ *   share_create key, hours (ou forever:true, só pastas), password?   ·   share_list key?   ·   share_revoke id
  *   search       q, prefix?, limit?   ·   index_tick   ·   index_status  (índice de conteúdo)
  *   delete, rename                                    → as ações antigas (compatibilidade)
  */
@@ -920,9 +920,16 @@ try {
     case 'share_create': {
         $key = want_any($str('key'));
         $folder = substr($key, -1) === '/';
-        $hours = filter_var($in['hours'] ?? null, FILTER_VALIDATE_INT);
-        if (!is_int($hours) || is_bool($in['hours'] ?? null) || $hours < 1 || $hours > DRIVE_SHARE_MAX_HOURS) {
-            api_err('Escolha uma duração entre 1 hora e 7 dias.');
+        // «forever»: o link da pasta fica ativo até ser revogado (só pastas; um ficheiro tem sempre prazo)
+        $forever = ($in['forever'] ?? false) === true;
+        if ($forever) {
+            if (!$folder) api_err('Só uma pasta pode ficar partilhada sem prazo. Escolha uma duração entre 1 hora e 7 dias.');
+            $hours = DRIVE_SHARE_MAX_HOURS;
+        } else {
+            $hours = filter_var($in['hours'] ?? null, FILTER_VALIDATE_INT);
+            if (!is_int($hours) || is_bool($in['hours'] ?? null) || $hours < 1 || $hours > DRIVE_SHARE_MAX_HOURS) {
+                api_err('Escolha uma duração entre 1 hora e 7 dias.');
+            }
         }
         if (drive_is_root($key)) api_err('As pastas base não podem ser partilhadas. Partilhe uma subpasta ou os ficheiros.');
         if (!drive_exists($key)) api_err($folder ? 'A pasta já não existe.' : 'O ficheiro já não existe.', 404);
@@ -940,7 +947,13 @@ try {
                     . '). Quem tiver o link também os pode descarregar.', 409, ['code' => 'private', 'private' => array_slice($priv, 0, 20), 'count' => count($priv)]);
             }
         }
-        $s = drive_share_create($pdo, $key, $folder, $hours);
+        // password opcional (quem abre o link tem de a escrever); guarda-se só o hash
+        $pw = $in['password'] ?? '';
+        if (!is_string($pw)) api_err('Password inválida.');
+        if ($pw !== '' && (mb_strlen($pw) < DRIVE_SHARE_PW_MIN || mb_strlen($pw) > DRIVE_SHARE_PW_MAX)) {
+            api_err('A password do link tem de ter entre ' . DRIVE_SHARE_PW_MIN . ' e ' . DRIVE_SHARE_PW_MAX . ' caracteres.');
+        }
+        $s = drive_share_create($pdo, $key, $folder, $hours, $forever, $pw);
         api_out(200, ['ok' => true, 'share' => drive_share_out($s)]);
     }
     case 'share_list': {

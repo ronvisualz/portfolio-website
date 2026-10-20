@@ -584,3 +584,9 @@ body.tdu-on .dr-scroll { padding-bottom: calc(var(--tdu-h, 0px) + 28px); }   /* 
 @media (prefers-reduced-motion: reduce) {
   .dr-boot span, .dr-skel-row i, .dr-skel-row b, .dr-skel-row em, .dr-q-spin { animation: none; }
 }
+.dr-share-note { margin-top: 12px; padding: 9px 12px; background: #FFF8DD; border: 1px solid #EBD58A; border-radius: var(--r); font-size: 12.5px; line-height: 1.45; color: #5C4600; }
+.dr-share-note[hidden] { display: none; }
+.dr-share-pwl { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; }
+.dr-share-pw { margin-top: 8px; }
+.dr-share-pw[hidden] { display: none; }
+.dr-share-pwn { margin: 6px 0 0; font-size: 12px; }

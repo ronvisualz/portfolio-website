@@ -17,6 +17,12 @@ require_once __DIR__ . '/drive.php';
 const DRIVE_RECENT_MAX = 200;
 const DRIVE_TRASH_DAYS = 30;
 const DRIVE_SHARE_MAX_HOURS = 168;
+/** Links de pasta «sem prazo»: a base exige uma data, por isso fica no último dia que o DATETIME aceita. */
+const DRIVE_SHARE_PW_MIN = 4;
+const DRIVE_SHARE_PW_MAX = 100;
+const DRIVE_SHARE_PW_TRIES = 5;      // tentativas falhadas seguidas…
+const DRIVE_SHARE_PW_LOCK = 900;     // …e a espera (s) até poder tentar outra vez
+const DRIVE_SHARE_FOREVER = '9999-12-31 23:59:59';
 
 function drive_key_hash(string $k): string {
     return hash('sha256', $k);
@@ -272,22 +278,27 @@ function drive_share_url(string $token): string {
 }
 
 function drive_share_row(array $r): array {
+    $forever = (string)$r['expires_at'] === DRIVE_SHARE_FOREVER;
     return ['id' => (int)$r['id'], 'token' => (string)$r['token'], 'k' => (string)$r['obj_key'], 'folder' => (int)$r['is_folder'] === 1,
-            'exp' => drive_ts($r['expires_at']), 'created' => drive_ts($r['created_at']),
-            'downloads' => (int)$r['downloads'], 'revoked' => (int)$r['revoked'] === 1];
+            'forever' => $forever, 'exp' => $forever ? 0 : drive_ts($r['expires_at']), 'created' => drive_ts($r['created_at']),
+            'downloads' => (int)$r['downloads'], 'revoked' => (int)$r['revoked'] === 1,
+            'protected' => (string)($r['pw_hash'] ?? '') !== '', 'pw_hash' => (string)($r['pw_hash'] ?? ''),
+            'pw_fails' => (int)($r['pw_fails'] ?? 0), 'pw_fail_at' => drive_ts($r['pw_fail_at'] ?? null)];
 }
 
-/** Para o JSON: {id, k, url, exp, folder, downloads, created}. */
+/** Para o JSON: {id, k, url, exp, forever, folder, downloads, created}. Sem prazo: forever=true e exp=0. */
 function drive_share_out(array $s): array {
-    return ['id' => $s['id'], 'k' => $s['k'], 'url' => drive_share_url($s['token']), 'exp' => $s['exp'],
+    return ['id' => $s['id'], 'k' => $s['k'], 'url' => drive_share_url($s['token']), 'exp' => $s['exp'], 'forever' => $s['forever'], 'protected' => $s['protected'],
             'folder' => $s['folder'], 'downloads' => $s['downloads'], 'created' => $s['created']];
 }
 
-function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours): array {
+/** $forever só vale para pastas (um ficheiro partilhado tem sempre prazo). */
+function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours, bool $forever = false, string $password = ''): array {
     $hours = max(1, min(DRIVE_SHARE_MAX_HOURS, $hours));
+    $until = $forever && $folder ? DRIVE_SHARE_FOREVER : drive_now($hours * 3600);
     $tok = drive_share_token();
-    $pdo->prepare('INSERT INTO drive_shares (token, obj_key, is_folder, expires_at, created_at, downloads, revoked) VALUES (?,?,?,?,?,0,0)')
-        ->execute([$tok, $key, $folder ? 1 : 0, drive_now($hours * 3600), drive_now()]);
+    $pdo->prepare('INSERT INTO drive_shares (token, obj_key, is_folder, expires_at, created_at, downloads, revoked, pw_hash) VALUES (?,?,?,?,?,0,0,?)')
+        ->execute([$tok, $key, $folder ? 1 : 0, $until, drive_now(), $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null]);
     return drive_share_get($pdo, (int)$pdo->lastInsertId());
 }
 
@@ -318,7 +329,7 @@ function drive_share_by_token(PDO $pdo, string $token): ?array {
     foreach ($st->fetchAll() as $r) {
         if (!hash_equals((string)$r['token'], $token)) continue;   // o MySQL pode comparar sem maiúsculas
         $s = drive_share_row($r);
-        $s['state'] = $s['revoked'] ? 'revoked' : ($s['exp'] <= time() ? 'expired' : 'ok');
+        $s['state'] = $s['revoked'] ? 'revoked' : (!$s['forever'] && $s['exp'] <= time() ? 'expired' : 'ok');
         return $s;
     }
     return null;
@@ -333,4 +344,30 @@ function drive_share_revoke(PDO $pdo, int $id): bool {
 /** Mais um download por este link. */
 function drive_share_hit(PDO $pdo, int $id): void {
     $pdo->prepare('UPDATE drive_shares SET downloads = downloads + 1 WHERE id = ?')->execute([$id]);
+}
+
+// ── password dos links ──────────────────────────────────────
+
+/** Segundos que faltam até se poder tentar outra vez (0 = pode). */
+function drive_share_pw_wait(array $s): int {
+    if ($s['pw_fails'] < DRIVE_SHARE_PW_TRIES) return 0;
+    return max(0, $s['pw_fail_at'] + DRIVE_SHARE_PW_LOCK - time());
+}
+
+/** Confere a password; conta as falhas (5 seguidas travam o link 15 min). */
+function drive_share_pw_check(PDO $pdo, array $s, string $pw): bool {
+    if (!$s['protected'] || drive_share_pw_wait($s) > 0) return false;
+    if ($pw !== '' && strlen($pw) <= 1000 && password_verify($pw, $s['pw_hash'])) {
+        if ($s['pw_fails'] > 0) $pdo->prepare('UPDATE drive_shares SET pw_fails = 0, pw_fail_at = NULL WHERE id = ?')->execute([$s['id']]);
+        return true;
+    }
+    // passado o castigo, recomeça a contar
+    $n = $s['pw_fails'] >= DRIVE_SHARE_PW_TRIES ? 1 : $s['pw_fails'] + 1;
+    $pdo->prepare('UPDATE drive_shares SET pw_fails = ?, pw_fail_at = ? WHERE id = ?')->execute([$n, drive_now(), $s['id']]);
+    return false;
+}
+
+/** O valor do cookie que prova que esta password foi dada (muda se a password mudar). */
+function drive_share_pw_cookie(array $s): string {
+    return hash_hmac('sha256', $s['token'], $s['pw_hash']);
 }

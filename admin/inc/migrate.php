@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -172,6 +172,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // e as tabelas do assistente (conversas, ações, gastos). Só cria
     // as tabelas que faltam; nada do que existe é tocado.
     migrate_drive($pdo);
+
+    // ── 09 · password opcional nos links de partilha ────────
+    migrate_share_password($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")
@@ -493,4 +496,16 @@ function migrate_drive(PDO $pdo): void {
             'CREATE INDEX IF NOT EXISTS idx_ai_actions_conv ON ai_actions (conv_id)',
         ] as $sql) $pdo->exec($sql);
     }
+}
+
+/**
+ * Links de partilha com password: pw_hash (password_hash, vazio = sem password) e o contador de
+ * tentativas falhadas (pw_fails desde pw_fail_at) para travar quem tenta adivinhar.
+ */
+function migrate_share_password(PDO $pdo): void {
+    if (!db_has_table($pdo, 'drive_shares') || db_has_column($pdo, 'drive_shares', 'pw_hash')) return;
+    $lite = db_is_sqlite($pdo);
+    $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_hash ' . ($lite ? 'TEXT' : 'VARCHAR(255)') . ' NULL');
+    $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_fails ' . ($lite ? 'INTEGER' : 'INT') . ' NOT NULL DEFAULT 0');
+    $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_fail_at ' . ($lite ? 'TEXT' : 'DATETIME') . ' NULL');
 }

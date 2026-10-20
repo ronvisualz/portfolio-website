@@ -31,9 +31,15 @@ function share_when(int $ts): string {
     return $d->format('d/m/Y') . ' às ' . $d->format('H:i');
 }
 
+/** «Disponível até 26/10/2026 às 18:00», ou «Sem prazo de validade» nos links de pasta sem prazo. */
+function share_valid(array $s): string {
+    return $s['forever'] ? 'Sem prazo de validade' : 'Disponível até ' . share_when($s['exp']);
+}
+
 /** Ícones (20×20, traço), os mesmos desenhos do Drive. */
 function share_icon(string $kind): string {
     $p = [
+        'lock' => '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
         'video' => '<rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="M8.5 7.5v5l4.2-2.5z"/>',
         'image' => '<rect x="2.5" y="3.5" width="15" height="13" rx="1.5"/><circle cx="7" cy="8" r="1.4"/><path d="M3 15l4.5-4.5 3 3 2.5-2.5 4.5 4.5"/>',
         'audio' => '<path d="M8 14.5V4.5l8-1.5v10"/><circle cx="6" cy="14.5" r="2"/><circle cx="14" cy="13" r="2"/>',
@@ -120,6 +126,10 @@ function share_head(string $title): void {
   .empty, .more { padding: 20px 24px; color: var(--ink-2); border-top: 1px solid var(--line); margin: 0; }
   .gone { text-align: center; padding: 48px 24px; }
   .gone .badge { margin: 0 auto 18px; background: var(--page); color: var(--ink-2); }
+  .pw { display: flex; gap: 8px; justify-content: center; margin: 22px auto 0; max-width: 360px; }
+  .pw input { flex: 1; min-width: 0; padding: 12px 14px; border: 1.5px solid var(--ink); border-radius: var(--r); font: inherit; }
+  .pw input[aria-invalid=true] { border-color: #B3261E; }
+  .pwerr { color: #B3261E !important; font-weight: 600; }
   .gone p { color: var(--ink-2); margin: 10px auto 0; max-width: 420px; }
   footer { padding: 0 0 28px; color: var(--ink-3); font-size: 12.5px; }
   @media (max-width: 560px) {
@@ -155,7 +165,7 @@ function share_foot(): void {
     ?>
 </div>
 </main>
-<footer><div class="wrap">Topper Digital · Os links de partilha são temporários.</div></footer>
+<footer><div class="wrap">Topper Digital · Partilhado a partir do Drive.</div></footer>
 </body>
 </html>
 <?php
@@ -187,7 +197,45 @@ $t = is_string($_GET['t'] ?? null) ? $_GET['t'] : '';
 $s = $t !== '' && r2_config() ? drive_share_by_token($pdo, $t) : null;
 if ($s === null || drive_hidden($s['k'])) share_gone(404);
 if ($s['state'] !== 'ok') share_gone(410);
-$left = $s['exp'] - time();
+// ── password: o link pode pedir uma; a prova é um cookie que só quem a deu recebe ──
+$unlocked = !$s['protected'];
+if (!$unlocked) {
+    $ck = 'td_sh_' . substr(hash('sha256', $s['token']), 0, 16);
+    $unlocked = isset($_COOKIE[$ck]) && is_string($_COOKIE[$ck]) && hash_equals(drive_share_pw_cookie($s), $_COOKIE[$ck]);
+    $pwError = '';
+    if (!$unlocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $wait = drive_share_pw_wait($s);
+        if ($wait > 0) $pwError = 'Demasiadas tentativas. Tente outra vez dentro de ' . max(1, (int)ceil($wait / 60)) . ' min.';
+        elseif (drive_share_pw_check($pdo, $s, is_string($_POST['pw'] ?? null) ? $_POST['pw'] : '')) {
+            setcookie($ck, drive_share_pw_cookie($s), ['expires' => 0, 'path' => '/admin/', 'secure' => !IS_LOCAL, 'httponly' => true, 'samesite' => 'Lax']);
+            share_go('partilha.php?t=' . rawurlencode($t));   // POST → GET: recarregar não repete o envio
+        } else {
+            $pwError = drive_share_pw_wait(drive_share_by_token($pdo, $t) ?? $s) > 0
+                ? 'Demasiadas tentativas. Tente outra vez dentro de ' . (int)ceil(DRIVE_SHARE_PW_LOCK / 60) . ' min.' : 'Password errada.';
+        }
+    } elseif (!$unlocked && drive_share_pw_wait($s) > 0) {
+        $pwError = 'Demasiadas tentativas. Tente outra vez dentro de ' . max(1, (int)ceil(drive_share_pw_wait($s) / 60)) . ' min.';
+    }
+    if (!$unlocked) {
+        http_response_code($pwError !== '' ? 401 : 200);
+        share_head('Link protegido');
+        ?>
+  <section class="card gone">
+    <div class="badge"><?= share_icon('lock') ?></div>
+    <h1>Este link tem password.</h1>
+    <p>Escreva a password que lhe enviaram para ver <?= $s['folder'] ? 'a pasta' : 'o ficheiro' ?>.</p>
+    <form method="post" action="partilha.php?t=<?= share_h(rawurlencode($t)) ?>" class="pw">
+      <input type="password" name="pw" autocomplete="off" required autofocus maxlength="1000" aria-label="Password" <?= $pwError !== '' ? 'aria-invalid="true"' : '' ?>>
+      <button class="btn" type="submit">Abrir</button>
+    </form>
+    <?php if ($pwError !== ''): ?><p class="pwerr" role="alert"><?= share_h($pwError) ?></p><?php endif; ?>
+  </section>
+<?php
+        share_foot();
+        exit;
+    }
+}
+$left = $s['forever'] ? 31536000 : $s['exp'] - time();   // sem prazo: o limite dos URLs curtos é só o do tipo de ficheiro
 
 try {
     // ── um ficheiro ─────────────────────────────────────────
@@ -215,7 +263,7 @@ try {
       <div>
         <p class="kicker">Ficheiro partilhado</p>
         <h1><?= share_h($name) ?></h1>
-        <p class="meta"><b><?= share_h(drive_size((int)$h['size'])) ?></b> · <?= share_h($label) ?> · Disponível até <?= share_h(share_when($s['exp'])) ?></p>
+        <p class="meta"><b><?= share_h(drive_size((int)$h['size'])) ?></b> · <?= share_h($label) ?> · <?= share_h(share_valid($s)) ?></p>
       </div>
     </div>
     <div class="actions">
@@ -266,7 +314,7 @@ try {
       <div>
         <p class="kicker">Pasta partilhada</p>
         <h1><?= share_h($name) ?></h1>
-        <p class="meta"><b><?= count($files) === 1 ? '1 ficheiro' : count($files) . ' ficheiros' ?></b> · <?= share_h(drive_size($total)) ?> · Disponível até <?= share_h(share_when($s['exp'])) ?></p>
+        <p class="meta"><b><?= count($files) === 1 ? '1 ficheiro' : count($files) . ' ficheiros' ?></b> · <?= share_h(drive_size($total)) ?> · <?= share_h(share_valid($s)) ?></p>
       </div>
     </div>
     <?php if (!$files): ?>
