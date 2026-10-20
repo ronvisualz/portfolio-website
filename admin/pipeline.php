@@ -138,7 +138,7 @@ render_flashes();
     $byStage = [];
     foreach ($deals as $d) $byStage[(int)$d['stage_id']][] = $d;
 ?>
-<div class="board" data-csrf="<?= e(csrf_token()) ?>" data-back="<?= e($self) ?>">
+<div class="pboard" data-csrf="<?= e(csrf_token()) ?>" data-back="<?= e($self) ?>">
   <?php foreach ($stages as $s): $sid = (int)$s['id']; $cards = $byStage[$sid] ?? [];
         $total = array_sum(array_map(fn($d) => (float)$d['value_estimate'], $cards)); ?>
     <section class="col <?= $s['kind'] === 'kickoff' ? 'col-win' : '' ?>" data-stage="<?= $sid ?>">
@@ -331,7 +331,7 @@ if ($open):
 <script>
 // Arrastar e largar entre colunas. Sem JavaScript, o menu «Mover para» de cada cartão faz o mesmo.
 (function () {
-  var board = document.querySelector('.board'); if (!board) return;
+  var board = document.querySelector('.pboard'); if (!board) return;
   var dragged = null;
   board.addEventListener('dragstart', function (e) {
     var c = e.target.closest('.dcard'); if (!c) return;

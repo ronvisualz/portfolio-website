@@ -557,14 +557,14 @@ tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
 .field .check + .check { margin-top: 6px; }
 
 /* ── pipeline (kanban por funil) ─────────────────────────── */
-.board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
-.board .col { flex: 0 0 250px; background: var(--surface); border: 1.5px solid var(--line, #e3e3e3); border-radius: var(--r); min-height: 140px; }
-.board .col.over { border-color: var(--black); background: var(--grey); }
-.board .col header { padding: 10px 12px; border-bottom: 1px solid var(--line, #e3e3e3); display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
-.board .col header .muted { font-size: 11.5px; }
-.board .col-win { border-style: dashed; background: transparent; }
-.board .col-win header b::after { content: ' →'; }
-.board .cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.pboard { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+.pboard .col { flex: 0 0 250px; background: var(--surface); border: 1.5px solid var(--line, #e3e3e3); border-radius: var(--r); min-height: 140px; }
+.pboard .col.over { border-color: var(--black); background: var(--grey); }
+.pboard .col header { padding: 10px 12px; border-bottom: 1px solid var(--line, #e3e3e3); display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.pboard .col header .muted { font-size: 11.5px; }
+.pboard .col-win { border-style: dashed; background: transparent; }
+.pboard .col-win header b::after { content: ' →'; }
+.pboard .cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
 .dcard { background: #fff; border: 1.5px solid var(--black); border-radius: var(--r); padding: 9px 10px; font-size: 12.5px; cursor: grab; }
 .dcard.dragging { opacity: 0.45; }
 .dcard .dname { font-weight: 600; color: var(--black); text-decoration: none; display: block; }
@@ -576,6 +576,6 @@ tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
 .dcard .dmove select { width: 100%; }
 .inline-edit input { border-color: transparent; background: transparent; padding: 4px 6px; }
 .inline-edit input:hover, .inline-edit input:focus { border-color: var(--line, #ccc); background: #fff; }
-@media (max-width: 720px) { .board .col { flex-basis: 78vw; } }
+@media (max-width: 720px) { .pboard .col { flex-basis: 78vw; } }
 .keep { text-transform: none; }
 .tablewrap + form.bar { margin-top: 12px; }

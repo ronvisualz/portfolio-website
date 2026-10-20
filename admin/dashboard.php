@@ -1,47 +1,28 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
-require __DIR__ . '/inc/carteira.php';
+require __DIR__ . '/inc/finance.php';
 $user = require_login();
-require_page('dashboard', 'negocios');
+require_page('dashboard');
 
-// As ações da Carteira (por baixo dos números) gravam aqui e voltam aqui.
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    carteira_handle_post();
-}
+// Dashboard executivo: só leitura. Por agora os mesmos números do Painel
+// de sempre, lidos do MySQL e calculados pelo sistema. A Carteira passou
+// para Negócios e Financeiro. Os indicadores novos ainda estão por decidir.
 
-// Os números vêm da folha Google — das colunas calculadas dela, para o
-// site e a folha mostrarem sempre o mesmo.
-$d = null; $sheetErr = null;
-try {
-    $d = sheet_data();
-} catch (SheetException $e) {
-    $sheetErr = $e;
-}
-
-$years = $d['years'] ?? [(int)date('Y')];
-// Por omissão, o ano corrente (sheet_data inclui-o sempre na lista).
+$rate  = vat_rate($pdo);
+$years = finance_years($pdo);
 $year  = (int)($_GET['year'] ?? date('Y'));
 if (!in_array($year, $years, true)) $year = (int)date('Y');
+$t = finance_year($pdo, $year, $rate);
 
-render_header('Painel', 'dashboard');
+render_header('Dashboard', 'dashboard');
 render_flashes();
-echo sheet_status_line($d);
-echo paginate_css();
 ?>
 
-<h1 style="margin-bottom:1.8rem">Painel</h1>
-
-<?php if ($sheetErr): ?>
-  <?= sheet_error_box($sheetErr) ?>
-<?php else: $t = sheet_year_totals($d, $year); ?>
+<h1 style="margin-bottom:1.8rem">Dashboard</h1>
 
 <?php if (count($years) > 1): ?>
 <form class="bar" method="get">
-  <?php foreach (['tab', 'pt', 'pc', 'pi'] as $k): if (isset($_GET[$k]) && $_GET[$k] !== ''): ?>
-    <input type="hidden" name="<?= $k ?>" value="<?= e((string)$_GET[$k]) ?>">
-  <?php endif; endforeach; ?>
   <select name="year" onchange="this.form.submit()" aria-label="Ano">
     <?php foreach ($years as $y): ?>
       <option value="<?= $y ?>" <?= $y === $year ? 'selected' : '' ?>><?= $y ?></option>
@@ -55,7 +36,7 @@ echo paginate_css();
   <div class="stat">
     <div class="k">Faturação (s/ IVA)</div>
     <div class="v"><?= eur($t['revenue']) ?></div>
-    <div class="n">c/ IVA: <?= eur($t['revenue'] + $t['vat_out']) ?></div>
+    <div class="n">c/ IVA: <?= eur($t['gross']) ?></div>
   </div>
   <div class="stat">
     <div class="k">Lucro antes de impostos</div>
@@ -69,7 +50,9 @@ echo paginate_css();
   </div>
 </div>
 
-<?php carteira_render($d); ?>
-<?php endif; ?>
+<p class="muted" style="margin-top:1.6rem">
+  <?php if (can('negocios')): ?><a class="lnk" href="/admin/negocios.php">Negócios em produção</a><?php endif; ?>
+  <?php if (can('financeiro')): ?> · <a class="lnk" href="/admin/financeiro.php?year=<?= $year ?>">Financeiro de <?= $year ?></a><?php endif; ?>
+</p>
 
 <?php render_footer(); ?>

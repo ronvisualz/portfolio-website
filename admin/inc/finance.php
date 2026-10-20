@@ -91,3 +91,60 @@ function cost_input(array $src): array {
         'notes'    => mb_substr(trim((string)($src['notes'] ?? '')), 0, 2000),
     ];
 }
+
+/** Os custos da empresa (sem negócio), já com valor limpo e IVA. $year null = todos. */
+function company_cost_rows(PDO $pdo, float $rate, ?int $year = null): array {
+    $st = $pdo->prepare('SELECT * FROM costs WHERE deal_id IS NULL' . ($year ? ' AND year = ?' : '') . ' ORDER BY year DESC, COALESCE(month, 13) DESC, id DESC');
+    $st->execute($year ? [$year] : []);
+    $rows = $st->fetchAll();
+    foreach ($rows as &$c) {
+        $c['net']   = cost_net($c, $rate);
+        $c['vat']   = cost_vat($c, $rate);
+        $c['total'] = round($c['net'] + $c['vat'], 2);
+    }
+    return $rows;
+}
+
+/** Os negócios faturados de um ano (em produção ou concluídos), cada um com as suas contas. */
+function year_deals(PDO $pdo, int $year, float $rate): array {
+    $st = $pdo->prepare("SELECT d.*, c.name AS contact_name FROM deals d LEFT JOIN contacts c ON c.id = d.contact_id
+                          WHERE d.code IS NOT NULL AND d.phase IN ('production','done') AND d.year = ?
+                          ORDER BY COALESCE(d.month, 0) DESC, d.code DESC");
+    $st->execute([$year]);
+    $rows = $st->fetchAll();
+    foreach ($rows as &$d) $d['m'] = deal_money($d, deal_costs($pdo, (int)$d['id'], $rate), $rate);
+    return $rows;
+}
+
+/** Os totais de um ano — as mesmas contas que a folha fazia. */
+function finance_year(PDO $pdo, int $year, float $rate): array {
+    $revenue = 0.0; $gross = 0.0; $costs = 0.0; $unpaid = 0.0; $vatOut = 0.0; $vatIn = 0.0;
+    $deals = year_deals($pdo, $year, $rate);
+    foreach ($deals as $d) {
+        $revenue += $d['m']['budget_net'];
+        $gross   += $d['m']['budget_gross'];
+        $costs   += $d['m']['expenses'];
+        $vatOut  += $d['m']['vat_out'];
+        $vatIn   += $d['m']['vat_in'];
+        if (!(int)$d['is_paid']) $unpaid += $d['m']['budget_net'];
+    }
+    foreach (company_cost_rows($pdo, $rate, $year) as $c) {
+        $costs += $c['net'];
+        $vatIn += $c['vat'];
+    }
+    return [
+        'revenue' => round($revenue, 2), 'gross' => round($gross, 2), 'costs' => round($costs, 2),
+        'profit'  => round($revenue - $costs, 2), 'unpaid' => round($unpaid, 2),
+        'vat_out' => round($vatOut, 2), 'vat_in' => round($vatIn, 2), 'count' => count($deals),
+    ];
+}
+
+/** Anos com negócios ou custos, mais o corrente, do mais recente para o mais antigo. */
+function finance_years(PDO $pdo): array {
+    $y = [(int)date('Y')];
+    foreach ($pdo->query("SELECT DISTINCT year FROM deals WHERE year IS NOT NULL AND code IS NOT NULL
+                          UNION SELECT DISTINCT year FROM costs WHERE year IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $v) $y[] = (int)$v;
+    $y = array_values(array_unique(array_filter($y)));
+    rsort($y);
+    return $y;
+}

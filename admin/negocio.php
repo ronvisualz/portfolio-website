@@ -139,7 +139,7 @@ $allContacts = $pdo->query('SELECT id, name FROM contacts ORDER BY name')->fetch
 
 $tasks = [];
 if (db_has_column($pdo, 'tasks', 'deal_id')) {
-    $st = $pdo->prepare('SELECT t.*, u.name AS who FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.deal_id = ? ORDER BY t.status = \'done\', t.due_date');
+    $st = $pdo->prepare('SELECT t.*, tm.name AS who FROM tasks t LEFT JOIN team_members tm ON tm.id = t.member_id WHERE t.deal_id = ? ORDER BY t.status = \'done\', t.due_date');
     $st->execute([$id]);
     $tasks = $st->fetchAll();
 }

@@ -4,8 +4,13 @@
  *
  * As tarefas vivem em pilhas: uma por pessoa e a pilha «Por atribuir»
  * (member_id NULL). A ordem dentro de cada pilha é a coluna position.
- * Há um só login para todos os sócios, por isso não há permissões:
- * atribuir é só escolher a pessoa.
+ *
+ * As pessoas vêm da aba Equipa: cada utilizador tem a sua pilha
+ * (team_members, ligada por users.team_member_id). team_sync() cria e
+ * liga as pilhas que faltam — a primeira vez pelo nome, para as tarefas
+ * antigas seguirem a pessoa certa. Quem vê que pilhas segue o âmbito da
+ * aba Tarefas; atribuir segue as regras de atribuição (inc/perm.php).
+ * Uma tarefa liga-se a um negócio pelo ID (deal_id), nunca pelo nome.
  */
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
@@ -26,13 +31,117 @@ const TASK_PRIO = [
     'baixa' => 'Baixa',
 ];
 
-/** Toda a equipa, pela ordem das pilhas. Indexada pelo id. */
+/**
+ * Liga cada utilizador à sua pilha: primeiro pelo nome (pilhas antigas),
+ * senão cria uma. Nome e cor seguem sempre o utilizador.
+ */
+function team_sync(PDO $pdo): void {
+    $users = $pdo->query('SELECT id, name, color, team_member_id FROM users ORDER BY position, id')->fetchAll();
+    $members = $pdo->query('SELECT id, name FROM team_members')->fetchAll();
+    $linked = array_filter(array_map(fn($u) => $u['team_member_id'] !== null ? (int)$u['team_member_id'] : null, $users));
+    foreach ($users as $u) {
+        $mid = $u['team_member_id'] !== null ? (int)$u['team_member_id'] : null;
+        if ($mid === null) {
+            foreach ($members as $m) {
+                if (!in_array((int)$m['id'], $linked, true)
+                    && mb_strtolower(trim($m['name'])) === mb_strtolower(trim($u['name']))) {
+                    $mid = (int)$m['id'];
+                    break;
+                }
+            }
+            if ($mid === null) {
+                $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) FROM team_members')->fetchColumn() + 1;
+                $pdo->prepare('INSERT INTO team_members (name, color, position) VALUES (?,?,?)')
+                    ->execute([$u['name'], $u['color'] ?: TEAM_COLORS[$pos % count(TEAM_COLORS)], $pos]);
+                $mid = (int)$pdo->lastInsertId();
+            }
+            $linked[] = $mid;
+            $pdo->prepare('UPDATE users SET team_member_id = ? WHERE id = ?')->execute([$mid, $u['id']]);
+        }
+        $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)$u['color']) ? $u['color'] : null;
+        $pdo->prepare('UPDATE team_members SET name = ?, color = COALESCE(?, color) WHERE id = ?')->execute([$u['name'], $color, $mid]);
+        if (!$color) {
+            $pdo->prepare("UPDATE users SET color = (SELECT color FROM team_members WHERE id = ?) WHERE id = ? AND color = ''")
+                ->execute([$mid, $u['id']]);
+        }
+    }
+}
+
+/**
+ * As pilhas, pela ordem. Indexadas pelo id, com user_id (null numa pilha
+ * antiga ainda sem utilizador). Quem foi desativado só aparece enquanto
+ * tiver tarefas por fazer.
+ */
 function team_members(PDO $pdo): array {
+    team_sync($pdo);
+    $rows = $pdo->query(
+        "SELECT tm.*, u.id AS user_id, u.is_active AS user_active,
+                (SELECT COUNT(*) FROM tasks t WHERE t.member_id = tm.id AND t.status <> 'done') AS open_tasks
+           FROM team_members tm LEFT JOIN users u ON u.team_member_id = tm.id
+          ORDER BY tm.position, tm.id"
+    )->fetchAll();
     $out = [];
-    foreach ($pdo->query('SELECT * FROM team_members ORDER BY position, id')->fetchAll() as $m) {
+    foreach ($rows as $m) {
+        $gone = $m['user_id'] === null || (int)$m['user_active'] !== 1;
+        if ($gone && (int)$m['open_tasks'] === 0) continue;
         $out[(int)$m['id']] = $m;
     }
     return $out;
+}
+
+/**
+ * Que pilhas posso ver, pelo âmbito da aba Tarefas: null = todas.
+ * Uma pilha antiga sem utilizador só se vê com âmbito «todos».
+ */
+function task_visible_members(PDO $pdo, array $members): ?array {
+    $scope = my_scope('tarefas');
+    if ($scope === 'all') return null;
+    $users = $scope === 'dept' ? dept_user_ids($pdo, current_user()) : [(int)current_user()['id']];
+    $ids = [];
+    foreach ($members as $mid => $m) {
+        if ($m['user_id'] !== null && in_array((int)$m['user_id'], $users, true)) $ids[] = (int)$mid;
+    }
+    return $ids;
+}
+
+/** Posso mexer numa tarefa desta pilha? (null = Por atribuir: toda a gente) */
+function task_member_visible(?int $mid, ?array $visible): bool {
+    return $mid === null || $visible === null || in_array($mid, $visible, true);
+}
+
+/**
+ * Posso pôr uma tarefa na pilha $to? A pilha tem de estar à vista e,
+ * sendo de outra pessoa, as regras de atribuição têm de o permitir.
+ */
+function task_can_assign(PDO $pdo, ?int $to, array $members, ?array $visible): bool {
+    if ($to === null) return true;
+    if (!task_member_visible($to, $visible)) return false;
+    $uid = $members[$to]['user_id'] ?? null;
+    if ($uid === null) return is_admin();
+    $st = $pdo->prepare('SELECT * FROM users WHERE id = ?');
+    $st->execute([(int)$uid]);
+    $target = $st->fetch();
+    $me = $pdo->prepare('SELECT * FROM users WHERE id = ?');
+    $me->execute([(int)current_user()['id']]);
+    return $target && can_assign_to($me->fetch(), $target);
+}
+
+/** Negócios a que se pode ligar uma tarefa ou um evento: os ativos, mais o atual. */
+function task_deal_options(PDO $pdo, ?int $current = null): array {
+    $st = $pdo->prepare("SELECT id, code, name FROM deals WHERE code IS NOT NULL
+                          AND (phase IN ('pipeline','production') OR id = ?) ORDER BY code DESC");
+    $st->execute([(int)$current]);
+    $out = [];
+    foreach ($st->fetchAll() as $d) $out[(int)$d['id']] = $d['code'] . ' · ' . $d['name'];
+    return $out;
+}
+
+function task_deal_in($raw, PDO $pdo): ?int {
+    $id = (int)$raw;
+    if ($id <= 0) return null;
+    $st = $pdo->prepare('SELECT COUNT(*) FROM deals WHERE id = ? AND code IS NOT NULL');
+    $st->execute([$id]);
+    return (int)$st->fetchColumn() > 0 ? $id : null;
 }
 
 /** Primeiro nome — chega para os cartões e para o calendário. */
@@ -76,7 +185,7 @@ function task_next_position(PDO $pdo, ?int $member): int {
  * Valida o formulário de uma tarefa. Devolve [valores, erro].
  * O erro vem em português, pronto para o flash.
  */
-function task_input(array $in, array $members): array {
+function task_input(array $in, array $members, ?PDO $pdo = null): array {
     $title = clip(trim((string)($in['title'] ?? '')), 200);
     if ($title === '') return [null, 'A tarefa precisa de um título.'];
 
@@ -92,6 +201,7 @@ function task_input(array $in, array $members): array {
         'description' => trim((string)($in['description'] ?? '')),
         'member_id'   => task_member_in($in['member_id'] ?? 0, $members),
         'job_name'    => clip(trim((string)($in['job_name'] ?? '')), 160),
+        'deal_id'     => $pdo ? task_deal_in($in['deal_id'] ?? 0, $pdo) : null,
         'due_date'    => $due !== '' ? $due : null,
         'priority'    => isset(TASK_PRIO[$prio]) ? $prio : 'media',
         'status'      => isset(TASK_STATUS[$status]) ? $status : 'todo',
@@ -101,12 +211,12 @@ function task_input(array $in, array $members): array {
 function task_create(PDO $pdo, array $v): int {
     $now = task_now();
     $pdo->prepare(
-        'INSERT INTO tasks (title, description, member_id, job_name, due_date, priority, status, position, done_at, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, priority, status, position, done_at, created_at, updated_at, created_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
     )->execute([
-        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['due_date'],
+        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'],
         $v['priority'], $v['status'], task_next_position($pdo, $v['member_id']),
-        $v['status'] === 'done' ? $now : null, $now, $now,
+        $v['status'] === 'done' ? $now : null, $now, $now, current_user()['id'] ?? null,
     ]);
     return (int)$pdo->lastInsertId();
 }
@@ -124,11 +234,11 @@ function task_update(PDO $pdo, array $old, array $v): void {
     }
 
     $pdo->prepare(
-        'UPDATE tasks SET title = ?, description = ?, member_id = ?, job_name = ?, due_date = ?,
+        'UPDATE tasks SET title = ?, description = ?, member_id = ?, job_name = ?, deal_id = ?, due_date = ?,
                           priority = ?, status = ?, position = ?, done_at = ?, updated_at = ?
           WHERE id = ?'
     )->execute([
-        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['due_date'],
+        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'],
         $v['priority'], $v['status'], $pos, $doneAt, task_now(), (int)$old['id'],
     ]);
 }
@@ -204,19 +314,6 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
     }
 }
 
-/** Nomes dos trabalhos na folha Google, para sugerir. Sem folha, lista vazia. */
-function task_job_names(): array {
-    if (!function_exists('sheet_data') || sheet_config_raw() === null) return [];
-    try {
-        $names = array_map(fn($j) => (string)$j['name'], sheet_data()['jobs'] ?? []);
-    } catch (Throwable $e) {
-        return [];
-    }
-    $names = array_values(array_unique(array_filter($names, fn($n) => $n !== '')));
-    sort($names, SORT_NATURAL | SORT_FLAG_CASE);
-    return $names;
-}
-
 /** «12 out» para os cartões; vazio sem prazo. */
 function task_due_label(?string $d): string {
     if (!$d) return '';
@@ -227,8 +324,11 @@ function task_due_label(?string $d): string {
  * As feitas, das mais recentes para as mais antigas, até $limit.
  * Devolve [lista, total]. $member limita a uma pessoa.
  */
-function task_done_list(PDO $pdo, int $limit, ?int $member = null): array {
+function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visible = null): array {
     $where = "status = 'done'" . ($member ? ' AND member_id = ' . (int)$member : '');
+    if ($visible !== null) {
+        $where .= ' AND (member_id IS NULL' . ($visible ? ' OR member_id IN (' . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
+    }
     $total = (int)$pdo->query("SELECT COUNT(*) FROM tasks WHERE $where")->fetchColumn();
     $list = $pdo->query(
         "SELECT * FROM tasks WHERE $where ORDER BY COALESCE(done_at, updated_at) DESC, id DESC LIMIT " . max(1, $limit)
