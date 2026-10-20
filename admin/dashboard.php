@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/data.php';
 require __DIR__ . '/inc/carteira.php';
 $user = require_login();
 
@@ -10,31 +10,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     carteira_handle_post();
 }
 
-// Os números vêm da folha Google — das colunas calculadas dela, para o
-// site e a folha mostrarem sempre o mesmo.
-$d = null; $sheetErr = null;
-try {
-    $d = sheet_data();
-} catch (SheetException $e) {
-    $sheetErr = $e;
-}
-
-$years = $d['years'] ?? [(int)date('Y')];
-// Por omissão, o ano corrente (sheet_data inclui-o sempre na lista).
+$d = data_all();
+$years = $d['years'];
+// Por omissão, o ano corrente (data_all inclui-o sempre na lista).
 $year  = (int)($_GET['year'] ?? date('Y'));
 if (!in_array($year, $years, true)) $year = (int)date('Y');
+$t = data_year_totals($d, $year);
 
 render_header('Painel', 'dashboard');
 render_flashes();
-echo sheet_status_line($d);
+echo data_export_line();
 echo paginate_css();
 ?>
 
 <h1 style="margin-bottom:1.8rem">Painel</h1>
-
-<?php if ($sheetErr): ?>
-  <?= sheet_error_box($sheetErr) ?>
-<?php else: $t = sheet_year_totals($d, $year); ?>
 
 <?php if (count($years) > 1): ?>
 <form class="bar" method="get">
@@ -69,6 +58,5 @@ echo paginate_css();
 </div>
 
 <?php carteira_render($d); ?>
-<?php endif; ?>
 
 <?php render_footer(); ?>

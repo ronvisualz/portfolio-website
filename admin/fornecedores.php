@@ -1,11 +1,11 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/data.php';
 require __DIR__ . '/inc/paginate.php';
 $user = require_login();
 
-// Os fornecedores vivem no separador «Fornecedores» da folha Google.
+// Os fornecedores (tabela suppliers).
 
 /** Os filtros atuais, para voltar a eles depois de gravar. */
 function sup_filters(array $src): array {
@@ -20,60 +20,53 @@ function sup_url(array $f = []): string {
     return '/admin/fornecedores.php' . ($f ? '?' . http_build_query($f) : '');
 }
 
-/** Os campos do formulário, prontos para a folha. */
+/** Os campos do formulário, prontos para gravar. */
 function sup_values(): array {
-    $links = sheet_split(str_replace(["\r\n", "\n"], '|', (string)($_POST['links'] ?? '')), '|');
+    $links = data_split(str_replace(["\r\n", "\n"], '|', (string)($_POST['links'] ?? '')), '|');
     $pick  = static function (string $k, array $list): string {
         $v = trim((string)($_POST[$k] ?? ''));
-        // valores fora da lista só se aceitam se já estavam na folha
+        // valores fora da lista só se aceitam se já lá estavam
         return ($v === '' || in_array($v, $list, true) || $v === trim((string)($_POST[$k . '_was'] ?? ''))) ? $v : '';
     };
-    $nif = trim((string)($_POST['nif'] ?? ''));
     return [
-        'Nome'               => sheet_text(trim((string)($_POST['name'] ?? '')) ?: 'Sem nome'),
-        'Categoria'          => $pick('category', SUPPLIER_CATEGORIES),
-        'Serviço'            => sheet_text((string)($_POST['service'] ?? '')),
-        'Pessoa de contacto' => sheet_text((string)($_POST['contact'] ?? '')),
-        'Email'              => sheet_text((string)($_POST['email'] ?? '')),
-        'Telefone'           => sheet_text((string)($_POST['phone'] ?? ''), true),
-        'Site / redes'       => sheet_text(implode(' | ', $links)),
-        'NIF'                => sheet_text($nif, true),
-        'Tarifa'             => sheet_text((string)($_POST['rate'] ?? '')),
-        'Avaliação'          => $pick('rating', SUPPLIER_RATINGS),
-        'Último trabalho'    => sheet_text((string)($_POST['last_job'] ?? '')),
-        'Notas'              => sheet_text((string)($_POST['notes'] ?? '')),
+        'name'     => trim((string)($_POST['name'] ?? '')) ?: 'Sem nome',
+        'category' => $pick('category', SUPPLIER_CATEGORIES),
+        'service'  => (string)($_POST['service'] ?? ''),
+        'contact'  => (string)($_POST['contact'] ?? ''),
+        'email'    => (string)($_POST['email'] ?? ''),
+        'phone'    => (string)($_POST['phone'] ?? ''),
+        'links'    => $links,
+        'nif'      => trim((string)($_POST['nif'] ?? '')),
+        'rate'     => (string)($_POST['rate'] ?? ''),
+        'rating'   => $pick('rating', SUPPLIER_RATINGS),   // «★★★» → 3
+        'last_job' => (string)($_POST['last_job'] ?? ''),
+        'notes'    => (string)($_POST['notes'] ?? ''),
     ];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do   = $_POST['do'] ?? '';
-    $row  = (int)($_POST['row'] ?? 0);
-    $key  = ['Nome' => (string)($_POST['name_key'] ?? '')];
+    $id   = (int)($_POST['id'] ?? 0);
     $back = sup_url(sup_filters(is_array($_POST['back'] ?? null) ? $_POST['back'] : []));
 
     if ($do === 'create') {
-        sheet_try(fn() => sheet_append('Fornecedores', sup_values()), 'Fornecedor adicionado.');
+        data_try(fn() => data_supplier_insert(sup_values()), 'Fornecedor adicionado.');
         redirect($back);
     }
     if ($do === 'save') {
-        sheet_try(fn() => sheet_update('Fornecedores', $row, $key, sup_values()), 'Fornecedor guardado.');
+        data_try(fn() => data_supplier_update($id, sup_values()), 'Fornecedor guardado.');
         redirect($back);
     }
     if ($do === 'delete') {
-        sheet_try(fn() => sheet_delete('Fornecedores', $row, $key), 'Fornecedor eliminado.');
+        data_try(fn() => data_supplier_delete($id), 'Fornecedor eliminado.');
         redirect($back);
     }
     redirect($back);
 }
 
-$d = null; $sheetErr = null;
-try {
-    $d = sheet_data();
-} catch (SheetException $e) {
-    $sheetErr = $e;
-}
-$all = $d['suppliers'] ?? [];
+$d = data_all();
+$all = $d['suppliers'];
 
 $filters = sup_filters($_GET);
 $fCat    = $filters['cat'] ?? '';
@@ -93,16 +86,16 @@ $rows = array_values(array_filter($all, static function ($s) use ($fCat, $needle
     }
     return true;
 }));
-usort($rows, static fn($a, $b) => [$lc($a['name']), $a['row']] <=> [$lc($b['name']), $b['row']]);
+usort($rows, static fn($a, $b) => [$lc($a['name']), $a['id']] <=> [$lc($b['name']), $b['id']]);
 
 // Fornecedor à espera de confirmação para ser eliminado (dois passos, sem diálogos).
 $pending = (int)($_GET['del'] ?? 0);
 $editRow = (int)($_GET['edit'] ?? 0);
-$es = ($d && $editRow && empty($d['suppliers_error'])) ? sheet_supplier_by_row($d, $editRow) : null;
+$es = $editRow ? data_supplier($d, $editRow) : null;
 
 // 8 por página (?pf=); um fornecedor a eliminar/editar abre na página onde está.
 foreach ($rows as $n => $s) {
-    if ($s['row'] === $pending || $s['row'] === $editRow) $_GET['pf'] = intdiv($n, PAGE_SIZE) + 1;
+    if ($s['id'] === $pending || $s['id'] === $editRow) $_GET['pf'] = intdiv($n, PAGE_SIZE) + 1;
 }
 $pg = paginate($rows, 'pf');
 if ($pg['page'] > 1) $filters['pf'] = (string)$pg['page']; else unset($filters['pf']);
@@ -133,26 +126,11 @@ function sup_stars(string $r): string {
 
 render_header('Fornecedores', 'fornecedores');
 render_flashes();
-echo sheet_status_line($d);
+echo data_export_line();
 echo paginate_css();
 ?>
 
 <h1>Fornecedores</h1>
-
-<?php if ($sheetErr): ?>
-  <?= sheet_error_box($sheetErr) ?>
-<?php render_footer(); exit; endif; ?>
-
-<?php if (!empty($d['suppliers_error'])): ?>
-  <div class="flash err"><b>Atualize o Code.gs.</b> <?= e($d['suppliers_error']) ?>
-    <div style="margin-top:0.5rem">Crie o separador «Fornecedores» na folha (títulos na linha 1: Nome, Categoria,
-      Serviço, Pessoa de contacto, Email, Telefone, Site / redes, NIF, Tarifa, Avaliação, Último trabalho, Notas),
-      cole a versão atual do <code>sheets/Code.gs</code> no Apps Script e faça Implementar &gt; Gerir implementações &gt;
-      Nova versão. As outras páginas continuam a funcionar.</div>
-    <div style="margin-top:0.5rem"><a href="<?= e(sheet_link()) ?>" target="_blank" rel="noopener noreferrer">Abrir folha</a>
-      · <a href="<?= e(sheet_refresh_url()) ?>">Tentar outra vez</a></div>
-  </div>
-<?php render_footer(); exit; endif; ?>
 
 <div class="sub"><?= count($all) ?> fornecedores no total</div>
 
@@ -178,8 +156,8 @@ echo paginate_css();
   <?php if (!$rows): ?>
     <tr><td colspan="7" class="empty">Nenhum fornecedor encontrado.</td></tr>
   <?php endif; ?>
-  <?php foreach ($pg['rows'] as $s): $sid = $s['row']; ?>
-    <tr class="<?= $pending === $sid || ($es && $es['row'] === $sid) ? 'pending' : '' ?>">
+  <?php foreach ($pg['rows'] as $s): $sid = $s['id']; ?>
+    <tr class="<?= $pending === $sid || ($es && $es['id'] === $sid) ? 'pending' : '' ?>">
       <td>
         <span class="b"><?= e($s['name']) ?></span>
         <?php if ($s['service'] !== ''): ?>
@@ -213,8 +191,7 @@ echo paginate_css();
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="row" value="<?= $sid ?>">
-            <input type="hidden" name="name_key" value="<?= e($s['name']) ?>">
+            <input type="hidden" name="id" value="<?= $sid ?>">
             <?= back_fields($filters) ?>
             <button class="btn danger sm" type="submit">Sim, eliminar</button>
           </form>
@@ -241,8 +218,7 @@ echo paginate_css();
   <?= back_fields($filters) ?>
   <?php if ($es): ?>
     <input type="hidden" name="do" value="save">
-    <input type="hidden" name="row" value="<?= $es['row'] ?>">
-    <input type="hidden" name="name_key" value="<?= e($es['name']) ?>">
+    <input type="hidden" name="id" value="<?= $es['id'] ?>">
     <input type="hidden" name="category_was" value="<?= e($es['category']) ?>">
     <input type="hidden" name="rating_was" value="<?= e($es['rating']) ?>">
   <?php else: ?>
@@ -255,11 +231,11 @@ echo paginate_css();
     </div>
     <div class="field">
       <label for="category">Categoria</label>
-      <select id="category" name="category"><?= sheet_options(SUPPLIER_CATEGORIES, $v['category'], '—') ?></select>
+      <select id="category" name="category"><?= data_options(SUPPLIER_CATEGORIES, $v['category'], '—') ?></select>
     </div>
     <div class="field">
       <label for="rating">Avaliação</label>
-      <select id="rating" name="rating"><?= sheet_options(SUPPLIER_RATINGS, $v['rating'], '—') ?></select>
+      <select id="rating" name="rating"><?= data_options(SUPPLIER_RATINGS, $v['rating'], '—') ?></select>
     </div>
     <div class="field wide">
       <label for="service">Serviço</label>

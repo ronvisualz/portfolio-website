@@ -1,12 +1,11 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/data.php';
 require __DIR__ . '/inc/paginate.php';
 $user = require_login();
 
-// As leads vivem no separador «Leads» da folha Google.
-// Nos endereços a fase vai como chave (?status=proposta); na folha, como texto.
+// As leads (tabela leads). A fase vai como chave (?status=proposta).
 const STAGES = LEAD_STAGES;
 
 /** Os filtros atuais, para voltar a eles depois de gravar. */
@@ -22,78 +21,70 @@ function leads_url(array $f = []): string {
     return '/admin/leads.php' . ($f ? '?' . http_build_query($f) : '');
 }
 
-/** Os campos do formulário, prontos para a folha. */
+/** Os campos do formulário, prontos para gravar. */
 function lead_values(): array {
     $types = [];
     foreach ((array)($_POST['types'] ?? []) as $t) {
         $t = trim((string)$t);
         if ($t !== '' && strpos($t, ',') === false && !in_array($t, $types, true)) $types[] = $t;
     }
-    $contacts = sheet_split(str_replace(["\r\n", "\n"], '|', (string)($_POST['contacts'] ?? '')), '|');
+    $contacts = data_split(str_replace(["\r\n", "\n"], '|', (string)($_POST['contacts'] ?? '')), '|');
     $stage    = (string)($_POST['status'] ?? 'novo');
-    $touch    = trim((string)($_POST['last_touch'] ?? ''));
     $pick     = static function (string $k, array $list): string {
         $v = trim((string)($_POST[$k] ?? ''));
-        // valores fora da lista só se aceitam se já estavam na folha
+        // valores fora da lista só se aceitam se já lá estavam
         return ($v === '' || in_array($v, $list, true) || $v === trim((string)($_POST[$k . '_was'] ?? ''))) ? $v : '';
     };
     return [
-        'Nome'                     => sheet_text(trim((string)($_POST['name'] ?? '')) ?: 'Sem nome'),
-        'Tipo'                     => sheet_text(implode(', ', $types)),
-        'Contactos (redes / site)' => sheet_text(implode(' | ', $contacts)),
-        'Telefone'                 => sheet_text((string)($_POST['phone'] ?? ''), true),
-        'Fase'                     => STAGES[$stage] ?? (trim((string)($_POST['status_was'] ?? '')) ?: STAGES['novo']),
-        'Serviço'                  => $pick('service', LEAD_SERVICES),
-        'Prioridade'               => $pick('priority', LEAD_PRIORITIES),
-        'Detalhe'                  => sheet_text((string)($_POST['detail'] ?? '')),
-        'Porquê abordar'           => sheet_text((string)($_POST['why'] ?? '')),
-        'Email'                    => sheet_text((string)($_POST['email'] ?? '')),
-        'Notas'                    => sheet_text((string)($_POST['notes'] ?? '')),
-        'Último toque'             => preg_match('/^\d{4}-\d{2}-\d{2}$/', $touch) ? $touch : sheet_text($touch),
+        'name'       => trim((string)($_POST['name'] ?? '')) ?: 'Sem nome',
+        'types'      => $types,
+        'contacts'   => $contacts,
+        'phone'      => (string)($_POST['phone'] ?? ''),
+        'stage'      => isset(STAGES[$stage]) ? $stage : 'novo',
+        'service'    => $pick('service', LEAD_SERVICES),
+        'priority'   => $pick('priority', LEAD_PRIORITIES),
+        'detail'     => (string)($_POST['detail'] ?? ''),
+        'why'        => (string)($_POST['why'] ?? ''),
+        'email'      => (string)($_POST['email'] ?? ''),
+        'notes'      => (string)($_POST['notes'] ?? ''),
+        'last_touch' => (string)($_POST['last_touch'] ?? ''),
     ];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do   = $_POST['do'] ?? '';
-    $row  = (int)($_POST['row'] ?? 0);
-    $key  = ['Nome' => (string)($_POST['name_key'] ?? '')];
+    $id   = (int)($_POST['id'] ?? 0);
     $back = leads_url(lead_filters(is_array($_POST['back'] ?? null) ? $_POST['back'] : []));
 
     if ($do === 'create') {
-        sheet_try(fn() => sheet_append('Leads', lead_values()), 'Lead adicionada.');
+        data_try(fn() => data_lead_insert(lead_values()), 'Lead adicionada.');
         redirect($back);
     }
 
     if ($do === 'save') {
-        sheet_try(fn() => sheet_update('Leads', $row, $key, lead_values()), 'Lead guardada.');
+        data_try(fn() => data_lead_update($id, lead_values()), 'Lead guardada.');
         redirect($back);
     }
 
     if ($do === 'move') {
         $to = (string)($_POST['status'] ?? '');
         if (isset(STAGES[$to])) {
-            sheet_try(fn() => sheet_update('Leads', $row, $key, ['Fase' => STAGES[$to], 'Último toque' => sheet_today()]),
-                      'Fase: ' . STAGES[$to] . '.');
+            data_try(fn() => data_lead_update($id, ['stage' => $to, 'last_touch' => data_today()]), 'Fase: ' . STAGES[$to] . '.');
         }
         redirect($back);
     }
 
     if ($do === 'delete') {
-        sheet_try(fn() => sheet_delete('Leads', $row, $key), 'Lead eliminada.');
+        data_try(fn() => data_lead_delete($id), 'Lead eliminada.');
         redirect($back);
     }
 
     redirect($back);
 }
 
-$d = null; $sheetErr = null;
-try {
-    $d = sheet_data();
-} catch (SheetException $e) {
-    $sheetErr = $e;
-}
-$all = $d['leads'] ?? [];
+$d = data_all();
+$all = $d['leads'];
 
 $filters = lead_filters($_GET);
 $fStatus = $filters['status'] ?? '';
@@ -132,11 +123,11 @@ usort($rows, static function ($a, $b) use ($order) {
 // Lead à espera de confirmação para ser eliminada (dois passos, sem diálogos).
 $pendingLead = (int)($_GET['del'] ?? 0);
 $editLead    = (int)($_GET['edit'] ?? 0);
-$el = ($d && $editLead) ? sheet_lead_by_row($d, $editLead) : null;
+$el = $editLead ? data_lead($d, $editLead) : null;
 
 // 8 por página (?pl=); uma lead a eliminar/editar abre na página onde está.
 foreach ($rows as $n => $l) {
-    if ($l['row'] === $pendingLead || $l['row'] === $editLead) $_GET['pl'] = intdiv($n, PAGE_SIZE) + 1;
+    if ($l['id'] === $pendingLead || $l['id'] === $editLead) $_GET['pl'] = intdiv($n, PAGE_SIZE) + 1;
 }
 $pgL = paginate($rows, 'pl');
 if ($pgL['page'] > 1) $filters['pl'] = (string)$pgL['page']; else unset($filters['pl']);
@@ -161,15 +152,12 @@ const PRIO_CHIP = ['Alta' => 'no', 'Média' => 'wait', 'Baixa' => ''];
 
 render_header('Leads', 'leads');
 render_flashes();
-echo sheet_status_line($d);
+echo data_export_line();
 echo paginate_css();
 ?>
 
 <h1>Leads</h1>
 
-<?php if ($sheetErr): ?>
-  <?= sheet_error_box($sheetErr) ?>
-<?php render_footer(); exit; endif; ?>
 
 <div class="sub"><?= count($all) ?> contactos no total</div>
 
@@ -193,10 +181,10 @@ echo paginate_css();
     <?php endforeach; ?>
   </select>
   <select name="tipo" onchange="this.form.submit()" aria-label="Tipo">
-    <?= sheet_options(LEAD_TYPES, $fTipo, 'Todos os tipos') ?>
+    <?= data_options(LEAD_TYPES, $fTipo, 'Todos os tipos') ?>
   </select>
   <select name="prio" onchange="this.form.submit()" aria-label="Prioridade">
-    <?= sheet_options(LEAD_PRIORITIES, $fPrio, 'Todas as prioridades') ?>
+    <?= data_options(LEAD_PRIORITIES, $fPrio, 'Todas as prioridades') ?>
   </select>
   <button class="btn sm" type="submit">Filtrar</button>
   <?php if (array_diff_key($filters, ['pl' => 1])): ?><a class="lnk" href="/admin/leads.php">Limpar</a><?php endif; ?>
@@ -212,8 +200,8 @@ echo paginate_css();
   <?php if (!$rows): ?>
     <tr><td colspan="7" class="empty">Nenhuma lead encontrada.</td></tr>
   <?php endif; ?>
-  <?php foreach ($pgL['rows'] as $l): $lid = $l['row']; ?>
-    <tr class="<?= $pendingLead === $lid || ($el && $el['row'] === $lid) ? 'pending' : '' ?>">
+  <?php foreach ($pgL['rows'] as $l): $lid = $l['id']; ?>
+    <tr class="<?= $pendingLead === $lid || ($el && $el['id'] === $lid) ? 'pending' : '' ?>">
       <td>
         <span class="b"><?= e($l['name']) ?></span>
         <?php if ($l['priority'] !== ''): ?>
@@ -248,8 +236,7 @@ echo paginate_css();
         <form method="post" style="display:inline">
           <?= csrf_field() ?>
           <input type="hidden" name="do" value="move">
-          <input type="hidden" name="row" value="<?= $lid ?>">
-          <input type="hidden" name="name_key" value="<?= e($l['name']) ?>">
+          <input type="hidden" name="id" value="<?= $lid ?>">
           <?= back_fields($filters) ?>
           <select name="status" onchange="this.form.submit()" aria-label="Fase"
                   style="font-size:0.66rem;padding:0.25rem 0.3rem;border-color:var(--hairline)">
@@ -268,8 +255,7 @@ echo paginate_css();
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="row" value="<?= $lid ?>">
-            <input type="hidden" name="name_key" value="<?= e($l['name']) ?>">
+            <input type="hidden" name="id" value="<?= $lid ?>">
             <?= back_fields($filters) ?>
             <button class="btn danger sm" type="submit">Sim, eliminar</button>
           </form>
@@ -298,9 +284,7 @@ echo paginate_css();
   <?= back_fields($filters) ?>
   <?php if ($el): ?>
     <input type="hidden" name="do" value="save">
-    <input type="hidden" name="row" value="<?= $el['row'] ?>">
-    <input type="hidden" name="name_key" value="<?= e($el['name']) ?>">
-    <input type="hidden" name="status_was" value="<?= e($el['stage_label']) ?>">
+    <input type="hidden" name="id" value="<?= $el['id'] ?>">
     <input type="hidden" name="service_was" value="<?= e($el['service']) ?>">
     <input type="hidden" name="priority_was" value="<?= e($el['priority']) ?>">
   <?php else: ?>
@@ -322,11 +306,11 @@ echo paginate_css();
     </div>
     <div class="field">
       <label for="service">Serviço</label>
-      <select id="service" name="service"><?= sheet_options(LEAD_SERVICES, $v['service'], '—') ?></select>
+      <select id="service" name="service"><?= data_options(LEAD_SERVICES, $v['service'], '—') ?></select>
     </div>
     <div class="field">
       <label for="priority">Prioridade</label>
-      <select id="priority" name="priority"><?= sheet_options(LEAD_PRIORITIES, $v['priority'], '—') ?></select>
+      <select id="priority" name="priority"><?= data_options(LEAD_PRIORITIES, $v['priority'], '—') ?></select>
     </div>
     <div class="field wide">
       <label>Tipo</label>

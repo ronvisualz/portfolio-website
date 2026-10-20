@@ -204,15 +204,11 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
     }
 }
 
-/** Nomes dos trabalhos na folha Google, para sugerir. Sem folha, lista vazia. */
+/** Nomes dos trabalhos, para sugerir. */
 function task_job_names(): array {
-    if (!function_exists('sheet_data') || sheet_config_raw() === null) return [];
-    try {
-        $names = array_map(fn($j) => (string)$j['name'], sheet_data()['jobs'] ?? []);
-    } catch (Throwable $e) {
-        return [];
-    }
-    $names = array_values(array_unique(array_filter($names, fn($n) => $n !== '')));
+    global $pdo;
+    $names = $pdo->query("SELECT name FROM jobs WHERE name <> ''")->fetchAll(PDO::FETCH_COLUMN);
+    $names = array_values(array_unique(array_map('strval', $names)));
     sort($names, SORT_NATURAL | SORT_FLAG_CASE);
     return $names;
 }

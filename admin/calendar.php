@@ -1,7 +1,6 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/tasks.php';
 $user = require_login();
 
@@ -44,9 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($back);
         }
 
-        $pid = (int)($_POST['project_id'] ?? 0);
+        $pid = (int)($_POST['job_id'] ?? 0);
         $pdo->prepare(
-            'INSERT INTO events (title, event_date, start_time, end_time, project_id, location, notes)
+            'INSERT INTO events (title, event_date, start_time, end_time, job_id, location, notes)
              VALUES (?,?,?,?,?,?,?)'
         )->execute([
             trim((string)($_POST['title'] ?? '')) ?: 'Sem título',
@@ -162,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $eq = $pdo->prepare(
     'SELECT e.*, p.name AS job_name
        FROM events e
-       LEFT JOIN projects p ON p.id = e.project_id
+       LEFT JOIN jobs p ON p.id = e.job_id
       WHERE e.event_date BETWEEN ? AND ?
       ORDER BY e.event_date, COALESCE(e.start_time, "23:59"), e.id'
 );
@@ -175,7 +174,7 @@ foreach ($events as $ev) {
 }
 
 $jobs = $pdo->query(
-    "SELECT id, name, year FROM projects WHERE kind = 'job' ORDER BY year DESC, name"
+    "SELECT id, name, year FROM jobs ORDER BY year DESC, name"
 )->fetchAll();
 
 // Evento à espera de confirmação para ser eliminado.
@@ -341,7 +340,7 @@ $pq      = $person ? '&amp;p=' . $person : '';
     <div class="cal-d<?= $fora ? ' fora' : '' ?><?= $iso === $today ? ' hoje' : '' ?>">
       <div class="n"><?= $dia ?></div>
       <?php foreach ($lista as $ev): ?>
-        <a class="ev<?= $ev['project_id'] ? ' job' : '' ?>"
+        <a class="ev<?= $ev['job_id'] ? ' job' : '' ?>"
            href="#ev-<?= (int)$ev['id'] ?>"
            title="<?= e($ev['title'] . ' · ' . event_hours($ev) . ($ev['job_name'] ? ' · ' . $ev['job_name'] : '')) ?>">
           <b><?= e(substr(event_hours($ev), 0, 5)) ?></b> <?= e(shorten($ev['title'], 22)) ?>
@@ -368,7 +367,7 @@ $pq      = $person ? '&amp;p=' . $person : '';
       <div class="ag-n"><b><?= $dia ?></b> <?= $dow ?></div>
       <div class="ag-items">
         <?php foreach ($byDay[$dia] ?? [] as $ev): ?>
-          <a class="ev<?= $ev['project_id'] ? ' job' : '' ?>" href="#ev-<?= (int)$ev['id'] ?>">
+          <a class="ev<?= $ev['job_id'] ? ' job' : '' ?>" href="#ev-<?= (int)$ev['id'] ?>">
             <b><?= e(event_hours($ev)) ?></b> <?= e($ev['title']) ?>
           </a>
         <?php endforeach; ?>
@@ -415,9 +414,8 @@ $pq      = $person ? '&amp;p=' . $person : '';
         <?php endif; ?>
       </td>
       <td>
-        <?php if ($ev['project_id']): ?>
-          <?php /* Os trabalhos vivem agora na folha Google: encontram-se pelo nome. */ ?>
-          <a href="/admin/project.php?n=<?= e(rawurlencode((string)$ev['job_name'])) ?>"><?= e($ev['job_name']) ?></a>
+        <?php if ($ev['job_id'] && $ev['job_name'] !== null): ?>
+          <a href="/admin/project.php?id=<?= (int)$ev['job_id'] ?>"><?= e($ev['job_name']) ?></a>
         <?php else: ?>
           <span class="muted">—</span>
         <?php endif; ?>
@@ -470,8 +468,8 @@ $pq      = $person ? '&amp;p=' . $person : '';
         <input type="time" id="end_time" name="end_time">
       </div>
       <div class="field">
-        <label for="project_id">Trabalho (opcional)</label>
-        <select id="project_id" name="project_id">
+        <label for="job_id">Trabalho (opcional)</label>
+        <select id="job_id" name="job_id">
           <option value="0">— nenhum —</option>
           <?php foreach ($jobs as $j): ?>
             <option value="<?= (int)$j['id'] ?>"><?= e($j['name']) ?> · <?= (int)$j['year'] ?></option>

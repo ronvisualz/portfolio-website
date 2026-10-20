@@ -25,7 +25,7 @@ require_once __DIR__ . '/inc/drive.php';
 require_once __DIR__ . '/inc/drive_store.php';
 require_once __DIR__ . '/inc/ai.php';
 require_once __DIR__ . '/inc/drive_index.php';
-require_once __DIR__ . '/inc/sheet.php';
+require_once __DIR__ . '/inc/data.php';
 require_once __DIR__ . '/inc/tasks.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -131,7 +131,7 @@ function ai_tools(): array {
          'description' => 'Os detalhes de um ficheiro ou de uma pasta: tipo, tamanho, data de alteração, se já foi lido e o resumo, os links de partilha ativos e se está nos favoritos. Para pastas: número de ficheiros, de subpastas e tamanho total.',
          'input_schema' => $obj(['key' => $str('A chave completa (as pastas terminam em «/»).')], ['key'])],
         ['name' => 'company_data', 'strict' => true,
-         'description' => 'Dados de gestão da empresa, da folha Google «TOPPER DIGITAL» e do quadro de tarefas. trabalhos: ano, mês, nome, tipo, valor sem e com IVA, gastos, lucro, se está pago. equipa: os sócios e quem trabalhou em cada trabalho (função, valor, IVA, contacto). fornecedores: contactos, serviço, NIF, tarifa, avaliação. leads: contactos comerciais e a fase. tarefas: quem, trabalho, prazo, prioridade e estado. Os valores estão em euros; «sem_iva» e «com_iva» dizem se incluem IVA.',
+         'description' => 'Dados de gestão da empresa (a base de dados do admin) e do quadro de tarefas. trabalhos: ano, mês, nome, tipo, valor sem e com IVA, gastos, lucro, se está pago. equipa: os sócios e quem trabalhou em cada trabalho (função, valor, IVA, contacto). fornecedores: contactos, serviço, NIF, tarifa, avaliação. leads: contactos comerciais e a fase. tarefas: quem, trabalho, prazo, prioridade e estado. Os valores estão em euros; «sem_iva» e «com_iva» dizem se incluem IVA.',
          'input_schema' => $obj(['dataset' => ['type' => 'string', 'enum' => ['trabalhos', 'equipa', 'fornecedores', 'leads', 'tarefas'],
                                               'description' => 'Os dados a ler.']], ['dataset'])],
         ['name' => 'propose_move', 'strict' => true,
@@ -488,11 +488,7 @@ function ai_tool_company_data(PDO $pdo, array $in): string {
         }
         $extra['nota_tarefas'] = 'Tarefas por fazer e as feitas nos últimos 60 dias.';
     } else {
-        try {
-            $d = sheet_data(false);
-        } catch (SheetException $e) {
-            throw new AiToolError('Não foi possível ler a folha Google: ' . $e->getMessage());
-        }
+        $d = data_all();
         switch ($ds) {
             case 'trabalhos':
                 foreach ($d['jobs'] as $j) {
@@ -517,7 +513,6 @@ function ai_tool_company_data(PDO $pdo, array $in): string {
                 }
                 break;
             case 'fornecedores':
-                if (!empty($d['suppliers_error'])) throw new AiToolError('Não foi possível ler os fornecedores: ' . $d['suppliers_error']);
                 foreach ($d['suppliers'] as $s) {
                     $rows[] = array_filter([
                         'nome' => $s['name'], 'categoria' => $s['category'], 'servico' => $s['service'], 'contacto' => $s['contact'],

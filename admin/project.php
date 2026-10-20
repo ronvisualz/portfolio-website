@@ -1,68 +1,46 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
+require __DIR__ . '/inc/data.php';
 require __DIR__ . '/inc/drive.php';
 $user = require_login();
 
-// Um trabalho é uma linha do separador Trabalhos: project.php?row=5.
-// O «n» (nome) que vai junto no endereço serve para o reencontrar se a
-// folha tiver mudado de ordem entretanto; project.php?n=Nome também serve.
-$row  = (int)($_GET['row'] ?? $_POST['row'] ?? 0);
-$want = trim((string)($_GET['n'] ?? ''));
-$vat  = SHEET_VAT;
+// Um trabalho: project.php?id=12. Os endereços antigos (do tempo da folha,
+// ?row=5&n=Nome) ainda funcionam: procura-se pelo nome.
+$id  = (int)($_GET['id'] ?? $_POST['id'] ?? 0);
+$vat = DATA_VAT;
 
-function job_page(int $row, string $name, string $extra = ''): string {
-    return '/admin/project.php?row=' . $row . '&n=' . rawurlencode($name) . $extra;
+function job_page(int $id, string $extra = ''): string {
+    return '/admin/project.php?id=' . $id . $extra;
 }
 
-/** Página de erro com o aspeto do resto do admin. */
-function job_fail(string $html, ?array $d): void {
-    render_header('Carteira', 'projects');
-    render_flashes();
-    echo sheet_status_line($d);
-    echo '<h1>Carteira</h1><div class="sub"><a href="/admin/dashboard.php#carteira">← Painel</a></div>';
-    echo $html;
-    render_footer();
-    exit;
-}
-
-$d = null;
-try {
-    $d = sheet_data();
-} catch (SheetException $e) {
-    job_fail(sheet_error_box($e), null);
-}
-
-$p = $row > 0 ? sheet_job_by_row($d, $row) : null;
-if ($want !== '' && (!$p || $p['name'] !== $want)) {
-    // A linha mudou (ou só veio o nome): procura-se pelo nome.
-    $byName = sheet_job_by_name($d, $want);
-    if ($byName && $_SERVER['REQUEST_METHOD'] !== 'POST') {
-        redirect(job_page($byName['row'], $byName['name']));
-    }
-    if (!$byName) $p = null;
+$d = data_all();
+$p = $id > 0 ? data_job($d, $id) : null;
+if (!$p && ($n = trim((string)($_GET['n'] ?? ''))) !== '') {
+    $byName = data_job_by_name($d, $n);
+    if ($byName) redirect(job_page($byName['id']));
 }
 if (!$p) {
     http_response_code(404);
-    job_fail('<div class="flash err">Este trabalho não está na folha (pode ter sido apagado ou mudado de nome). '
-           . '<a href="/admin/dashboard.php#carteira">Voltar ao Painel</a></div>', $d);
+    render_header('Carteira', 'projects');
+    render_flashes();
+    echo '<h1>Carteira</h1><div class="sub"><a href="/admin/dashboard.php#carteira">← Painel</a></div>';
+    echo '<div class="flash err">Este trabalho não existe (pode ter sido apagado). '
+       . '<a href="/admin/dashboard.php#carteira">Voltar ao Painel</a></div>';
+    render_footer();
+    exit;
 }
-$id   = $p['row'];
-$here = job_page($id, $p['name']);
+$here = job_page($id);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = $_POST['do'] ?? '';
-
-    // A página foi aberta com um trabalho; se a linha entretanto tem
-    // outro, não se escreve nada.
-    if ((string)($_POST['name_key'] ?? '') !== $p['name']) {
-        flash('A folha mudou entretanto. Recarregue a página e tente outra vez.', 'err');
+    $crewId = (int)($_POST['crew_id'] ?? 0);
+    // Um custo de outro trabalho não se mexe a partir desta página.
+    if ($crewId > 0 && (data_crew($d, $crewId)['job_id'] ?? 0) !== $id) {
+        flash('Este custo já não existe (foi apagado entretanto).', 'err');
         redirect($here);
     }
-    $crewKey = ['Trabalho' => $p['name'], 'Função' => (string)($_POST['k_role'] ?? '')];
-    $crewRow = (int)($_POST['crew_row'] ?? 0);
 
     // A pasta do trabalho no Drive (R2): criada (se faltar) só quando se carrega no botão.
     if ($do === 'drive_folder') {
@@ -78,58 +56,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($do === 'save_project') {
-        $name  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
         $mode  = ($_POST['expenses_mode'] ?? 'crew') === 'manual' ? 'manual' : 'crew';
         $gross = isset($_POST['amount_includes_vat']);
         $y     = (int)($_POST['year'] ?? $p['year']);
-        $ok = sheet_try(function () use ($p, $name, $mode, $gross, $vat, $y) {
-            $other = sheet_job_by_name(sheet_data(), $name);
-            if ($other && $other['row'] !== $p['row']) {
-                throw new SheetException('Já existe um trabalho chamado «' . $name . '». Escolha outro nome.');
-            }
-            // Mudar o nome leva a equipa com ele (a folha trata disso).
-            sheet_update('Trabalhos', $p['row'], ['Nome' => $p['name']], [
-                'Nome'            => sheet_text($name),
-                'Tipo'            => sheet_text((string)($_POST['type_label'] ?? '')),
-                'Mês'             => sheet_month_out(((int)($_POST['start_month'] ?? 0)) ?: null),
-                'Ano'             => ($y >= 2000 && $y <= 2100) ? $y : $p['year'],
-                'Budget (s/ IVA)' => net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
-                'Internacional'   => isset($_POST['is_international']),
-                'Fatura com IVA'  => isset($_POST['has_vat']),
-                // Vazio = os custos são a soma da Equipa.
-                'Gastos manuais'  => $mode === 'manual' ? net_from_input($_POST['expenses_manual'] ?? 0, $gross, $vat) : '',
-                'Pago'            => isset($_POST['is_paid']),
-                'Notas'           => sheet_text((string)($_POST['notes'] ?? '')),
-            ]);
-        }, 'Alterações guardadas.');
-        redirect($ok ? job_page($id, $name) : $here);
+        $m     = (int)($_POST['start_month'] ?? 0);
+        data_try(fn() => data_job_update($id, [
+            'name'             => (string)($_POST['name'] ?? ''),
+            'type_label'       => (string)($_POST['type_label'] ?? ''),
+            'month'            => $m >= 1 && $m <= 12 ? $m : null,
+            'year'             => ($y >= 2000 && $y <= 2100) ? $y : $p['year'],
+            'budget_net'       => net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
+            'is_international' => isset($_POST['is_international']),
+            'has_vat'          => isset($_POST['has_vat']),
+            // null = os custos são a soma da equipa
+            'expenses_manual'  => $mode === 'manual' ? net_from_input($_POST['expenses_manual'] ?? 0, $gross, $vat) : null,
+            'is_paid'          => isset($_POST['is_paid']),
+            'notes'            => (string)($_POST['notes'] ?? ''),
+        ]), 'Alterações guardadas.');
+        redirect($here);
     }
 
     if ($do === 'add_crew' || $do === 'save_crew') {
         $mode = (string)($_POST['vat_mode'] ?? 'plus');
         if (!isset(VAT_MODES[$mode])) $mode = 'plus';
-        $values = [
-            'Trabalho'    => sheet_text($p['name']),
-            'Pessoa'      => sheet_text((string)($_POST['person'] ?? '')),
-            'Função'      => sheet_text((string)($_POST['role'] ?? '')),
-            'Valor'       => money_in($_POST['fee'] ?? 0),   // guarda-se tal como foi escrito
-            'Tipo de IVA' => sheet_vat_label($mode),
-            'Fechado'     => isset($_POST['is_confirmed']),
-            'Contacto'    => sheet_text((string)($_POST['contact'] ?? '')),
-            'Notas'       => sheet_text((string)($_POST['notes'] ?? '')),
+        $f = [
+            'person'       => (string)($_POST['person'] ?? ''),
+            'role'         => (string)($_POST['role'] ?? ''),
+            'fee'          => money_in($_POST['fee'] ?? 0),   // guarda-se tal como foi escrito
+            'vat_mode'     => $mode,
+            'is_confirmed' => isset($_POST['is_confirmed']),
+            'contact'      => (string)($_POST['contact'] ?? ''),
+            'notes'        => (string)($_POST['notes'] ?? ''),
         ];
-        if ($do === 'add_crew') {
-            sheet_try(fn() => sheet_append('Equipa', $values), 'Custo adicionado.');
-        } else {
-            sheet_try(fn() => sheet_update('Equipa', $crewRow, $crewKey, $values), 'Custo guardado.');
-        }
+        if ($do === 'add_crew') data_try(fn() => data_crew_insert($id, $f), 'Custo adicionado.');
+        else                    data_try(fn() => data_crew_update($crewId, $f), 'Custo guardado.');
         redirect($here);
     }
 
     if ($do === 'toggle_crew') {
         $to = ($_POST['to'] ?? '') === '1';
-        sheet_try(fn() => sheet_update('Equipa', $crewRow, $crewKey, ['Fechado' => $to]),
-                  $to ? 'Custo fechado.' : 'Custo em aberto.');
+        data_try(fn() => data_crew_update($crewId, ['is_confirmed' => $to]), $to ? 'Custo fechado.' : 'Custo em aberto.');
         redirect($here);
     }
 
@@ -138,29 +104,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'set_crew_vat') {
         $mode = (string)($_POST['vat_mode'] ?? 'plus');
         if (!isset(VAT_MODES[$mode])) $mode = 'plus';
-        sheet_try(fn() => sheet_update('Equipa', $crewRow, $crewKey, ['Tipo de IVA' => sheet_vat_label($mode)]),
-                  'IVA do custo: ' . VAT_MODES[$mode] . '.');
+        data_try(fn() => data_crew_update($crewId, ['vat_mode' => $mode]), 'IVA do custo: ' . VAT_MODES[$mode] . '.');
         redirect($here);
     }
 
     if ($do === 'del_crew') {
-        sheet_try(fn() => sheet_delete('Equipa', $crewRow, $crewKey), 'Removido da equipa.');
+        data_try(fn() => data_crew_delete($crewId), 'Removido da equipa.');
         redirect($here);
     }
 
     redirect($here);
 }
 
-$crew = sheet_job_crew($d, $p['name']);
+$crew = data_job_crew($d, $id);
 
 // Pessoa à espera de confirmação para ser removida. Em dois passos,
 // para não depender dos diálogos do browser, que podem estar bloqueados.
 $pendingCrew = (int)($_GET['delcrew'] ?? 0);
 $editCrew    = (int)($_GET['editcrew'] ?? 0);
-$ec = $editCrew ? sheet_crew_by_row($d, $editCrew) : null;
-if ($ec && $ec['job'] !== $p['name']) $ec = null;
+$ec = $editCrew ? data_crew($d, $editCrew) : null;
+if ($ec && $ec['job_id'] !== $id) $ec = null;
 
-// Os números são as colunas calculadas da folha.
 $crewTotal     = $p['crew_net'];        // o que pesa no lucro
 $crewVat       = $p['crew_vat'];        // o que se deduz
 $crewConfirmed = $p['crew_confirmed'];
@@ -173,16 +137,14 @@ $profit  = $p['profit'];
 $margin  = $net > 0 ? $profit / $net * 100 : 0;
 $usedPct = $net > 0 ? min(100, $exp / $net * 100) : 0;
 
-/** Os campos escondidos que identificam uma linha da Equipa. */
-function crew_hidden(array $c, string $job): string {
-    return '<input type="hidden" name="name_key" value="' . e($job) . '">'
-         . '<input type="hidden" name="crew_row" value="' . $c['row'] . '">'
-         . '<input type="hidden" name="k_role" value="' . e($c['role']) . '">';
+/** Os campos escondidos que identificam um custo da equipa. */
+function crew_hidden(array $c): string {
+    return '<input type="hidden" name="crew_id" value="' . $c['id'] . '">';
 }
 
 render_header($p['name'] !== '' ? $p['name'] : 'Trabalho', 'projects');
 render_flashes();
-echo sheet_status_line($d);
+echo data_export_line();
 ?>
 
 <h1><?= e($p['name'] !== '' ? $p['name'] : '(sem nome)') ?></h1>
@@ -195,8 +157,7 @@ echo sheet_status_line($d);
 <form method="post" class="actions" style="margin:-0.8rem 0 1.6rem">
   <?= csrf_field() ?>
   <input type="hidden" name="do" value="drive_folder">
-  <input type="hidden" name="row" value="<?= $id ?>">
-  <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
+  <input type="hidden" name="id" value="<?= $id ?>">
   <button class="btn ghost sm" type="submit">Pasta no Drive</button>
 </form>
 
@@ -288,8 +249,8 @@ echo sheet_status_line($d);
   <?php if (!$crew): ?>
     <tr><td colspan="9" class="empty">Sem custos registados. Acrescente o primeiro abaixo.</td></tr>
   <?php endif; ?>
-  <?php foreach ($crew as $c): $cid = $c['row']; ?>
-    <tr class="<?= $pendingCrew === $cid || ($ec && $ec['row'] === $cid) ? 'pending' : '' ?>">
+  <?php foreach ($crew as $c): $cid = $c['id']; ?>
+    <tr class="<?= $pendingCrew === $cid || ($ec && $ec['id'] === $cid) ? 'pending' : '' ?>">
       <td class="b"><?= e($c['person'] ?: '—') ?>
         <?php if ($c['contact']): ?>
           <div class="muted" style="font-size:0.6rem"><?= e($c['contact']) ?></div>
@@ -304,8 +265,8 @@ echo sheet_status_line($d);
         <form method="post" style="display:inline">
           <?= csrf_field() ?>
           <input type="hidden" name="do" value="set_crew_vat">
-          <input type="hidden" name="row" value="<?= $id ?>">
-          <?= crew_hidden($c, $p['name']) ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <?= crew_hidden($c) ?>
           <select name="vat_mode" class="mini" onchange="this.form.submit()"
                   title="O valor escrito já inclui IVA, leva IVA por cima, ou não tem IVA?">
             <?php foreach (VAT_MODES as $k => $lbl): ?>
@@ -321,9 +282,9 @@ echo sheet_status_line($d);
         <form method="post" style="display:inline">
           <?= csrf_field() ?>
           <input type="hidden" name="do" value="toggle_crew">
-          <input type="hidden" name="row" value="<?= $id ?>">
+          <input type="hidden" name="id" value="<?= $id ?>">
           <input type="hidden" name="to" value="<?= $c['is_confirmed'] ? '0' : '1' ?>">
-          <?= crew_hidden($c, $p['name']) ?>
+          <?= crew_hidden($c) ?>
           <button type="submit" class="chip <?= $c['is_confirmed'] ? 'ok' : 'wait' ?>"
                   style="border:0;cursor:pointer;font-family:inherit">
             <?= $c['is_confirmed'] ? 'Fechado' : 'Em aberto' ?>
@@ -335,14 +296,14 @@ echo sheet_status_line($d);
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="del_crew">
-            <input type="hidden" name="row" value="<?= $id ?>">
-            <?= crew_hidden($c, $p['name']) ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <?= crew_hidden($c) ?>
             <button class="btn danger sm" type="submit">Sim, remover</button>
           </form>
           <a class="lnk" href="<?= e($here) ?>">Cancelar</a>
         <?php else: ?>
-          <a class="lnk" href="<?= e(job_page($id, $p['name'], '&editcrew=' . $cid . '#custo')) ?>">Editar</a>
-          <a class="lnk del" href="<?= e(job_page($id, $p['name'], '&delcrew=' . $cid)) ?>">Remover</a>
+          <a class="lnk" href="<?= e(job_page($id, '&editcrew=' . $cid . '#custo')) ?>">Editar</a>
+          <a class="lnk del" href="<?= e(job_page($id, '&delcrew=' . $cid)) ?>">Remover</a>
         <?php endif; ?>
       </td>
     </tr>
@@ -366,14 +327,13 @@ echo sheet_status_line($d);
 <?php $fMode = $ec['vat_mode'] ?? 'plus'; ?>
 <form method="post" id="custo" style="margin-top:1.2rem">
   <?= csrf_field() ?>
-  <input type="hidden" name="row" value="<?= $id ?>">
+  <input type="hidden" name="id" value="<?= $id ?>">
   <?php if ($ec): ?>
     <input type="hidden" name="do" value="save_crew">
-    <?= crew_hidden($ec, $p['name']) ?>
+    <?= crew_hidden($ec) ?>
     <h2>Editar custo</h2>
   <?php else: ?>
     <input type="hidden" name="do" value="add_crew">
-    <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
   <?php endif; ?>
   <div class="grid">
     <div class="field">
@@ -426,8 +386,7 @@ echo sheet_status_line($d);
 <form method="post">
   <?= csrf_field() ?>
   <input type="hidden" name="do" value="save_project">
-  <input type="hidden" name="row" value="<?= $id ?>">
-  <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
+  <input type="hidden" name="id" value="<?= $id ?>">
   <div class="grid">
     <div class="field">
       <label for="pname">Nome</label>
@@ -443,7 +402,7 @@ echo sheet_status_line($d);
     <div class="field">
       <label for="ptype">Tipo</label>
       <select id="ptype" name="type_label">
-        <?= sheet_options(JOB_TYPES, $p['type_label'], '—') ?>
+        <?= data_options(JOB_TYPES, $p['type_label'], '—') ?>
       </select>
     </div>
     <div class="field">

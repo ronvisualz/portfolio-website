@@ -60,22 +60,8 @@ const SHEET_VAT_LABELS = [
     'incl' => 'IVA incluído',
 ];
 
-const JOB_TYPES       = ['Animação 3D', 'VFX', 'Edição', 'Produção Completa', 'Fotografia'];
-const LEAD_TYPES      = ['Produtora', 'Agência de Marketing', 'Empresa Particular', 'Realizador', 'VFX company'];
-const LEAD_SERVICES   = ['VFX / 3D', 'Marketing Buddy', 'Ambos'];
-const LEAD_PRIORITIES = ['Alta', 'Média', 'Baixa'];
-const SUPPLIER_CATEGORIES = ['Produção', 'Imagem', 'Som', 'Pós-produção', '3D / VFX', 'Elenco',
-                             'Material / aluguer', 'Locais', 'Software / serviços', 'Outro'];
-/** Avaliação na folha: de «★» a «★★★★★». */
-const SUPPLIER_RATINGS = ['★', '★★', '★★★', '★★★★', '★★★★★'];
-const LEAD_STAGES = [
-    'novo'        => 'Novo',
-    'contactado'  => 'Contactado',
-    'em_conversa' => 'Em conversa',
-    'proposta'    => 'Proposta enviada',
-    'ganho'       => 'Ganho',
-    'perdido'     => 'Perdido',
-];
+// As listas (tipos de trabalho, fases das leads, categorias…) estão em data.php.
+require_once __DIR__ . '/data.php';
 
 // ── configuração ────────────────────────────────────────────
 

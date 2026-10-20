@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -175,6 +175,14 @@ function run_migrations(PDO $pdo, int $from = 0): void {
 
     // ── 09 · password opcional nos links de partilha ────────
     migrate_share_password($pdo);
+
+    // ── 10 · os dados da folha Google passam para a base ────
+    //
+    // Trabalhos, equipa, custos da empresa, leads e fornecedores ganham
+    // tabelas próprias (até aqui viviam na folha). As tabelas antigas da
+    // primeira versão do admin (projects, crew, company_costs, leads)
+    // ficam guardadas com o prefixo legacy_, sem nada apagado.
+    migrate_data($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")
@@ -508,4 +516,135 @@ function migrate_share_password(PDO $pdo): void {
     $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_hash ' . ($lite ? 'TEXT' : 'VARCHAR(255)') . ' NULL');
     $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_fails ' . ($lite ? 'INTEGER' : 'INT') . ' NOT NULL DEFAULT 0');
     $pdo->exec('ALTER TABLE drive_shares ADD COLUMN pw_fail_at ' . ($lite ? 'TEXT' : 'DATETIME') . ' NULL');
+}
+
+/**
+ * 10 · as cinco tabelas dos dados da empresa (jobs, job_crew, company_costs, leads, suppliers)
+ * e events.job_id. As tabelas da primeira versão com os mesmos nomes mudam para legacy_*.
+ */
+function migrate_data(PDO $pdo): void {
+    $lite = db_is_sqlite($pdo);
+    $T = ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+    $rename = static function (string $from, string $to) use ($pdo, $lite): void {
+        if (!db_has_table($pdo, $from) || db_has_table($pdo, $to)) return;
+        $pdo->exec($lite ? "ALTER TABLE $from RENAME TO $to" : "RENAME TABLE $from TO $to");
+    };
+    // As antigas: projects e crew sempre; company_costs e leads só se forem do esquema antigo (sem «position»).
+    $rename('projects', 'legacy_projects');
+    $rename('crew', 'legacy_crew');
+    if (db_has_table($pdo, 'company_costs') && !db_has_column($pdo, 'company_costs', 'position')) $rename('company_costs', 'legacy_company_costs');
+    if (db_has_table($pdo, 'leads') && !db_has_column($pdo, 'leads', 'position')) $rename('leads', 'legacy_leads');
+
+    $money = $lite ? 'REAL' : 'DECIMAL(12,2)';
+    $id    = $lite ? 'id INTEGER PRIMARY KEY AUTOINCREMENT' : 'id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
+    $ref   = $lite ? 'INTEGER' : 'INT UNSIGNED';
+    $int   = $lite ? 'INTEGER' : 'INT';
+    $bool  = $lite ? 'INTEGER' : 'TINYINT(1)';
+    $tiny  = $lite ? 'INTEGER' : 'TINYINT UNSIGNED';
+    $str   = static fn(int $n) => $lite ? 'TEXT' : "VARCHAR($n)";
+    $txt   = $lite ? 'TEXT' : 'TEXT';
+    $dt    = $lite ? 'TEXT' : 'DATETIME';
+    $date  = $lite ? 'TEXT' : 'DATE';
+    $tail  = $lite ? '' : $T;
+
+    if (!db_has_table($pdo, 'jobs')) {
+        $pdo->exec("CREATE TABLE jobs (
+            $id,
+            name             {$str(255)} NOT NULL,
+            year             $int        NOT NULL DEFAULT 0,
+            month            $tiny       NULL,
+            type_label       {$str(120)} NOT NULL DEFAULT '',
+            budget_net       $money      NOT NULL DEFAULT 0,
+            is_international $bool       NOT NULL DEFAULT 0,
+            has_vat          $bool       NOT NULL DEFAULT 1,
+            expenses_manual  $money      NULL,
+            is_paid          $bool       NOT NULL DEFAULT 0,
+            notes            $txt        NULL,
+            position         $int        NOT NULL DEFAULT 0,
+            created_at       $dt         NOT NULL,
+            updated_at       $dt         NOT NULL" . ($lite ? '' : ",
+            UNIQUE KEY uq_name (name),
+            INDEX idx_year (year, month)") . "
+        )$tail");
+        if ($lite) $pdo->exec('CREATE UNIQUE INDEX uq_jobs_name ON jobs (name)');
+    }
+    if (!db_has_table($pdo, 'job_crew')) {
+        $pdo->exec("CREATE TABLE job_crew (
+            $id,
+            job_id       $ref        NOT NULL" . ($lite ? ' REFERENCES jobs(id) ON DELETE CASCADE' : '') . ",
+            person       {$str(255)} NOT NULL DEFAULT '',
+            role         {$str(255)} NOT NULL DEFAULT '',
+            fee          $money      NOT NULL DEFAULT 0,
+            vat_mode     {$str(4)}   NOT NULL DEFAULT 'plus',
+            is_confirmed $bool       NOT NULL DEFAULT 0,
+            contact      $txt        NULL,
+            notes        $txt        NULL,
+            position     $int        NOT NULL DEFAULT 0,
+            created_at   $dt         NOT NULL,
+            updated_at   $dt         NOT NULL" . ($lite ? '' : ",
+            INDEX idx_job (job_id, position),
+            CONSTRAINT fk_job_crew_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE") . "
+        )$tail");
+    }
+    if (!db_has_table($pdo, 'company_costs')) {
+        $pdo->exec("CREATE TABLE company_costs (
+            $id,
+            year       $int        NOT NULL DEFAULT 0,
+            month      $tiny       NULL,
+            name       {$str(255)} NOT NULL DEFAULT '',
+            amount     $money      NOT NULL DEFAULT 0,
+            vat_mode   {$str(4)}   NOT NULL DEFAULT 'plus',
+            is_paid    $bool       NOT NULL DEFAULT 0,
+            notes      $txt        NULL,
+            position   $int        NOT NULL DEFAULT 0,
+            created_at $dt         NOT NULL,
+            updated_at $dt         NOT NULL" . ($lite ? '' : ",
+            INDEX idx_year (year, month)") . "
+        )$tail");
+    }
+    if (!db_has_table($pdo, 'leads')) {
+        $pdo->exec("CREATE TABLE leads (
+            $id,
+            name       {$str(255)} NOT NULL DEFAULT '',
+            types      $txt        NULL,
+            contacts   $txt        NULL,
+            phone      {$str(120)} NOT NULL DEFAULT '',
+            stage      {$str(20)}  NOT NULL DEFAULT 'novo',
+            service    {$str(120)} NOT NULL DEFAULT '',
+            priority   {$str(40)}  NOT NULL DEFAULT '',
+            detail     $txt        NULL,
+            why        $txt        NULL,
+            email      {$str(255)} NOT NULL DEFAULT '',
+            notes      $txt        NULL,
+            last_touch $date       NULL,
+            position   $int        NOT NULL DEFAULT 0,
+            created_at $dt         NOT NULL,
+            updated_at $dt         NOT NULL
+        )$tail");
+    }
+    if (!db_has_table($pdo, 'suppliers')) {
+        $pdo->exec("CREATE TABLE suppliers (
+            $id,
+            name       {$str(255)} NOT NULL DEFAULT '',
+            category   {$str(120)} NOT NULL DEFAULT '',
+            service    $txt        NULL,
+            contact    {$str(255)} NOT NULL DEFAULT '',
+            email      {$str(255)} NOT NULL DEFAULT '',
+            phone      {$str(120)} NOT NULL DEFAULT '',
+            links      $txt        NULL,
+            nif        {$str(60)}  NOT NULL DEFAULT '',
+            rate       $txt        NULL,
+            rating     $tiny       NOT NULL DEFAULT 0,
+            last_job   {$str(255)} NOT NULL DEFAULT '',
+            notes      $txt        NULL,
+            position   $int        NOT NULL DEFAULT 0,
+            created_at $dt         NOT NULL,
+            updated_at $dt         NOT NULL
+        )$tail");
+    }
+    // Os eventos do calendário passam a apontar para um trabalho (o import liga os antigos pelo nome).
+    if (db_has_table($pdo, 'events') && !db_has_column($pdo, 'events', 'job_id')) {
+        $pdo->exec($lite ? 'ALTER TABLE events ADD COLUMN job_id INTEGER NULL'
+                         : 'ALTER TABLE events ADD COLUMN job_id INT UNSIGNED NULL, ADD INDEX idx_job (job_id)');
+    }
 }

@@ -4,7 +4,7 @@
  * dashboard.php chama carteira_handle_post() antes de escrever a página e
  * carteira_render() por baixo dos números; projects.php só trata dos POST
  * antigos e redireciona para aqui.
- * Precisa de bootstrap.php, layout.php e sheet.php já carregados.
+ * Precisa de bootstrap.php, layout.php e data.php já carregados.
  */
 require_once __DIR__ . '/paginate.php';
 
@@ -29,149 +29,107 @@ function form_year(string $key): int {
     $y = (int)($_POST[$key] ?? date('Y'));
     return ($y >= 2000 && $y <= 2100) ? $y : (int)date('Y');
 }
-function form_month(string $key): string {
-    return sheet_month_out(((int)($_POST[$key] ?? 0)) ?: null);
+function form_month(string $key): ?int {
+    $m = (int)($_POST[$key] ?? 0);
+    return $m >= 1 && $m <= 12 ? $m : null;
 }
 function form_vat_mode(): string {
     $mode = (string)($_POST['vat_mode'] ?? 'plus');
     return isset(VAT_MODES[$mode]) ? $mode : 'plus';
 }
 
-/**
- * A chave com que a folha confirma que a linha ainda é a mesma:
- * Equipa → Trabalho + Função; Custos empresa → Nome.
- */
-function cost_match(): array {
-    return ($_POST['src'] ?? '') === 'company'
-        ? ['Nome' => (string)($_POST['k_name'] ?? '')]
-        : ['Trabalho' => (string)($_POST['k_job'] ?? ''), 'Função' => (string)($_POST['k_role'] ?? '')];
-}
-function cost_tab(): string {
-    return ($_POST['src'] ?? '') === 'company' ? 'Custos empresa' : 'Equipa';
-}
-
 /** Trata um POST da Carteira (redireciona sempre; não volta). */
 function carteira_handle_post(): void {
-    $vat = SHEET_VAT;
+    $vat = DATA_VAT;
     csrf_check();
     $do   = $_POST['do'] ?? '';
     $tab  = (string)($_POST['tab'] ?? 'todos');
     $back = carteira_url($tab);
     $costBack = carteira_url('custos');
-    $row  = (int)($_POST['row'] ?? 0);
-    $name = (string)($_POST['name_key'] ?? '');
+    $id   = (int)($_POST['id'] ?? 0);
+    $company = ($_POST['src'] ?? '') === 'company';
 
     if ($do === 'create') {
-        $new = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
-        sheet_try(function () use ($new, $vat) {
-            // O nome é a chave que liga o trabalho às linhas da Equipa.
-            if (sheet_job_by_name(sheet_data(true), $new)) {
-                throw new SheetException('Já existe um trabalho chamado «' . $new . '». Escolha outro nome.');
-            }
-            // Se o valor escrito já trazia IVA lá dentro, tira-se agora:
-            // na folha o budget fica sempre limpo.
-            $gross = isset($_POST['amount_includes_vat']);
-            sheet_append('Trabalhos', [
-                'Ano'             => form_year('year'),
-                'Mês'             => form_month('start_month'),
-                'Nome'            => sheet_text($new),
-                'Tipo'            => sheet_text((string)($_POST['type_label'] ?? '')),
-                'Budget (s/ IVA)' => net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
-                'Internacional'   => isset($_POST['is_international']),
-                'Fatura com IVA'  => isset($_POST['has_vat']),
-                'Gastos manuais'  => '',          // soma a Equipa
-                'Pago'            => isset($_POST['is_paid']),
-                'Notas'           => sheet_text((string)($_POST['notes'] ?? '')),
-            ]);
-        }, 'Trabalho criado.');
+        // Se o valor escrito já trazia IVA lá dentro, tira-se agora: o budget fica sempre limpo.
+        $gross = isset($_POST['amount_includes_vat']);
+        data_try(fn() => data_job_insert([
+            'name'             => (string)($_POST['name'] ?? ''),
+            'year'             => form_year('year'),
+            'month'            => form_month('start_month'),
+            'type_label'       => (string)($_POST['type_label'] ?? ''),
+            'budget_net'       => net_from_input($_POST['budget_net'] ?? 0, $gross, $vat),
+            'is_international' => isset($_POST['is_international']),
+            'has_vat'          => isset($_POST['has_vat']),
+            'expenses_manual'  => null,          // soma a equipa
+            'is_paid'          => isset($_POST['is_paid']),
+            'notes'            => (string)($_POST['notes'] ?? ''),
+        ]), 'Trabalho criado.');
         redirect($back);
     }
 
     if ($do === 'toggle_paid') {
         $to = ($_POST['to'] ?? '') === '1';
-        sheet_try(fn() => sheet_update('Trabalhos', $row, ['Nome' => $name], ['Pago' => $to]),
-                  $to ? 'Marcado como recebido.' : 'Marcado como por receber.');
+        data_try(fn() => data_job_update($id, ['is_paid' => $to]), $to ? 'Marcado como recebido.' : 'Marcado como por receber.');
         redirect($back);
     }
 
     if ($do === 'toggle_vat') {
         $to = ($_POST['to'] ?? '') === '1';
-        sheet_try(fn() => sheet_update('Trabalhos', $row, ['Nome' => $name], ['Fatura com IVA' => $to]),
-                  $to ? 'Fatura com IVA.' : 'Fatura sem IVA.');
+        data_try(fn() => data_job_update($id, ['has_vat' => $to]), $to ? 'Fatura com IVA.' : 'Fatura sem IVA.');
         redirect($back);
     }
 
     if ($do === 'delete') {
-        // A folha apaga também as linhas da Equipa deste trabalho.
-        sheet_try(fn() => sheet_delete('Trabalhos', $row, ['Nome' => $name]), 'Trabalho eliminado.');
+        // Apaga também a equipa (os custos) deste trabalho.
+        data_try(fn() => data_job_delete($id), 'Trabalho eliminado.');
         redirect($back);
     }
 
     // ── custos ──────────────────────────────────────────────
     // O mesmo formulário serve os dois: se escolher um trabalho,
-    // o custo entra na Equipa dele; se escolher «Empresa», vai para
-    // Custos empresa, a estrutura que existe mesmo sem trabalhos.
+    // o custo entra na equipa dele; se escolher «Empresa», vai para
+    // os custos da empresa, a estrutura que existe mesmo sem trabalhos.
     if ($do === 'add_cost' || $do === 'save_cost') {
-        $mode  = form_vat_mode();
-        $what  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
-        $value = money_in($_POST['amount'] ?? 0);
-        $job   = trim((string)($_POST['job'] ?? ''));
-        $paid  = isset($_POST['is_paid']);
         $edit  = $do === 'save_cost';
-        $src   = $edit ? (($_POST['src'] ?? '') === 'company' ? 'company' : 'job') : ($job !== '' ? 'job' : 'company');
+        $jobId = (int)($_POST['job'] ?? 0);
+        $src   = $edit ? ($company ? 'company' : 'job') : ($jobId > 0 ? 'job' : 'company');
+        $what  = trim((string)($_POST['name'] ?? '')) ?: 'Sem nome';
+        $value = money_in($_POST['amount'] ?? 0);   // tal como foi escrito
+        $mode  = form_vat_mode();
+        $paid  = isset($_POST['is_paid']);
+        $notes = (string)($_POST['notes'] ?? '');
 
         if ($src === 'job') {
-            sheet_try(function () use ($job, $what, $value, $mode, $paid, $edit, $row) {
-                if (!sheet_job_by_name(sheet_data(true), $job)) {
-                    throw new SheetException('O trabalho «' . $job . '» já não existe na folha. Recarregue a página.');
-                }
-                $values = [
-                    'Trabalho'    => sheet_text($job),
-                    'Pessoa'      => sheet_text((string)($_POST['person'] ?? '')),
-                    'Função'      => sheet_text($what),
-                    'Valor'       => $value,           // tal como foi escrito
-                    'Tipo de IVA' => sheet_vat_label($mode),
-                    'Fechado'     => $paid,
-                    'Notas'       => sheet_text((string)($_POST['notes'] ?? '')),
-                ];
-                if ($edit) sheet_update('Equipa', $row, cost_match(), $values);
-                else       sheet_append('Equipa', $values + ['Contacto' => '']);
-            }, $edit ? 'Custo guardado.' : 'Custo acrescentado ao trabalho.');
+            $f = ['person' => (string)($_POST['person'] ?? ''), 'role' => $what, 'fee' => $value,
+                  'vat_mode' => $mode, 'is_confirmed' => $paid, 'notes' => $notes];
+            if ($edit && $jobId > 0) $f['job_id'] = $jobId;   // pode mudar de trabalho
+            data_try(fn() => $edit ? data_crew_update($id, $f) : data_crew_insert($jobId, $f),
+                     $edit ? 'Custo guardado.' : 'Custo acrescentado ao trabalho.');
         } else {
-            $values = [
-                'Ano'         => form_year('year'),
-                'Mês'         => form_month('month'),
-                'Nome'        => sheet_text($what),
-                'Valor'       => $value,
-                'Tipo de IVA' => sheet_vat_label($mode),
-                'Pago'        => $paid,
-                'Notas'       => sheet_text((string)($_POST['notes'] ?? '')),
-            ];
-            sheet_try(fn() => $edit ? sheet_update('Custos empresa', $row, cost_match(), $values)
-                                    : sheet_append('Custos empresa', $values),
-                      $edit ? 'Custo guardado.' : 'Custo da empresa acrescentado.');
+            $f = ['year' => form_year('year'), 'month' => form_month('month'), 'name' => $what, 'amount' => $value,
+                  'vat_mode' => $mode, 'is_paid' => $paid, 'notes' => $notes];
+            data_try(fn() => $edit ? data_cost_update($id, $f) : data_cost_insert($f),
+                     $edit ? 'Custo guardado.' : 'Custo da empresa acrescentado.');
         }
         redirect($costBack);
     }
 
     if ($do === 'set_cost_vat') {
         $mode = form_vat_mode();
-        sheet_try(fn() => sheet_update(cost_tab(), $row, cost_match(), ['Tipo de IVA' => sheet_vat_label($mode)]),
-                  'IVA do custo: ' . VAT_MODES[$mode] . '.');
+        data_try(fn() => $company ? data_cost_update($id, ['vat_mode' => $mode]) : data_crew_update($id, ['vat_mode' => $mode]),
+                 'IVA do custo: ' . VAT_MODES[$mode] . '.');
         redirect($costBack);
     }
 
     if ($do === 'toggle_cost_state') {
-        $to  = ($_POST['to'] ?? '') === '1';
-        $col = ($_POST['src'] ?? '') === 'company' ? 'Pago' : 'Fechado';
-        sheet_try(fn() => sheet_update(cost_tab(), $row, cost_match(), [$col => $to]),
-                  $col === 'Pago' ? ($to ? 'Custo pago.' : 'Custo por pagar.')
-                                  : ($to ? 'Custo fechado.' : 'Custo em aberto.'));
+        $to = ($_POST['to'] ?? '') === '1';
+        data_try(fn() => $company ? data_cost_update($id, ['is_paid' => $to]) : data_crew_update($id, ['is_confirmed' => $to]),
+                 $company ? ($to ? 'Custo pago.' : 'Custo por pagar.') : ($to ? 'Custo fechado.' : 'Custo em aberto.'));
         redirect($costBack);
     }
 
     if ($do === 'delete_cost') {
-        sheet_try(fn() => sheet_delete(cost_tab(), $row, cost_match()), 'Custo eliminado.');
+        data_try(fn() => $company ? data_cost_delete($id) : data_crew_delete($id), 'Custo eliminado.');
         redirect($costBack);
     }
     redirect($back);
@@ -211,7 +169,7 @@ function vat_select(array $hidden, string $current): string {
 }
 
 function job_url(array $p): string {
-    return '/admin/project.php?row=' . $p['row'] . '&n=' . rawurlencode($p['name']);
+    return '/admin/project.php?id=' . $p['id'];
 }
 
 /** Ano*100+mês, para ordenar do mais recente para o mais antigo. */
@@ -219,9 +177,9 @@ function carteira_ym($year, $month): int {
     return ((int)$year) * 100 + ((int)$month);
 }
 
-/** A Carteira: separadores, tabelas e formulários. $d = sheet_data(). */
+/** A Carteira: separadores, tabelas e formulários. $d = data_all(). */
 function carteira_render(array $d): void {
-    $vat = SHEET_VAT;
+    $vat = DATA_VAT;
     $tabs = CARTEIRA_TABS;
     $tab = (string)($_GET['tab'] ?? 'todos');
     if (!isset($tabs[$tab])) $tab = 'todos';
@@ -235,7 +193,7 @@ $companyNet = 0.0; $companyVat = 0.0;
 if ($d) {
     foreach ($d['jobs'] as $p) {
         $inNet   += $p['budget_net'];
-        $jobCost += $p['expenses'];     // [c] Gastos
+        $jobCost += $p['expenses'];
         $vatOut  += $p['vat_out'];
         $vatIn   += $p['vat_in'];
         $items[] = [
@@ -244,7 +202,7 @@ if ($d) {
             'cost'    => $p['expenses'],
             'vat_out' => $p['vat_out'],
             'vat_in'  => $p['vat_in'],
-            'profit'  => $p['profit'],  // [c] Lucro
+            'profit'  => $p['profit'],
             'intl'    => $p['is_international'],
             'when'    => month_year($p['start_month'], $p['year']),
         ];
@@ -253,14 +211,14 @@ if ($d) {
     // ── todas as linhas de custo, das duas origens ──────────
     foreach ($items as $i) {
         if ($i['p']['expenses_mode'] !== 'crew') continue;
-        foreach (sheet_job_crew($d, $i['p']['name']) as $c) {
+        foreach (data_job_crew($d, $i['p']['id']) as $c) {
             $costLines[] = [
                 'src'   => 'job',
-                'id'    => $c['row'],
+                'id'    => $c['id'],
                 'name'  => $c['role'] ?: ($c['person'] ?: '—'),
                 'who'   => $c['person'],
                 'ref'   => $i['p']['name'],
-                'refrow'=> $i['p']['row'],
+                'p'     => $i['p'],
                 'when'  => $i['when'],
                 'ym'    => carteira_ym($i['p']['year'], $i['p']['start_month']),
                 'raw'   => $c['fee'],
@@ -270,22 +228,9 @@ if ($d) {
                 'total' => $c['total'],
                 'on'    => $c['is_confirmed'],
                 'label' => 'Fechado',
-                'keys'  => ['k_job' => $c['job'], 'k_role' => $c['role']],
                 'c'     => $c,
             ];
         }
-    }
-    // Linhas da Equipa cujo trabalho não existe (nome mudado à mão na folha):
-    // aparecem, para não ficarem esquecidas, mas não contam em total nenhum.
-    foreach ($d['crew'] as $c) {
-        if ($c['job_row'] !== null) continue;
-        $costLines[] = [
-            'src' => 'job', 'id' => $c['row'], 'name' => $c['role'] ?: ($c['person'] ?: '—'),
-            'who' => $c['person'], 'ref' => $c['job'], 'refrow' => 0, 'when' => '—', 'ym' => 0,
-            'raw' => $c['fee'], 'mode' => $c['vat_mode'], 'net' => $c['net'], 'vat' => $c['vat'],
-            'total' => $c['total'], 'on' => $c['is_confirmed'], 'label' => 'Fechado',
-            'keys' => ['k_job' => $c['job'], 'k_role' => $c['role']], 'c' => $c,
-        ];
     }
 
     foreach ($d['company'] as $c) {
@@ -293,11 +238,11 @@ if ($d) {
         $companyVat += $c['vat'];
         $costLines[] = [
             'src'   => 'company',
-            'id'    => $c['row'],
+            'id'    => $c['id'],
             'name'  => $c['name'],
             'who'   => '',
             'ref'   => null,
-            'refrow'=> 0,
+            'p'     => null,
             'when'  => month_year($c['start_month'], $c['year']),
             'ym'    => carteira_ym($c['year'], $c['start_month']),
             'raw'   => $c['amount'],
@@ -307,7 +252,6 @@ if ($d) {
             'total' => $c['total'],
             'on'    => $c['is_paid'],
             'label' => 'Pago',
-            'keys'  => ['k_name' => $c['name']],
             'c'     => $c,
         ];
     }
@@ -323,7 +267,7 @@ $pendingDelete = (int)($_GET['del'] ?? 0);
 $pendingCost   = (string)($_GET['delcost'] ?? '');
 $pendingItem   = null;
 foreach ($items as $i) {
-    if ($i['p']['row'] === $pendingDelete) { $pendingItem = $i; break; }
+    if ($i['p']['id'] === $pendingDelete) { $pendingItem = $i; break; }
 }
 if ($pendingItem === null) $pendingDelete = 0;
 
@@ -337,8 +281,8 @@ foreach ($costLines as $c) {
 // Mais recentes primeiro (ano/mês; sem data, no fim). Os totais acima já
 // somam tudo — a paginação só corta o que se vê.
 usort($items, static fn($a, $b) =>
-    [carteira_ym($b['p']['year'], $b['p']['start_month']), $b['p']['row']]
-    <=> [carteira_ym($a['p']['year'], $a['p']['start_month']), $a['p']['row']]);
+    [carteira_ym($b['p']['year'], $b['p']['start_month']), $b['p']['position'], $b['p']['id']]
+    <=> [carteira_ym($a['p']['year'], $a['p']['start_month']), $a['p']['position'], $a['p']['id']]);
 usort($costLines, static fn($a, $b) => [$b['ym'], $b['src'] === 'company' ? 1 : 0, $b['id']]
                                    <=> [$a['ym'], $a['src'] === 'company' ? 1 : 0, $a['id']]);
 
@@ -360,7 +304,7 @@ usort($vatLines, static fn($a, $b) => $b['ym'] <=> $a['ym']);
 $drop = ['del', 'delcost', 'editcost'];
 // Uma linha à espera de confirmação/edição abre na página onde está.
 foreach ($items as $n => $i) {
-    if ($pendingDelete && $i['p']['row'] === $pendingDelete) $_GET['pt'] = intdiv($n, PAGE_SIZE) + 1;
+    if ($pendingDelete && $i['p']['id'] === $pendingDelete) $_GET['pt'] = intdiv($n, PAGE_SIZE) + 1;
 }
 foreach ($costLines as $n => $c) {
     $k = $c['src'] . ':' . $c['id'];
@@ -375,7 +319,7 @@ $pgI = paginate($vatLines, 'pi');
 <?php if ($pendingItem): ?>
   <div class="flash err">
     Eliminar «<b><?= e($pendingItem['p']['name']) ?></b>»?
-    Apaga também todos os custos deste trabalho (as linhas dele na Equipa). Não há como desfazer —
+    Apaga também todos os custos deste trabalho (a equipa dele). Não há como desfazer —
     confirme na linha marcada abaixo.
   </div>
 <?php endif; ?>
@@ -408,8 +352,8 @@ $pgI = paginate($vatLines, 'pi');
   <?php if (!$items): ?>
     <tr><td colspan="9" class="empty">Ainda não há trabalhos. Acrescente o primeiro abaixo.</td></tr>
   <?php endif; ?>
-  <?php foreach ($pgT['rows'] as $i): $p = $i['p']; $pid = $p['row'];
-        $keys = ['row' => $pid, 'name_key' => $p['name'], 'tab' => 'todos']; ?>
+  <?php foreach ($pgT['rows'] as $i): $p = $i['p']; $pid = $p['id'];
+        $keys = ['id' => $pid, 'tab' => 'todos']; ?>
     <tr class="<?= $pendingDelete === $pid ? 'pending' : '' ?>">
       <td>
         <a href="<?= e(job_url($p)) ?>"><?= e($p['name'] !== '' ? $p['name'] : '(sem nome)') ?></a>
@@ -430,8 +374,7 @@ $pgI = paginate($vatLines, 'pi');
           <form method="post" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="row" value="<?= $pid ?>">
-            <input type="hidden" name="name_key" value="<?= e($p['name']) ?>">
+            <input type="hidden" name="id" value="<?= $pid ?>">
             <input type="hidden" name="tab" value="todos">
             <button class="btn danger sm" type="submit">Sim, eliminar</button>
           </form>
@@ -463,7 +406,7 @@ $pgI = paginate($vatLines, 'pi');
       <div class="field">
         <label for="type_label">Tipo de trabalho</label>
         <select id="type_label" name="type_label">
-          <?= sheet_options(JOB_TYPES, '', '—') ?>
+          <?= data_options(JOB_TYPES, '', '—') ?>
         </select>
       </div>
       <div class="field">
@@ -523,7 +466,7 @@ $pgI = paginate($vatLines, 'pi');
     <tr><td colspan="10" class="empty">Ainda não há custos. Acrescente o primeiro abaixo.</td></tr>
   <?php endif; ?>
   <?php foreach ($pgC['rows'] as $c): $key = $c['src'] . ':' . $c['id'];
-        $hid = ['src' => $c['src'], 'row' => $c['id']] + $c['keys']; ?>
+        $hid = ['src' => $c['src'], 'id' => $c['id']]; ?>
     <tr class="<?= $pendingCost === $key || $editKey === $key ? 'pending' : '' ?>">
       <td class="b"><?= e($c['name']) ?>
         <?php if ($c['who']): ?>
@@ -533,11 +476,8 @@ $pgI = paginate($vatLines, 'pi');
       <td>
         <?php if ($c['ref'] === null): ?>
           <span class="chip exp">Empresa</span>
-        <?php elseif ($c['refrow'] > 0): ?>
-          <a href="<?= e('/admin/project.php?row=' . $c['refrow'] . '&n=' . rawurlencode($c['ref'])) ?>"><?= e($c['ref']) ?></a>
         <?php else: ?>
-          <?= e($c['ref'] ?: '—') ?>
-          <div class="muted" style="font-size:0.62rem">trabalho não encontrado — não conta</div>
+          <a href="<?= e(job_url($c['p'])) ?>"><?= e($c['ref']) ?></a>
         <?php endif; ?>
       </td>
       <td class="nowrap"><?= e($c['when']) ?></td>
@@ -598,10 +538,7 @@ $pgI = paginate($vatLines, 'pi');
     <?php if ($editLine): ?>
       <input type="hidden" name="do" value="save_cost">
       <input type="hidden" name="src" value="<?= e($eSrc) ?>">
-      <input type="hidden" name="row" value="<?= (int)$editLine['id'] ?>">
-      <?php foreach ($editLine['keys'] as $k => $v): ?>
-        <input type="hidden" name="<?= e($k) ?>" value="<?= e((string)$v) ?>">
-      <?php endforeach; ?>
+      <input type="hidden" name="id" value="<?= (int)$editLine['id'] ?>">
     <?php else: ?>
       <input type="hidden" name="do" value="add_cost">
     <?php endif; ?>
@@ -612,7 +549,7 @@ $pgI = paginate($vatLines, 'pi');
         <select id="cref" name="job">
           <?php if (!$editLine): ?><option value="">A empresa — custo de estrutura</option><?php endif; ?>
           <?php foreach ($items as $i): ?>
-            <option value="<?= e($i['p']['name']) ?>" <?= $ec && $ec['job'] === $i['p']['name'] ? 'selected' : '' ?>><?= e($i['p']['name']) ?></option>
+            <option value="<?= (int)$i['p']['id'] ?>" <?= $ec && ($ec['job_id'] ?? 0) === $i['p']['id'] ? 'selected' : '' ?>><?= e($i['p']['name']) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
