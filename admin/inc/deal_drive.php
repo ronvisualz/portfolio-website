@@ -23,7 +23,7 @@ function drive_deal_folder(PDO $pdo, array $deal): string {
             if (str_starts_with($leaf, $code . '_') || $leaf === $code) { $p = 'Projetos/' . $leaf . '/'; break; }
         }
     }
-    if ($p === '') $p = 'Projetos/' . $code . '_' . drive_slug((string)$deal['name']) . '/';
+    if ($p === '') $p = 'Projetos/' . $code . '_' . substr(drive_slug((string)$deal['name']), 0, 60) . '/';
     if (!drive_folder_exists($p)) {
         r2_mkdir_p($p);
         drive_catalog_invalidate();

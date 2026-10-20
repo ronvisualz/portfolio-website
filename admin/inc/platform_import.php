@@ -237,8 +237,8 @@ function platform_migrate(PDO $pdo, array $opt): array {
             // Sem data de fecho na versão 10: conta o mês do próprio trabalho.
             $when = sprintf('%04d-%02d-01 00:00:00', (int)$j['year'], (int)$j['month']);
             $insDeal->execute([
-                $j['code'], $j['name'], (string)$j['notes'], $owner, $owner, $j['funnel_id'], $j['funnel_id'], $done,
-                (string)$j['type_label'], (int)$j['year'], (int)$j['month'], (float)$j['budget_net'], (int)$j['is_international'],
+                $j['code'], mb_substr(trim((string)$j['name']), 0, 160), (string)$j['notes'], $owner, $owner, $j['funnel_id'], $j['funnel_id'], $done,
+                mb_substr((string)$j['type_label'], 0, 40), (int)$j['year'], (int)$j['month'], (float)$j['budget_net'], (int)$j['is_international'],
                 (int)$j['has_vat'], (int)$j['is_paid'], $manual ? 'manual' : 'crew', $manual ? (float)$j['expenses_manual'] : 0,
                 $folder, $when, $when,
             ]);
@@ -250,7 +250,7 @@ function platform_migrate(PDO $pdo, array $opt): array {
             if ($folder !== '') $sum['folders']++;
             foreach ($j['crew'] as $c) {
                 $notes = trim(((string)$c['contact'] !== '' ? 'Contacto: ' . $c['contact'] . "\n" : '') . (string)$c['notes']);
-                $insCost->execute([$id, (int)$j['year'], (int)$j['month'], (string)$c['person'], (string)$c['role'], (float)$c['fee'],
+                $insCost->execute([$id, (int)$j['year'], (int)$j['month'], mb_substr((string)$c['person'], 0, 160), mb_substr((string)$c['role'], 0, 120), (float)$c['fee'],
                                    isset(VAT_MODES[$c['vat_mode']]) ? $c['vat_mode'] : 'plus', (int)$c['is_confirmed'], $notes, $owner]);
                 $sum['costs']++;
             }
@@ -267,7 +267,7 @@ function platform_migrate(PDO $pdo, array $opt): array {
         }
 
         foreach ($plan['company'] as $c) {
-            $insCost->execute([null, (int)$c['year'], $c['month'] === null ? null : (int)$c['month'], (string)$c['name'], '',
+            $insCost->execute([null, (int)$c['year'], $c['month'] === null ? null : (int)$c['month'], mb_substr((string)$c['name'], 0, 160), '',
                                (float)$c['amount'], isset(VAT_MODES[$c['vat_mode']]) ? $c['vat_mode'] : 'plus', (int)$c['is_paid'],
                                (string)$c['notes'], $owner]);
             $sum['company']++;
@@ -286,7 +286,7 @@ function platform_migrate(PDO $pdo, array $opt): array {
             )->execute([
                 $phase, $state, mb_substr(trim((string)$l['name']) ?: 'Sem nome', 0, 160), implode(', ', $types['known']),
                 (string)$l['contacts'], mb_substr((string)$l['phone'], 0, 40), mb_substr((string)$l['email'], 0, 190),
-                in_array($l['service'], LEAD_SERVICES_LIST, true) ? $l['service'] : '',
+                in_array($l['service'], LEAD_SERVICES_LIST, true) ? $l['service'] : '',   // VARCHAR(40); valores fora da lista ficam vazios
                 $prio[mb_strtolower(trim((string)$l['priority']))] ?? 'media', (string)$l['detail'], (string)$l['why'],
                 $notes, $owner, $owner, $touch, (string)($l['created_at'] ?: date('Y-m-d H:i:s')),
             ]);
