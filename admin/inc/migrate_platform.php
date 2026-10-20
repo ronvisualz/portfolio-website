@@ -13,8 +13,7 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
-/** O email da conta única de superadmin. */
-const SUPERADMIN_EMAIL = 'info@topperdigital.xyz';
+require_once __DIR__ . '/perm.php';
 
 /** Traduz um CREATE TABLE de MySQL para SQLite (só o que aqui se usa). */
 function sqlite_ddl(string $sql): string {

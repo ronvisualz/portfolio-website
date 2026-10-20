@@ -15,6 +15,9 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+/** O email da conta única de superadmin. */
+const SUPERADMIN_EMAIL = 'info@topperdigital.xyz';
+
 const PERM_NONE = 0, PERM_VIEW = 1, PERM_EDIT = 2, PERM_MANAGE = 3;
 
 const ROLES = [
@@ -50,6 +53,7 @@ const TAB_PAGES = [
     'contactos' => '/admin/fornecedores.php',
     'tarefas'   => '/admin/calendar.php',
     'drive'     => '/admin/drive.php',
+    'equipa'    => '/admin/equipa.php',
     'tools'     => '/admin/tools.php',
 ];
 

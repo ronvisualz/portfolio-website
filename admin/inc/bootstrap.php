@@ -69,8 +69,12 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // ── database ────────────────────────────────────────────────
 try {
+    // Na bancada de testes local pode usar-se SQLite (db_dsn); em produção é sempre MySQL.
+    $__dsn = (IS_LOCAL && !empty($CONFIG['db_dsn']))
+        ? $CONFIG['db_dsn']
+        : "mysql:host={$CONFIG['db_host']};dbname={$CONFIG['db_name']};charset=utf8mb4";
     $pdo = new PDO(
-        "mysql:host={$CONFIG['db_host']};dbname={$CONFIG['db_name']};charset=utf8mb4",
+        $__dsn,
         $CONFIG['db_user'],
         $CONFIG['db_pass'],
         [

@@ -26,6 +26,7 @@ function render_header(string $title, string $active = ''): void {
         'leads'     => ['Leads',     '/admin/leads.php'],
         'fornecedores' => ['Fornecedores', '/admin/fornecedores.php'],
         'drive'     => ['Drive',     '/admin/drive.php'],
+        'equipa'    => ['Equipa',    '/admin/equipa.php'],
         'tools'     => ['Tools',     '/admin/tools.php'],
     ];
     ?><!DOCTYPE html>
@@ -63,6 +64,7 @@ function render_header(string $title, string $active = ''): void {
   <div class="mark"></div>
   <div class="page-title" aria-hidden="true"><?= e($nav[$active][0] ?? ($active === 'projects' ? 'Carteira' : $title)) ?>.</div>
   <div class="session">
+    <a class="lnk" href="/admin/conta.php">A minha conta</a>
     <a class="lnk" href="/admin/logout.php">Sair</a>
   </div>
 </div>
