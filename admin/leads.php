@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/paginate.php';
 $user = require_login();
+require_page('leads');
 
 // As leads vivem no separador «Leads» da folha Google.
 // Nos endereços a fase vai como chave (?status=proposta); na folha, como texto.

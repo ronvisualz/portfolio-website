@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/tasks.php';
 $user = require_login();
+require_page('tarefas');
 
 // Três vistas no mesmo separador: o mês, as pilhas de tarefas e a equipa.
 $view = (string)($_GET['view'] ?? 'mes');

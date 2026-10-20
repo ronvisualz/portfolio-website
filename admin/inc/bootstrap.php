@@ -90,6 +90,8 @@ try {
 // acontece mais nada; quando está atrasada, o site actualiza-se
 // sozinho — não é preciso mexer no phpMyAdmin depois de publicar.
 require_once __DIR__ . '/migrate.php';
+require_once __DIR__ . '/perm.php';
+require_once __DIR__ . '/deals.php';
 
 try {
     $__ver = (int)$pdo->query("SELECT svalue FROM settings WHERE skey = 'schema_version'")
@@ -133,9 +135,10 @@ function current_user(): ?array {
     return $_SESSION['user'] ?? null;
 }
 
+/** Superadmin ou admin. */
 function is_admin(): bool {
     $u = current_user();
-    return $u !== null && $u['role'] === 'admin';
+    return $u !== null && role_is_admin((string)$u['role']);
 }
 
 /** Redirect to login unless a valid, unexpired session exists. */
@@ -161,18 +164,37 @@ function require_login(): array {
     }
 
     $_SESSION['last_seen'] = $now;
-    return $u;
+
+    // O papel, o departamento e o estado da conta podem mudar a meio da
+    // sessão (na aba Equipa): relê-se a conta em cada pedido. Uma conta
+    // desativada perde o acesso logo no pedido seguinte.
+    global $pdo;
+    $st = $pdo->prepare('SELECT id, name, email, role, department_id, is_active, deactivated_at FROM users WHERE id = ?');
+    $st->execute([(int)$u['id']]);
+    $row = $st->fetch();
+    if (!$row || (int)$row['is_active'] !== 1 || !empty($row['deactivated_at'])) {
+        logout_user();
+        header('Location: /admin/index.php');
+        exit;
+    }
+    $_SESSION['user'] = session_user_fields($row);
+    return $_SESSION['user'];
+}
+
+function session_user_fields(array $row): array {
+    return [
+        'id'            => (int)$row['id'],
+        'name'          => $row['name'],
+        'email'         => $row['email'],
+        'role'          => $row['role'],
+        'department_id' => $row['department_id'] !== null ? (int)$row['department_id'] : null,
+    ];
 }
 
 function login_user(array $row): void {
     // New session ID on privilege change — blocks session fixation.
     session_regenerate_id(true);
-    $_SESSION['user'] = [
-        'id'    => (int)$row['id'],
-        'name'  => $row['name'],
-        'email' => $row['email'],
-        'role'  => $row['role'],
-    ];
+    $_SESSION['user'] = session_user_fields($row);
     $_SESSION['started']   = time();
     $_SESSION['last_seen'] = time();
     $_SESSION['csrf']      = bin2hex(random_bytes(32));

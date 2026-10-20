@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/paginate.php';
 $user = require_login();
+require_page('contactos');
 
 // Os fornecedores vivem no separador «Fornecedores» da folha Google.
 

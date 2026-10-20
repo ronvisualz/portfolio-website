@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/drive.php';
 require __DIR__ . '/inc/paginate.php';
 $user = require_login();
+require_page('drive');
 
 // drive.php?p=<prefixo da pasta>/. Sem p, a raiz do bucket.
 $p = (string)($_GET['p'] ?? '');

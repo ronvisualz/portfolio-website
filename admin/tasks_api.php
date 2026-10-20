@@ -40,6 +40,7 @@ if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) {
 }
 
 $do = (string)($_POST['do'] ?? '');
+require_perm('tarefas', PERM_EDIT);
 
 if (in_array($do, ['move', 'done', 'reopen'], true)) {
     $id = (int)($_POST['id'] ?? 0);

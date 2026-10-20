@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/drive.php';
 $user = require_login();
+require_page('negocios');
 
 // Um trabalho é uma linha do separador Trabalhos: project.php?row=5.
 // O «n» (nome) que vai junto no endereço serve para o reencontrar se a

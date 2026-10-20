@@ -41,6 +41,7 @@ if (!is_array($in)) api_err('Pedido inválido (JSON).');
 if (!r2_config()) api_err('O armazenamento R2 ainda não está configurado (falta inc/r2_config.php).', 503);
 
 $do = (string)($in['do'] ?? '');
+require_perm('drive', $do === 'url' ? PERM_VIEW : PERM_EDIT);
 $str = static fn(string $k): string => is_string($in[$k] ?? null) ? $in[$k] : '';
 
 /** Uma chave vinda do browser, validada. */

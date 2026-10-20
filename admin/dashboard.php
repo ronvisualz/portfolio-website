@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/carteira.php';
 $user = require_login();
+require_page('dashboard', 'negocios');
 
 // As ações da Carteira (por baixo dos números) gravam aqui e voltam aqui.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

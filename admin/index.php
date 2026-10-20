@@ -3,7 +3,7 @@ require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 
 // Already signed in? Go straight through.
-if (current_user() !== null) redirect('/admin/dashboard.php');
+if (current_user() !== null) redirect(home_url());
 
 $error = '';
 if (!empty($_GET['expired'])) $error = 'A sessão expirou. Entre outra vez.';
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')
                 ->execute([$user['id']]);
             login_user($user);
-            redirect('/admin/dashboard.php');
+            redirect(home_url());
         }
 
         record_attempt($pdo, $email, false);

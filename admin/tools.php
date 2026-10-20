@@ -2,6 +2,7 @@
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 $user = require_login();
+require_page('tools');
 
 /** Ferramentas do estúdio. Para acrescentar uma, junte uma entrada a esta lista. */
 $tools = [
