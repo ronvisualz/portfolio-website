@@ -85,6 +85,12 @@ function deal_move(PDO $pdo, array $deal, int $stageId): string {
     try {
         $pdo->prepare('UPDATE deals SET stage_id = ?, phase = ?, done_at = ' . ($phase === 'done' ? now_sql($pdo) : 'NULL') . ', last_touch = ? WHERE id = ?')
             ->execute([$stageId, $phase, today_lisbon(), $deal['id']]);
+        // Fechado no Kickoff sem ano/mês: conta para o Financeiro no mês em que fechou.
+        if ($phase === 'production' && $deal['year'] === null) {
+            $now = new DateTimeImmutable('now', new DateTimeZone('Europe/Lisbon'));
+            $pdo->prepare('UPDATE deals SET year = ?, month = COALESCE(month, ?) WHERE id = ?')
+                ->execute([(int)$now->format('Y'), (int)$now->format('n'), $deal['id']]);
+        }
         deal_log($pdo, (int)$deal['id'], 'stage', [
             'from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
             'to_funnel'   => $deal['funnel_id'], 'to_stage'   => $stageId,

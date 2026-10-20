@@ -59,6 +59,9 @@ function render_header(string $title, string $active = ''): void {
     <?php foreach ($nav as $key => [$label, $href]): if (!can(NAV_TABS[$key] ?? $key)) continue; ?>
       <a href="<?= $href ?>" class="<?= $active === $key ? 'on' : '' ?>"><?= $label ?></a>
     <?php endforeach; ?>
+    <?php if (($u['role'] ?? '') === 'superadmin'): ?>
+      <a href="/admin/migracao.php" class="<?= $active === 'migracao' ? 'on' : '' ?>">Migração</a>
+    <?php endif; ?>
   </nav>
   <div class="rail-foot hide-sm">Sessão iniciada como<br><b><?= e($u['name'] ?? '') ?></b></div>
 </aside>
