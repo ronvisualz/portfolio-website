@@ -27,6 +27,34 @@ Contexto do código atual: ver `README.md`, `sheets/CONTRACT.md`,
 
 ---
 
+## 0.1 Ponto de partida — o que já está implementado vs. o que falta
+
+Levantamento do código em 20 out 2026 (ramo principal, base na versão 7).
+**Tudo o que está na coluna «Falta» foi decidido nas sessões de conceção e
+ainda não existe no código.**
+
+| Área | Já implementado (código atual) | Falta (decidido, por implementar) |
+|---|---|---|
+| **Fonte de dados** | Folha Google via Apps Script (`sheets/Code.gs`, `admin/inc/sheet.php`) para Painel, Carteira, Leads e Fornecedores; MySQL só para utilizadores, login, configurações e Calendário. Tabelas antigas `projects`, `crew`, `company_costs`, `leads` existem sem uso. | MySQL como fonte única; tabelas novas; migração da folha; folha só como exportação; backup diário (§5) |
+| **Menu** | Painel · Calendário · Leads · Fornecedores · Drive · Tools (`admin/inc/layout.php`) | Novo menu de 15 abas (§1); páginas «Em construção» para as PENDENTE |
+| **Utilizadores e papéis** | Tabela `users` com campo `role`; o código só conhece `admin` (`is_admin()` em `bootstrap.php`). Membros da equipa (`team_members`: nome, cor) são **separados** dos utilizadores e não fazem login. | Superadmin (`info@topperdigital.xyz`), Admin, Chefe de equipa, Colaborador; departamentos; membros = utilizadores; verificação de permissões e visibilidade no servidor (§3.9) |
+| **ID do negócio** | Não existe. Trabalhos identificados pelo **nome** (chave na folha; equipa e tarefas ligam-se pelo nome). | ID `ID2610-01` atribuído na conversão, imutável; tudo ligado por ID (§2.1) |
+| **Leads** | Lista com contagens, filtros (texto, fase, tipo, prioridade), fases Novo/Contactado/Em conversa/Proposta enviada/Ganho/Perdido; mudar fase atualiza o último contacto; criar/editar/eliminar. Sem responsável, sem origem. | Origem + campanha; fila «Por atribuir»; responsável com regras de hierarquia; visibilidade por papel; estados reduzidos a Novo/Contactado/Em conversa; Converter (funil, ID, Contacto, X-Ray); Arquivar/reativar com motivo; duplicados; alerta de lead parada (§3.1) |
+| **Formulário no site** | Não existe; só o link de email. | Formulário que cria lead «Site», com anti-spam (§6) |
+| **Anúncios** | Não existe. | Estrutura para webhooks Meta/LinkedIn (fase posterior) |
+| **Pipeline / funis** | Não existe. | Tudo (§3.2) |
+| **Negócios** | Carteira › Trabalhos (no Painel) + Ficha do trabalho (`project.php`): editar, gastos soma/manual, custos de equipa, pasta no Drive. | Aba própria; ficha central agregando tudo pelo ID; etapas de produção (§3.3) |
+| **Contactos** | Só Fornecedores (aba própria, na folha). | Aba Contactos com tipos; Fornecedores passam a separador; criação na conversão (§3.4) |
+| **Tarefas** | Calendário em MySQL: Mês, kanban por pessoa, arrastar e largar, Equipa com cor (`calendar.php`, `tasks_api.php`). Trabalho ligado pelo nome vindo da folha. | Renomear para Tarefas; ligar por ID do negócio; membros = utilizadores (§3.5) |
+| **Drive** | Completo em R2 (`drive.php`, `drive_api.php`, `inc/r2.php`); pastas `Projetos/NN_NOME_PROJECT/` com aliases manuais. | Pastas `Projetos/<ID>_<NOME>/` encontradas por ID (§2.2) |
+| **Financeiro** | Carteira › Custos e IVA no Painel; cálculos feitos pelas fórmulas da folha. | Aba própria; cálculos pelo sistema com resultados idênticos (§3.7) |
+| **Dashboard** | Painel: 3 cartões + seletor de ano + Atualizar. | Ler do MySQL; Carteira sai daqui (§3.8) |
+| **Segurança** | Completa (§4). | Permissões por papel/aba no servidor |
+| **Orçamentação, Centro Criativo, Relatórios, Marketing, Centro de Conhecimento** | Não existem. | Só a entrada no menu, por agora (PENDENTE) |
+| **Tools** | Link para o Render farm. | Nada |
+
+---
+
 ## 1. Esqueleto — abas (por esta ordem no menu)
 
 | # | Aba | Papel | Estado atual |
