@@ -484,14 +484,14 @@ cores de estado.
       contadores passam a um ponto/número pequeno sobre o ícone.
     - Estado (recolhido/expandido) guardado por utilizador.
     - Em ecrãs estreitos (telemóvel) o menu fica escondido e abre por cima do conteúdo.
-20. **Dicas (tooltips) em todos os ícones — regra geral da plataforma:** qualquer
+19. **Dicas (tooltips) em todos os ícones — regra geral da plataforma:** qualquer
     ícone, seja botão ou apenas informativo (menu recolhido, ações, estados,
     indicadores), mostra o seu nome ao passar o cursor — rato, touchpad ou
     trackpad do iPad. Aparece após ~300 ms, desaparece ao sair. Em ecrãs só de
     toque, aparece com toque longo; também aparece ao receber foco pelo teclado.
     O mesmo texto serve de nome acessível (`aria-label`) do ícone. Nenhum ícone
     sem nome.
-19. **Motion:** 150–200 ms, só para confirmar ações (cartão que muda de coluna,
+20. **Motion:** 150–200 ms, só para confirmar ações (cartão que muda de coluna,
     gravação feita, contagem de números). Respeitar `prefers-reduced-motion`.
 
 Fora: navegação em pílulas no topo (não serve para 15 abas), recompensas, mensagens.
