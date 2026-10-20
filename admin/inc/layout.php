@@ -21,16 +21,21 @@ const NAV_TABS = ['calendar' => 'tarefas'];
 function render_header(string $title, string $active = ''): void {
     $u = current_user();
     $nav = [
-        'dashboard' => ['Dashboard', '/admin/dashboard.php'],
-        'leads'     => ['Leads',     '/admin/leads.php'],
-        'pipeline'  => ['Pipeline',  '/admin/pipeline.php'],
-        'contactos' => ['Contactos', '/admin/contactos.php'],
-        'negocios'  => ['Negócios',  '/admin/negocios.php'],
-        'calendar'  => ['Calendário','/admin/calendar.php'],
-        'drive'     => ['Drive',     '/admin/drive.php'],
-        'financeiro'=> ['Financeiro','/admin/financeiro.php'],
-        'equipa'    => ['Equipa',    '/admin/equipa.php'],
-        'tools'     => ['Tools',     '/admin/tools.php'],
+        'dashboard'    => ['Dashboard',       '/admin/dashboard.php'],
+        'leads'        => ['Leads',           '/admin/leads.php'],
+        'pipeline'     => ['Pipeline',        '/admin/pipeline.php'],
+        'contactos'    => ['Contactos',       '/admin/contactos.php'],
+        'negocios'     => ['Negócios',        '/admin/negocios.php'],
+        'orcamentacao' => ['Orçamentação',    '/admin/brevemente.php?t=orcamentacao'],
+        'criativo'     => ['Centro Criativo', '/admin/brevemente.php?t=criativo'],
+        'calendar'     => ['Tarefas',         '/admin/calendar.php'],
+        'drive'        => ['Drive',           '/admin/drive.php'],
+        'financeiro'   => ['Financeiro',      '/admin/financeiro.php'],
+        'relatorios'   => ['Relatórios',      '/admin/brevemente.php?t=relatorios'],
+        'marketing'    => ['Marketing',       '/admin/brevemente.php?t=marketing'],
+        'equipa'       => ['Equipa',          '/admin/equipa.php'],
+        'conhecimento' => ['Conhecimento',    '/admin/brevemente.php?t=conhecimento'],
+        'tools'        => ['Tools',           '/admin/tools.php'],
     ];
     ?><!DOCTYPE html>
 <html lang="pt">

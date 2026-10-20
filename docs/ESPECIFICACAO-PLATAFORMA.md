@@ -384,3 +384,34 @@ para ler/gravar; só a exportação escreve na folha.
    elimina admins; ninguém mexe no superadmin. Admins podem atribuir e
    reatribuir tarefas (e registos) a outros admins. **Eliminar = desativar**:
    a conta deixa de entrar e todo o histórico se mantém.
+
+---
+
+## 10. Estado da execução (20 out 2026)
+
+Os 9 passos da §7 estão implementados no branch `claude/exciting-goodall-mtlx1a`,
+um commit por passo, testados numa bancada local (SQLite). **Nada foi ainda
+publicado no servidor.** Publicar e migrar fazem-se juntos (ver abaixo).
+
+| Passo | Onde |
+|---|---|
+| 1 Base + permissões | `admin/inc/migrate_platform.php` (base v8), `inc/perm.php`, `inc/deals.php` |
+| 2 Equipa | `admin/equipa.php`, `admin/conta.php` |
+| 3 Leads | `admin/leads.php`, `inc/leads.php` |
+| 4 Pipeline | `admin/pipeline.php`, `admin/funis.php`, `inc/pipeline.php` |
+| 5 Negócios + Contactos | `admin/negocios.php`, `admin/negocio.php`, `admin/contactos.php`, `inc/finance.php` |
+| 6 Financeiro, Dashboard, Tarefas, Drive | `admin/financeiro.php`, `admin/dashboard.php`, `admin/calendar.php`, `inc/tasks.php`, `inc/drive.php` |
+| 7 Migração, exportação, backups | `admin/migracao.php`, `inc/migrate_sheet.php`, `inc/export.php`, `inc/cron_run.php`, `sheets/Code.gs` (ação `mirror`) |
+| 8 Formulário do site | `index.html`, `contacto.php` |
+| 9 Menu + abas «Em construção» | `admin/inc/layout.php`, `admin/brevemente.php` |
+
+**Ordem para pôr em produção (no mesmo dia):**
+1. Cópia da folha (Ficheiro › Fazer uma cópia) e cópia da base (phpMyAdmin › Exportar).
+2. Publicar o código no servidor. A base atualiza-se sozinha para a v8 no primeiro acesso.
+3. Publicar o `sheets/Code.gs` novo (Implementar › Gerir implementações › Nova versão).
+4. Entrar como `info@topperdigital.xyz` › Migração: ver o plano, resolver a lista, migrar.
+5. Pôr a folha só de leitura; criar as contas da equipa na aba Equipa (com o mesmo
+   nome que tinham no Calendário, para as tarefas antigas as seguirem).
+6. Marcar os dois cron jobs no hPanel (backup e export, ver `admin/inc/cron_run.php`).
+
+Continua PENDENTE tudo o que está na §8 e não foi respondido na §9.

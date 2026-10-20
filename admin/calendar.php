@@ -180,7 +180,7 @@ function event_hours(array $ev): string {
 
 const DIAS_PT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-render_header('Calendário', 'calendar');
+render_header('Tarefas', 'calendar');
 render_flashes();
 
 /** Endereço desta página com os parâmetros dados (os vazios saem). */
@@ -254,7 +254,7 @@ function task_card(array $t, array $members, ?int $person): void {
 $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 ?>
 
-<h1>Calendário</h1>
+<h1>Tarefas</h1>
 
 <div class="tabs">
   <a href="<?= e(cal_url(['ym' => $ym, 'p' => $person])) ?>" class="<?= $view === 'mes' ? 'on' : '' ?>">Mês</a>
