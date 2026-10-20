@@ -50,6 +50,7 @@ const TABS = [
 const TAB_PAGES = [
     'dashboard' => '/admin/dashboard.php',
     'leads'     => '/admin/leads.php',
+    'pipeline'  => '/admin/pipeline.php',
     'contactos' => '/admin/fornecedores.php',
     'tarefas'   => '/admin/calendar.php',
     'drive'     => '/admin/drive.php',

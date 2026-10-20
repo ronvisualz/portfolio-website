@@ -10,6 +10,16 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+/** A data de hoje em Lisboa (yyyy-mm-dd). */
+function today_lisbon(): string {
+    return (new DateTimeImmutable('now', new DateTimeZone('Europe/Lisbon')))->format('Y-m-d');
+}
+
+/** «Agora» em SQL, para MySQL ou para a bancada SQLite. */
+function now_sql(PDO $pdo): string {
+    return db_is_sqlite($pdo) ? "datetime('now')" : 'NOW()';
+}
+
 /** Formata o ID. Com 100 ou mais no mês passa naturalmente a 3 dígitos. */
 function deal_code_format(string $yymm, int $seq): string {
     return 'ID' . $yymm . '-' . str_pad((string)$seq, 2, '0', STR_PAD_LEFT);

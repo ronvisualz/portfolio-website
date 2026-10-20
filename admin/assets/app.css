@@ -555,3 +555,26 @@ a.stat { color: inherit; text-decoration: none; }
 a.stat:hover { border-color: var(--black); }
 tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
 .field .check + .check { margin-top: 6px; }
+
+/* ── pipeline (kanban por funil) ─────────────────────────── */
+.board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+.board .col { flex: 0 0 250px; background: var(--surface); border: 1.5px solid var(--line, #e3e3e3); border-radius: var(--r); min-height: 140px; }
+.board .col.over { border-color: var(--black); background: var(--grey); }
+.board .col header { padding: 10px 12px; border-bottom: 1px solid var(--line, #e3e3e3); display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.board .col header .muted { font-size: 11.5px; }
+.board .col-win { border-style: dashed; background: transparent; }
+.board .col-win header b::after { content: ' →'; }
+.board .cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.dcard { background: #fff; border: 1.5px solid var(--black); border-radius: var(--r); padding: 9px 10px; font-size: 12.5px; cursor: grab; }
+.dcard.dragging { opacity: 0.45; }
+.dcard .dname { font-weight: 600; color: var(--black); text-decoration: none; display: block; }
+.dcard .dname:hover { text-decoration: underline; }
+.dcard .muted { font-size: 11px; }
+.dcard .drow { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; }
+.dcard .owner { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dcard .dmove { margin-top: 6px; }
+.dcard .dmove select { width: 100%; }
+.inline-edit input { border-color: transparent; background: transparent; padding: 4px 6px; }
+.inline-edit input:hover, .inline-edit input:focus { border-color: var(--line, #ccc); background: #fff; }
+@media (max-width: 720px) { .board .col { flex-basis: 78vw; } }
+.keep { text-transform: none; }

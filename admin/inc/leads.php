@@ -23,14 +23,6 @@ const ARCHIVE_REASONS  = [
     'perdido_migracao' => 'Perdido (migração)',
 ];
 
-function today_lisbon(): string {
-    return (new DateTimeImmutable('now', new DateTimeZone('Europe/Lisbon')))->format('Y-m-d');
-}
-
-function now_sql(PDO $pdo): string {
-    return db_is_sqlite($pdo) ? "datetime('now')" : 'NOW()';
-}
-
 /** Só os dígitos, e só os últimos 9 (ignora o +351 e espaços). */
 function phone_key(string $p): string {
     $d = preg_replace('/\D+/', '', $p);
