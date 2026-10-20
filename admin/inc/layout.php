@@ -15,7 +15,11 @@ function css_url(): string {
     return '/admin/assets/app.css?v=' . $v;
 }
 
-function render_header(string $title, string $active = ''): void {
+/**
+ * $bodyClass: classe opcional do <body> (ex.: «td-full» nas páginas de ecrã
+ * inteiro, como o Drive, em que a página não rola e o conteúdo rola por dentro).
+ */
+function render_header(string $title, string $active = '', string $bodyClass = ''): void {
     $u = current_user();
     $nav = [
         'dashboard' => ['Painel',    '/admin/dashboard.php'],
@@ -37,7 +41,7 @@ function render_header(string $title, string $active = ''): void {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@600;700&display=swap">
 <link rel="stylesheet" href="<?= css_url() ?>">
 </head>
-<body>
+<body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
 <a class="skip" href="#conteudo">Saltar para o conteúdo</a>
 <div class="app">
 <aside class="rail">

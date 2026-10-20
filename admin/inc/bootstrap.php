@@ -49,8 +49,9 @@ header(
   . "font-src https://fonts.gstatic.com; "
   . "script-src 'self' 'unsafe-inline'; "
   . "connect-src 'self'$__r2; "
-  . "media-src 'self'$__r2; "
-  . "img-src 'self' data:$__r2; "
+  . "media-src 'self' blob:$__r2; "
+  . "img-src 'self' data: blob:$__r2; "
+  . "frame-src 'self'$__r2; "
   . "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
 );
 

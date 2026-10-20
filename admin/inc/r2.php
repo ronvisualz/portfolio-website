@@ -157,7 +157,21 @@ function r2_presign(string $method, string $key, int $ttl, array $query = [], ?i
  * Um pedido assinado feito pelo servidor (cURL).
  * Devolve ['code', 'headers' => [lower => valor], 'body'].
  */
-function r2_request(string $method, string $key, array $query = [], string $body = '', array $headers = [], int $timeout = 30): array {
+function r2_request(string $method, string $key, array $query = [], string $body = '', array $headers = [], int $timeout = 30, int $maxBytes = 0): array {
+    [$ch, $box] = r2_prepare($method, $key, $query, $body, $headers, $timeout, $maxBytes);
+    $out = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($out === false && $errno === CURLE_FILESIZE_EXCEEDED) throw new R2Exception('O ficheiro é grande demais para ser lido aqui.');
+    if ($out === false) throw new R2Exception('Não foi possível falar com o R2 (' . $err . ').');
+    if ($maxBytes > 0 && strlen((string)$out) > $maxBytes) throw new R2Exception('O ficheiro é grande demais para ser lido aqui.');
+    return ['code' => $code, 'headers' => $box->h, 'body' => (string)$out];
+}
+
+/** O pedido assinado, pronto a correr: [handle do cURL, caixa onde caem os cabeçalhos da resposta (->h)]. */
+function r2_prepare(string $method, string $key, array $query, string $body, array $headers, int $timeout, int $maxBytes): array {
     $c = r2_config();
     if (!$c) throw new R2Exception('O armazenamento R2 não está configurado.');
     $amz = gmdate('Ymd\THis\Z');
@@ -173,27 +187,96 @@ function r2_request(string $method, string $key, array $query = [], string $body
     foreach ($hdr as $k => $v) if ($k !== 'host') $lines[] = $k . ': ' . $v;
     $lines[] = 'Expect:';
     $ch = curl_init($url);
-    $resp = [];
+    $box = new stdClass();
+    $box->h = [];
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => $lines,
         CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_HEADERFUNCTION => static function ($ch, $line) use (&$resp) {
+        CURLOPT_HEADERFUNCTION => static function ($ch, $line) use ($box) {
             $p = strpos($line, ':');
-            if ($p !== false) $resp[strtolower(trim(substr($line, 0, $p)))] = trim(substr($line, $p + 1));
+            if ($p !== false) $box->h[strtolower(trim(substr($line, 0, $p)))] = trim(substr($line, $p + 1));
             return strlen($line);
         },
     ]);
     if ($method === 'HEAD') curl_setopt($ch, CURLOPT_NOBODY, true);
     if ($body !== '' || in_array($method, ['PUT', 'POST'], true)) curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    $out = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-    if ($out === false) throw new R2Exception('Não foi possível falar com o R2 (' . $err . ').');
-    return ['code' => $code, 'headers' => $resp, 'body' => (string)$out];
+    // $maxBytes: o cURL nem começa a transferência se o content-length passar disto.
+    if ($maxBytes > 0) curl_setopt($ch, CURLOPT_MAXFILESIZE, $maxBytes);
+    return [$ch, $box];
+}
+
+/**
+ * Vários pedidos pequenos ao mesmo tempo (no máximo $par em voo), para as operações com
+ * muitos objetos (copiar, confirmar, apagar uma pasta de milhares de frames).
+ * $reqs: [i => [método, chave, query?, corpo?, cabeçalhos?, timeout?]].
+ * Devolve [i => ['code', 'headers', 'body']] pela mesma ordem; uma falha de rede fica
+ * em ['code' => 0, …, 'error' => mensagem] (quem chama decide o que fazer).
+ */
+function r2_request_many(array $reqs, int $par = 16): array {
+    $out = [];
+    if (!$reqs) return $out;
+    $mh = curl_multi_init();
+    $queue = array_keys($reqs);
+    $live = [];
+    $fill = static function () use (&$queue, &$live, $reqs, $mh, $par): void {
+        while ($queue && count($live) < max(1, $par)) {
+            $i = array_shift($queue);
+            $r = $reqs[$i];
+            [$ch, $box] = r2_prepare((string)$r[0], (string)$r[1], $r[2] ?? [], (string)($r[3] ?? ''), $r[4] ?? [], (int)($r[5] ?? 60), 0);
+            curl_multi_add_handle($mh, $ch);
+            $live[spl_object_id($ch)] = [$i, $box, $ch];
+        }
+    };
+    try {
+        $fill();
+        while ($live) {
+            $st = curl_multi_exec($mh, $running);
+            if ($st !== CURLM_OK) throw new R2Exception('Não foi possível falar com o R2 (' . curl_multi_strerror($st) . ').');
+            while (($info = curl_multi_info_read($mh)) !== false) {
+                $ch = $info['handle'];
+                $id = spl_object_id($ch);
+                if (!isset($live[$id])) continue;
+                [$i, $box] = $live[$id];
+                unset($live[$id]);
+                if ($info['result'] !== CURLE_OK) {
+                    $out[$i] = ['code' => 0, 'headers' => [], 'body' => '', 'error' => 'Não foi possível falar com o R2 (' . curl_strerror($info['result']) . ').'];
+                } else {
+                    $out[$i] = ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => $box->h, 'body' => (string)curl_multi_getcontent($ch)];
+                }
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+                $fill();
+            }
+            if ($live && $running && curl_multi_select($mh, 1.0) === -1) usleep(2000);
+        }
+    } finally {
+        foreach ($live as [, , $ch]) { curl_multi_remove_handle($mh, $ch); curl_close($ch); }
+        curl_multi_close($mh);
+    }
+    $res = [];
+    foreach ($reqs as $i => $_) $res[$i] = $out[$i] ?? ['code' => 0, 'headers' => [], 'body' => '', 'error' => 'Não foi possível falar com o R2.'];
+    return $res;
+}
+
+/** Vários HEAD de uma vez: [i => ['size','type','modified','etag'] | null]. Lança se o R2 falhar. */
+function r2_head_many(array $keys, int $par = 16): array {
+    $reqs = [];
+    foreach ($keys as $i => $k) $reqs[$i] = ['HEAD', (string)$k];
+    $out = [];
+    foreach (r2_request_many($reqs, $par) as $i => $r) {
+        if (isset($r['error'])) throw new R2Exception($r['error']);
+        $out[$i] = $r['code'] === 404 ? null : r2_head_parse(r2_expect($r, 'Ler o ficheiro'));
+    }
+    return $out;
+}
+
+function r2_head_parse(array $r): array {
+    return ['size' => (int)($r['headers']['content-length'] ?? 0), 'type' => (string)($r['headers']['content-type'] ?? ''),
+            'modified' => strtotime((string)($r['headers']['last-modified'] ?? '')) ?: 0,
+            'etag' => strtolower(trim((string)($r['headers']['etag'] ?? ''), '"'))];
 }
 
 /** Lança uma exceção legível se a resposta não for 2xx. */
@@ -251,13 +334,11 @@ function r2_list(string $prefix, int $maxPages = 20): array {
     return ['folders' => $folders, 'files' => $files];
 }
 
-/** HEAD: ['size','type','modified'] ou null. */
+/** HEAD: ['size','type','modified','etag'] ou null. */
 function r2_head(string $key): ?array {
     $r = r2_request('HEAD', $key);
     if ($r['code'] === 404) return null;
-    r2_expect($r, 'Ler o ficheiro');
-    return ['size' => (int)($r['headers']['content-length'] ?? 0), 'type' => (string)($r['headers']['content-type'] ?? ''),
-            'modified' => strtotime((string)($r['headers']['last-modified'] ?? '')) ?: 0];
+    return r2_head_parse(r2_expect($r, 'Ler o ficheiro'));
 }
 
 /** Cria o marcador de pasta («pasta/» com 0 bytes). */
@@ -286,6 +367,116 @@ function r2_copy(string $from, string $to): void {
     r2_expect(r2_request('PUT', $to, [], '', ['x-amz-copy-source' => $src], 120), 'Copiar');
 }
 
+/**
+ * Tudo debaixo de $prefix, sem delimitador (inclui os marcadores «pasta/»).
+ * [['key','size','modified'(ts),'etag'], …] pela ordem do R2 (bytes UTF-8).
+ * $startAfter: só as chaves depois desta (para continuar uma listagem longa).
+ */
+function r2_list_all(string $prefix = '', int $maxPages = 200, string $startAfter = ''): array {
+    $out = []; $token = null;
+    for ($i = 0; $i < $maxPages; $i++) {
+        $q = ['list-type' => '2', 'prefix' => $prefix, 'max-keys' => '1000'];
+        if ($token !== null) $q['continuation-token'] = $token;
+        elseif ($startAfter !== '') $q['start-after'] = $startAfter;
+        $x = r2_xml(r2_expect(r2_request('GET', '', $q), 'Listar o Drive')['body']);
+        foreach ($x->Contents as $o) {
+            $out[] = [
+                'key' => (string)$o->Key, 'size' => (int)$o->Size,
+                'modified' => strtotime((string)$o->LastModified) ?: 0, 'etag' => strtolower(trim((string)$o->ETag, '"')),
+            ];
+        }
+        if ((string)$x->IsTruncated !== 'true') break;
+        $token = (string)$x->NextContinuationToken;
+        if ($token === '') break;
+    }
+    return $out;
+}
+
+/**
+ * Os bytes de um objeto (ou de um intervalo [início, fim], inclusivo).
+ * Recusa objetos maiores do que $maxBytes sem os descarregar.
+ */
+function r2_get(string $key, ?array $range = null, int $maxBytes = 52428800): string {
+    $h = [];
+    if ($range !== null) {
+        $a = max(0, (int)($range[0] ?? 0)); $b = (int)($range[1] ?? -1);
+        if ($b < $a) throw new R2Exception('Intervalo de leitura inválido.');
+        $h['range'] = 'bytes=' . $a . '-' . $b;
+    }
+    @set_time_limit(300);
+    $r = r2_request('GET', $key, [], '', $h, 120, max(1, $maxBytes));
+    if ($r['code'] === 404) throw new R2Exception('O ficheiro já não existe.', 404);
+    if ($r['code'] === 416) return '';    // intervalo para lá do fim (ficheiro vazio ou mais curto)
+    r2_expect($r, 'Ler o ficheiro');
+    return $r['body'];
+}
+
+/** Um PUT pequeno feito pelo servidor (ex.: um ficheiro de texto gerado aqui). */
+function r2_put(string $key, string $body, string $type): void {
+    r2_expect(r2_request('PUT', $key, [], $body, ['content-type' => $type !== '' ? $type : 'application/octet-stream'], 120), 'Guardar');
+}
+
+/** Respostas de cópia: o S3 pode dizer 200 e trazer um <Error> no corpo. */
+function r2_expect_copy(array $r, string $what): array {
+    r2_expect($r, $what);
+    if (strpos($r['body'], '<Error>') !== false) r2_expect(['code' => 500] + $r, $what);
+    return $r;
+}
+
+/**
+ * Copia um objeto de qualquer tamanho dentro do bucket.
+ * Até $single bytes, um CopyObject (o limite do S3 é 5 GiB); acima, um envio em
+ * partes com UploadPartCopy (partes de $part bytes, cada uma lida do original pelo
+ * próprio R2). Se alguma parte falhar, o envio é cancelado e nada fica a meio.
+ * $single e $part só mudam nos testes (o S3 exige partes ≥ 5 MiB, salvo a última).
+ */
+function r2_copy_any(string $from, string $to, int $size, int $single = 5368709120, int $part = 1073741824): void {
+    $c = r2_config();
+    if (!$c) throw new R2Exception('O armazenamento R2 não está configurado.');
+    if (function_exists('set_time_limit')) @set_time_limit(0);
+    $src = '/' . $c['bucket'] . '/' . r2_enc($from, true);
+    if ($size <= $single) {
+        r2_expect_copy(r2_request('PUT', $to, [], '', ['x-amz-copy-source' => $src], 900), 'Copiar');
+        return;
+    }
+    $part = max($part, 5 * 1024 * 1024, (int)ceil($size / 10000));   // ≥ 5 MiB e no máximo 10 000 partes
+    $h = r2_head($from);
+    if ($h === null) throw new R2Exception('Copiar: O ficheiro já não existe.');
+    if ($h['size'] !== $size) $size = $h['size'];
+    $id = r2_mp_create($to, $h['type'] !== '' ? $h['type'] : r2_mime($to));
+    try {
+        $parts = [];
+        for ($n = 1, $off = 0; $off < $size; $n++, $off += $part) {
+            $end = min($size, $off + $part) - 1;
+            $r = r2_expect_copy(r2_request('PUT', $to, ['partNumber' => (string)$n, 'uploadId' => $id], '', [
+                'x-amz-copy-source' => $src, 'x-amz-copy-source-range' => 'bytes=' . $off . '-' . $end,
+            ], 900), 'Copiar (parte ' . $n . ')');
+            if (!preg_match('~<ETag>([^<]+)</ETag>~', $r['body'], $m)) throw new R2Exception('Copiar: o R2 não devolveu o ETag da parte ' . $n . '.');
+            $parts[] = [$n, html_entity_decode($m[1], ENT_QUOTES | ENT_XML1, 'UTF-8')];
+        }
+        r2_mp_complete($to, $id, $parts);
+    } catch (Throwable $e) {
+        try { r2_mp_abort($to, $id); } catch (Throwable $e2) { /* o erro que interessa é o primeiro */ }
+        throw $e instanceof R2Exception ? $e : new R2Exception('Copiar: ' . $e->getMessage());
+    }
+}
+
+/** Apaga várias chaves de uma vez (DeleteObjects, até 1000 por pedido). */
+function r2_delete_many(array $keys): void {
+    foreach (array_chunk(array_values($keys), 1000) as $chunk) {
+        $xml = '<Delete><Quiet>true</Quiet>';
+        foreach ($chunk as $k) $xml .= '<Object><Key>' . htmlspecialchars((string)$k, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</Key></Object>';
+        $xml .= '</Delete>';
+        $r = r2_expect(r2_request('POST', '', ['delete' => ''], $xml, [
+            'content-type' => 'application/xml', 'content-md5' => base64_encode(md5($xml, true)),
+        ], 120), 'Apagar');
+        if (strpos($r['body'], '<Error>') !== false) {
+            $msg = preg_match('~<Error>.*?<Key>([^<]*)</Key>~s', $r['body'], $m) ? ' («' . html_entity_decode($m[1], ENT_QUOTES | ENT_XML1, 'UTF-8') . '»)' : '';
+            throw new R2Exception('Apagar: o R2 não conseguiu apagar tudo' . $msg . '.');
+        }
+    }
+}
+
 function r2_mp_create(string $key, string $type): string {
     $r = r2_expect(r2_request('POST', $key, ['uploads' => ''], '', ['content-type' => $type]), 'Começar o envio');
     $id = (string)r2_xml($r['body'])->UploadId;
@@ -297,8 +488,8 @@ function r2_mp_part_url(string $key, string $uploadId, int $n): string {
     return r2_presign('PUT', $key, R2_URL_TTL, ['partNumber' => (string)$n, 'uploadId' => $uploadId]);
 }
 
-/** $parts: [[n, etag]…] */
-function r2_mp_complete(string $key, string $uploadId, array $parts): void {
+/** $parts: [[n, etag]…]. Devolve o ETag final (sem aspas, minúsculas; «…-N» nos multipart). */
+function r2_mp_complete(string $key, string $uploadId, array $parts): string {
     usort($parts, static fn($a, $b) => $a[0] <=> $b[0]);
     $xml = '<CompleteMultipartUpload>';
     foreach ($parts as [$n, $etag]) {
@@ -308,6 +499,10 @@ function r2_mp_complete(string $key, string $uploadId, array $parts): void {
     $r = r2_expect(r2_request('POST', $key, ['uploadId' => $uploadId], $xml, ['content-type' => 'application/xml'], 120), 'Terminar o envio');
     // O S3 pode responder 200 com um erro no corpo.
     if (strpos($r['body'], '<Error>') !== false) r2_expect(['code' => 500] + $r, 'Terminar o envio');
+    $etag = '';
+    if (preg_match('~<ETag>([^<]*)</ETag>~', $r['body'], $m)) $etag = html_entity_decode($m[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
+    if ($etag === '') $etag = (string)(r2_head($key)['etag'] ?? '');
+    return strtolower(trim($etag, '"'));
 }
 
 function r2_mp_abort(string $key, string $uploadId): void {
@@ -335,12 +530,12 @@ function r2_disposition(string $name, bool $inline): string {
     return ($inline ? 'inline' : 'attachment') . '; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($name);
 }
 
-/** URL de download/pré-visualização (curto). */
-function r2_get_url(string $key, bool $inline, string $type = ''): string {
+/** URL de download/pré-visualização (curto, salvo $ttl). */
+function r2_get_url(string $key, bool $inline, string $type = '', int $ttl = R2_GET_TTL, ?int $now = null): string {
     $name = basename(str_replace('\\', '/', $key));
     $q = ['response-content-disposition' => r2_disposition($name, $inline)];
     if ($type !== '') $q['response-content-type'] = $type;
-    return r2_presign('GET', $key, R2_GET_TTL, $q);
+    return r2_presign('GET', $key, $ttl, $q, $now);
 }
 
 /** O tipo MIME pela extensão (o R2 guarda o que o browser mandou; isto é para a pré-visualização). */
