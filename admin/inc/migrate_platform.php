@@ -276,6 +276,13 @@ function migrate_platform(PDO $pdo): void {
     db_add_column($pdo, 'tasks',  'created_by',  'INT UNSIGNED NULL', 'INTEGER NULL');
     db_add_column($pdo, 'events', 'deal_id',     'INT UNSIGNED NULL', 'INTEGER NULL');
 
+    // ── formulário do site: limite de envios por IP ─────────
+    db_create($pdo, 'form_submissions', "
+        id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ip         VARBINARY(16) NULL,
+        created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ip (ip, created_at)");
+
     // ── definições ──────────────────────────────────────────
     $set = $lite
         ? $pdo->prepare('INSERT OR IGNORE INTO settings (skey, svalue) VALUES (?, ?)')
