@@ -446,9 +446,13 @@ cores de estado.
 6. **Alertas e notificações:** centro de notificações na barra de topo. O alerta
    de lead parada passa a valer também para negócios sem movimento no Pipeline,
    tarefas a vencer e faturas em atraso.
-7. **Painel lateral de detalhe:** clicar num registo de uma lista (lead, negócio,
-   contacto, tarefa, ficheiro) abre à direita um resumo editável com a próxima
-   ação, sem sair da lista. A página completa abre-se a partir dele.
+7. **Painel lateral de detalhe:** clicar num registo de uma lista abre à direita
+   um resumo editável com a próxima ação, sem sair da lista; a página completa
+   abre-se a partir dele. Regra por aba (detalhe fica para o desenho de cada aba):
+   - **Leads:** abrir uma lead → painel lateral.
+   - **Pipeline** e **Negócios:** abrir um negócio → **página completa** (ficha do
+     negócio), mantendo o menu lateral das abas visível.
+   - Restantes listas (contactos, tarefas, ficheiros): definido ao desenhar cada aba.
 8. **Edição no próprio campo** (ícone de lápis) nas fichas e no painel lateral.
 9. **Histórico de interações** em leads, negócios e contactos: chamadas, emails,
    reuniões, mudanças de etapa, orçamentos — quem, quando, o quê. Registo manual
@@ -472,10 +476,21 @@ cores de estado.
     agrupamento sem sair da página.
 17. **Login como único momento de marca:** cartão sobre fundo animado da topper.
     (3D/motion só aqui), transição suave entre Entrar e Recuperar palavra-passe.
-18. **Menu lateral agrupado** com contadores e alertas: Geral (Dashboard) ·
-    Comercial (Leads, Pipeline, Contactos, Marketing) · Produção (Negócios,
-    Orçamentação, Centro Criativo, Tarefas, Drive) · Gestão (Financeiro,
+18. **Menu lateral agrupado e recolhível** com contadores e alertas: Geral
+    (Dashboard) · Comercial (Leads, Pipeline, Contactos, Marketing) · Produção
+    (Negócios, Orçamentação, Centro Criativo, Tarefas, Drive) · Gestão (Financeiro,
     Relatórios, Equipa, Conhecimento, Tools).
+    - Botão para recolher/expandir. **Recolhido:** só ícones, no lugar dos nomes;
+      contadores passam a um ponto/número pequeno sobre o ícone.
+    - Estado (recolhido/expandido) guardado por utilizador.
+    - Em ecrãs estreitos (telemóvel) o menu fica escondido e abre por cima do conteúdo.
+20. **Dicas (tooltips) em todos os ícones — regra geral da plataforma:** qualquer
+    ícone, seja botão ou apenas informativo (menu recolhido, ações, estados,
+    indicadores), mostra o seu nome ao passar o cursor — rato, touchpad ou
+    trackpad do iPad. Aparece após ~300 ms, desaparece ao sair. Em ecrãs só de
+    toque, aparece com toque longo; também aparece ao receber foco pelo teclado.
+    O mesmo texto serve de nome acessível (`aria-label`) do ícone. Nenhum ícone
+    sem nome.
 19. **Motion:** 150–200 ms, só para confirmar ações (cartão que muda de coluna,
     gravação feita, contagem de números). Respeitar `prefers-reduced-motion`.
 
