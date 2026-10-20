@@ -1,17 +1,22 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/sheet.php';
 require __DIR__ . '/inc/tasks.php';
 $user = require_login();
+require_page('tarefas');
 
 // Três vistas no mesmo separador: o mês, as pilhas de tarefas e a equipa.
 $view = (string)($_GET['view'] ?? 'mes');
 if (!in_array($view, ['mes', 'tarefas', 'equipa'], true)) $view = 'mes';
 
-$members = team_members($pdo);
+$allMembers = team_members($pdo);
+// Só as pilhas dentro do meu âmbito da aba Tarefas (null = todas).
+$visible = task_visible_members($pdo, $allMembers);
+$members = $visible === null ? $allMembers : array_intersect_key($allMembers, array_flip($visible));
 // ?p=<id> — só esta pessoa (no mês: as tarefas dela; nas tarefas: a pilha dela em grande).
 $person = task_member_in($_GET['p'] ?? 0, $members);
+/** Restringe uma consulta às tarefas que posso ver. */
+$visSql = $visible === null ? '' : ' AND (member_id IS NULL' . ($visible ? ' OR member_id IN (' . implode(',', $visible) . ')' : '') . ')';
 
 // Mês a mostrar. Formato AAAA-MM no endereço; o mês corrente por omissão.
 $ym = (string)($_GET['ym'] ?? date('Y-m'));
@@ -44,16 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($back);
         }
 
-        $pid = (int)($_POST['project_id'] ?? 0);
         $pdo->prepare(
-            'INSERT INTO events (title, event_date, start_time, end_time, project_id, location, notes)
+            'INSERT INTO events (title, event_date, start_time, end_time, deal_id, location, notes)
              VALUES (?,?,?,?,?,?,?)'
         )->execute([
             trim((string)($_POST['title'] ?? '')) ?: 'Sem título',
             $date,
             $ini !== '' ? $ini : null,
             $fim !== '' ? $fim : null,
-            $pid > 0 ? $pid : null,
+            task_deal_in($_POST['deal_id'] ?? 0, $pdo),
             trim((string)($_POST['location'] ?? '')),
             trim((string)($_POST['notes'] ?? '')),
         ]);
@@ -71,12 +75,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pBack = task_member_in($_POST['p'] ?? 0, $members);
     $board = '/admin/calendar.php?view=tarefas' . ($pBack ? '&p=' . $pBack : '');
 
-    if ($do === 'add_task' || $do === 'update_task') {
-        [$v, $err] = task_input($_POST, $members);
-        $old = $do === 'update_task' ? task_by_id($pdo, (int)($_POST['id'] ?? 0)) : null;
-        if ($do === 'update_task' && !$old) {
+    // Uma tarefa fora do meu âmbito não se mexe, nem pelo id.
+    $guard = function (?array $t) use ($visible, $board) {
+        if (!$t || !task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible)) {
             flash('Essa tarefa já não existe.', 'err');
             redirect($board);
+        }
+        return $t;
+    };
+
+    if ($do === 'add_task' || $do === 'update_task') {
+        [$v, $err] = task_input($_POST, $members, $pdo);
+        $old = $do === 'update_task' ? $guard(task_by_id($pdo, (int)($_POST['id'] ?? 0))) : null;
+        $oldMember = $old && $old['member_id'] !== null ? (int)$old['member_id'] : null;
+        if (!$err && $v['member_id'] !== $oldMember && !task_can_assign($pdo, $v['member_id'], $allMembers, $visible)) {
+            $err = 'Não pode atribuir tarefas a essa pessoa.';
         }
         if ($err) {
             flash($err, 'err');
@@ -94,16 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($do === 'move_task') {
         $id = (int)($_POST['id'] ?? 0);
-        if (!task_by_id($pdo, $id)) {
-            flash('Essa tarefa já não existe.', 'err');
-            redirect($board);
-        }
+        $guard(task_by_id($pdo, $id));
         if ((string)($_POST['to'] ?? '') === 'done') {
             task_done($pdo, $id);
             flash('Tarefa marcada como feita.');
             redirect($board);
         }
         $to = task_member_in($_POST['to'] ?? 0, $members);
+        if (!task_can_assign($pdo, $to, $allMembers, $visible)) {
+            flash('Não pode atribuir tarefas a essa pessoa.', 'err');
+            redirect($board);
+        }
         task_move($pdo, $id, $to);
         flash('Tarefa movida para ' . ($to ? $members[$to]['name'] : 'Por atribuir') . '.');
         redirect($board);
@@ -112,11 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // «✓ Feito» e «Reabrir» — sem JavaScript, formulários normais.
     if ($do === 'done_task' || $do === 'reopen_task') {
         $id = (int)($_POST['id'] ?? 0);
-        $t = task_by_id($pdo, $id);
-        if (!$t) {
-            flash('Essa tarefa já não existe.', 'err');
-            redirect($board);
-        }
+        $t = $guard(task_by_id($pdo, $id));
         if ($do === 'done_task') {
             task_done($pdo, $id);
             flash('«' . $t['title'] . '» está feita.');
@@ -129,40 +139,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($do === 'delete_task') {
+        $guard(task_by_id($pdo, (int)($_POST['id'] ?? 0)));
         $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
         flash('Tarefa eliminada.');
         redirect($board);
     }
 
-    // ── equipa ──────────────────────────────────────────────
-    if ($do === 'add_member' || $do === 'update_member') {
-        $name  = clip(trim((string)($_POST['name'] ?? '')), 120);
-        $color = (string)($_POST['color'] ?? '');
-        if ($name === '') {
-            flash('Indique o nome.', 'err');
-            redirect('/admin/calendar.php?view=equipa');
-        }
-        if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) $color = TEAM_COLORS[count($members) % count(TEAM_COLORS)];
-
-        if ($do === 'add_member') {
-            $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) FROM team_members')->fetchColumn() + 1;
-            $pdo->prepare('INSERT INTO team_members (name, color, position) VALUES (?,?,?)')
-                ->execute([$name, strtoupper($color), $pos]);
-            flash($name . ' entrou na equipa.');
-        } else {
-            $pdo->prepare('UPDATE team_members SET name = ?, color = ? WHERE id = ?')
-                ->execute([$name, strtoupper($color), (int)($_POST['id'] ?? 0)]);
-            flash('Equipa guardada.');
-        }
-        redirect('/admin/calendar.php?view=equipa');
-    }
 }
 
 // ── eventos do mês ──────────────────────────────────────────
 $eq = $pdo->prepare(
-    'SELECT e.*, p.name AS job_name
+    'SELECT e.*, CASE WHEN d.id IS NULL THEN NULL ELSE ' . (db_is_sqlite($pdo) ? "d.code || ' · ' || d.name" : "CONCAT(d.code, ' · ', d.name)") . ' END AS job_name
        FROM events e
-       LEFT JOIN projects p ON p.id = e.project_id
+       LEFT JOIN deals d ON d.id = e.deal_id
       WHERE e.event_date BETWEEN ? AND ?
       ORDER BY e.event_date, COALESCE(e.start_time, "23:59"), e.id'
 );
@@ -174,9 +163,7 @@ foreach ($events as $ev) {
     $byDay[(int)substr($ev['event_date'], 8, 2)][] = $ev;
 }
 
-$jobs = $pdo->query(
-    "SELECT id, name, year FROM projects WHERE kind = 'job' ORDER BY year DESC, name"
-)->fetchAll();
+$dealOptions = task_deal_options($pdo);
 
 // Evento à espera de confirmação para ser eliminado.
 $pendingEvent = (int)($_GET['del'] ?? 0);
@@ -193,7 +180,7 @@ function event_hours(array $ev): string {
 
 const DIAS_PT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-render_header('Calendário', 'calendar');
+render_header('Tarefas', 'calendar');
 render_flashes();
 
 /** Endereço desta página com os parâmetros dados (os vazios saem). */
@@ -230,7 +217,9 @@ function task_card(array $t, array $members, ?int $person): void {
           <span class="due<?= $late ? ' late' : '' ?>" title="Prazo"><?= e(task_due_label($t['due_date'])) ?></span>
         <?php endif; ?>
       </div>
-      <?php if ($t['job_name'] !== ''): ?>
+      <?php if (!empty($t['deal_code'])): ?>
+        <div class="card-job"><a href="/admin/negocio.php?id=<?= (int)$t['deal_id'] ?>"><?= e($t['deal_code'] . ' · ' . $t['deal_name']) ?></a></div>
+      <?php elseif ($t['job_name'] !== ''): ?>
         <div class="card-job"><?= e($t['job_name']) ?></div>
       <?php endif; ?>
       <form method="post" action="/admin/calendar.php" class="card-move">
@@ -265,7 +254,7 @@ function task_card(array $t, array $members, ?int $person): void {
 $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 ?>
 
-<h1>Calendário</h1>
+<h1>Tarefas</h1>
 
 <div class="tabs">
   <a href="<?= e(cal_url(['ym' => $ym, 'p' => $person])) ?>" class="<?= $view === 'mes' ? 'on' : '' ?>">Mês</a>
@@ -289,7 +278,7 @@ $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 <?php if ($view === 'mes'):
 // ── tarefas com prazo neste mês ─────────────────────────────
 $tq = $pdo->prepare(
-    'SELECT * FROM tasks WHERE due_date BETWEEN ? AND ?' . ($person ? ' AND member_id = ?' : '')
+    'SELECT * FROM tasks WHERE due_date BETWEEN ? AND ?' . ($person ? ' AND member_id = ?' : '') . $visSql
   . ' ORDER BY due_date, position, id'
 );
 $tq->execute(array_merge(
@@ -341,7 +330,7 @@ $pq      = $person ? '&amp;p=' . $person : '';
     <div class="cal-d<?= $fora ? ' fora' : '' ?><?= $iso === $today ? ' hoje' : '' ?>">
       <div class="n"><?= $dia ?></div>
       <?php foreach ($lista as $ev): ?>
-        <a class="ev<?= $ev['project_id'] ? ' job' : '' ?>"
+        <a class="ev<?= $ev['deal_id'] ? ' job' : '' ?>"
            href="#ev-<?= (int)$ev['id'] ?>"
            title="<?= e($ev['title'] . ' · ' . event_hours($ev) . ($ev['job_name'] ? ' · ' . $ev['job_name'] : '')) ?>">
           <b><?= e(substr(event_hours($ev), 0, 5)) ?></b> <?= e(shorten($ev['title'], 22)) ?>
@@ -368,7 +357,7 @@ $pq      = $person ? '&amp;p=' . $person : '';
       <div class="ag-n"><b><?= $dia ?></b> <?= $dow ?></div>
       <div class="ag-items">
         <?php foreach ($byDay[$dia] ?? [] as $ev): ?>
-          <a class="ev<?= $ev['project_id'] ? ' job' : '' ?>" href="#ev-<?= (int)$ev['id'] ?>">
+          <a class="ev<?= $ev['deal_id'] ? ' job' : '' ?>" href="#ev-<?= (int)$ev['id'] ?>">
             <b><?= e(event_hours($ev)) ?></b> <?= e($ev['title']) ?>
           </a>
         <?php endforeach; ?>
@@ -415,9 +404,8 @@ $pq      = $person ? '&amp;p=' . $person : '';
         <?php endif; ?>
       </td>
       <td>
-        <?php if ($ev['project_id']): ?>
-          <?php /* Os trabalhos vivem agora na folha Google: encontram-se pelo nome. */ ?>
-          <a href="/admin/project.php?n=<?= e(rawurlencode((string)$ev['job_name'])) ?>"><?= e($ev['job_name']) ?></a>
+        <?php if ($ev['deal_id']): ?>
+          <a href="/admin/negocio.php?id=<?= (int)$ev['deal_id'] ?>"><?= e((string)$ev['job_name']) ?></a>
         <?php else: ?>
           <span class="muted">—</span>
         <?php endif; ?>
@@ -470,11 +458,11 @@ $pq      = $person ? '&amp;p=' . $person : '';
         <input type="time" id="end_time" name="end_time">
       </div>
       <div class="field">
-        <label for="project_id">Trabalho (opcional)</label>
-        <select id="project_id" name="project_id">
+        <label for="deal_id">Negócio (opcional)</label>
+        <select id="deal_id" name="deal_id">
           <option value="0">— nenhum —</option>
-          <?php foreach ($jobs as $j): ?>
-            <option value="<?= (int)$j['id'] ?>"><?= e($j['name']) ?> · <?= (int)$j['year'] ?></option>
+          <?php foreach ($dealOptions as $did => $label): ?>
+            <option value="<?= (int)$did ?>"><?= e($label) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -497,7 +485,8 @@ $pq      = $person ? '&amp;p=' . $person : '';
 </details>
 
 <?php elseif ($view === 'tarefas'):
-$all = $pdo->query('SELECT * FROM tasks ORDER BY position, id')->fetchAll();
+$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id
+                     WHERE 1=1' . $visSql . ' ORDER BY t.position, t.id')->fetchAll();
 $stacks = [0 => []];
 foreach ($members as $mid => $m) $stacks[$mid] = [];
 foreach ($all as $t) {
@@ -510,13 +499,14 @@ if ($person) $stacks = [0 => $stacks[0], $person => $stacks[$person]];
 
 // «Feito»: as mais recentes primeiro, TASK_DONE_PAGE de cada vez (?feitas=60 mostra mais).
 $doneLimit = max(TASK_DONE_PAGE, min(5000, (int)($_GET['feitas'] ?? 0)));
-[$doneList, $doneCount] = task_done_list($pdo, $doneLimit, $person);
+[$doneList, $doneCount] = task_done_list($pdo, $doneLimit, $person, $visible);
 $editing   = isset($_GET['edit']) ? task_by_id($pdo, (int)$_GET['edit']) : null;
+if ($editing && !task_member_visible($editing['member_id'] !== null ? (int)$editing['member_id'] : null, $visible)) $editing = null;
 $confirmDel = $editing && !empty($_GET['del']);
-$jobNames  = task_job_names();
+$dealOptions = task_deal_options($pdo, $editing ? (int)$editing['deal_id'] : null);
 
 $f = $editing ?: ['id' => 0, 'title' => '', 'description' => '', 'member_id' => $person,
-                  'job_name' => '', 'due_date' => '', 'priority' => 'media', 'status' => 'todo'];
+                  'job_name' => '', 'deal_id' => null, 'due_date' => '', 'priority' => 'media', 'status' => 'todo'];
 $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
 ?>
 
@@ -554,12 +544,17 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
         </select>
       </div>
       <div class="field">
-        <label for="t_job">Trabalho (opcional)</label>
-        <input type="text" id="t_job" name="job_name" maxlength="160" list="t_jobs"
-               value="<?= e($f['job_name']) ?>" placeholder="— interno —">
-        <datalist id="t_jobs">
-          <?php foreach ($jobNames as $n): ?><option value="<?= e($n) ?>"><?php endforeach; ?>
-        </datalist>
+        <label for="t_deal">Negócio (opcional)</label>
+        <select id="t_deal" name="deal_id">
+          <option value="0">— interno —</option>
+          <?php foreach ($dealOptions as $did => $label): ?>
+            <option value="<?= (int)$did ?>"<?= (int)$f['deal_id'] === (int)$did ? ' selected' : '' ?>><?= e($label) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?php if ($f['job_name'] !== '' && !$f['deal_id']): ?>
+          <input type="hidden" name="job_name" value="<?= e($f['job_name']) ?>">
+          <div class="muted" style="font-size:0.68rem">Antes: «<?= e($f['job_name']) ?>»</div>
+        <?php endif; ?>
       </div>
       <div class="field">
         <label for="t_due">Prazo</label>
@@ -656,50 +651,21 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
 
 <?php else: /* equipa */ ?>
 
-<div class="sub">Um só login para todos — atribuir uma tarefa é só escolher a pessoa.</div>
+<div class="sub">As pessoas, os nomes e as cores gerem-se na aba <a class="lnk" href="/admin/equipa.php">Equipa</a>.</div>
 
 <div class="tablewrap">
 <table>
-  <thead><tr><th>Cor</th><th>Nome</th><th class="num">Tarefas por fazer</th><th></th></tr></thead>
+  <thead><tr><th>Pessoa</th><th class="num">Tarefas por fazer</th></tr></thead>
   <tbody>
-  <?php
-  $open = [];
-  foreach ($pdo->query("SELECT member_id, COUNT(*) AS n FROM tasks WHERE status <> 'done' AND member_id IS NOT NULL GROUP BY member_id")->fetchAll() as $r) {
-      $open[(int)$r['member_id']] = (int)$r['n'];
-  }
-  foreach ($members as $m): $mid = (int)$m['id']; ?>
+  <?php foreach ($members as $m): $mid = (int)$m['id']; ?>
     <tr>
-      <td colspan="2">
-        <form method="post" action="/admin/calendar.php" class="bar" style="margin:0">
-          <?= csrf_field() ?>
-          <input type="hidden" name="do" value="update_member">
-          <input type="hidden" name="id" value="<?= $mid ?>">
-          <label class="sr" for="mc-<?= $mid ?>">Cor</label>
-          <input type="color" id="mc-<?= $mid ?>" name="color" value="<?= e(member_color($m)) ?>" style="flex:0 0 44px;padding:2px;height:36px">
-          <label class="sr" for="mn-<?= $mid ?>">Nome</label>
-          <input type="text" id="mn-<?= $mid ?>" name="name" value="<?= e($m['name']) ?>" required maxlength="120">
-          <button class="btn ghost sm" type="submit">Guardar</button>
-        </form>
-      </td>
-      <td class="num"><a href="<?= e(cal_url(['view' => 'tarefas', 'p' => $mid])) ?>"><?= $open[$mid] ?? 0 ?></a></td>
-      <td></td>
+      <td><i class="sw" style="--who:<?= e(member_color($m)) ?>"></i> <?= e($m['name']) ?>
+        <?= $m['user_id'] === null || (int)$m['user_active'] !== 1 ? ' <span class="chip">sem conta ativa</span>' : '' ?></td>
+      <td class="num"><a href="<?= e(cal_url(['view' => 'tarefas', 'p' => $mid])) ?>"><?= (int)$m['open_tasks'] ?></a></td>
     </tr>
   <?php endforeach; ?>
   </tbody>
 </table>
-</div>
-
-<div class="panel" style="margin-top:2rem">
-  <h2 style="margin-top:0">Novo membro</h2>
-  <form method="post" action="/admin/calendar.php" class="bar" style="margin:0">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="add_member">
-    <label class="sr" for="new_color">Cor</label>
-    <input type="color" id="new_color" name="color" value="<?= e(TEAM_COLORS[count($members) % count(TEAM_COLORS)]) ?>" style="flex:0 0 44px;padding:2px;height:36px">
-    <label class="sr" for="new_name">Nome</label>
-    <input type="text" id="new_name" name="name" required maxlength="120" placeholder="Nome e apelido">
-    <button class="btn sm" type="submit">Adicionar</button>
-  </form>
 </div>
 
 <?php endif; ?>

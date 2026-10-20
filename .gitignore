@@ -11,3 +11,5 @@ admin/inc/cache/
 assets/fonts/
 # Cloudflare R2 (Drive) — copie r2_config.example.php para r2_config.php no servidor.
 admin/inc/r2_config.php
+# Assistente do Drive (chave da Anthropic) — copie ai_config.example.php para ai_config.php no servidor.
+admin/inc/ai_config.php

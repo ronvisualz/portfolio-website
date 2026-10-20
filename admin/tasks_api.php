@@ -40,6 +40,7 @@ if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) {
 }
 
 $do = (string)($_POST['do'] ?? '');
+require_perm('tarefas', PERM_EDIT);
 
 if (in_array($do, ['move', 'done', 'reopen'], true)) {
     $id = (int)($_POST['id'] ?? 0);
@@ -48,11 +49,19 @@ if (in_array($do, ['move', 'done', 'reopen'], true)) {
         api_out(404, ['ok' => false, 'error' => 'Essa tarefa já não existe. Recarregue a página.']);
     }
     $members = team_members($pdo);
+    $visible = task_visible_members($pdo, $members);
+    if (!task_member_visible($task['member_id'] !== null ? (int)$task['member_id'] : null, $visible)) {
+        api_out(404, ['ok' => false, 'error' => 'Essa tarefa já não existe. Recarregue a página.']);
+    }
     $rawTo = (string)($_POST['to'] ?? '');
     $toDone = $do === 'done' || ($do === 'move' && $rawTo === 'done');
     if ($do === 'reopen' && $rawTo === '') $rawTo = (string)(int)$task['member_id'];
     $to    = $toDone ? task_member_in($task['member_id'], $members) : task_member_in($rawTo, $members);
     $order = array_values(array_filter(array_map('intval', explode(',', (string)($_POST['order'] ?? '')))));
+    $from  = $task['member_id'] !== null ? (int)$task['member_id'] : null;
+    if (!$toDone && $to !== $from && !task_can_assign($pdo, $to, $members, $visible)) {
+        api_out(403, ['ok' => false, 'error' => 'Não pode atribuir tarefas a essa pessoa.']);
+    }
 
     try {
         if ($toDone) {

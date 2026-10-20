@@ -376,3 +376,64 @@ para ler/gravar; só a exportação escreve na folha.
 7. Conceito e lógica de: Orçamentação, Centro Criativo, Relatórios, Marketing,
    Centro de Conhecimento, indicadores do Dashboard, faturas/tesouraria no Financeiro.
 8. Valor de X dias para o alerta de lead parada.
+
+---
+
+## 9. Decisões de 20 out 2026 (respondem a parte da §8)
+
+1. **Funis** — base: VFX/3D · CGI · Campanhas · Ads · Marketing Buddy.
+   Funis de cross-selling **criados na própria plataforma** quando forem
+   precisos: «Novo funil» do zero ou **combinando funis existentes** (as
+   etapas variáveis dos escolhidos são juntadas, sem repetir, e editadas
+   antes de gravar). Cada funil é independente dos funis de onde veio.
+   Os 5 funis base são criados só com as etapas fixas; as etapas variáveis
+   exatas serão dadas depois. Cada etapa terá **automações de tarefas**
+   (tarefas criadas ao entrar na etapa): fica a estrutura preparada, a
+   lógica entra numa fase seguinte.
+2. **Alerta de lead parada**: 14 dias por defeito, configurável (§8.8).
+3. **Permissões** (§8.6) — duas camadas, sempre verificadas no servidor:
+   - acesso por aba: sem acesso · ver · editar · gerir (gerir = apagar e configurar);
+   - âmbito dos registos (Leads, Pipeline, Negócios, Tarefas): só os meus ·
+     do meu departamento · todos.
+   Por defeito: superadmin/admin = todos, gerir tudo; chefe de equipa =
+   departamento, editar nas abas comerciais e de produção, ver Financeiro e
+   Dashboard, ver Equipa; colaborador = só os seus, editar nas abas de
+   trabalho, sem Financeiro, Dashboard e Equipa. Grelha papel × aba editável
+   pelos admins na aba Equipa, com exceções por utilizador.
+4. **Leads em «Perdido» na migração** (§8.5): passam a **leads arquivadas**
+   (motivo «Perdido (migração)»). As que chegaram a ter orçamento passam a
+   **negócios perdidos com ID**, perdidos na etapa **X-Ray**.
+5. **«Concluído»** (§8.1): existe como etapa fixa final. Os negócios
+   concluídos vão para um **separador «Concluídos» dentro do Pipeline**,
+   com o funil em que foram concluídos registado. Os Trabalhos da folha
+   migram como Concluídos. «Cancelado» continua PENDENTE.
+6. **Utilizadores**: superadmin e admins criam utilizadores e atribuem
+   papéis, departamentos e funções. **Só o superadmin** edita, desativa ou
+   elimina admins; ninguém mexe no superadmin. Admins podem atribuir e
+   reatribuir tarefas (e registos) a outros admins. **Eliminar = desativar**:
+   a conta deixa de entrar e todo o histórico se mantém.
+
+---
+
+## 10. Estado da execução (20 out 2026)
+
+Os 9 passos da §7 estão feitos e publicados. Entretanto o `main` tinha trazido a folha para o
+MySQL (versão 10: `jobs`, `job_crew`, `company_costs`, `leads`, `suppliers`) e o Drive novo
+(versões 8 e 9). A plataforma entra como **versão 11** por cima disso:
+
+- **Migração (§5):** em vez de ler a folha, passa os dados da versão 10 para a estrutura nova
+  (`admin/inc/platform_import.php`, página **Migração** ou `php admin/inc/cron_run.php migrate`).
+  As contas de cada trabalho e de cada ano são refeitas e comparadas com as da versão 10;
+  uma diferença de um cêntimo desfaz tudo. As tabelas da versão 10 ficam guardadas.
+  Funil por tipo de trabalho: VFX e Edição → VFX / 3D · Animação 3D → CGI ·
+  Produção Completa e Fotografia → Campanhas (pode mudar-se em cada negócio).
+- **Drive:** o Drive novo (R2, assistente) não foi alterado. A permissão da aba Drive é
+  verificada no `require_login()`; a pasta de cada negócio (`Projetos/<ID>_<NOME>/`) usa as
+  funções do Drive a partir de `inc/deal_drive.php`. O assistente lê os dados de gestão por
+  `inc/data.php`, que agora vem da estrutura nova e respeita as permissões de quem pergunta.
+- **Exportação (§5.7):** em vez do espelho na folha, um botão «Descarregar Excel»
+  (`admin/export.php`, só admins). A folha Google fica como arquivo.
+- **Backups (§5.8):** cópia diária da base para o R2 em `.topper/backups/` (pasta de sistema,
+  invisível no Drive), pelo cron `php admin/inc/cron_run.php backup`.
+
+Continua PENDENTE tudo o que está na §8 e não foi respondido na §9.

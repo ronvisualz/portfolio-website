@@ -1,5 +1,12 @@
 # Admin ↔ Google Sheet contract
 
+> **Archive.** Since October 2026 the admin no longer reads or writes the sheet. Its data was
+> imported into MySQL (version 10: `jobs`, `job_crew`, `company_costs`, `leads`, `suppliers`)
+> and then moved into the platform tables (version 11: `deals`, `costs`, `contacts`, see
+> `docs/ESPECIFICACAO-PLATAFORMA.md` and `admin/inc/platform_import.php`). The sheet stays as a
+> read-only archive; exports are an Excel download from the admin. This document describes the
+> sheet as it was.
+
 The Google Sheet "TOPPER DIGITAL" is the single source of truth for the admin's
 Painel, Carteira (jobs, job crew/costs, company costs, IVA), Leads and Fornecedores.
 The admin talks to it through an Apps Script web app (`sheets/Code.gs`).

@@ -249,6 +249,28 @@ html.js .statement h2 .w { --o: .14; }
 .mail:hover::after { transform: scaleX(.0); transform-origin: right; }
 .mail .circ { width: 1.3em; height: 1.3em; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: .6em; flex: none; transition: transform .6s var(--ease); }
 .mail:hover .circ { transform: rotate(-45deg); }
+/* contact form */
+.cform { margin-top: clamp(48px, 7vw, 110px); max-width: 980px; }
+.cform-lead { font-size: var(--body); color: var(--mute); margin-bottom: clamp(18px, 2.4vw, 32px); }
+.cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(14px, 1.6vw, 22px) clamp(16px, 2vw, 28px); }
+.cgrid label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+.cgrid label i { font-style: normal; text-transform: none; letter-spacing: 0; }
+.cgrid .wide { grid-column: 1 / -1; }
+.cgrid input, .cgrid select, .cgrid textarea { font: inherit; font-size: var(--body); letter-spacing: 0; text-transform: none; color: var(--ink);
+  background: transparent; border: 0; border-bottom: 2px solid var(--line); border-radius: 0; padding: 10px 0; outline: none; transition: border-color .3s; width: 100%; }
+.cgrid textarea { resize: vertical; min-height: 120px; }
+.cgrid input:focus, .cgrid select:focus, .cgrid textarea:focus { border-bottom-color: var(--ink); }
+.cgrid .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.csend { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: clamp(22px, 3vw, 40px); }
+.cbtn { display: inline-flex; align-items: center; gap: .6em; font: inherit; font-weight: 700; font-size: clamp(18px, 1.8vw, 26px); letter-spacing: -.02em;
+  background: var(--ink); color: #fff; border: 0; border-radius: 999px; padding: .7em 1.2em .7em 1.4em; cursor: pointer; }
+.cbtn .circ { width: 1.4em; height: 1.4em; border-radius: 50%; background: #fff; color: var(--ink); display: grid; place-items: center; font-size: .7em; transition: transform .6s var(--ease); }
+.cbtn:hover .circ { transform: rotate(-45deg); }
+.cbtn[disabled] { opacity: .5; cursor: wait; }
+.cstatus { font-size: var(--body); }
+.cstatus.err { color: #b3261e; }
+.cfine { font-size: 13px; color: var(--mute); margin-top: 16px; }
+@media (max-width: 640px) { .cgrid { grid-template-columns: 1fr; } }
 footer { padding-top: clamp(64px, 9vw, 140px); padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px var(--g); border-top: 1px solid var(--ink); padding-top: 28px; font-size: 16px; line-height: 1.6; }
 .foot h4 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
@@ -408,6 +430,30 @@ html.js .rvm.in > * { transform: none; }
     <h2 class="rvm"><span>Let&rsquo;s make</span></h2>
     <h2 class="rvm"><span class="lt">something move.</span></h2>
     <a class="mail rv" href="mailto:info@topperdigital.xyz?subject=New%20project"><span>info@topperdigital.xyz</span><span class="circ" aria-hidden="true">&rarr;</span></a>
+
+    <form class="cform rv" id="cform" action="/contacto.php" method="post" novalidate>
+      <p class="cform-lead">Or tell us about your project and we&rsquo;ll get back to you.</p>
+      <div class="cgrid">
+        <label><span>Name</span><input name="name" autocomplete="name" required maxlength="160"></label>
+        <label><span>Email</span><input name="email" type="email" autocomplete="email" required maxlength="190"></label>
+        <label><span>Company <i>(optional)</i></span><input name="company" autocomplete="organization" maxlength="160"></label>
+        <label><span>Phone <i>(optional)</i></span><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
+        <label class="wide"><span>What do you need?</span>
+          <select name="service">
+            <option value="vfx">3D / VFX / Post-production</option>
+            <option value="marketing">Marketing &amp; campaigns</option>
+            <option value="both">Both</option>
+          </select></label>
+        <label class="wide"><span>Message</span><textarea name="message" rows="5" required maxlength="4000"></textarea></label>
+        <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+        <input type="hidden" name="ts" value="">
+      </div>
+      <div class="csend">
+        <button type="submit" class="cbtn">Send message <span class="circ" aria-hidden="true">&rarr;</span></button>
+        <p class="cstatus" role="status" aria-live="polite"></p>
+      </div>
+      <p class="cfine">We only use these details to reply to you.</p>
+    </form>
   </section>
 </div>
 
@@ -429,6 +475,31 @@ html.js .rvm.in > * { transform: none; }
 <div class="cursor" id="cursor" aria-hidden="true"><b></b></div>
 <div class="wipe" id="wipe" aria-hidden="true"><span></span></div>
 
+<script>
+/* Contact form: posts to /contacto.php, which creates a lead in the admin. Works without JavaScript too. */
+(function () {
+  var f = document.getElementById('cform'); if (!f) return;
+  var status = f.querySelector('.cstatus'), btn = f.querySelector('.cbtn');
+  f.ts.value = String(Date.now());
+  var q = location.search;
+  if (/[?&]sent=1/.test(q)) status.textContent = 'Thank you — we will get back to you shortly.';
+  if (/[?&]error=1/.test(q)) { status.textContent = 'Something went wrong. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; }
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!f.checkValidity()) { status.textContent = 'Please fill in your name, a valid email and a message.'; status.className = 'cstatus err'; f.reportValidity(); return; }
+    btn.disabled = true; status.className = 'cstatus'; status.textContent = 'Sending…';
+    fetch(f.action, { method: 'POST', body: new FormData(f), headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+      .then(function (d) {
+        status.textContent = d.message || (d.ok ? 'Thank you — we will get back to you shortly.' : 'Something went wrong. Please email info@topperdigital.xyz.');
+        status.className = 'cstatus' + (d.ok ? '' : ' err');
+        if (d.ok) { f.reset(); f.ts.value = String(Date.now()); }
+      })
+      .catch(function () { status.textContent = 'Network error. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+</script>
 <script>
 /* ================================================================
    SHOWREEL — replace with the owner's new showreel files.
