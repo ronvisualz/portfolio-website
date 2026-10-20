@@ -578,3 +578,4 @@ tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
 .inline-edit input:hover, .inline-edit input:focus { border-color: var(--line, #ccc); background: #fff; }
 @media (max-width: 720px) { .board .col { flex-basis: 78vw; } }
 .keep { text-transform: none; }
+.tablewrap + form.bar { margin-top: 12px; }

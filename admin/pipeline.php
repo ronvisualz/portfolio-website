@@ -234,7 +234,8 @@ if ($open):
 <h2 id="negocio"><span class="keep"><?= e($open['code']) ?> · <?= e($open['name']) ?></span></h2>
 <div class="sub"><?= e(funnel_get($pdo, (int)$open['funnel_id'])['name'] ?? '—') ?> · <?= e($curStage['name'] ?? '—') ?>
   <?= $open['phase'] === 'lost' ? ' · <span class="chip no">Perdido</span>' : '' ?>
-  <?= $open['phase'] === 'done' ? ' · <span class="chip ok">Concluído</span>' : '' ?></div>
+  <?= $open['phase'] === 'done' ? ' · <span class="chip ok">Concluído</span>' : '' ?>
+  <?= can('negocios') ? ' · <a class="lnk" href="/admin/negocio.php?id=' . (int)$open['id'] . '">Abrir a ficha completa</a>' : '' ?></div>
 
 <?php if ($canEdit): ?>
 <form method="post">

@@ -73,6 +73,30 @@ function drive_project(string $name, int $year): string {
     return $p;
 }
 
+/**
+ * Pasta de um negócio: «Projetos/<ID>_<NOME>/», encontrada pelo ID — mudar
+ * o nome do negócio não a parte. Uma pasta já ligada (deals.drive_folder,
+ * por exemplo uma pasta antiga NN_NOME_PROJECT ligada na migração) ganha
+ * sempre. Cria a pasta se faltar e guarda a ligação. Devolve o prefixo.
+ */
+function drive_deal_folder(PDO $pdo, array $deal): string {
+    $code = (string)$deal['code'];
+    if ($code === '') throw new RuntimeException('Este registo ainda não tem ID.');
+    $p = (string)$deal['drive_folder'];
+    if ($p === '') {
+        foreach (r2_list('Projetos/')['folders'] ?? [] as $f) {
+            $leaf = substr(rtrim($f, '/'), strlen('Projetos/'));
+            if (str_starts_with($leaf, $code . '_') || $leaf === $code) { $p = 'Projetos/' . $leaf . '/'; break; }
+        }
+    }
+    if ($p === '') $p = 'Projetos/' . $code . '_' . drive_slug((string)$deal['name']) . '/';
+    r2_mkdir_p($p);
+    if ($p !== (string)$deal['drive_folder']) {
+        $pdo->prepare('UPDATE deals SET drive_folder = ? WHERE id = ?')->execute([$p, $deal['id']]);
+    }
+    return $p;
+}
+
 /** «1,2 MB». */
 function drive_size(int $b): string {
     if ($b <= 0) return $b === 0 ? '0 B' : '—';

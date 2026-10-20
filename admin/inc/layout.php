@@ -16,16 +16,17 @@ function css_url(): string {
 }
 
 /** Separador do menu → aba de permissões. */
-const NAV_TABS = ['calendar' => 'tarefas', 'fornecedores' => 'contactos'];
+const NAV_TABS = ['calendar' => 'tarefas'];
 
 function render_header(string $title, string $active = ''): void {
     $u = current_user();
     $nav = [
         'dashboard' => ['Painel',    '/admin/dashboard.php'],
-        'calendar'  => ['Calendário','/admin/calendar.php'],
         'leads'     => ['Leads',     '/admin/leads.php'],
         'pipeline'  => ['Pipeline',  '/admin/pipeline.php'],
-        'fornecedores' => ['Fornecedores', '/admin/fornecedores.php'],
+        'contactos' => ['Contactos', '/admin/contactos.php'],
+        'negocios'  => ['Negócios',  '/admin/negocios.php'],
+        'calendar'  => ['Calendário','/admin/calendar.php'],
         'drive'     => ['Drive',     '/admin/drive.php'],
         'equipa'    => ['Equipa',    '/admin/equipa.php'],
         'tools'     => ['Tools',     '/admin/tools.php'],
