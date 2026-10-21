@@ -1,7 +1,9 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/paginate.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/paginate.php';
+require_once __DIR__ . '/inc/interactions.php';
+require_once __DIR__ . '/inc/alerts.php';
 $user = require_login();
 require_page('contactos');
 
@@ -122,11 +124,24 @@ if ($pg['page'] > 1) $filters['pc'] = (string)$pg['page']; else unset($filters['
 $canEdit = can('contactos', PERM_EDIT);
 $canManage = can('contactos', PERM_MANAGE);
 
+$active = (int)$pdo->query("SELECT COUNT(DISTINCT c.id) FROM contacts c JOIN deals d ON d.contact_id = c.id OR d.id IN (SELECT deal_id FROM deal_contacts WHERE contact_id = c.id)
+                              WHERE d.phase IN ('pipeline','production')")->fetchColumn();
+$st = $pdo->prepare('SELECT COUNT(*) FROM contacts WHERE created_at >= ?');
+$st->execute([date('Y-m-01') . ' 00:00:00']);
+$newMonth = (int)$st->fetchColumn();
+
 render_header('Contactos', 'contactos');
 render_flashes();
 echo paginate_css();
 ?>
 <h1>Contactos</h1>
+
+<div class="stats">
+  <a class="stat hero" href="<?= e(ct_url(['t' => 'clientes'])) ?>"><div class="k">Clientes</div><div class="v"><?= $counts['clientes'] ?></div><div class="n">de <?= $counts['todos'] ?> contactos</div></a>
+  <div class="stat"><div class="k">Com negócios em curso</div><div class="v"><?= $active ?></div><div class="n">no Pipeline ou em produção</div></div>
+  <a class="stat" href="<?= e(ct_url(['t' => 'fornecedores'])) ?>"><div class="k">Fornecedores</div><div class="v"><?= $counts['fornecedores'] ?></div><div class="n"><?= $counts['parceiros'] ?> parceiros</div></a>
+  <div class="stat"><div class="k">Novos este mês</div><div class="v"><?= $newMonth ?></div><div class="n">contactos criados</div></div>
+</div>
 
 <div class="tabs">
   <?php foreach (CONTACT_TABS as $k => $label): ?>
@@ -134,15 +149,15 @@ echo paginate_css();
   <?php endforeach; ?>
 </div>
 
-<form class="bar" method="get">
+<form class="bar" method="get" data-auto>
   <input type="hidden" name="t" value="<?= e($tab) ?>">
-  <input type="search" name="q" value="<?= e($filters['q'] ?? '') ?>" placeholder="Procurar nome, serviço, email, NIF">
+  <input type="search" name="q" value="<?= e($filters['q'] ?? '') ?>" placeholder="Procurar nome, serviço, email, NIF" aria-label="Procurar" data-refocus>
   <?php if ($tab === 'fornecedores' || $tab === 'todos'): ?>
   <select name="cat" onchange="this.form.submit()" aria-label="Categoria"><option value="">Todas as categorias</option>
     <?php foreach (SUPPLIER_CATS as $c): ?><option <?= ($filters['cat'] ?? '') === $c ? 'selected' : '' ?>><?= e($c) ?></option><?php endforeach; ?>
   </select>
   <?php endif; ?>
-  <button class="btn sm" type="submit">Filtrar</button>
+  <button class="btn sm apply" type="submit">Filtrar</button>
   <?php if (array_diff_key($filters, ['pc' => 1, 't' => 1])): ?><a class="lnk" href="<?= e(ct_url(['t' => $tab])) ?>">Limpar</a><?php endif; ?>
 </form>
 
@@ -153,8 +168,8 @@ echo paginate_css();
   <tbody>
   <?php if (!$rows): ?><tr><td colspan="7" class="empty">Nenhum contacto aqui.</td></tr><?php endif; ?>
   <?php foreach ($pg['rows'] as $c): $cid = (int)$c['id']; ?>
-    <tr class="<?= in_array($cid, [$pending, $editId], true) ? 'pending' : '' ?>">
-      <td><span class="b"><?= e($c['name']) ?></span>
+    <tr class="<?= in_array($cid, [$pending, $editId], true) ? 'pending' : '' ?>" data-panel="contact:<?= $cid ?>">
+      <td><a class="b" style="color:inherit;text-decoration:none" href="<?= e(ct_url($filters + ['t' => $tab, 'edit' => $cid])) ?>#contacto" data-panel="contact:<?= $cid ?>"><?= e($c['name']) ?></a>
         <div class="muted" style="font-size:0.62rem"><?= $c['kind'] === 'person' ? 'Pessoa' : 'Empresa' ?><?= $c['service'] ? ' · ' . e(shorten($c['service'], 50)) : '' ?><?= $c['nif'] ? ' · NIF ' . e($c['nif']) : '' ?></div></td>
       <td><?= implode(' ', array_map(fn($f) => '<span class="chip">' . e(CONTACT_TYPES[$f]) . '</span>', array_filter(array_keys(CONTACT_TYPES), fn($f) => (int)$c[$f] === 1))) ?: '—' ?></td>
       <td class="hide-sm" style="font-size:0.7rem">
@@ -186,14 +201,14 @@ echo paginate_css();
 <?= page_nav($pg, ['del', 'edit']) ?>
 
 <?php if ($ec):
-    $st = $pdo->prepare("SELECT DISTINCT d.id, d.code, d.name, d.phase FROM deals d
+    $st = $pdo->prepare("SELECT DISTINCT d.id, d.code, d.name, d.phase, d.owner_id, d.funnel_id FROM deals d
                           LEFT JOIN deal_contacts dc ON dc.deal_id = d.id
                          WHERE d.code IS NOT NULL AND (d.contact_id = ? OR dc.contact_id = ?) ORDER BY d.code DESC");
     $st->execute([$ec['id'], $ec['id']]);
-    $linked = $st->fetchAll(); ?>
+    $linked = array_filter($st->fetchAll(), fn($d) => record_reach($pdo, $d)); ?>
 <h2>Negócios de <span class="keep"><?= e($ec['name']) ?></span></h2>
 <?php if (!$linked): ?><p class="muted">Ainda sem negócios.</p><?php else: ?>
-  <ul><?php foreach ($linked as $d): ?><li><a class="lnk" href="/admin/negocio.php?id=<?= (int)$d['id'] ?>"><?= e($d['code']) ?></a> <?= e($d['name']) ?></li><?php endforeach; ?></ul>
+  <ul><?php foreach ($linked as $d): ?><li><a class="lnk id" href="<?= e(deal_url($d)) ?>"><?= e($d['code']) ?></a> <?= e($d['name']) ?></li><?php endforeach; ?></ul>
 <?php endif; ?>
 <?php endif; ?>
 
@@ -234,5 +249,8 @@ echo paginate_css();
   <div class="actions"><button class="btn" type="submit"><?= $ec ? 'Guardar' : 'Adicionar' ?></button>
     <?php if ($ec): ?><a class="btn ghost" href="<?= e(ct_url($filters + ['t' => $tab])) ?>">Cancelar</a><?php endif; ?></div>
 </form>
+<?php endif; ?>
+<?php if ($ec): ?>
+<?= history_block($pdo, 'contact', (int)$ec['id'], $canEdit, ct_url($filters + ['t' => $tab, 'edit' => (int)$ec['id']]) . '#historico') ?>
 <?php endif; ?>
 <?php render_footer();

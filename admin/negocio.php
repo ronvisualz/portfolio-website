@@ -1,10 +1,12 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/leads.php';
-require __DIR__ . '/inc/pipeline.php';
-require __DIR__ . '/inc/finance.php';
-require __DIR__ . '/inc/deal_drive.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/leads.php';
+require_once __DIR__ . '/inc/pipeline.php';
+require_once __DIR__ . '/inc/finance.php';
+require_once __DIR__ . '/inc/deal_drive.php';
+require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/interactions.php';
 $user = require_login();
 require_page('negocios');
 
@@ -51,7 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'stage':
-                flash(deal_move($pdo, $deal, (int)($_POST['stage_id'] ?? 0)));
+                $snap = undo_deal_snapshot($deal);
+                $to = (int)($_POST['stage_id'] ?? 0);
+                $msg = deal_move($pdo, $deal, $to);
+                flash($msg, 'ok', (int)$deal['stage_id'] !== $to ? undo_push('deal_stage', $snap + ['to_stage' => $to]) : '');
                 if (($s = stage_get($pdo, (int)$_POST['stage_id'])) && $s['kind'] === 'done') redirect('/admin/pipeline.php?v=concluidos');
                 break;
 
@@ -83,7 +88,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'toggle_cost':
-                $pdo->prepare('UPDATE costs SET is_closed = 1 - is_closed WHERE id = ? AND deal_id = ?')->execute([(int)($_POST['cost_id'] ?? 0), $id]);
+                $st = $pdo->prepare('SELECT is_closed FROM costs WHERE id = ? AND deal_id = ?');
+                $st->execute([(int)($_POST['cost_id'] ?? 0), $id]);
+                $was = $st->fetchColumn();
+                if ($was !== false) {
+                    $pdo->prepare('UPDATE costs SET is_closed = 1 - is_closed WHERE id = ? AND deal_id = ?')->execute([(int)($_POST['cost_id'] ?? 0), $id]);
+                    flash((int)$was ? 'Custo reaberto.' : 'Custo fechado.', 'ok', undo_push('cost_closed', ['id' => (int)$_POST['cost_id'], 'from' => (int)$was]));
+                }
                 break;
 
             case 'del_cost':
@@ -144,29 +155,15 @@ if (db_has_column($pdo, 'tasks', 'deal_id')) {
     $tasks = $st->fetchAll();
 }
 
-$hist = $pdo->prepare(
-    'SELECT h.*, u.name AS user_name, fs.name AS from_stage, ts.name AS to_stage, ff.name AS from_funnel, tf.name AS to_funnel
-       FROM deal_history h
-       LEFT JOIN users u ON u.id = h.user_id
-       LEFT JOIN funnel_stages fs ON fs.id = h.from_stage_id
-       LEFT JOIN funnel_stages ts ON ts.id = h.to_stage_id
-       LEFT JOIN funnels ff ON ff.id = h.from_funnel_id
-       LEFT JOIN funnels tf ON tf.id = h.to_funnel_id
-      WHERE h.deal_id = ? ORDER BY h.created_at DESC, h.id DESC');
-$hist->execute([$id]);
-$hist = $hist->fetchAll();
-$eventLabel = ['convert' => 'Convertida em negócio', 'stage' => 'Mudou de etapa', 'funnel' => 'Mudou de funil', 'lost' => 'Perdido',
-               'reopen' => 'Reaberto', 'assign' => 'Responsável', 'archive' => 'Arquivada', 'reactivate' => 'Reativada', 'import' => 'Importado da folha'];
-
 $editCost = (int)($_GET['cost'] ?? 0);
 $ec = null; foreach ($costs as $c) if ((int)$c['id'] === $editCost) $ec = $c;
 $phaseChip = ['pipeline' => 'Fase comercial', 'production' => 'Em produção', 'done' => 'Concluído', 'lost' => 'Perdido'][$deal['phase']] ?? $deal['phase'];
 
-render_header($deal['code'] . ' · ' . $deal['name'], 'negocios');
+render_header($deal['code'] . ' · ' . $deal['name'], $deal['phase'] === 'production' ? 'negocios' : 'pipeline');
 render_flashes();
 ?>
 <p><a class="lnk" href="<?= $deal['phase'] === 'production' ? '/admin/negocios.php' : '/admin/pipeline.php' ?>">← <?= $deal['phase'] === 'production' ? 'Negócios' : 'Pipeline' ?></a></p>
-<h1><span class="keep"><?= e($deal['code']) ?> · <?= e($deal['name']) ?></span></h1>
+<h1><span class="keep"><span class="id"><?= e($deal['code']) ?></span> · <?= inline_field('deal', $id, 'name', e($deal['name']), ['edit' => $canEdit && record_reach($pdo, $deal, PERM_EDIT), 'label' => 'Editar nome', 'value' => $deal['name']]) ?></span></h1>
 <div class="sub"><?= e($funnel['name'] ?? '—') ?> · <?= e($stage['name'] ?? '—') ?> · <span class="chip"><?= e($phaseChip) ?></span>
   · Responsável: <?= e($owner ?: 'por atribuir') ?></div>
 
@@ -193,7 +190,14 @@ render_flashes();
 <?php endif; ?>
 
 <h2 id="info">Informação</h2>
-<?php if ($canEdit): ?>
+<?php if ($canEdit && record_reach($pdo, $deal, PERM_EDIT)): ?>
+<div class="panel js-only">
+  <div class="kv">
+    <span>Valor estimado</span><div><?= inline_field('deal', $id, 'value_estimate', $deal['value_estimate'] !== null ? e(eur0((float)$deal['value_estimate'])) : '', ['edit' => true, 'type' => 'money', 'label' => 'Editar valor estimado', 'value' => $deal['value_estimate'] !== null ? number_format((float)$deal['value_estimate'], 2, ',', '') : '']) ?></div>
+    <span>Notas</span><div><?= inline_field('deal', $id, 'notes', e((string)$deal['notes']), ['edit' => true, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$deal['notes']]) ?></div>
+  </div>
+</div>
+<noscript>
 <form method="post">
   <?= csrf_field() ?><input type="hidden" name="do" value="save_info"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="anchor" value="info">
   <div class="grid">
@@ -203,6 +207,7 @@ render_flashes();
   </div>
   <div class="actions"><button class="btn" type="submit">Guardar</button></div>
 </form>
+</noscript>
 <?php else: ?>
   <p><?= nl2br(e((string)$deal['notes'])) ?: '<span class="muted">Sem notas.</span>' ?></p>
 <?php endif; ?>
@@ -213,7 +218,7 @@ render_flashes();
   <tbody>
   <?php if (!$contacts): ?><tr><td colspan="5" class="empty">Sem contactos ligados.</td></tr><?php endif; ?>
   <?php foreach ($contacts as $c): ?>
-    <tr><td><a class="b" style="color:inherit" href="/admin/contactos.php?edit=<?= (int)$c['id'] ?>#contacto"><?= e($c['name']) ?></a>
+    <tr><td><a class="b" style="color:inherit" href="/admin/contactos.php?edit=<?= (int)$c['id'] ?>#contacto"<?= can('contactos') ? ' data-panel="contact:' . (int)$c['id'] . '"' : '' ?>><?= e($c['name']) ?></a>
           <?= (int)$c['id'] === (int)$deal['contact_id'] ? ' <span class="chip">cliente</span>' : '' ?></td>
       <td><?= e($c['link_role'] ?: '—') ?></td>
       <td class="hide-sm"><?= $c['email'] ? '<a href="mailto:' . e($c['email']) . '">' . e($c['email']) . '</a>' : '—' ?></td>
@@ -349,23 +354,6 @@ render_flashes();
   </tbody>
 </table></div>
 
-<h2 id="historico">Histórico</h2>
-<div class="tablewrap"><table>
-  <thead><tr><th>Quando</th><th>O quê</th><th>Detalhe</th><th>Quem</th></tr></thead>
-  <tbody>
-  <?php foreach ($hist as $h): ?>
-    <tr><td class="nowrap"><?= e(date('d/m/Y H:i', strtotime($h['created_at']))) ?></td>
-      <td><?= e($eventLabel[$h['event']] ?? $h['event']) ?></td>
-      <td class="muted" style="font-size:0.75rem"><?php
-        $parts = [];
-        if ($h['event'] === 'funnel') $parts[] = e(($h['from_funnel'] ?? '?') . ' › ' . ($h['from_stage'] ?? '?') . ' → ' . ($h['to_funnel'] ?? '?') . ' › ' . ($h['to_stage'] ?? '?'));
-        elseif ($h['from_stage'] || $h['to_stage']) $parts[] = e(trim(($h['from_stage'] ?? '') . ' → ' . ($h['to_stage'] ?? ''), ' →'));
-        if ($h['note'] !== '') $parts[] = e($h['note']);
-        echo implode(' · ', $parts);
-      ?></td>
-      <td><?= e($h['user_name'] ?? '—') ?></td></tr>
-  <?php endforeach; ?>
-  </tbody>
-</table></div>
+<?= history_block($pdo, 'deal', $id, $canEdit, $self . '#historico') ?>
 
 <?php render_footer();

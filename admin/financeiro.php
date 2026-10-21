@@ -1,16 +1,21 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/paginate.php';
-require __DIR__ . '/inc/finance.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/paginate.php';
+require_once __DIR__ . '/inc/finance.php';
+require_once __DIR__ . '/inc/alerts.php';
+require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/billing.php';
+require_once __DIR__ . '/inc/charts.php';
 $user = require_login();
 require_page('financeiro');
 
 // Financeiro: o que estava em Carteira › Trabalhos, Custos e IVA, agora
 // lido do MySQL e calculado pelo sistema (inc/finance.php).
-// Separadores: Negócios · Custos · IVA, sempre de um ano.
+// Separadores: Negócios · Por receber · Fluxo de caixa · Custos · IVA.
+// «Por receber» junta todos os anos (com a antiguidade); os outros são de um ano.
 
-const FIN_TABS = ['negocios' => 'Negócios', 'custos' => 'Custos', 'iva' => 'IVA'];
+const FIN_TABS = ['negocios' => 'Negócios', 'receber' => 'Por receber', 'fluxo' => 'Fluxo de caixa', 'custos' => 'Custos', 'iva' => 'IVA'];
 
 $rate  = vat_rate($pdo);
 $years = finance_years($pdo);
@@ -25,11 +30,28 @@ function fin_url(array $q): string {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do   = (string)($_POST['do'] ?? '');
-    $back = fin_url(['year' => $year, 'tab' => (string)($_POST['tab'] ?? 'negocios')]);
+    $back = fin_url(array_filter(['year' => $year, 'tab' => (string)($_POST['tab'] ?? 'negocios'),
+                                  'doc' => (int)($_POST['doc'] ?? 0) ?: null, 'aging' => (string)($_POST['aging'] ?? '') ?: null]));
 
     if ($do === 'toggle_paid') {
-        $pdo->prepare("UPDATE deals SET is_paid = 1 - is_paid WHERE id = ? AND code IS NOT NULL")->execute([(int)($_POST['id'] ?? 0)]);
+        $st = $pdo->prepare('SELECT code, is_paid FROM deals WHERE id = ? AND code IS NOT NULL');
+        $st->execute([(int)($_POST['id'] ?? 0)]);
+        if ($d = $st->fetch()) {
+            $pdo->prepare("UPDATE deals SET is_paid = 1 - is_paid WHERE id = ? AND code IS NOT NULL")->execute([(int)$_POST['id']]);
+            flash($d['code'] . ((int)$d['is_paid'] ? ' voltou a estar por pagar.' : ' marcado como pago.'), 'ok',
+                  undo_push('deal_paid', ['id' => (int)$_POST['id'], 'from' => (int)$d['is_paid']]));
+        }
         redirect($back);
+    }
+    if ($do === 'goal') {
+        require_perm('financeiro', PERM_MANAGE);
+        $key = 'meta_anual_' . $year;
+        $pdo->prepare(db_is_sqlite($pdo)
+            ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+            : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)'
+        )->execute([$key, (string)money_in($_POST['goal'] ?? '0')]);
+        flash('Meta de ' . $year . ' guardada.');
+        redirect(fin_url(['year' => $year, 'tab' => 'fluxo']));
     }
     if ($do === 'add_cost' || $do === 'save_cost') {
         $c = cost_input($_POST);
@@ -53,7 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($back);
     }
     if ($do === 'toggle_cost') {
-        $pdo->prepare('UPDATE costs SET is_closed = 1 - is_closed WHERE id = ? AND deal_id IS NULL')->execute([(int)($_POST['cost_id'] ?? 0)]);
+        $st = $pdo->prepare('SELECT is_closed FROM costs WHERE id = ? AND deal_id IS NULL');
+        $st->execute([(int)($_POST['cost_id'] ?? 0)]);
+        $was = $st->fetchColumn();
+        if ($was !== false) {
+            $pdo->prepare('UPDATE costs SET is_closed = 1 - is_closed WHERE id = ? AND deal_id IS NULL')->execute([(int)$_POST['cost_id']]);
+            flash((int)$was ? 'Custo por pagar.' : 'Custo pago.', 'ok', undo_push('cost_closed', ['id' => (int)$_POST['cost_id'], 'from' => (int)$was]));
+        }
         redirect($back);
     }
     if ($do === 'del_cost') {
@@ -67,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $t = finance_year($pdo, $year, $rate);
 $canEdit = can('financeiro', PERM_EDIT);
+$alertsInv = count(my_alerts($pdo)['invoice']);
 
 render_header('Financeiro', 'financeiro');
 render_flashes();
@@ -74,6 +103,7 @@ echo paginate_css();
 ?>
 <h1>Financeiro</h1>
 
+<?php if ($tab !== 'receber'): ?>
 <form class="bar" method="get">
   <input type="hidden" name="tab" value="<?= e($tab) ?>">
   <select name="year" onchange="this.form.submit()" aria-label="Ano">
@@ -81,12 +111,13 @@ echo paginate_css();
   </select>
   <noscript><button class="btn sm">Ver</button></noscript>
 </form>
+<?php endif; ?>
 
 <div class="stats" style="margin-bottom:1.6rem">
   <div class="stat"><div class="k">Faturação s/ IVA</div><div class="v"><?= eur0($t['revenue']) ?></div><div class="n">c/ IVA <?= eur0($t['gross']) ?> · <?= $t['count'] ?> negócios</div></div>
   <div class="stat"><div class="k">Gastos</div><div class="v"><?= eur0($t['costs']) ?></div><div class="n"><?= $t['revenue'] > 0 ? round($t['costs'] / $t['revenue'] * 100) . '% da faturação' : '—' ?></div></div>
   <div class="stat hero <?= $t['profit'] < 0 ? 'neg' : '' ?>"><div class="k">Lucro antes de impostos</div><div class="v"><?= eur0($t['profit']) ?></div></div>
-  <div class="stat"><div class="k">Por receber</div><div class="v"><?= eur0($t['unpaid']) ?></div><div class="n">s/ IVA</div></div>
+  <a class="stat<?= $alertsInv ? ' risk' : '' ?>" href="<?= e(fin_url(['tab' => 'receber'])) ?>"><div class="k">Por receber</div><div class="v"><?= eur0($t['unpaid']) ?></div><div class="n">s/ IVA<?= $alertsInv ? ' · ' . $alertsInv . ' em atraso' : '' ?></div></a>
 </div>
 
 <div class="tabs">
@@ -104,7 +135,8 @@ echo paginate_css();
   <?php if (!$rows): ?><tr><td colspan="8" class="empty">Sem negócios em <?= $year ?>.</td></tr><?php endif; ?>
   <?php foreach ($pg['rows'] as $d): $m = $d['m']; ?>
     <tr>
-      <td class="nowrap"><a class="lnk" href="/admin/negocio.php?id=<?= (int)$d['id'] ?>#financeiro"><?= e($d['code']) ?></a></td>
+      <td class="nowrap"><a class="lnk id" href="/admin/negocio.php?id=<?= (int)$d['id'] ?>#financeiro"><?= e($d['code']) ?></a>
+        <?= icon_button('eye', 'Pré-visualizar a cobrança de ' . $d['code'], ['href' => fin_url(['tab' => 'receber', 'doc' => (int)$d['id']]), 'class' => 'ibtn', 'style' => 'width:28px;height:28px;vertical-align:middle']) ?></td>
       <td><span class="b"><?= e($d['name']) ?></span><?= $d['job_type'] ? '<div class="muted" style="font-size:0.62rem">' . e($d['job_type']) . '</div>' : '' ?></td>
       <td class="nowrap"><?= e($d['month'] ? month_name((int)$d['month']) : '—') ?></td>
       <td class="num"><?= eur($m['budget_net']) ?></td>
@@ -121,6 +153,108 @@ echo paginate_css();
   </tbody>
 </table></div>
 <?= page_nav($pg) ?>
+
+<?php elseif ($tab === 'receber'):
+    $recv = receivables($pdo);
+    $buckets = array_fill_keys(array_keys(AGING), ['n' => 0, 'v' => 0.0]);
+    foreach ($recv as &$r) { $r['bucket'] = aging_bucket($r['age']); $buckets[$r['bucket']]['n']++; $buckets[$r['bucket']]['v'] += $r['net']; }
+    unset($r);
+    $ag = isset(AGING[$_GET['aging'] ?? '']) ? (string)$_GET['aging'] : '';
+    $list = $ag === '' ? $recv : array_values(array_filter($recv, fn($r) => $r['bucket'] === $ag));
+    $docId = (int)($_GET['doc'] ?? 0);
+    $doc = $docId ? billing_deal($pdo, $docId) : null;
+    $limit = alert_limits($pdo)['invoice'];
+?>
+<p class="muted" style="font-size:12.5px;margin:-6px 0 12px">Negócios por pagar de todos os anos. A antiguidade conta a partir da conclusão ou, sem ela, do fim do mês do trabalho — ainda não há faturas na plataforma. Em atraso: mais de <?= $limit ?> dias.</p>
+<div class="aging" role="list">
+  <?php foreach (AGING as $k => $_): $b = $buckets[$k]; ?>
+    <a role="listitem" class="<?= in_array($k, ['61-90', '90+'], true) && $b['n'] ? 'late' : '' ?><?= $ag === $k ? ' on' : '' ?>" href="<?= e(fin_url(array_filter(['tab' => 'receber', 'aging' => $ag === $k ? null : $k]))) ?>"<?= $ag === $k ? ' aria-current="true"' : '' ?>>
+      <div class="k"><?= e($k) ?> DIAS</div><div class="v"><?= eur0($b['v']) ?></div><div class="n"><?= $b['n'] ?> negócio<?= $b['n'] === 1 ? '' : 's' ?> · s/ IVA</div></a>
+  <?php endforeach; ?>
+</div>
+<div class="fin-split" style="margin-top:16px">
+  <div class="tablewrap"><table>
+    <thead><tr><th>ID</th><th>Negócio</th><th class="num">Dias</th><th class="num">s/ IVA</th><th class="num hide-sm">c/ IVA</th><th></th></tr></thead>
+    <tbody>
+    <?php if (!$list): ?><tr><td colspan="6" class="empty">Nada por receber<?= $ag ? ' nesta faixa' : '' ?>.</td></tr><?php endif; ?>
+    <?php foreach ($list as $r): $rid = (int)$r['id']; ?>
+      <tr class="<?= $docId === $rid ? 'sel' : '' ?> <?= $r['age'] > $limit ? 'stale' : '' ?>">
+        <td class="nowrap"><a class="lnk id" href="<?= e(fin_url(array_filter(['tab' => 'receber', 'aging' => $ag ?: null, 'doc' => $rid]))) ?>"><?= e($r['code']) ?></a></td>
+        <td><span class="b"><?= e($r['name']) ?></span><?= $r['contact_name'] ? '<div class="muted" style="font-size:0.62rem">' . e($r['contact_name']) . '</div>' : '' ?></td>
+        <td class="num<?= $r['age'] > $limit ? ' neg' : '' ?>"><?= $r['age'] ?></td>
+        <td class="num"><?= eur($r['net']) ?></td>
+        <td class="num hide-sm"><?= eur($r['gross']) ?></td>
+        <td class="num nowrap"><?= icon_button('eye', 'Pré-visualizar ' . $r['code'], ['href' => fin_url(array_filter(['tab' => 'receber', 'aging' => $ag ?: null, 'doc' => $rid]))]) ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php if ($doc): $docUrl = fin_url(['tab' => 'receber', 'doc' => (int)$doc['id']]); ?>
+  <div class="doc-wrap">
+    <?= billing_doc($pdo, $doc, $rate) ?>
+    <div class="doc-actions">
+      <a class="btn ghost sm" href="/admin/documento.php?id=<?= (int)$doc['id'] ?>&amp;dl=1"><?= icon('download') ?> Descarregar</a>
+      <button type="button" class="btn ghost sm" data-copy="<?= e($docUrl) ?>"><?= icon('link') ?> Copiar link</button>
+      <?php if ($canEdit): ?>
+      <form method="post" style="margin:0"><?= csrf_field() ?><input type="hidden" name="do" value="toggle_paid"><input type="hidden" name="id" value="<?= (int)$doc['id'] ?>">
+        <input type="hidden" name="tab" value="receber"><input type="hidden" name="doc" value="<?= (int)$doc['id'] ?>"><input type="hidden" name="aging" value="<?= e($ag) ?>">
+        <button class="btn sm" type="submit"><?= icon('check') ?> <?= (int)$doc['is_paid'] ? 'Marcar como por pagar' : 'Marcar como paga' ?></button></form>
+      <?php endif; ?>
+      <a class="btn ghost sm" href="/admin/documento.php?id=<?= (int)$doc['id'] ?>" target="_blank" rel="noopener"><?= icon('external') ?> Abrir para imprimir</a>
+    </div>
+  </div>
+  <?php endif; ?>
+</div>
+
+<?php elseif ($tab === 'fluxo'):
+    $deals = year_deals($pdo, $year, $rate);
+    $rev = array_fill(1, 12, 0.0); $out = array_fill(1, 12, 0.0); $noMonth = 0.0;
+    foreach ($deals as $d) {
+        if (!$d['month']) { $noMonth += $d['m']['budget_net']; continue; }
+        $rev[(int)$d['month']] += $d['m']['budget_net'];
+        $out[(int)$d['month']] += $d['m']['expenses'];
+    }
+    foreach (company_cost_rows($pdo, $rate, $year) as $c) if ($c['month']) $out[(int)$c['month']] += $c['net'];
+    $goal = (float)setting($pdo, 'meta_anual_' . $year, 0);
+    $cy = (int)date('Y');
+    $upto = $year < $cy ? 12 : ($year === $cy ? (int)date('n') : 1);
+    $done = array_sum(array_slice($rev, 0, $upto, true));
+?>
+<p class="muted" style="font-size:12.5px;margin:-6px 0 12px">Faturação s/ IVA pelo mês do trabalho (a plataforma ainda não guarda as datas de pagamento).
+  <?= $goal > 0 ? 'Meta de ' . $year . ': <b>' . eur0($goal) . '</b> · ' . round($done / $goal * 100) . '% atingido.' : 'Ainda sem meta para ' . $year . '.' ?></p>
+<div class="flow-grid">
+  <figure class="flow" style="margin:0">
+    <h3>Faturação por mês</h3>
+    <div class="lg"><span><i class="box" style="background:var(--c-real)"></i>Faturação s/ IVA</span><?php if ($goal > 0): ?><span><i style="background:var(--c-goal)"></i>Meta do mês (<?= eur0($goal / 12) ?>)</span><?php endif; ?></div>
+    <?= chart_months($rev, $goal / 12, $year === $cy ? (int)date('n') : 0, 'Faturação por mês em ' . $year) ?>
+  </figure>
+  <figure class="flow" style="margin:0">
+    <h3>Acumulado contra a meta</h3>
+    <div class="lg"><span><i style="background:var(--c-real)"></i>Acumulado</span><?php if ($goal > 0): ?><span><i style="background:var(--c-goal)"></i>Ritmo da meta</span><?php endif; ?></div>
+    <?= chart_cumulative($rev, $goal, $upto, 'Faturação acumulada em ' . $year . ' contra a meta anual') ?>
+  </figure>
+</div>
+<?php if ($noMonth > 0): ?><p class="muted" style="font-size:12px">Sem mês definido: <?= eur0($noMonth) ?> (fora dos gráficos).</p><?php endif; ?>
+<details class="panel" style="margin-top:14px"><summary>Ver em tabela</summary>
+  <div class="tablewrap" style="margin-top:12px"><table>
+    <thead><tr><th>Mês</th><th class="num">Faturação s/ IVA</th><th class="num">Gastos</th><th class="num">Saldo</th><th class="num">Acumulado</th><?= $goal > 0 ? '<th class="num">Meta acumulada</th>' : '' ?></tr></thead>
+    <tbody>
+    <?php $acc = 0.0; for ($m = 1; $m <= 12; $m++): $acc += $rev[$m]; ?>
+      <tr><td><?= e(month_name($m)) ?></td><td class="num"><?= eur0($rev[$m]) ?></td><td class="num"><?= eur0($out[$m]) ?></td>
+        <td class="num <?= $rev[$m] - $out[$m] < 0 ? 'neg' : '' ?>"><?= eur0($rev[$m] - $out[$m]) ?></td><td class="num"><?= eur0($acc) ?></td>
+        <?= $goal > 0 ? '<td class="num">' . eur0($goal * $m / 12) . '</td>' : '' ?></tr>
+    <?php endfor; ?>
+    </tbody>
+  </table></div>
+</details>
+<?php if (can('financeiro', PERM_MANAGE)): ?>
+<form class="bar" method="post" style="margin-top:14px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="goal"><input type="hidden" name="year" value="<?= $year ?>">
+  <label for="goal" class="muted" style="font-size:12.5px">Meta anual de faturação para <?= $year ?> (€, s/ IVA)</label>
+  <input type="text" id="goal" name="goal" inputmode="decimal" value="<?= $goal > 0 ? e(number_format($goal, 0, ',', '')) : '' ?>" style="flex:0 0 140px">
+  <button class="btn sm ghost" type="submit">Guardar meta</button>
+</form>
+<?php endif; ?>
 
 <?php elseif ($tab === 'custos'):
     $company = company_cost_rows($pdo, $rate, $year);

@@ -1,93 +1,127 @@
 <?php
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/ui.php';
+
 /**
- * Endereço da folha de estilos com a data do ficheiro colada ao fim.
+ * Endereço de um ficheiro de assets com a data do ficheiro colada ao fim.
  *
  * Sem isto, o browser guarda o CSS antigo e continua a usá-lo depois
  * de publicar uma versão nova — a página fica com o desenho velho e
  * só um Ctrl+F5 a corrige. Assim que o ficheiro muda, o endereço
  * muda com ele e o browser é obrigado a ir buscar o novo.
  */
-function css_url(): string {
-    $path = __DIR__ . '/../assets/app.css';
+function asset_url(string $file): string {
+    $path = __DIR__ . '/../assets/' . $file;
     $v    = is_file($path) ? filemtime($path) : time();
-    return '/admin/assets/app.css?v=' . $v;
+    return '/admin/assets/' . $file . '?v=' . $v;
 }
 
-/** Separador do menu → aba de permissões. */
-const NAV_TABS = ['calendar' => 'tarefas'];
+function css_url(): string {
+    return asset_url('app.css');
+}
+
+/** O <head> comum (também usado pela página de entrada). */
+function render_head(string $title): void {
+    ?>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="color-scheme" content="light dark">
+<title><?= e($title) ?> · topper.</title>
+<script>document.documentElement.classList.add('js');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="<?= css_url() ?>">
+<?php
+}
 
 /**
  * $bodyClass: classe opcional do <body> (ex.: «td-full» nas páginas de ecrã
  * inteiro, como o Drive, em que a página não rola e o conteúdo rola por dentro).
  */
 function render_header(string $title, string $active = '', string $bodyClass = ''): void {
-    $u = current_user();
-    $nav = [
-        'dashboard'    => ['Dashboard',       '/admin/dashboard.php'],
-        'leads'        => ['Leads',           '/admin/leads.php'],
-        'pipeline'     => ['Pipeline',        '/admin/pipeline.php'],
-        'contactos'    => ['Contactos',       '/admin/contactos.php'],
-        'negocios'     => ['Negócios',        '/admin/negocios.php'],
-        'orcamentacao' => ['Orçamentação',    '/admin/brevemente.php?t=orcamentacao'],
-        'criativo'     => ['Centro Criativo', '/admin/brevemente.php?t=criativo'],
-        'calendar'     => ['Tarefas',         '/admin/calendar.php'],
-        'drive'        => ['Drive',           '/admin/drive.php'],
-        'financeiro'   => ['Financeiro',      '/admin/financeiro.php'],
-        'relatorios'   => ['Relatórios',      '/admin/brevemente.php?t=relatorios'],
-        'marketing'    => ['Marketing',       '/admin/brevemente.php?t=marketing'],
-        'equipa'       => ['Equipa',          '/admin/equipa.php'],
-        'conhecimento' => ['Conhecimento',    '/admin/brevemente.php?t=conhecimento'],
-        'tools'        => ['Tools',           '/admin/tools.php'],
-    ];
+    global $pdo;
+    require_once __DIR__ . '/alerts.php';
+    $u      = current_user();
+    $prefs  = ui_prefs();
+    $badges = nav_badges($pdo);
+    $unread = notifications_unread($pdo);
+    $html   = ($prefs['pref_theme'] !== '' ? ' data-theme="' . e($prefs['pref_theme']) . '"' : '')
+            . ($prefs['pref_nav'] === 'closed' ? ' data-nav="closed"' : '');
+    $pageTitle = NAV_ITEMS[$active][0] ?? ($active === 'conta' ? 'A minha conta' : ($active === 'migracao' ? 'Migração' : $title));
+    $crumbGroup = 'Conta';
+    foreach (NAV_GROUPS as $g => $keys) if (in_array($active, $keys, true)) $crumbGroup = $g;
+    if ($active === 'migracao') $crumbGroup = 'Gestão';
     ?><!DOCTYPE html>
-<html lang="pt">
+<html lang="pt"<?= $html ?>>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-<title><?= e($title) ?> · topper.</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@600;700&display=swap">
-<link rel="stylesheet" href="<?= css_url() ?>">
+<?php render_head($title); ?>
+<meta name="csrf" content="<?= e(csrf_token()) ?>">
 </head>
 <body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
 <a class="skip" href="#conteudo">Saltar para o conteúdo</a>
 <div class="app">
-<aside class="rail">
+<aside class="rail" id="rail" aria-label="Menu">
   <div class="brand">
     <a href="<?= e(home_url()) ?>" aria-label="topper. admin — início">
-      <svg class="wm" viewBox="0 0 432.74 121.88" aria-hidden="true" focusable="false">
-<path fill="currentColor" fill-rule="nonzero" d="M 64.7 55.0 C 64.7 60.6 66.2 65.1 69.2 68.3 C 72.3 71.6 76.4 73.3 81.5 73.3 C 86.7 73.3 90.8 71.6 93.8 68.3 C 96.9 65.1 98.4 60.7 98.4 55.2 C 98.4 49.8 96.9 45.4 93.8 42.0 C 90.8 38.7 86.7 37.0 81.5 37.0 C 76.4 37.0 72.3 38.7 69.2 42.0 C 66.2 45.4 64.7 49.7 64.7 55.0 M 45.1 54.8 C 45.1 49.8 46.0 45.2 47.8 41.0 C 49.6 36.8 52.1 33.2 55.3 30.1 C 58.6 27.1 62.4 24.7 66.9 22.9 C 71.3 21.2 76.2 20.3 81.5 20.3 C 86.8 20.3 91.7 21.1 96.2 22.8 C 100.6 24.6 104.5 26.9 107.7 30.0 C 111.0 33.1 113.5 36.8 115.3 41.0 C 117.1 45.3 118.0 50.0 118.0 55.2 C 118.0 60.3 117.1 65.0 115.3 69.3 C 113.5 73.6 111.0 77.3 107.7 80.3 C 104.5 83.4 100.6 85.8 96.1 87.5 C 91.6 89.2 86.7 90.1 81.3 90.1 C 76.0 90.1 71.2 89.2 66.7 87.5 C 62.3 85.8 58.5 83.4 55.3 80.3 C 52.1 77.3 49.6 73.5 47.8 69.2 C 46.0 64.8 45.1 60.0 45.1 54.8 M 146.6 55.0 C 146.6 57.6 147.0 59.9 147.8 62.1 C 148.7 64.3 149.8 66.3 151.4 67.9 C 152.9 69.5 154.7 70.8 156.8 71.7 C 158.9 72.7 161.3 73.2 163.8 73.2 C 166.4 73.2 168.7 72.7 170.8 71.8 C 172.9 70.9 174.6 69.6 176.1 68.0 C 177.5 66.4 178.6 64.5 179.5 62.3 C 180.3 60.1 180.7 57.7 180.7 55.2 C 180.7 49.8 179.2 45.3 176.3 41.9 C 173.4 38.5 169.2 36.8 163.9 36.8 C 158.7 36.8 154.5 38.5 151.4 41.9 C 148.2 45.3 146.6 49.7 146.6 55.0 M 147.6 22.0 L 147.4 29.7 L 147.6 29.7 C 150.6 26.6 153.9 24.2 157.3 22.6 C 160.7 21.0 164.5 20.1 168.7 20.1 C 173.4 20.1 177.8 21.1 181.7 22.9 C 185.6 24.8 189.0 27.3 191.7 30.4 C 194.5 33.6 196.7 37.3 198.2 41.5 C 199.6 45.7 200.4 50.3 200.4 55.2 C 200.4 59.9 199.6 64.4 198.1 68.6 C 196.6 72.8 194.4 76.5 191.6 79.6 C 188.8 82.8 185.5 85.3 181.6 87.1 C 177.7 88.9 173.5 89.8 168.8 89.8 C 164.5 89.8 160.7 89.0 157.2 87.5 C 153.8 86.0 150.5 83.6 147.6 80.3 L 147.4 80.3 C 147.6 82.4 147.7 84.3 147.7 86.0 L 147.7 121.8 L 128.1 121.8 L 128.1 22.0 Z M 147.6 22.0 M 228.9 55.0 C 228.9 57.6 229.3 59.9 230.1 62.1 C 230.9 64.3 232.1 66.3 233.6 67.9 C 235.1 69.5 237.0 70.8 239.1 71.7 C 241.2 72.7 243.5 73.2 246.0 73.2 C 248.7 73.2 251.0 72.7 253.1 71.8 C 255.1 70.9 256.9 69.6 258.3 68.0 C 259.8 66.4 260.9 64.5 261.7 62.3 C 262.5 60.1 262.9 57.7 262.9 55.2 C 262.9 49.8 261.5 45.3 258.5 41.9 C 255.6 38.5 251.5 36.8 246.2 36.8 C 241.0 36.8 236.8 38.5 233.6 41.9 C 230.5 45.3 228.9 49.7 228.9 55.0 M 229.8 22.0 L 229.7 29.7 L 229.8 29.7 C 232.9 26.6 236.1 24.2 239.6 22.6 C 243.0 21.0 246.8 20.1 250.9 20.1 C 255.7 20.1 260.0 21.1 263.9 22.9 C 267.9 24.8 271.2 27.3 274.0 30.4 C 276.8 33.6 278.9 37.3 280.4 41.5 C 281.9 45.7 282.6 50.3 282.6 55.2 C 282.6 59.9 281.9 64.4 280.3 68.6 C 278.8 72.8 276.7 76.5 273.9 79.6 C 271.1 82.8 267.7 85.3 263.9 87.1 C 260.0 88.9 255.7 89.8 251.0 89.8 C 246.8 89.8 243.0 89.0 239.5 87.5 C 236.0 86.0 232.8 83.6 229.8 80.3 L 229.7 80.3 C 229.9 82.4 230.0 84.3 230.0 86.0 L 230.0 121.8 L 210.4 121.8 L 210.4 22.0 Z M 229.8 22.0 M 309.2 46.4 L 335.9 46.4 C 335.4 42.8 334.0 40.0 331.7 38.0 C 329.3 36.0 326.3 35.0 322.6 35.0 C 319.0 35.0 316.1 36.1 313.8 38.1 C 311.5 40.2 310.0 43.0 309.2 46.4 M 322.3 20.3 C 327.5 20.3 332.1 21.1 336.2 22.7 C 340.3 24.3 343.8 26.7 346.7 29.7 C 349.5 32.8 351.8 36.5 353.3 40.9 C 354.9 45.3 355.7 50.2 355.7 55.7 L 355.7 59.2 L 308.4 59.2 C 308.8 64.1 310.2 68.0 312.7 70.9 C 315.2 73.9 318.7 75.3 323.3 75.3 C 326.4 75.3 329.2 74.6 331.5 73.0 C 333.8 71.5 335.8 69.1 337.6 65.8 L 354.8 71.5 C 351.8 77.7 347.5 82.4 341.9 85.5 C 336.3 88.5 330.0 90.1 323.0 90.1 C 317.9 90.1 313.2 89.2 309.0 87.6 C 304.9 86.0 301.2 83.7 298.2 80.7 C 295.1 77.6 292.7 74.0 291.1 69.7 C 289.4 65.4 288.6 60.6 288.6 55.3 C 288.6 50.0 289.4 45.2 291.1 40.8 C 292.7 36.5 295.1 32.8 298.0 29.8 C 301.0 26.8 304.6 24.4 308.7 22.8 C 312.8 21.1 317.4 20.3 322.3 20.3 M 365.8 22.0 L 385.4 22.0 L 385.2 28.8 L 385.6 28.8 C 388.1 25.7 390.5 23.5 392.9 22.2 C 395.3 20.9 398.3 20.3 402.0 20.3 C 404.9 20.3 408.2 21.3 411.9 23.3 L 406.6 42.0 C 405.2 41.1 403.7 40.3 402.3 39.7 C 400.9 39.1 399.3 38.8 397.6 38.8 C 389.5 38.8 385.4 44.6 385.4 56.1 L 385.4 88.2 L 365.8 88.2 Z M 365.8 22.0 M 409.2 79.0 C 409.2 75.7 410.4 73.1 412.7 71.0 C 415.0 68.9 417.8 67.9 420.9 67.9 C 424.1 67.9 426.8 68.9 429.2 71.0 C 431.5 73.1 432.7 75.7 432.7 79.0 C 432.7 82.2 431.5 84.9 429.2 86.9 C 426.8 89.0 424.1 90.1 420.9 90.1 C 417.8 90.1 415.0 89.0 412.7 86.9 C 410.4 84.9 409.2 82.2 409.2 79.0 M 10.5 88.2 L 30.0 88.2 L 30.0 48.7 L 10.5 48.7 Z M 10.5 88.2 M 31.3 23.8 L 31.3 0.0 L 10.5 0.0 L 10.5 23.8 C 10.5 24.6 9.8 25.2 9.1 25.0 L 1.4 23.6 C 0.6 23.5 0.0 24.0 0.0 24.8 L 0.0 40.7 L 41.8 40.7 L 41.8 24.8 C 41.8 24.0 41.1 23.5 40.4 23.6 L 32.7 25.0 C 32.0 25.2 31.3 24.6 31.3 23.8"/></svg>
+      <?= wordmark_svg() ?><span class="mk" aria-hidden="true"></span>
     </a>
     <div class="brand-sub">admin</div>
   </div>
   <nav aria-label="Principal">
-    <?php foreach ($nav as $key => [$label, $href]): if (!can(NAV_TABS[$key] ?? $key)) continue; ?>
-      <a href="<?= $href ?>" class="<?= $active === $key ? 'on' : '' ?>"><?= $label ?></a>
+    <?php $first = true; foreach (NAV_GROUPS as $group => $keys):
+        $items = array_values(array_filter($keys, fn($k) => can(NAV_TABS[$k] ?? $k)));
+        if ($group === 'Gestão' && is_admin()) $items[] = 'migracao';
+        if (!$items) continue; ?>
+      <?= $first ? '' : '<div class="grp-sep" aria-hidden="true"></div>' ?>
+      <div class="grp"><?= e($group) ?></div>
+      <?php foreach ($items as $key):
+          [$label, $href, $ico] = $key === 'migracao' ? ['Migração', '/admin/migracao.php', 'migracao'] : NAV_ITEMS[$key];
+          $b = $badges[$key] ?? null;
+          $tip = $label . ($b ? ' · ' . $b['tip'] : '');
+          $on = $active === $key; ?>
+        <a class="ni<?= $on ? ' on' : '' ?>" href="<?= e($href) ?>" aria-label="<?= e($tip) ?>" data-tip="<?= e($tip) ?>" data-tip-nav<?= $on ? ' aria-current="page"' : '' ?>>
+          <?= icon($ico) ?><span class="lbl"><?= e($label) ?></span>
+          <?php if ($b): ?><em class="<?= $b['al'] ? 'al' : '' ?>" aria-hidden="true"><?= (int)$b['n'] ?></em><?php endif; ?>
+        </a>
+      <?php endforeach; $first = false; ?>
     <?php endforeach; ?>
-    <?php if (is_admin()): ?>
-      <a href="/admin/migracao.php" class="<?= $active === 'migracao' ? 'on' : '' ?>">Migração</a>
-    <?php endif; ?>
   </nav>
-  <div class="rail-foot hide-sm">Sessão iniciada como<br><b><?= e($u['name'] ?? '') ?></b></div>
-</aside>
-<div class="shell">
-<div class="topbar">
-  <div class="mark"></div>
-  <div class="page-title" aria-hidden="true"><?= e($nav[$active][0] ?? ($active === 'projects' ? 'Carteira' : $title)) ?>.</div>
-  <div class="session">
-    <a class="lnk" href="/admin/conta.php">A minha conta</a>
-    <a class="lnk" href="/admin/logout.php">Sair</a>
+  <div class="rail-foot">
+    <a class="who<?= $active === 'conta' ? ' on' : '' ?>" href="/admin/conta.php" aria-label="A minha conta · <?= e($u['name'] ?? '') ?>" data-tip="A minha conta" data-tip-nav>
+      <span class="av" style="--who:<?= e(preg_match('/^#[0-9a-fA-F]{6}$/', $prefs['color']) ? $prefs['color'] : '#81CFE3') ?>" aria-hidden="true"><?= e(initials((string)($u['name'] ?? ''))) ?></span>
+      <span class="nm"><?= e($u['name'] ?? '') ?><small><?= e(ROLES[$u['role'] ?? ''] ?? '') ?></small></span>
+    </a>
+    <a class="ni" href="/admin/logout.php" aria-label="Sair" data-tip="Sair" data-tip-nav><?= icon('logout') ?><span class="lbl">Sair</span></a>
+    <button type="button" class="ni rail-toggle" aria-controls="rail" aria-expanded="<?= $prefs['pref_nav'] === 'closed' ? 'false' : 'true' ?>"
+            aria-label="Recolher ou expandir o menu" data-tip="Recolher ou expandir o menu" data-tip-nav><?= icon('sidebar') ?><span class="lbl">Recolher menu</span></button>
   </div>
-</div>
+</aside>
+<div class="nav-scrim" data-nav-close></div>
+<div class="shell">
+<header class="topbar">
+  <?= icon_button('menu', 'Abrir o menu', ['class' => 'ibtn menu-btn', 'aria-controls' => 'rail', 'aria-expanded' => 'false']) ?>
+  <div class="crumb"><?= e($crumbGroup) ?><i aria-hidden="true">/</i><b><?= e($pageTitle) ?></b></div>
+  <div class="top-actions">
+    <button type="button" class="cmd-btn" data-cmdk aria-label="Pesquisar (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K">
+      <?= icon('search') ?><span class="lbl">Procurar ID, negócio, lead…</span><span class="kbd" data-kbd>Ctrl K</span>
+    </button>
+    <button type="button" class="ibtn theme-btn" aria-label="Mudar de modo (claro / escuro)" data-tip><?= icon('moon', 'i-moon') . icon('sun', 'i-sun') ?></button>
+    <button type="button" class="ibtn bell" aria-label="Notificações<?= $unread ? ' · ' . $unread . ' por ler' : '' ?>" data-tip aria-haspopup="dialog" aria-expanded="false" aria-controls="notif">
+      <?= icon('bell') ?><span class="badge"<?= $unread ? '' : ' hidden' ?>><?= $unread ?></span>
+    </button>
+    <div class="pop" id="notif" role="dialog" aria-label="Notificações">
+      <div class="pop-head"><b>Notificações</b><button type="button" class="lnk" data-read-all>Marcar tudo como lido</button></div>
+      <div class="pop-list"><div class="sp-loading">A carregar…</div></div>
+    </div>
+  </div>
+</header>
 <main id="conteudo">
 <?php
     // Até a migração para a plataforma estar feita, os admins são avisados.
     if (is_admin() && $active !== 'migracao') {
-        global $pdo;
         try {
             $done = $pdo->query("SELECT svalue FROM settings WHERE skey = 'platform_migrated_at'")->fetchColumn();
             $old  = !$done && db_has_table($pdo, 'jobs')
@@ -103,17 +137,50 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 }
 
 function render_footer(): void {
-    echo "</main>\n</div>\n</div>\n</body>\n</html>";
+    ?>
+</main>
+</div>
+</div>
+<div class="toasts" role="status" aria-live="polite"></div>
+<div class="sp-back" data-sp-close></div>
+<aside class="sp" id="sp" aria-labelledby="sp-title" tabindex="-1">
+  <div class="sp-head">
+    <span class="eyebrow" id="sp-title">Detalhe</span>
+    <?= icon_button('external', 'Abrir a página completa', ['href' => '#', 'class' => 'ibtn sp-full']) ?>
+    <?= icon_button('x', 'Fechar (Esc)', ['class' => 'ibtn sp-x', 'data-sp-close' => true]) ?>
+  </div>
+  <div class="sp-body"></div>
+</aside>
+<div class="cmdk-back" role="dialog" aria-modal="true" aria-label="Pesquisa global">
+  <div class="cmdk">
+    <div class="cmdk-in"><?= icon('search') ?>
+      <input type="text" placeholder="Procurar IDs, negócios, leads, contactos, ficheiros, tarefas… ou «ir para»" aria-label="Pesquisar"
+             autocomplete="off" spellcheck="false" role="combobox" aria-controls="cmdk-res" aria-expanded="true" aria-autocomplete="list">
+      <span class="kbd">Esc</span></div>
+    <div class="cmdk-res" id="cmdk-res" role="listbox" aria-label="Resultados"></div>
+    <div class="cmdk-foot"><span><span class="kbd">↑ ↓</span> escolher</span><span><span class="kbd">Enter</span> abrir</span><span><span class="kbd" data-kbd-mod>Ctrl</span> <span class="kbd">Enter</span> no painel lateral</span></div>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script src="<?= asset_url('app.js') ?>" defer></script>
+</body>
+</html>
+<?php
 }
 
-/** One-shot messages that survive a redirect. */
-function flash(string $msg, string $kind = 'ok'): void {
-    $_SESSION['flash'][] = ['m' => $msg, 'k' => $kind];
+/**
+ * Mensagens que sobrevivem a um redirecionamento. Com $undo (código de
+ * undo_push), o aviso aparece em baixo com «Anular» durante 8 segundos.
+ */
+function flash(string $msg, string $kind = 'ok', string $undo = ''): void {
+    $_SESSION['flash'][] = ['m' => $msg, 'k' => $kind, 'u' => $undo];
 }
 
 function render_flashes(): void {
     foreach ($_SESSION['flash'] ?? [] as $f) {
-        echo '<div class="flash ' . e($f['k']) . '">' . e($f['m']) . '</div>';
+        $u = (string)($f['u'] ?? '');
+        echo '<div class="flash ' . e($f['k']) . '"' . ($u !== '' ? ' data-undo="' . e($u) . '"' : '')
+           . ($f['k'] === 'err' ? ' role="alert"' : ' role="status"') . '>' . e($f['m']) . '</div>';
     }
     unset($_SESSION['flash']);
 }

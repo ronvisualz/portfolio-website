@@ -1,6 +1,6 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
 $user = require_login();
 require_page('equipa');
 
@@ -217,6 +217,14 @@ render_header('Equipa', 'equipa');
 render_flashes();
 ?>
 <h1>Equipa</h1>
+<?php $act = array_filter($users, fn($u) => (int)$u['is_active'] === 1 && empty($u['deactivated_at']));
+      $byRole = array_count_values(array_column($act, 'role')); ?>
+<div class="stats">
+  <div class="stat hero"><div class="k">Pessoas ativas</div><div class="v"><?= count($act) ?></div><div class="n"><?= count($users) - count($act) ?> desativadas</div></div>
+  <div class="stat"><div class="k">Admins</div><div class="v"><?= ($byRole['superadmin'] ?? 0) + ($byRole['admin'] ?? 0) ?></div><div class="n">acesso total</div></div>
+  <div class="stat"><div class="k">Chefes de equipa</div><div class="v"><?= $byRole['lead'] ?? 0 ?></div><div class="n"><?= count($depts) ?> departamentos</div></div>
+  <div class="stat"><div class="k">Colaboradores</div><div class="v"><?= $byRole['member'] ?? 0 ?></div><div class="n">com a grelha de permissões</div></div>
+</div>
 
 <div class="tabs">
   <a href="<?= e(team_url('pessoas')) ?>" class="<?= $tab === 'pessoas' ? 'on' : '' ?>">Pessoas</a>

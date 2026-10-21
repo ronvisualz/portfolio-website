@@ -1,8 +1,10 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/paginate.php';
-require __DIR__ . '/inc/leads.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/paginate.php';
+require_once __DIR__ . '/inc/leads.php';
+require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/interactions.php';
 $user = require_login();
 require_page('leads');
 
@@ -11,10 +13,12 @@ require_page('leads');
 // âmbito da aba Leads (inc/perm.php); a fila sem dono é dos gestores.
 
 const VIEWS = ['ativas' => 'Ativas', 'fila' => 'Por atribuir', 'arquivadas' => 'Arquivadas', 'quarentena' => 'Quarentena'];
+/** Vistas guardadas (§11.12): filtram a lista aberta sem botão «Filtrar». */
+const LEAD_VISTAS = ['' => 'Todas', 'meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
 
 function lead_filters(array $src): array {
     $f = [];
-    foreach (['v', 'q', 'estado', 'tipo', 'prio', 'origem', 'dono', 'pl'] as $k) {
+    foreach (['v', 'vista', 'q', 'estado', 'tipo', 'prio', 'origem', 'dono', 'pl'] as $k) {
         $v = trim((string)($src[$k] ?? ''));
         if ($v !== '') $f[$k] = $v;
     }
@@ -111,8 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($do === 'state') {
         $s = (string)($_POST['lead_state'] ?? '');
-        if (isset(LEAD_STATE[$s]) && $lead['phase'] === 'lead') {
+        if (isset(LEAD_STATE[$s]) && $lead['phase'] === 'lead' && $s !== $lead['lead_state']) {
             $pdo->prepare('UPDATE deals SET lead_state = ?, last_touch = ? WHERE id = ?')->execute([$s, today_lisbon(), $id]);
+            deal_log($pdo, $id, 'state', ['note' => LEAD_STATE[$lead['lead_state']] . ' → ' . LEAD_STATE[$s]]);
+            flash('«' . $lead['name'] . '» passou a ' . LEAD_STATE[$s] . '.', 'ok',
+                  undo_push('lead_state', ['id' => $id, 'from' => $lead['lead_state'], 'to' => $s, 'last_touch' => $lead['last_touch']]));
         }
         redirect($back);
     }
@@ -122,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((string)$owner !== (string)$lead['owner_id']) {
             $pdo->prepare('UPDATE deals SET owner_id = ? WHERE id = ?')->execute([$owner, $id]);
             deal_log($pdo, $id, 'assign', ['note' => 'Responsável: ' . ($owner === null ? 'por atribuir' : $pdo->query('SELECT name FROM users WHERE id = ' . (int)$owner)->fetchColumn())]);
-            flash('Responsável atualizado.');
+            flash('Responsável atualizado.', 'ok', undo_push('assign', ['id' => $id, 'from' => $lead['owner_id'] !== null ? (int)$lead['owner_id'] : null, 'to' => $owner]));
         }
         redirect($back);
     }
@@ -135,6 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $touch = preg_match('/^\d{4}-\d{2}-\d{2}$/', $touch) ? $touch : $lead['last_touch'];
         if ($s !== $lead['lead_state']) $touch = today_lisbon();
         $owner = owner_from_post($pdo, $me, $lead['owner_id'] !== null ? (int)$lead['owner_id'] : null);
+        if ($s !== $lead['lead_state']) deal_log($pdo, $id, 'state', ['note' => LEAD_STATE[$lead['lead_state']] . ' → ' . LEAD_STATE[$s]]);
+        if ((string)$owner !== (string)$lead['owner_id']) {
+            deal_log($pdo, $id, 'assign', ['note' => 'Responsável: ' . ($owner === null ? 'por atribuir' : $pdo->query('SELECT name FROM users WHERE id = ' . (int)$owner)->fetchColumn())]);
+        }
         $pdo->prepare(
             'UPDATE deals SET name=?, types=?, links=?, phone=?, email=?, service=?, priority=?, detail=?, why=?, notes=?,
                               origin=?, campaign=?, lead_state=?, last_touch=?, owner_id=? WHERE id=?'
@@ -150,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('UPDATE deals SET phase = \'archived\', archived_reason = ?, archived_note = ?, archived_at = ' . now_sql($pdo) . ' WHERE id = ? AND phase = \'lead\'')
             ->execute([$r, mb_substr(trim((string)($_POST['note'] ?? '')), 0, 255), $id]);
         deal_log($pdo, $id, 'archive', ['note' => ARCHIVE_REASONS[$r]]);
-        flash('Lead arquivada.');
+        flash('«' . $lead['name'] . '» arquivada.', 'ok', undo_push('lead_archive', ['id' => $id]));
         redirect($back);
     }
 
@@ -235,7 +246,20 @@ $staleDays = lead_stale_days($pdo);
 $q = $filters['q'] ?? '';
 $lc = static fn(string $s): string => mb_strtolower($s, 'UTF-8');
 $needle = $lc($q);
-$rows = array_values(array_filter($all, static function ($l) use ($filters, $needle, $lc) {
+$vista = isset(LEAD_VISTAS[$filters['vista'] ?? '']) ? (string)($filters['vista'] ?? '') : '';
+$monthStart = (new DateTimeImmutable(today_lisbon()))->format('Y-m-01');
+$inVista = static function (array $l, string $vista) use ($me, $staleDays, $monthStart): bool {
+    return match ($vista) {
+        'meus'  => (int)$l['owner_id'] === (int)$me['id'],
+        'risco' => $l['phase'] === 'lead' && lead_is_stale($l, $staleDays),
+        'mes'   => substr((string)($l['phase'] === 'archived' ? $l['archived_at'] : $l['created_at']), 0, 10) >= $monthStart,
+        default => true,
+    };
+};
+$vistaCount = [];
+foreach (array_keys(LEAD_VISTAS) as $k) $vistaCount[$k] = count(array_filter($all, fn($l) => $inVista($l, $k)));
+$rows = array_values(array_filter($all, static function ($l) use ($filters, $needle, $lc, $inVista, $vista) {
+    if (!$inVista($l, $vista)) return false;
     if (($filters['estado'] ?? '') !== '' && $l['lead_state'] !== $filters['estado']) return false;
     if (($filters['prio'] ?? '') !== '' && $l['priority'] !== $filters['prio']) return false;
     if (($filters['origem'] ?? '') !== '' && $l['origin'] !== $filters['origem']) return false;
@@ -265,6 +289,8 @@ $archId  = (int)($_GET['arch'] ?? 0);
 $convId  = (int)($_GET['conv'] ?? 0);
 $el = $editId ? lead_get($pdo, $editId) : null;
 if ($el && !lead_in_reach($pdo, $el, $me)) $el = null;
+$openLead = (int)($_GET['open'] ?? 0) ? lead_get($pdo, (int)$_GET['open']) : null;
+if ($openLead && (!lead_in_reach($pdo, $openLead, $me) || !in_array($openLead['phase'], ['lead', 'archived'], true))) $openLead = null;
 
 foreach ($rows as $n => $l) {
     if (in_array((int)$l['id'], [$pending, $editId, $archId, $convId], true)) $_GET['pl'] = intdiv($n, PAGE_SIZE) + 1;
@@ -308,15 +334,18 @@ render_header('Leads', 'leads');
 render_flashes();
 echo paginate_css();
 ?>
+<?php if ($openLead): ?><div data-open-panel="lead:<?= (int)$openLead['id'] ?>" hidden></div><?php endif; ?>
 <h1>Leads</h1>
 <div class="sub"><?= $counts['ativas'] ?> leads ativas<?= $staleCount ? ' · <b>' . $staleCount . ' parada' . ($staleCount > 1 ? 's' : '') . '</b> há mais de ' . $staleDays . ' dias' : '' ?></div>
 
-<div class="stats" style="margin-bottom:1.6rem">
-  <?php foreach (LEAD_STATE as $k => $label): ?>
-    <a class="stat" href="<?= e(leads_url(['estado' => $k])) ?>"><div class="k"><?= e($label) ?></div><div class="v"><?= $stateCount[$k] ?></div></a>
-  <?php endforeach; ?>
+<div class="stats">
+  <a class="stat hero" href="<?= e(leads_url(['estado' => 'em_conversa'])) ?>"><div class="k">Em conversa</div><div class="v"><?= $stateCount['em_conversa'] ?></div><div class="n">de <?= $counts['ativas'] ?> ativas</div></a>
+  <a class="stat" href="<?= e(leads_url(['estado' => 'novo'])) ?>"><div class="k">Novas</div><div class="v"><?= $stateCount['novo'] ?></div><div class="n"><?= $stateCount['contactado'] ?> contactadas</div></a>
+  <a class="stat<?= $staleCount ? ' risk' : '' ?>" href="<?= e(leads_url(['vista' => 'risco'])) ?>"><div class="k">Paradas</div><div class="v"><?= $staleCount ?></div><div class="n">sem atividade há mais de <?= $staleDays ?> dias</div></a>
   <?php if ($manager): ?>
-    <a class="stat" href="<?= e(leads_url(['v' => 'fila'])) ?>"><div class="k">Por atribuir</div><div class="v"><?= $counts['fila'] ?></div></a>
+    <a class="stat<?= $counts['fila'] ? ' risk' : '' ?>" href="<?= e(leads_url(['v' => 'fila'])) ?>"><div class="k">Por atribuir</div><div class="v"><?= $counts['fila'] ?></div><div class="n">na fila de entrada</div></a>
+  <?php else: ?>
+    <a class="stat" href="<?= e(leads_url(['vista' => 'mes'])) ?>"><div class="k">Este mês</div><div class="v"><?= $vistaCount['mes'] ?></div><div class="n">leads novas</div></a>
   <?php endif; ?>
 </div>
 
@@ -325,6 +354,9 @@ echo paginate_css();
     <a href="<?= e(leads_url($k === 'ativas' ? [] : ['v' => $k])) ?>" class="<?= $view === $k ? 'on' : '' ?>"><?= e($label) ?> (<?= $counts[$k] ?>)</a>
   <?php endforeach; ?>
 </div>
+<?php if (in_array($view, ['ativas', 'arquivadas'], true)): ?>
+<?= views_bar(LEAD_VISTAS, $vista, fn($k) => leads_url(array_filter(['v' => $view === 'ativas' ? null : $view, 'vista' => $k ?: null])), $vistaCount) ?>
+<?php endif; ?>
 
 <?php // ── duplicados: avisar e propor juntar ──
 if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
@@ -366,9 +398,10 @@ if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
 </div>
 <?php endif; ?>
 
-<form class="bar" method="get">
+<form class="bar" method="get" data-auto>
   <?php if ($view !== 'ativas'): ?><input type="hidden" name="v" value="<?= e($view) ?>"><?php endif; ?>
-  <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, contacto, nota">
+  <?php if ($vista !== ''): ?><input type="hidden" name="vista" value="<?= e($vista) ?>"><?php endif; ?>
+  <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, contacto, nota" aria-label="Procurar" data-refocus>
   <?php if ($view !== 'arquivadas'): ?>
   <select name="estado" onchange="this.form.submit()" aria-label="Estado">
     <option value="">Todos os estados</option>
@@ -393,8 +426,8 @@ if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
     <?php foreach ($owners as $oid => $on): ?><option value="<?= (int)$oid ?>" <?= ($filters['dono'] ?? '') === (string)$oid ? 'selected' : '' ?>><?= e($on) ?></option><?php endforeach; ?>
   </select>
   <?php endif; ?>
-  <button class="btn sm" type="submit">Filtrar</button>
-  <?php if (array_diff_key($filters, ['pl' => 1, 'v' => 1])): ?><a class="lnk" href="<?= e(leads_url($view === 'ativas' ? [] : ['v' => $view])) ?>">Limpar</a><?php endif; ?>
+  <button class="btn sm apply" type="submit">Filtrar</button>
+  <?php if (array_diff_key($filters, ['pl' => 1, 'v' => 1, 'vista' => 1])): ?><a class="lnk" href="<?= e(leads_url(array_filter(['v' => $view === 'ativas' ? null : $view, 'vista' => $vista ?: null]))) ?>">Limpar</a><?php endif; ?>
 </form>
 
 <div class="tablewrap">
@@ -406,9 +439,9 @@ if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
   <tbody>
   <?php if (!$rows): ?><tr><td colspan="7" class="empty">Nenhuma lead aqui.</td></tr><?php endif; ?>
   <?php foreach ($pg['rows'] as $l): $lid = (int)$l['id']; $stale = $l['phase'] === 'lead' && lead_is_stale($l, $staleDays); ?>
-    <tr class="<?= in_array($lid, [$pending, $editId, $archId, $convId], true) ? 'pending' : '' ?> <?= $stale ? 'stale' : '' ?>">
+    <tr class="<?= in_array($lid, [$pending, $editId, $archId, $convId], true) ? 'pending' : '' ?> <?= $stale ? 'stale' : '' ?>" data-panel="lead:<?= $lid ?>">
       <td>
-        <span class="b"><?= e($l['name']) ?></span>
+        <a class="b" style="color:inherit;text-decoration:none" href="<?= e(leads_url($filters + ['edit' => $lid])) ?>#lead" data-panel="lead:<?= $lid ?>"><?= e($l['name']) ?></a>
         <div class="muted" style="font-size:0.62rem">
           <?= implode(' · ', array_filter([
                 e((string)$l['types']), e((string)$l['service']),
@@ -469,10 +502,10 @@ if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
           <?php elseif (can('pipeline', PERM_EDIT)): ?>
             <a class="btn sm" href="<?= e(leads_url($filters + ['conv' => $lid])) ?>#converter">Converter</a>
           <?php endif; ?>
-          <a class="lnk" href="<?= e(leads_url($filters + ['edit' => $lid])) ?>#lead">Editar</a>
-          <a class="lnk" href="<?= e(leads_url($filters + ['arch' => $lid])) ?>#arquivar">Arquivar</a>
+          <?= icon_button('pencil', 'Editar «' . $l['name'] . '»', ['href' => leads_url($filters + ['edit' => $lid]) . '#lead']) ?>
+          <?= icon_button('archive', 'Arquivar «' . $l['name'] . '»', ['href' => leads_url($filters + ['arch' => $lid]) . '#arquivar']) ?>
         <?php endif; ?>
-        <?php if ($canManage): ?><a class="lnk del" href="<?= e(leads_url($filters + ['del' => $lid])) ?>">Eliminar</a><?php endif; ?>
+        <?php if ($canManage): ?><?= icon_button('x', 'Eliminar «' . $l['name'] . '»', ['href' => leads_url($filters + ['del' => $lid]), 'class' => 'ibtn del']) ?><?php endif; ?>
       <?php endif; ?>
       </td>
     </tr>
@@ -601,6 +634,9 @@ if ($al && $al['phase'] === 'lead' && lead_in_reach($pdo, $al, $me) && $canEdit)
     <?php if ($el): ?><a class="btn ghost" href="<?= e(leads_url($filters)) ?>">Cancelar</a><?php endif; ?>
   </div>
 </form>
+<?php if ($el): ?>
+<?= history_block($pdo, 'deal', (int)$el['id'], true, leads_url($filters + ['edit' => (int)$el['id']]) . '#historico') ?>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php if ($canManage): ?>

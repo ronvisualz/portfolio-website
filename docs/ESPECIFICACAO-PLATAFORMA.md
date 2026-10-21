@@ -410,6 +410,71 @@ MySQL (versão 10: `jobs`, `job_crew`, `company_costs`, `leads`, `suppliers`) e 
 
 Continua PENDENTE tudo o que está na §8 e não foi respondido na §9.
 
+### 10.1 Linha de design e features transversais — §11 (21 out 2026)
+
+A §11 está aplicada em toda a zona admin (base de dados **versão 12**: `users.display_name`,
+`pref_theme`, `pref_nav`; tabelas `interactions`, `notification_reads`, `password_resets`;
+limites `deal_stale_days` = 10, `task_due_days` = 2, `invoice_overdue_days` = 30 em `settings`).
+A lógica das abas não mudou; o Drive não foi alterado (o modo escuro chega-lhe pelos tokens do
+`app.css`). Ponto a ponto:
+
+1–2. **Modo claro/escuro** em todos os ecrãs (tokens com valor nos dois modos em `assets/app.css`),
+   botão na barra de topo, escolha guardada na conta; troca em círculo a partir do clique
+   (View Transitions, ~560 ms), direta sem suporte ou com `prefers-reduced-motion`.
+3–4. **Dashboard:** «Bom dia / Boa tarde / Boa noite, <nome>» pela hora do browser; nome em
+   **A minha conta › Definições** («Como quer ser tratado»; vazio = primeiro nome). «O teu dia»:
+   tarefas a vencer, leads paradas (e fila por atribuir, para gestores), negócios sem movimento,
+   valores por receber em atraso — cada coluna só com a permissão da aba.
+5. **Resumo antes do detalhe:** 3–4 indicadores com um em destaque no Dashboard, Leads, Pipeline,
+   Negócios, Contactos, Tarefas, Financeiro, Relatórios e Equipa.
+6. **Notificações** no sino da barra de topo (`inc/alerts.php`): lead parada, negócio sem
+   movimento, tarefa a vencer/atrasada, por receber em atraso, fila por atribuir. Lidas por pessoa.
+7. **Painel lateral:** Leads abrem no painel (clique na linha ou no nome; `?open=<id>`); Pipeline e
+   Negócios abrem a ficha completa com o menu visível. Contactos: decidido painel lateral também
+   (a ficha completa abre a partir dele). Tarefas e ficheiros ficam como estão.
+8. **Edição no campo** (lápis) no painel lateral e na ficha do negócio (nome, valor estimado, notas);
+   lista fechada de campos por registo em `inc/inline.php`.
+9. **Histórico de interações** em leads, negócios e contactos: «Registar interação» (chamada,
+   email, reunião, nota) mais o automático de `deal_history` (agora também a mudança de estado da lead).
+   Registar uma interação avança o «último contacto».
+10. **«Anular» 8 s** em: mudar etapa (Pipeline e ficha), marcar perdido, estado e responsável da lead,
+    arquivar lead, marcar pago, fechar custo, tarefa feita/movida, edição no campo. Eliminar continua a
+    pedir confirmação. Mover ficheiro: o Drive já tinha o seu «Anular».
+11. **Pesquisa ⌘K / Ctrl+K:** IDs, negócios, leads, contactos, tarefas, ficheiros (pelo nome, no índice
+    do Drive, sem `.topper/` nem documentos privados) e «ir para»; Enter abre, ⌘/Ctrl+Enter abre no
+    painel lateral. Só devolve o que a pessoa pode ver (`ui_api.php`, mesmo âmbito das abas).
+12. **Vistas guardadas** «Todos / Os meus / Em risco / Este mês» em Leads, Pipeline e Negócios
+    (em Negócios, «em risco» = com tarefas atrasadas); filtros aplicam logo, sem «Filtrar».
+13. **Pipeline em tempo real:** arrastar (ou «Mover para», no toque) grava sem recarregar e atualiza
+    colunas e indicadores; largar em Kickoff fecha o negócio com «Anular».
+14. **Cartões de destaque** no Dashboard: negócios sem movimento, por receber em atraso e maior valor
+    em aberto.
+15. **Financeiro:** separadores novos «Por receber» (antiguidade 0–30 · 31–60 · 61–90 · 90+ e
+    pré-visualização com Descarregar, Copiar link e Marcar como paga) e «Fluxo de caixa» (faturação
+    por mês e acumulado contra a meta anual, editável por quem gere o Financeiro).
+    **Atenção:** ainda não há faturas nem datas de pagamento (§8.7) — a pré-visualização é um
+    «resumo de cobrança» interno calculado pela plataforma, a antiguidade conta da conclusão (ou do
+    fim do mês do trabalho) e o fluxo usa o mês do trabalho. Quando a Orçamentação/faturação
+    existir, estes três pontos passam a ler os documentos reais.
+16. **Relatórios** (`relatorios.php`): entradas, conversões, ganhos, perdas e valor ganho por funil,
+    por origem da lead ou por mês, num ano ou trimestre; o agrupamento muda sem sair da página.
+    Valores em euros só para quem vê o Financeiro.
+17. **Login** como momento de marca (fundo animado, cartão em vidro, nos dois modos) com
+    «Recuperar palavra-passe»: link por email válido 30 min, só o hash guardado, uso único,
+    resposta igual exista ou não o email, limite de pedidos por IP e por conta. O email sai pelo
+    `mail()` do servidor, de `no-reply@topperdigital.xyz`.
+18. **Menu lateral** agrupado (Geral · Comercial · Produção · Gestão), recolhível (só ícones, com
+    contador em ponto pequeno), estado guardado na conta; no telemóvel abre por cima do conteúdo.
+    Os contadores mostram só o que pede atenção (os mesmos alertas das notificações).
+19. **Dicas** em todos os ícones (~300 ms com rato, logo com teclado, toque longo); o mesmo texto é
+    o `aria-label`.
+20. **Motion** 150–200 ms só a confirmar ações (cartão que muda de coluna, gravação feita, contagem
+    dos números); tudo desligado com `prefers-reduced-motion`.
+
+Ficheiros novos: `assets/app.js`, `ui_api.php`, `relatorios.php`, `documento.php` e, em `inc/`,
+`ui.php`, `alerts.php`, `reach.php`, `inline.php`, `undo.php`, `interactions.php`, `panel.php`,
+`billing.php`, `charts.php`, `migrate_design.php`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

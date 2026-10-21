@@ -46,7 +46,7 @@ $__r2 = $__r2 !== '' ? ' ' . $__r2 : '';
 header(
     "Content-Security-Policy: default-src 'self'; "
   . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-  . "font-src https://fonts.gstatic.com; "
+  . "font-src 'self' https://fonts.gstatic.com; "
   . "script-src 'self' 'unsafe-inline'; "
   . "connect-src 'self'$__r2; "
   . "media-src 'self' blob:$__r2; "

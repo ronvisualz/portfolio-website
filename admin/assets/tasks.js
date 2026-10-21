@@ -132,8 +132,13 @@
         if (!r.ok || !j.ok) throw new Error(j.error || 'Não foi possível guardar a mudança.');
         return j;
       });
-    }).then(function () {
+    }).then(function (j) {
       card.classList.remove('saving');
+      // Aviso em baixo com «Anular» durante 8 s (app.js).
+      if (j && j.undo && window.topper) {
+        var t = (card.querySelector('.card-t') || {}).textContent || 'Tarefa';
+        window.topper.toast(j.status === 'done' ? '«' + t.trim() + '» feita.' : '«' + t.trim() + '» em ' + j.member + '.', { undo: j.undo });
+      }
     }).catch(function (err) {
       card.classList.remove('saving');
       undo();

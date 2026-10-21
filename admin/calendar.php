@@ -1,7 +1,8 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/tasks.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/tasks.php';
+require_once __DIR__ . '/inc/undo.php';
 $user = require_login();
 require_page('tarefas');
 
@@ -105,12 +106,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($board);
     }
 
+    $taskSnap = fn(array $t) => ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
+
     if ($do === 'move_task') {
         $id = (int)($_POST['id'] ?? 0);
-        $guard(task_by_id($pdo, $id));
+        $mt = $guard(task_by_id($pdo, $id));
         if ((string)($_POST['to'] ?? '') === 'done') {
             task_done($pdo, $id);
-            flash('Tarefa marcada como feita.');
+            flash('Tarefa marcada como feita.', 'ok', undo_push('task', $taskSnap($mt)));
             redirect($board);
         }
         $to = task_member_in($_POST['to'] ?? 0, $members);
@@ -119,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($board);
         }
         task_move($pdo, $id, $to);
-        flash('Tarefa movida para ' . ($to ? $members[$to]['name'] : 'Por atribuir') . '.');
+        flash('Tarefa movida para ' . ($to ? $members[$to]['name'] : 'Por atribuir') . '.', 'ok', undo_push('task', $taskSnap($mt)));
         redirect($board);
     }
 
@@ -129,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $t = $guard(task_by_id($pdo, $id));
         if ($do === 'done_task') {
             task_done($pdo, $id);
-            flash('«' . $t['title'] . '» está feita.');
+            flash('«' . $t['title'] . '» está feita.', 'ok', undo_push('task', $taskSnap($t)));
         } else {
             $to = task_member_in($t['member_id'], $members);
             task_reopen($pdo, $id, $to);
@@ -255,6 +258,22 @@ $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 ?>
 
 <h1>Tarefas</h1>
+<?php
+// Resumo (§11.5): as tarefas que posso ver.
+$kq = fn(string $where, array $a = []) => (function () use ($pdo, $where, $a, $visSql) {
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tasks WHERE $where$visSql"); $st->execute($a); return (int)$st->fetchColumn(); })();
+$dueDays = max(0, (int)setting($pdo, 'task_due_days', 2));
+$kOpen = $kq("status <> 'done'");
+$kLate = $kq("status <> 'done' AND due_date < ?", [$today]);
+$kSoon = $kq("status <> 'done' AND due_date BETWEEN ? AND ?", [$today, (new DateTimeImmutable($today))->modify("+$dueDays days")->format('Y-m-d')]);
+$kDone = $kq("status = 'done' AND done_at >= ?", [(new DateTimeImmutable($today))->modify('monday this week')->format('Y-m-d') . ' 00:00:00']);
+?>
+<div class="stats">
+  <a class="stat hero" href="<?= e(cal_url(['view' => 'tarefas'])) ?>"><div class="k">Por fazer</div><div class="v"><?= $kOpen ?></div><div class="n">tarefas abertas</div></a>
+  <div class="stat<?= $kLate ? ' risk' : '' ?>"><div class="k">Atrasadas</div><div class="v<?= $kLate ? ' neg' : '' ?>"><?= $kLate ?></div><div class="n">prazo já passou</div></div>
+  <div class="stat"><div class="k">A vencer</div><div class="v"><?= $kSoon ?></div><div class="n">até <?= $dueDays ?> dias</div></div>
+  <div class="stat"><div class="k">Feitas esta semana</div><div class="v"><?= $kDone ?></div><div class="n">desde segunda-feira</div></div>
+</div>
 
 <div class="tabs">
   <a href="<?= e(cal_url(['ym' => $ym, 'p' => $person])) ?>" class="<?= $view === 'mes' ? 'on' : '' ?>">Mês</a>

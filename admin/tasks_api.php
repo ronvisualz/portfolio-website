@@ -14,8 +14,9 @@
  *   do=done   id — o botão «✓ Feito»
  *   do=reopen id, to (opcional; por omissão a pessoa que a fez)
  */
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/tasks.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/tasks.php';
+require_once __DIR__ . '/inc/undo.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -63,6 +64,8 @@ if (in_array($do, ['move', 'done', 'reopen'], true)) {
         api_out(403, ['ok' => false, 'error' => 'Não pode atribuir tarefas a essa pessoa.']);
     }
 
+    // O necessário para o «Anular» (§11.10).
+    $snap = ['id' => $id, 'status' => $task['status'], 'done_at' => $task['done_at'], 'member_id' => $task['member_id'], 'position' => $task['position']];
     try {
         if ($toDone) {
             task_done($pdo, $id);
@@ -83,6 +86,7 @@ if (in_array($do, ['move', 'done', 'reopen'], true)) {
         'member_id' => $to,
         'member'    => $to ? $members[$to]['name'] : 'Por atribuir',
         'order'     => $final,
+        'undo'      => undo_push('task', $snap),
     ]);
 }
 

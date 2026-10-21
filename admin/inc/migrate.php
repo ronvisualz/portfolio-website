@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -192,6 +192,13 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // página Migração e ficam guardados, sem nada apagado.
     require_once __DIR__ . '/migrate_platform.php';
     migrate_platform($pdo);
+
+    // ── 12 · a linha de design (§11) ────────────────────────
+    //
+    // Preferências na conta (modo, menu, nome), histórico de interações,
+    // notificações lidas e recuperação de palavra-passe.
+    require_once __DIR__ . '/migrate_design.php';
+    migrate_design($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

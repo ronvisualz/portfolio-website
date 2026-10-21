@@ -1,8 +1,11 @@
 <?php
-require __DIR__ . '/inc/bootstrap.php';
-require __DIR__ . '/inc/layout.php';
-require __DIR__ . '/inc/leads.php';
-require __DIR__ . '/inc/pipeline.php';
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/leads.php';
+require_once __DIR__ . '/inc/pipeline.php';
+require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/alerts.php';
+require_once __DIR__ . '/inc/interactions.php';
 $user = require_login();
 require_page('pipeline');
 
@@ -38,13 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         switch ($do) {
             case 'move':
-                flash(deal_move($pdo, $deal, (int)($_POST['stage_id'] ?? 0)));
+                $snap = undo_deal_snapshot($deal);
+                $to = (int)($_POST['stage_id'] ?? 0);
+                $msg = deal_move($pdo, $deal, $to);
+                flash($msg, 'ok', (int)$deal['stage_id'] !== $to ? undo_push('deal_stage', $snap + ['to_stage' => $to]) : '');
                 break;
             case 'lost':
                 $r = (string)($_POST['reason'] ?? '');
                 if ($r === 'Outro' && trim((string)($_POST['reason_other'] ?? '')) !== '') $r = 'Outro: ' . trim((string)$_POST['reason_other']);
                 deal_mark_lost($pdo, $deal, $r);
-                flash($deal['code'] . ' marcado como perdido.');
+                flash($deal['code'] . ' marcado como perdido.', 'ok', undo_push('deal_lost', ['id' => (int)$deal['id'], 'stage_id' => $deal['stage_id']]));
                 break;
             case 'reopen':
                 deal_reopen($pdo, $deal);
@@ -111,10 +117,24 @@ $selectDeals = function (string $where, array $args = []) use ($pdo, $reach, $sc
 };
 
 $count = fn(string $phase) => count($selectDeals('d.phase = ?', [$phase]));
+
+/** Vistas guardadas do quadro (§11.12). */
+const PIPE_VISTAS = ['' => 'Todos', 'meus' => 'Os meus', 'risco' => 'Em risco', 'mes' => 'Este mês'];
+$vista = isset(PIPE_VISTAS[$_GET['vista'] ?? '']) ? (string)($_GET['vista'] ?? '') : '';
+$staleLimit = alert_limits($pdo)['deal'];
+$monthStart = (new DateTimeImmutable(today_lisbon()))->format('Y-m-01');
+$inVista = function (array $d, string $v) use ($me, $staleLimit, $monthStart): bool {
+    return match ($v) {
+        'meus'  => (int)$d['owner_id'] === (int)$me['id'],
+        'risco' => days_since(deal_last_move($d)) > $staleLimit,
+        'mes'   => substr((string)$d['converted_at'], 0, 10) >= $monthStart,
+        default => true,
+    };
+};
 $canEdit = can('pipeline', PERM_EDIT);
 $openId  = (int)($_GET['deal'] ?? 0);
 $open    = $openId ? deal_in_reach($pdo, $openId) : null;
-$self    = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' => $view === 'funil' ? $fid : null]));
+$self    = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' => $view === 'funil' ? $fid : null, 'vista' => $view === 'funil' && $vista !== '' ? $vista : null]));
 
 render_header('Pipeline', 'pipeline');
 render_flashes();
@@ -134,38 +154,58 @@ render_flashes();
 
 <?php if ($view === 'funil' && $fid):
     $stages = commercial_stages(funnel_stages($pdo, $fid));
-    $deals  = $selectDeals("d.phase = 'pipeline' AND d.funnel_id = ?", [$fid]);
+    $allDeals = $selectDeals("d.phase = 'pipeline' AND d.funnel_id = ?", [$fid]);
+    $vistaCount = [];
+    foreach (array_keys(PIPE_VISTAS) as $k) $vistaCount[$k] = count(array_filter($allDeals, fn($d) => $inVista($d, $k)));
+    $deals  = array_values(array_filter($allDeals, fn($d) => $inVista($d, $vista)));
     $byStage = [];
     foreach ($deals as $d) $byStage[(int)$d['stage_id']][] = $d;
+    // Ganhos este mês: chegaram a Kickoff neste funil desde o dia 1.
+    $won = $selectDeals("d.phase IN ('production','done') AND d.funnel_id = ? AND d.id IN (
+                            SELECT h.deal_id FROM deal_history h JOIN funnel_stages ts ON ts.id = h.to_stage_id
+                             WHERE h.event = 'stage' AND ts.kind = 'kickoff' AND h.created_at >= ?)", [$fid, $monthStart . ' 00:00:00']);
+    $won = array_values(array_filter($won, fn($d) => $inVista($d + ['converted_at' => $monthStart], $vista === 'risco' ? '' : $vista)));
+    $wonValue = array_sum(array_map(fn($d) => (float)($d['budget'] ?: $d['value_estimate']), $won));
+    $openValue = array_sum(array_map(fn($d) => (float)$d['value_estimate'], $deals));
+    $staleN = count(array_filter($deals, fn($d) => days_since(deal_last_move($d)) > $staleLimit));
 ?>
-<div class="pboard" data-csrf="<?= e(csrf_token()) ?>" data-back="<?= e($self) ?>">
+<div class="stats">
+  <div class="stat hero"><div class="k">Em aberto</div><div class="v" data-kpi="open-value" data-n="<?= $openValue ?>"><?= eur0($openValue) ?></div><div class="n">valor estimado no funil</div></div>
+  <div class="stat"><div class="k">Negócios</div><div class="v" data-kpi="open-count" data-n="<?= count($deals) ?>"><?= count($deals) ?></div><div class="n">na fase comercial</div></div>
+  <a class="stat<?= $staleN ? ' risk' : '' ?>" href="<?= e(pipe_url(['f' => $fid, 'vista' => 'risco'])) ?>"><div class="k">Sem movimento</div><div class="v" data-kpi="stale" data-n="<?= $staleN ?>"><?= $staleN ?></div><div class="n">há mais de <?= $staleLimit ?> dias</div></a>
+  <div class="stat"><div class="k">Ganhos este mês</div><div class="v" data-kpi="won-value" data-n="<?= $wonValue ?>"><?= eur0($wonValue) ?></div><div class="n">chegaram a Kickoff: <span data-kpi="won-count" data-n="<?= count($won) ?>"><?= count($won) ?></span></div></div>
+</div>
+<?= views_bar(PIPE_VISTAS, $vista, fn($k) => pipe_url(array_filter(['f' => $fid, 'vista' => $k ?: null])), $vistaCount) ?>
+<div class="pboard"<?= $canEdit ? ' data-live' : '' ?>>
   <?php foreach ($stages as $s): $sid = (int)$s['id']; $cards = $byStage[$sid] ?? [];
         $total = array_sum(array_map(fn($d) => (float)$d['value_estimate'], $cards)); ?>
-    <section class="col <?= $s['kind'] === 'kickoff' ? 'col-win' : '' ?>" data-stage="<?= $sid ?>">
+    <section class="col <?= $s['kind'] === 'kickoff' ? 'col-win' : '' ?>" data-stage="<?= $sid ?>" aria-label="<?= e($s['name']) ?>">
       <header>
-        <b><?= e($s['name']) ?></b>
+        <b><span><?= e($s['name']) ?></span><?php if ($s['kind'] !== 'kickoff'): ?><span data-cnt data-n="<?= count($cards) ?>"><?= count($cards) ?></span><?php endif; ?></b>
         <?php if ($s['kind'] === 'kickoff'): ?>
           <span class="muted">largue aqui para fechar o negócio</span>
         <?php else: ?>
-          <span class="muted"><?= count($cards) ?> · <?= eur0($total) ?></span>
+          <span class="sum" data-sum data-n="<?= $total ?>"><?= eur0($total) ?></span>
         <?php endif; ?>
       </header>
       <div class="cards">
-      <?php foreach ($cards as $d): ?>
-        <article class="dcard" draggable="<?= $canEdit ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>">
-          <a class="dname" href="<?= e(pipe_url(['f' => $fid, 'deal' => $d['id']])) ?>#negocio"><?= e($d['name']) ?></a>
-          <div class="muted"><?= e($d['code']) ?><?= $d['contact_name'] && $d['contact_name'] !== $d['name'] ? ' · ' . e($d['contact_name']) : '' ?></div>
+      <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $idle > $staleLimit; ?>
+        <article class="dcard<?= $risk ? ' risk' : '' ?>" draggable="<?= $canEdit ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>" data-value="<?= (float)$d['value_estimate'] ?>">
+          <div class="id"><span><?= e($d['code']) ?></span><?php if ($risk): ?><span class="chip risk" data-tip="Sem movimento há <?= $idle ?> dias" aria-label="Sem movimento há <?= $idle ?> dias"><?= $idle ?>d</span><?php endif; ?></div>
+          <a class="dname" href="<?= e(can('negocios') ? '/admin/negocio.php?id=' . (int)$d['id'] : pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio') ?>"><?= e($d['name']) ?></a>
+          <?php if ($d['contact_name'] && $d['contact_name'] !== $d['name']): ?><div class="muted"><?= e($d['contact_name']) ?></div><?php endif; ?>
           <div class="drow">
-            <span><?= $d['value_estimate'] !== null ? eur0((float)$d['value_estimate']) : '<span class="muted">sem valor</span>' ?></span>
+            <span class="mono"><?= $d['value_estimate'] !== null ? eur0((float)$d['value_estimate']) : '<span class="muted">sem valor</span>' ?></span>
             <span class="owner"><span class="dot" style="background:<?= e($d['owner_color'] ?: '#ccc') ?>"></span> <?= e($d['owner_name'] ?? 'Por atribuir') ?></span>
           </div>
           <?php if ($canEdit): ?>
           <form method="post" class="dmove"><?= csrf_field() ?>
             <input type="hidden" name="do" value="move"><input type="hidden" name="id" value="<?= (int)$d['id'] ?>">
             <input type="hidden" name="back" value="<?= e($self) ?>">
-            <select name="stage_id" class="mini" onchange="this.form.submit()" aria-label="Mover para">
+            <select name="stage_id" class="mini" aria-label="Mover <?= e($d['code']) ?> para">
               <?php foreach ($stages as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === $sid ? 'selected' : '' ?>><?= e($o['name']) ?></option><?php endforeach; ?>
             </select>
+            <noscript><button class="btn sm" type="submit">Mover</button></noscript>
           </form>
           <?php endif; ?>
         </article>
@@ -216,20 +256,7 @@ render_flashes();
 <?php // ── painel do negócio ──
 if ($open):
     $assignees = assignable_users($pdo, $me);
-    $hist = $pdo->prepare(
-        'SELECT h.*, u.name AS user_name, fs.name AS from_stage, ts.name AS to_stage, ff.name AS from_funnel, tf.name AS to_funnel
-           FROM deal_history h
-           LEFT JOIN users u ON u.id = h.user_id
-           LEFT JOIN funnel_stages fs ON fs.id = h.from_stage_id
-           LEFT JOIN funnel_stages ts ON ts.id = h.to_stage_id
-           LEFT JOIN funnels ff ON ff.id = h.from_funnel_id
-           LEFT JOIN funnels tf ON tf.id = h.to_funnel_id
-          WHERE h.deal_id = ? ORDER BY h.created_at DESC, h.id DESC');
-    $hist->execute([$open['id']]);
-    $hist = $hist->fetchAll();
     $curStage = stage_get($pdo, (int)$open['stage_id']);
-    $eventLabel = ['convert' => 'Convertida em negócio', 'stage' => 'Mudou de etapa', 'funnel' => 'Mudou de funil', 'lost' => 'Perdido',
-                   'reopen' => 'Reaberto', 'assign' => 'Responsável', 'archive' => 'Arquivada', 'reactivate' => 'Reativada'];
 ?>
 <h2 id="negocio"><span class="keep"><?= e($open['code']) ?> · <?= e($open['name']) ?></span></h2>
 <div class="sub"><?= e(funnel_get($pdo, (int)$open['funnel_id'])['name'] ?? '—') ?> · <?= e($curStage['name'] ?? '—') ?>
@@ -307,57 +334,9 @@ if ($open):
 <?php endif; ?>
 <?php endif; ?>
 
-<h2>Histórico</h2>
-<div class="tablewrap"><table>
-  <thead><tr><th>Quando</th><th>O quê</th><th>Detalhe</th><th>Quem</th></tr></thead>
-  <tbody>
-  <?php foreach ($hist as $h): ?>
-    <tr><td class="nowrap"><?= e(date('d/m/Y H:i', strtotime($h['created_at']))) ?></td>
-      <td><?= e($eventLabel[$h['event']] ?? $h['event']) ?></td>
-      <td class="muted" style="font-size:0.75rem"><?php
-        $parts = [];
-        if ($h['event'] === 'funnel') $parts[] = e(($h['from_funnel'] ?? '?') . ' › ' . ($h['from_stage'] ?? '?') . ' → ' . ($h['to_funnel'] ?? '?') . ' › ' . ($h['to_stage'] ?? '?'));
-        elseif ($h['from_stage'] || $h['to_stage']) $parts[] = e(trim(($h['from_stage'] ?? '') . ' → ' . ($h['to_stage'] ?? ''), ' →'));
-        if ($h['note'] !== '') $parts[] = e($h['note']);
-        echo implode(' · ', $parts);
-      ?></td>
-      <td><?= e($h['user_name'] ?? '—') ?></td></tr>
-  <?php endforeach; ?>
-  </tbody>
-</table></div>
+<?= history_block($pdo, 'deal', (int)$open['id'], $canEdit, $self . '&deal=' . $open['id'] . '#historico') ?>
 <?php endif; ?>
 
-<?php if ($canEdit && $view === 'funil'): ?>
-<script>
-// Arrastar e largar entre colunas. Sem JavaScript, o menu «Mover para» de cada cartão faz o mesmo.
-(function () {
-  var board = document.querySelector('.pboard'); if (!board) return;
-  var dragged = null;
-  board.addEventListener('dragstart', function (e) {
-    var c = e.target.closest('.dcard'); if (!c) return;
-    dragged = c; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', c.dataset.id);
-  });
-  board.addEventListener('dragend', function () {
-    if (dragged) dragged.classList.remove('dragging'); dragged = null;
-    board.querySelectorAll('.col.over').forEach(function (c) { c.classList.remove('over'); });
-  });
-  board.addEventListener('dragover', function (e) {
-    var col = e.target.closest('.col'); if (!col || !dragged) return;
-    e.preventDefault();
-    board.querySelectorAll('.col.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
-    col.classList.add('over');
-  });
-  board.addEventListener('drop', function (e) {
-    var col = e.target.closest('.col'); if (!col || !dragged) return;
-    e.preventDefault();
-    var form = dragged.querySelector('form.dmove');
-    if (col.contains(dragged)) return;
-    form.querySelector('select').value = col.dataset.stage;
-    form.submit();   // grava no servidor, que regista o histórico e devolve a página atualizada
-  });
-})();
-</script>
-<?php endif; ?>
+
 
 <?php render_footer();
