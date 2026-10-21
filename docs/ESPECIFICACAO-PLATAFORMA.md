@@ -836,7 +836,7 @@ Substitui o que contradiga a §3.4. Aplica a §11 (design transversal) e o padr�
 ### 13.4 Fontes de negócio
 - Cada lead e negócio tem **«Trazido por»** (pessoa ou empresa externa que originou o
   negócio — ex.: agência que traz o cliente final), separado do **Cliente** (quem paga) e
-  do **Criado por** (utilizador da plataforma, automático). — significado a confirmar.
+  do **Criado por** (utilizador da plataforma, automático).
 - Ficha do contacto: bloco **«Fontes de negócio»** com leads ativas, negócios no Pipeline,
   concluídos e perdidos que vieram dele (estado, valor, cliente final); abrir mostra o
   histórico. Totais no topo: nº gerado, faturado, taxa de conversão.
