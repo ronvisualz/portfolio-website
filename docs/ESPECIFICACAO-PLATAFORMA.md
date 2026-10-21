@@ -601,7 +601,7 @@ email, links → redes sociais; o que não for claro vai para as notas.
 ### 12.4 Estados e prazo (timer)
 - **Estados da lead:** **Novo** (nunca contactada) · **Sem resposta** (última chamada não
   atendida) · **Follow-Up** (houve conversa, há passo seguinte). Substituem os estados
-  anteriores (Contactado, Em conversa) — a confirmar a migração destes (ver nota).
+  anteriores: na migração, Contactado e Em conversa passam a **Follow-Up**.
 - **Prazo em horas seguidas (24/7, sem pausas).** Cada estado tem o seu prazo, editável
   em **Definições** só por superadmin e admins; a alteração vale **para toda a plataforma**:
   | Estado | Prazo por defeito | Recomeça quando |
