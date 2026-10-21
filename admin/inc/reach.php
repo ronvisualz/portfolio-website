@@ -22,12 +22,12 @@ function me_row(PDO $pdo): array {
     return $row = $st->fetch() ?: [];
 }
 
-/** A aba de que um registo de deals depende, pela fase. */
+/** A aba de que um registo de deals depende, pela fase (os concluídos vivem em Negócios, §15.1). */
 function deal_tab_for(string $phase): string {
     return match ($phase) {
-        'lead', 'archived' => 'leads',
-        'production'       => 'negocios',
-        default            => 'pipeline',   // pipeline, done, lost
+        'lead', 'archived'   => 'leads',
+        'production', 'done' => 'negocios',
+        default              => 'pipeline',   // pipeline, lost
     };
 }
 

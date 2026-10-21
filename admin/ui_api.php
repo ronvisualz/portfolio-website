@@ -203,7 +203,7 @@ try {
 
             // Negócios e IDs: cada fase responde à sua aba.
             $parts = []; $args = [];
-            foreach (['pipeline' => "d.phase IN ('pipeline','done','lost')", 'negocios' => "d.phase = 'production'"] as $tab => $cond) {
+            foreach (['pipeline' => "d.phase IN ('pipeline','lost')", 'negocios' => "d.phase IN ('production','done')"] as $tab => $cond) {
                 if (!can($tab)) continue;
                 [$rs, $ra] = reach_sql($pdo, $tab);
                 $parts[] = "($cond AND $rs)";
@@ -390,6 +390,13 @@ try {
             $isLead = $d && in_array($d['phase'], ['lead', 'archived'], true);
             if (!record_reach($pdo, $d) || ($type === 'lead') !== $isLead) out(404, ['ok' => false, 'error' => 'Registo não encontrado.']);
             out(200, ['ok' => true] + ($isLead ? panel_lead($pdo, $d) : panel_deal($pdo, $d)));
+        }
+        // Os cartões da ficha do negócio (§15.2): o painel da aba de origem, já filtrado para o negócio.
+        if (in_array($type, ['dcontacts', 'dbudget', 'dresult', 'dcosts', 'dtasks', 'dfiles', 'ddocs', 'dhist', 'dclose'], true)) {
+            require_once __DIR__ . '/inc/deal_file.php';
+            $d = record_get($pdo, $id);
+            if (!$d || $d['code'] === null || !record_reach($pdo, $d)) out(404, ['ok' => false, 'error' => 'Negócio não encontrado.']);
+            out(200, ['ok' => true] + deal_panel($pdo, $type, deal_file_row($pdo, $id)));
         }
         if ($type === 'contact') {
             require_perm('contactos', PERM_VIEW);

@@ -819,6 +819,76 @@ os negócios que já existem. O cálculo está em `inc/budget.php`; as partes da
 Ficheiros novos: `orcamentacao.php`, `orcamento.php`, `orcamento_pdf.php`, `assets/budget.js`,
 `inc/budget.php`, `inc/budget_view.php`, `inc/budget_pdf.php`, `inc/migrate_budget.php`.
 
+### 10.7 Aba Negócios — ficha central — §15 (22 out 2026)
+
+A §15 está aplicada. Base de dados **versão 17** (`inc/migrate_deal_file.php`): em `deals` os campos
+`prod_step` (etapa de produção enquanto o funil não tiver etapas de produção próprias), `delivered_at`,
+`portfolio_at` e `testimonial_at` (o que a checklist de fecho regista). Os negócios que já estavam
+concluídos ficam com as entregas feitas na data da conclusão. A lógica está em `inc/deal_file.php`.
+
+- **15.1 Onde vivem:** um negócio aparece em Negócios quando chega a Kickoff em qualquer funil, e os
+  **concluídos passam a viver em Negócios** — as permissões, a pesquisa ⌘K e o painel respondem à
+  aba Negócios para `production` e `done` (`deal_tab_for`). O Pipeline fica com a fase comercial e
+  os Perdidos (o separador «Concluídos» saiu; os endereços antigos levam a Negócios › Concluídos e
+  abrir um negócio em produção ou concluído no Pipeline leva à ficha). Lista: **Em produção** (por
+  defeito) · **Concluídos** · **Todos**; vistas Os meus · Entrega esta semana · Em risco · Por
+  receber (esta só com Financeiro); colunas ID · negócio (cliente e tipo em pequeno) · etapa ·
+  valor s/ IVA · margem real · % recebido (estas três só com Financeiro) · entrega. «Em risco» =
+  tarefas atrasadas, entrega prevista ultrapassada, ou concluído com a checklist incompleta.
+- **15.2 Regra de ouro:** a ficha não cria dados. Cada cartão lê da aba de origem pelo ID e o «Ver
+  detalhe» (ou o «›») abre o **painel lateral dessa aba já filtrado para o negócio**, sem sair da
+  ficha (`ui_api.php?a=panel&type=dcontacts|dbudget|dresult|dcosts|dtasks|dfiles|ddocs|dhist|dclose`),
+  cada um com a permissão da aba de origem confirmada no servidor. O que se regista por negócio
+  continua no seu sítio: «Contas e custos» (Financeiro: contas, custos, pagar, avaliar) e «Dados e
+  contactos» (pessoas ligadas, «Trazido por», valor estimado, notas) são vistas da ficha, a que os
+  painéis levam com «Registar…» / «Ligar…».
+- **15.3 Topo:** voltar, ID, nome (editável no campo), tipo, estado e «Fecho incompleto» quando falta
+  algo; cliente · trazido por · responsável · funil · IVA (com IVA, sem IVA, internacional).
+  **Barra de etapas de produção:** Pré-produção · Produção · Pós-produção · Entrega · Concluído —
+  clicar muda a etapa (com «Anular»; num concluído, voltar a uma etapa reabre-o no Kickoff). Quando
+  o funil tiver etapas de produção (`funnel_stages.kind = 'production'`), a barra passa a usá-las e
+  muda a etapa do negócio. **Ações:** pasta no Drive · abrir orçamento · nova tarefa (fica ligada
+  ao negócio e aparece em Tarefas, com «Anular») · adicionar documento (abre a pasta do negócio no
+  Drive) · «Mais» (Contas e custos, Dados e contactos, histórico completo, resumo de cobrança, ver
+  no Pipeline). **Pulso:** valor s/ IVA · custos reais · margem real vs a meta da casa (a margem por
+  defeito da Orçamentação, 65%) · % recebido · lucro e lucro/mês quando há prazo (real Kickoff →
+  conclusão, ou o da folha de orçamento); sem Financeiro, o pulso mostra etapa, tarefas, entrega
+  prevista e fecho. **«Precisa de atenção»:** margem abaixo da meta, entrega em ≤ 7 dias ou
+  atrasada, fatura em atraso (o limite das Definições), custos por pagar, tarefas atrasadas,
+  fornecedores por avaliar, sem orçamento na plataforma, fecho incompleto — e «Tudo pago e
+  recebido» quando é o caso; cada chip com a sua dica.
+- **15.4 Cartões:** Cliente e contactos (cliente, pessoas, trazido por, outros negócios do
+  cliente) · Orçamento (versão aceite, preço, margem e prazo orçados; abrir a folha) · Resultado
+  (preço, custos, gross profit, gross margin com barra custos/lucro; o painel mostra o orçado vs
+  real da §14.5) · Equipa e fornecedores (custos por pessoa/fornecedor, valor, pago/por pagar, IVA
+  suportado) · Produção e tarefas (etapa, tarefas abertas/feitas/atrasadas, entregas, prazo real vs
+  orçado) · Ficheiros (pasta `<ID>_<NOME>`, contagens por tipo, último ficheiro) · Documentos
+  (contratuais, fiscais e de fornecedores, pelo nome e pela subpasta no Drive, mais as propostas
+  geradas na Orçamentação) · Criativos (estado vazio claro até o Centro Criativo existir) ·
+  Histórico de **todas as fontes** (interações e etapas, folha de orçamento, tarefas feitas e, com
+  Financeiro, custos — ícones e cores da §12.7) · Fecho do negócio. Sem o Drive ligado no servidor,
+  Ficheiros e Documentos dizem-no; sem acesso a uma aba, o cartão diz que não há acesso.
+- **15.5 Fecho:** «Concluído» na barra abre a checklist: custos todos pagos · cliente pagou ·
+  entregas feitas · fornecedores avaliados (§13.3) · resultado fechado (§14.5; sem orçamento na
+  plataforma conta como feito). Opcional: **«Enviar para o portfólio»** (regista e cria a tarefa
+  de preparar o material para o Marketing) e **«Pedir testemunho»** (cria o email ao cliente para o
+  responsável). Concluir com itens em falta é possível: o negócio fica com «Fecho incompleto» e
+  conta como «Em risco» até fechar. Tudo com «Anular» (a conclusão anula-se de uma vez: etapa,
+  entregas e tarefas criadas). Depois de concluído, o cartão tem Entregas feitas · Enviar para o
+  portfólio · Pedir testemunho.
+- **15.6 Negócios anteriores:** sem linhas na Orçamentação mostram «Sem orçamento na plataforma» e o
+  Resultado usa o valor e os custos existentes do Financeiro.
+- **Permissões:** quem não vê o Financeiro não recebe valor, custos, margens, lucro, IVA nem o
+  Resultado — nem na ficha, nem na lista, nem nos painéis (`dresult` e `dcosts` pedem o Financeiro;
+  o histórico não leva custos nem margens). Mudar etapas, concluir e criar tarefas pede editar
+  Negócios e ter o negócio ao alcance.
+- **§11:** modo claro e escuro com os tokens, degradês da §11.21 nos cartões e no pulso, animação
+  dos formulários (checklist e nova tarefa saem do botão), «Anular», dicas em todos os ícones e
+  chips, e a ficha cabe num telemóvel.
+
+Ficheiros novos: `inc/deal_file.php`, `inc/migrate_deal_file.php`, `assets/deal.js`; `negocio.php` e
+`negocios.php` reescritos.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

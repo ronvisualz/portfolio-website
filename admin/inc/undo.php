@@ -227,6 +227,31 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             }
             return 'Relação reposta.';
 
+        case 'deal_step':
+            // Etapa de produção (§15.3): repõe a etapa, a fase e o passo de produção de antes.
+            $deal = record_get($pdo, (int)$d['id']);
+            if (!$deal) throw new RuntimeException($changed);
+            if (!record_reach($pdo, $deal, PERM_EDIT) && !record_reach($pdo, ['phase' => $d['phase']] + $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            if ((int)$deal['stage_id'] !== (int)$d['to_stage'] || (string)$deal['prod_step'] !== (string)$d['to_step']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE deals SET stage_id = ?, phase = ?, done_at = ?, year = ?, month = ?, last_touch = ?, prod_step = ? WHERE id = ?')
+                ->execute([$d['stage_id'], $d['phase'], $d['done_at'], $d['year'], $d['month'], $d['last_touch'], $d['prod_step'], $d['id']]);
+            if ((int)$d['stage_id'] !== (int)$d['to_stage']) {
+                deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
+                                                         'to_funnel' => $deal['funnel_id'], 'to_stage' => $d['stage_id'], 'note' => 'Anulado']);
+            } else {
+                deal_log($pdo, (int)$d['id'], 'step', ['note' => 'Anulado']);
+            }
+            return 'Etapa reposta.';
+
+        case 'deal_flags':
+            // Entregas, portfólio e testemunho (§15.5): voltam ao que estavam; as tarefas criadas saem se ainda estiverem por fazer.
+            $deal = record_get($pdo, (int)$d['id']);
+            if (!$deal || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            $pdo->prepare('UPDATE deals SET delivered_at = ?, portfolio_at = ?, testimonial_at = ? WHERE id = ?')
+                ->execute([$d['delivered_at'], $d['portfolio_at'], $d['testimonial_at'], $d['id']]);
+            foreach ($d['tasks'] as $tid) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND deal_id = ? AND status <> 'done'")->execute([(int)$tid, $d['id']]);
+            return 'Reposto.';
+
         case 'budget_line':
             // Tirar uma linha do orçamento: volta tal como estava (preço copiado incluído).
             require_once __DIR__ . '/budget.php';

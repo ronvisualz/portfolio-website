@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -230,6 +230,13 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // definições globais (MSO, margem, horas por dia, meta mensal).
     require_once __DIR__ . '/migrate_budget.php';
     migrate_budget($pdo);
+
+    // ── 17 · aba Negócios — ficha central (§15) ─────────────
+    //
+    // A etapa de produção (enquanto o funil não tiver etapas próprias) e o
+    // que a checklist de fecho regista: entregas, portfólio, testemunho.
+    require_once __DIR__ . '/migrate_deal_file.php';
+    migrate_deal_file($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

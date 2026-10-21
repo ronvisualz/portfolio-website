@@ -91,8 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ── dados ───────────────────────────────────────────────────
 $funnels = funnels_active($pdo);
 $view = (string)($_GET['v'] ?? '');
+// Os concluídos vivem agora na aba Negócios (§15.1): os endereços antigos vão para lá.
+if ($view === 'concluidos') redirect('/admin/negocios.php?t=concluidos');
 $fid  = (int)($_GET['f'] ?? ($funnels[0]['id'] ?? 0));
-if (!in_array($view, ['concluidos', 'perdidos'], true)) {
+if (!in_array($view, ['perdidos'], true)) {
     $view = 'funil';
     if (!array_filter($funnels, fn($f) => (int)$f['id'] === $fid)) $fid = (int)($funnels[0]['id'] ?? 0);
 }
@@ -134,6 +136,8 @@ $inVista = function (array $d, string $v) use ($me, $staleLimit, $monthStart): b
 $canEdit = can('pipeline', PERM_EDIT);
 $openId  = (int)($_GET['deal'] ?? 0);
 $open    = $openId ? deal_in_reach($pdo, $openId) : null;
+// Depois do Kickoff (em produção ou concluído) o negócio vive na aba Negócios (§15.1).
+if ($open && in_array($open['phase'], ['production', 'done'], true) && can('negocios')) redirect('/admin/negocio.php?id=' . (int)$open['id']);
 $self    = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' => $view === 'funil' ? $fid : null, 'vista' => $view === 'funil' && $vista !== '' ? $vista : null]));
 
 render_header('Pipeline', 'pipeline');
@@ -145,7 +149,6 @@ render_flashes();
   <?php foreach ($funnels as $f): ?>
     <a href="<?= e(pipe_url(['f' => $f['id']])) ?>" class="<?= $view === 'funil' && (int)$f['id'] === $fid ? 'on' : '' ?>"><?= e($f['name']) ?></a>
   <?php endforeach; ?>
-  <a href="<?= e(pipe_url(['v' => 'concluidos'])) ?>" class="<?= $view === 'concluidos' ? 'on' : '' ?>">Concluídos (<?= $count('done') ?>)</a>
   <a href="<?= e(pipe_url(['v' => 'perdidos'])) ?>" class="<?= $view === 'perdidos' ? 'on' : '' ?>">Perdidos (<?= $count('lost') ?>)</a>
 </div>
 <?php if (can('pipeline', PERM_MANAGE)): ?>
@@ -216,9 +219,9 @@ render_flashes();
 </div>
 <?php if (!$funnels): ?><p class="empty">Ainda não há funis.</p><?php endif; ?>
 
-<?php elseif ($view === 'concluidos' || $view === 'perdidos'):
-    $rows = $selectDeals('d.phase = ?', [$view === 'concluidos' ? 'done' : 'lost']);
-    usort($rows, fn($a, $b) => strcmp((string)($b['done_at'] ?? $b['lost_at']), (string)($a['done_at'] ?? $a['lost_at'])));
+<?php elseif ($view === 'perdidos'):
+    $rows = $selectDeals('d.phase = ?', ['lost']);
+    usort($rows, fn($a, $b) => strcmp((string)$b['lost_at'], (string)$a['lost_at']));
 ?>
 <div class="tablewrap">
 <table>

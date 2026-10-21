@@ -64,6 +64,12 @@ const HISTORY_TYPES = [
     'rel_resume' => ['Relação retomada', 'refresh', 'sky'],
     'rel_level'  => ['Nível revisto', 'arrows', 'neutral'],
     'rel_stop'   => ['Deixou de ser acompanhada', 'x', 'neutral'],
+    // Negócios — ficha central (§15)
+    'step'        => ['Etapa de produção', 'arrows', 'sky'],
+    'delivered'   => ['Entregas feitas', 'check', 'green'],
+    'portfolio'   => ['Enviado para o portfólio', 'star', 'yellow'],
+    'testimonial' => ['Testemunho pedido', 'bubble', 'blue'],
+    'cost'        => ['Custo registado', 'euro', 'orange'],
     // Orçamentação (§14)
     'b_create'   => ['Folha criada', 'orcamentacao', 'neutral'],
     'b_line'     => ['Linha de custo', 'euro', 'neutral'],
