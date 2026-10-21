@@ -41,7 +41,7 @@ function render_head(string $title): void {
  * $bodyClass: classe opcional do <body> (ex.: «td-full» nas páginas de ecrã
  * inteiro, como o Drive, em que a página não rola e o conteúdo rola por dentro).
  */
-function render_header(string $title, string $active = '', string $bodyClass = ''): void {
+function render_header(string $title, string $active = '', string $bodyClass = '', array $crumbs = []): void {
     global $pdo;
     require_once __DIR__ . '/alerts.php';
     $u      = current_user();
@@ -95,15 +95,16 @@ function render_header(string $title, string $active = '', string $bodyClass = '
       <span class="nm"><?= e($u['name'] ?? '') ?><small><?= e(ROLES[$u['role'] ?? ''] ?? '') ?></small></span>
     </a>
     <a class="ni" href="/admin/logout.php" aria-label="Sair" data-tip="Sair" data-tip-nav><?= icon('logout') ?><span class="lbl">Sair</span></a>
-    <button type="button" class="ni rail-toggle" aria-controls="rail" aria-expanded="<?= $prefs['pref_nav'] === 'closed' ? 'false' : 'true' ?>"
-            aria-label="Recolher ou expandir o menu" data-tip="Recolher ou expandir o menu" data-tip-nav><?= icon('sidebar') ?><span class="lbl">Recolher menu</span></button>
   </div>
 </aside>
+<?php $navLabel = $prefs['pref_nav'] === 'closed' ? 'Expandir menu' : 'Recolher menu'; ?>
+<button type="button" class="rail-edge rail-toggle" aria-controls="rail" aria-expanded="<?= $prefs['pref_nav'] === 'closed' ? 'false' : 'true' ?>"
+        aria-keyshortcuts="[" aria-label="<?= $navLabel ?> ( [ )" data-tip="<?= $navLabel ?>  ·  [ "><?= icon('chev-left') ?></button>
 <div class="nav-scrim" data-nav-close></div>
 <div class="shell">
 <header class="topbar">
   <?= icon_button('menu', 'Abrir o menu', ['class' => 'ibtn menu-btn', 'aria-controls' => 'rail', 'aria-expanded' => 'false']) ?>
-  <div class="crumb"><?= e($crumbGroup) ?><i aria-hidden="true">/</i><b><?= e($pageTitle) ?></b></div>
+  <nav class="crumb" aria-label="Caminho"><?= e($crumbGroup) ?><i aria-hidden="true">/</i><?php if ($crumbs): ?><a href="<?= e(NAV_ITEMS[$active][1] ?? '#') ?>"><?= e($pageTitle) ?></a><?php foreach ($crumbs as $ci => $c): ?><i aria-hidden="true">/</i><?= $ci === count($crumbs) - 1 ? '<b>' . e($c) . '</b>' : e($c) ?><?php endforeach; else: ?><b><?= e($pageTitle) ?></b><?php endif; ?></nav>
   <div class="top-actions">
     <button type="button" class="cmd-btn" data-cmdk aria-label="Pesquisar (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K">
       <?= icon('search') ?><span class="lbl">Procurar ID, negócio, lead…</span><span class="kbd" data-kbd>Ctrl K</span>
@@ -144,6 +145,10 @@ function render_footer(): void {
 <div class="toasts" role="status" aria-live="polite"></div>
 <div class="sp-back" data-sp-close></div>
 <aside class="sp" id="sp" aria-labelledby="sp-title" tabindex="-1">
+  <div class="sp-nav" hidden>
+    <?= icon_button('chev-up', 'Anterior ( ↑ ou K )', ['data-step' => '-1']) ?>
+    <?= icon_button('chev-down', 'Seguinte ( ↓ ou J )', ['data-step' => '1']) ?>
+  </div>
   <div class="sp-head">
     <span class="eyebrow" id="sp-title">Detalhe</span>
     <?= icon_button('external', 'Abrir a página completa', ['href' => '#', 'class' => 'ibtn sp-full']) ?>

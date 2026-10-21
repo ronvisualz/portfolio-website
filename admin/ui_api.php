@@ -12,6 +12,14 @@
  *   GET  a=panel&type=&id=    painel lateral (lead | deal | contact)
  *   POST a=deal_move          id, stage_id — arrastar no Pipeline, sem recarregar
  *
+ *   Leads v2 (§12):
+ *   GET  a=lead_dups&email=&phone=   duplicados enquanto se escreve (nova lead)
+ *   POST a=lead_task          id, kind, title, notes, date, time, duration, assignee, repeat — Nova ação
+ *   POST a=lead_task_done     id, task — concluir no Foco (uma chamada abre «Como correu?»)
+ *   POST a=lead_outcome       id, result (missed | followup), note
+ *   POST a=lead_archive       id, reason, note — com «Anular»
+ *   GET  a=lead_next&id=      a próxima lead urgente
+ *
  * Os POST pedem o token CSRF (campo «csrf» ou cabeçalho X-CSRF-Token).
  * Todas as permissões se verificam aqui, em cada pedido (§4).
  */
@@ -21,6 +29,7 @@ require_once __DIR__ . '/inc/reach.php';
 require_once __DIR__ . '/inc/alerts.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/panel.php';
+require_once __DIR__ . '/inc/tasks.php';
 
 $json = str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json');
 
@@ -41,6 +50,38 @@ if ($post) {
     if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) {
         out(400, ['ok' => false, 'error' => 'Pedido inválido. Recarregue a página e tente outra vez.']);
     }
+}
+
+/** A lead do pedido, ativa (ou não, com $active false) e ao meu alcance para editar. */
+function lead_for_edit(PDO $pdo, bool $active = true): array {
+    require_perm('leads', PERM_EDIT);
+    $l = record_get($pdo, (int)($_POST['id'] ?? 0));
+    if (!$l || !in_array($l['phase'], ['lead', 'archived'], true) || !record_reach($pdo, $l, PERM_EDIT)) throw new RuntimeException('Lead não encontrada.');
+    if ($active && $l['phase'] !== 'lead') throw new RuntimeException('Esta lead já não está ativa.');
+    return $l;
+}
+
+/** As partes da vista (e da linha da lista) que mudam depois de uma ação. */
+function lead_parts(PDO $pdo, int $id): array {
+    require_once __DIR__ . '/inc/lead_view.php';
+    $l = record_get($pdo, $id);
+    $tasks = lead_open_tasks($pdo, [$id])[$id] ?? [];
+    $clock = lead_clock($l, lead_deadline_hours($pdo));
+    $next = $tasks[0] ?? null;
+    return ['focus' => lead_focus_html($tasks, can('leads', PERM_EDIT)), 'focus_n' => count($tasks),
+            'history' => timeline_html(timeline($pdo, 'deal', $id)),
+            'state' => lead_state_chip($l), 'state_key' => (string)$l['lead_state'], 'ring' => lead_ring($clock), 'level' => $clock['level'] ?? '',
+            'next' => $next ? '<span class="' . (task_is_late($next) ? 'neg' : '') . '">' . e((LEAD_TASK_KINDS[$next['kind'] ?? 'task'] ?? LEAD_TASK_KINDS['task'])[0]) . ' · ' . e(lead_task_when($next)) . '</span>'
+                            : '<span class="risk-txt">Sem próxima ação</span>',
+            'last' => lead_ago($l['last_contact_at'])];
+}
+
+function lead_task_default_title(string $kind, string $who): string {
+    return match ($kind) {
+        'call' => 'Ligar a ' . $who, 'meeting' => 'Reunião com ' . $who, 'email' => 'Email para ' . $who,
+        'visit' => 'Visita a ' . $who, 'document' => 'Documento para ' . $who, 'event' => 'Evento · ' . $who,
+        default => 'Tarefa · ' . $who,
+    };
 }
 
 /** Para LIKE … ESCAPE '!'. */
@@ -105,13 +146,15 @@ try {
 
             if (can('leads')) {
                 [$rs, $ra] = reach_sql($pdo, 'leads');
-                $st = $pdo->prepare("SELECT d.id, d.name, d.phase, d.email, d.lead_state FROM deals d
+                $st = $pdo->prepare("SELECT d.id, d.name, d.company, d.person, d.phase, d.email, d.lead_state FROM deals d
                                       WHERE d.phase IN ('lead','archived') AND $rs
-                                        AND (d.name LIKE ? ESCAPE '!' OR d.email LIKE ? ESCAPE '!' OR d.phone LIKE ? ESCAPE '!')
+                                        AND (d.name LIKE ? ESCAPE '!' OR d.company LIKE ? ESCAPE '!' OR d.person LIKE ? ESCAPE '!'
+                                             OR d.email LIKE ? ESCAPE '!' OR d.phone LIKE ? ESCAPE '!')
                                       ORDER BY d.phase = 'archived', d.id DESC LIMIT 6");
-                $st->execute([...$ra, $l, $l, $l]);
+                $st->execute([...$ra, $l, $l, $l, $l, $l]);
                 foreach ($st->fetchAll() as $d) {
-                    $add('Leads', ['title' => $d['name'], 'sub' => $d['phase'] === 'archived' ? 'Arquivada' : (LEAD_STATE[$d['lead_state']] ?? ''),
+                    [$dn, $dc] = lead_display($d);
+                    $add('Leads', ['title' => $dn, 'sub' => trim(($dc !== '' ? $dc . ' · ' : '') . ($d['phase'] === 'archived' ? 'Arquivada' : (LEAD_STATE[$d['lead_state']] ?? ''))),
                                    'url' => '/admin/leads.php?open=' . $d['id'], 'panel' => 'lead:' . $d['id'], 'icon' => icon('leads')]);
                 }
             }
@@ -197,10 +240,20 @@ try {
         $entity = (string)($_POST['entity'] ?? '');
         $id = (int)($_POST['id'] ?? 0);
         $field = (string)($_POST['field'] ?? '');
+        $before = $entity === 'lead' ? record_get($pdo, $id) : null;
         $r = inline_save($pdo, $entity, $id, $field, $_POST['value'] ?? '');
-        $token = (string)$r['prev'] !== (string)$r['value']
-            ? undo_push('inline', ['entity' => $entity, 'id' => $id, 'field' => $field, 'prev' => $r['prev']]) : '';
-        out(200, ['ok' => true, 'display' => $r['display'], 'value' => $r['value'], 'undo' => $token]);
+        $token = '';
+        if ((string)$r['prev'] !== (string)$r['value']) {
+            if ($entity === 'lead' && $field === 'lead_state') {
+                $token = undo_push('lead_state', ['id' => $id, 'from' => $before['lead_state'], 'to' => $r['value'], 'last_touch' => $before['last_touch'],
+                                                  'state_since' => $before['state_since'], 'no_answer' => (int)$before['no_answer']]);
+            } elseif ($entity === 'lead' && $field === 'owner_id') {
+                $token = undo_push('assign', ['id' => $id, 'from' => $before['owner_id'] !== null ? (int)$before['owner_id'] : null, 'to' => $r['value']]);
+            } else {
+                $token = undo_push('inline', ['entity' => $entity, 'id' => $id, 'field' => $field, 'prev' => $r['prev']]);
+            }
+        }
+        out(200, ['ok' => true, 'display' => $r['display'], 'value' => $r['value'], 'undo' => $token, 'reload' => !empty($r['reload'])]);
 
     // ── registar interação ──────────────────────────────────
     case 'interaction':
@@ -248,6 +301,113 @@ try {
             out(200, ['ok' => true] + panel_contact($pdo, $c));
         }
         break;
+
+
+    // ── Leads v2 (§12) ──────────────────────────────────────
+    // Duplicados enquanto se escreve telefone/email (§12.1). Leads fora do meu
+    // alcance aparecem só como «existe outro registo», sem nome.
+    case 'lead_dups':
+        require_perm('leads', PERM_EDIT);
+        $d = find_duplicates($pdo, (string)($_GET['email'] ?? ''), (string)($_GET['phone'] ?? ''));
+        $me = me_row($pdo);
+        $leads = []; $hidden = 0;
+        foreach ($d['deals'] as $r) {
+            if (in_array($r['phase'], ['lead', 'archived'], true) && lead_in_reach($pdo, $r + ['owner_id' => $r['owner_id']], $me)) {
+                $leads[] = ['id' => (int)$r['id'], 'name' => lead_display_name($r), 'phase' => $r['phase']];
+            } elseif (record_reach($pdo, record_get($pdo, (int)$r['id']))) {
+                $leads[] = ['id' => (int)$r['id'], 'name' => ($r['code'] ? $r['code'] . ' · ' : '') . $r['name'], 'phase' => $r['phase']];
+            } else {
+                $hidden++;
+            }
+        }
+        $contacts = [];
+        if (can('contactos')) {
+            foreach ($d['contacts'] as $c) {
+                $co = $c['company_id'] ? (string)$pdo->query('SELECT name FROM contacts WHERE id = ' . (int)$c['company_id'])->fetchColumn() : '';
+                $contacts[] = ['id' => (int)$c['id'], 'name' => $c['name'], 'kind' => $c['kind'], 'company' => $co];
+            }
+        }
+        out(200, ['ok' => true, 'leads' => $leads, 'contacts' => $contacts, 'hidden' => $hidden]);
+
+    // Nova ação: cria uma tarefa ligada à lead (aparece também na aba Tarefas).
+    case 'lead_task':
+        if (!$post) break;
+        $l = lead_for_edit($pdo);
+        $kind = (string)($_POST['kind'] ?? 'task');
+        if (!isset(LEAD_TASK_KINDS[$kind])) throw new RuntimeException('Escolha o tipo de ação.');
+        $date = (string)($_POST['date'] ?? '');
+        $time = (string)($_POST['time'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) throw new RuntimeException('Indique a data.');
+        if ($time !== '' && !preg_match('/^\d{2}:\d{2}$/', $time)) throw new RuntimeException('Indique uma hora válida.');
+        $who = (int)($_POST['assignee'] ?? 0) ?: (int)current_user()['id'];
+        $st = $pdo->prepare('SELECT * FROM users WHERE id = ?');
+        $st->execute([$who]);
+        $target = $st->fetch();
+        if (!$target || !can_assign_to(me_row($pdo), $target)) throw new RuntimeException('Não pode atribuir tarefas a essa pessoa.');
+        $title = trim(mb_substr((string)($_POST['title'] ?? ''), 0, 200));
+        if ($title === '') $title = lead_task_default_title($kind, lead_display_name($l));
+        $dur = (int)($_POST['duration'] ?? 0);
+        lead_task_create($pdo, $l, $kind, $title, trim(mb_substr((string)($_POST['notes'] ?? ''), 0, 4000)),
+                         $date . ($time !== '' ? ' ' . $time : ''), $dur > 0 && $dur <= 600 ? $dur : null, $who,
+                         (string)($_POST['repeat'] ?? ''), (int)current_user()['id']);
+        out(200, ['ok' => true, 'msg' => 'Tarefa criada.'] + lead_parts($pdo, (int)$l['id']));
+
+    // Foco: concluir. Uma chamada abre «Como correu?» (§12.8).
+    case 'lead_task_done':
+        if (!$post) break;
+        $l = lead_for_edit($pdo, false);
+        $st = $pdo->prepare('SELECT * FROM tasks WHERE id = ? AND deal_id = ?');
+        $st->execute([(int)($_POST['task'] ?? 0), (int)$l['id']]);
+        $t = $st->fetch();
+        if (!$t || $t['status'] === 'done') throw new RuntimeException('Essa tarefa já não está aberta.');
+        $snap = ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
+        $snap['spawned'] = task_done($pdo, (int)$t['id']);   // fica no histórico da lead; se se repete, cria a seguinte
+        // Reunião, email ou visita feitos contam como contacto e, em Follow-Up, como follow-up.
+        if (in_array($t['kind'], ['meeting', 'email', 'visit'], true) && $l['phase'] === 'lead') {
+            lead_touch($pdo, (int)$l['id']);
+            if ($l['lead_state'] === 'follow_up') $pdo->prepare('UPDATE deals SET state_since = ? WHERE id = ?')->execute([now_php(), $l['id']]);
+        }
+        out(200, ['ok' => true, 'msg' => '«' . $t['title'] . '» feita.', 'undo' => undo_push('task', $snap),
+                  'call' => $t['kind'] === 'call' && $l['phase'] === 'lead'] + lead_parts($pdo, (int)$l['id']));
+
+    // «Como correu?»: chamada não atendida ou follow-up (os outros dois botões são Arquivar e Converter).
+    case 'lead_outcome':
+        if (!$post) break;
+        $l = lead_for_edit($pdo);
+        $res = (string)($_POST['result'] ?? '');
+        if ($res === 'missed') {
+            $n = (int)$l['no_answer'] + 1;
+            $pdo->prepare("UPDATE deals SET lead_state = 'sem_resposta', state_since = ?, no_answer = ? WHERE id = ?")->execute([now_php(), $n, $l['id']]);
+            deal_log($pdo, (int)$l['id'], 'call_miss', ['note' => $n . '.ª tentativa · prazo recomeçou']);
+            lead_touch($pdo, (int)$l['id']);
+            out(200, ['ok' => true, 'msg' => 'Chamada não atendida (' . $n . '.ª tentativa).', 'attempt' => $n, 'suggest_archive' => $n >= 3,
+                      'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])] + lead_parts($pdo, (int)$l['id']));
+        }
+        if ($res === 'followup') {
+            $note = trim(mb_substr((string)($_POST['note'] ?? ''), 0, 4000));
+            $pdo->prepare("UPDATE deals SET lead_state = 'follow_up', state_since = ?, no_answer = 0 WHERE id = ?")->execute([now_php(), $l['id']]);
+            deal_log($pdo, (int)$l['id'], 'call_ok', ['note' => $l['lead_state'] !== 'follow_up' ? (LEAD_STATE[$l['lead_state']] ?? '') . ' → Follow-Up' : 'Follow-Up']);
+            if ($note !== '') interaction_add($pdo, (int)$l['id'], null, 'call', $note, today_lisbon());
+            lead_touch($pdo, (int)$l['id']);
+            out(200, ['ok' => true, 'msg' => 'Follow-Up registado. Marque o passo seguinte.',
+                      'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])] + lead_parts($pdo, (int)$l['id']));
+        }
+        throw new RuntimeException('Escolha como correu.');
+
+    // Arquivar com motivo (§12.9), com «Anular».
+    case 'lead_archive':
+        if (!$post) break;
+        $l = lead_for_edit($pdo);
+        $r = (string)($_POST['reason'] ?? '');
+        $note = trim(mb_substr((string)($_POST['note'] ?? ''), 0, 255));
+        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') throw new RuntimeException('Escolha o motivo.');
+        if ($r === 'outro' && $note === '') throw new RuntimeException('Escreva o motivo.');
+        out(200, ['ok' => true, 'msg' => 'Lead arquivada.', 'undo' => undo_push('lead_archive', lead_archive($pdo, $l, $r, $note)),
+                  'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])]);
+
+    case 'lead_next':
+        require_perm('leads', PERM_VIEW);
+        out(200, ['ok' => true, 'next' => lead_next_urgent($pdo, me_row($pdo), (int)($_GET['id'] ?? 0))]);
 
     // ── Pipeline: mover sem recarregar ──────────────────────
     case 'deal_move':

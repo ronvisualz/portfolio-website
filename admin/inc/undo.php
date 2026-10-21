@@ -71,7 +71,9 @@ function undo_run(PDO $pdo, string $token): string {
             $lead = record_get($pdo, (int)$d['id']);
             if (!$lead || $lead['phase'] !== 'lead' || !record_reach($pdo, $lead, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
             if ($lead['lead_state'] !== $d['to']) throw new RuntimeException($changed);
-            $pdo->prepare('UPDATE deals SET lead_state = ?, last_touch = ? WHERE id = ?')->execute([$d['from'], $d['last_touch'], $d['id']]);
+            // Repõe também o prazo e as tentativas como estavam (§12.4).
+            $pdo->prepare('UPDATE deals SET lead_state = ?, last_touch = ?, state_since = ?, no_answer = ? WHERE id = ?')
+                ->execute([$d['from'], $d['last_touch'], $d['state_since'] ?? $lead['state_since'], (int)($d['no_answer'] ?? $lead['no_answer']), $d['id']]);
             deal_log($pdo, (int)$d['id'], 'state', ['note' => (LEAD_STATE[$d['to']] ?? $d['to']) . ' → ' . (LEAD_STATE[$d['from']] ?? $d['from']) . ' (anulado)']);
             return 'Estado reposto.';
 
@@ -80,6 +82,7 @@ function undo_run(PDO $pdo, string $token): string {
             if (!$lead || $lead['phase'] !== 'archived' || !record_reach($pdo, $lead, PERM_EDIT)) throw new RuntimeException($changed);
             $pdo->prepare("UPDATE deals SET phase = 'lead', archived_reason = '', archived_note = '', archived_at = NULL WHERE id = ?")
                 ->execute([$d['id']]);
+            lead_restore_tasks($pdo, $d['tasks'] ?? []);   // as tarefas abertas voltam ao Foco
             deal_log($pdo, (int)$d['id'], 'reactivate', ['note' => 'Arquivo anulado']);
             return '«' . $lead['name'] . '» voltou às leads ativas.';
 
@@ -98,8 +101,12 @@ function undo_run(PDO $pdo, string $token): string {
                 if (!$t || !can_assign_to($me, $t)) throw new RuntimeException('Já não pode devolver a essa pessoa.');
                 $name = $t['name'];
             }
-            $pdo->prepare('UPDATE deals SET owner_id = ? WHERE id = ?')->execute([$d['from'], $d['id']]);
-            deal_log($pdo, (int)$d['id'], 'assign', ['note' => 'Responsável: ' . $name . ' (anulado)']);
+            if ($row['phase'] === 'lead') {
+                lead_reassign($pdo, $row, $d['from'] === null ? null : (int)$d['from']);   // as tarefas da lead voltam também
+            } else {
+                $pdo->prepare('UPDATE deals SET owner_id = ? WHERE id = ?')->execute([$d['from'], $d['id']]);
+                deal_log($pdo, (int)$d['id'], 'assign', ['note' => 'Responsável: ' . $name . ' (anulado)']);
+            }
             return 'Responsável reposto.';
 
         case 'deal_paid':
@@ -123,6 +130,8 @@ function undo_run(PDO $pdo, string $token): string {
             if (!task_member_visible($from, $visible)) throw new RuntimeException('Sem permissão.');
             $pdo->prepare('UPDATE tasks SET status = ?, done_at = ?, member_id = ?, position = ?, updated_at = ? WHERE id = ?')
                 ->execute([$d['status'], $d['done_at'], $from, $d['position'], task_now(), $d['id']]);
+            // A repetição criada ao concluir sai também (se ainda ninguém lhe mexeu).
+            if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
 
         case 'inline':

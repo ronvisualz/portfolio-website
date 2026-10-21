@@ -112,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)($_POST['id'] ?? 0);
         $mt = $guard(task_by_id($pdo, $id));
         if ((string)($_POST['to'] ?? '') === 'done') {
-            task_done($pdo, $id);
-            flash('Tarefa marcada como feita.', 'ok', undo_push('task', $taskSnap($mt)));
+            $spawned = task_done($pdo, $id);
+            flash('Tarefa marcada como feita.', 'ok', undo_push('task', $taskSnap($mt) + ['spawned' => $spawned]));
             redirect($board);
         }
         $to = task_member_in($_POST['to'] ?? 0, $members);
@@ -131,8 +131,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)($_POST['id'] ?? 0);
         $t = $guard(task_by_id($pdo, $id));
         if ($do === 'done_task') {
-            task_done($pdo, $id);
-            flash('«' . $t['title'] . '» está feita.', 'ok', undo_push('task', $taskSnap($t)));
+            $spawned = task_done($pdo, $id);
+            flash('«' . $t['title'] . '» está feita.', 'ok', undo_push('task', $taskSnap($t) + ['spawned' => $spawned]));
         } else {
             $to = task_member_in($t['member_id'], $members);
             task_reopen($pdo, $id, $to);
@@ -222,6 +222,8 @@ function task_card(array $t, array $members, ?int $person): void {
       </div>
       <?php if (!empty($t['deal_code'])): ?>
         <div class="card-job"><a href="/admin/negocio.php?id=<?= (int)$t['deal_id'] ?>"><?= e($t['deal_code'] . ' · ' . $t['deal_name']) ?></a></div>
+      <?php elseif (!empty($t['deal_id']) && in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)): ?>
+        <div class="card-job"><a href="/admin/lead.php?id=<?= (int)$t['deal_id'] ?>">Lead · <?= e($t['deal_name']) ?></a></div>
       <?php elseif ($t['job_name'] !== ''): ?>
         <div class="card-job"><?= e($t['job_name']) ?></div>
       <?php endif; ?>
@@ -504,7 +506,7 @@ $pq      = $person ? '&amp;p=' . $person : '';
 </details>
 
 <?php elseif ($view === 'tarefas'):
-$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id
+$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id
                      WHERE 1=1' . $visSql . ' ORDER BY t.position, t.id')->fetchAll();
 $stacks = [0 => []];
 foreach ($members as $mid => $m) $stacks[$mid] = [];

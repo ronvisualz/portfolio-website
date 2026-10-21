@@ -78,14 +78,15 @@ if (preg_match_all('~https?://~i', $message) > 2) $why[] = 'muitos links';
 
 $services = ['vfx' => 'VFX / 3D', 'marketing' => 'Marketing Buddy', 'both' => 'Ambos'];
 $notes = [];
-if ($company !== '') $notes[] = 'Empresa: ' . $company;
 if ($why) $notes[] = 'Quarentena: ' . implode(', ', $why) . '.';
 $dups = find_duplicates($pdo, $email, $phone);
-foreach ($dups['deals'] as $d) $notes[] = 'Possível duplicado: ' . $d['name'] . ($d['code'] ? ' (' . $d['code'] . ')' : '') . '.';
+foreach ($dups['deals'] as $d) $notes[] = 'Possível duplicado: ' . lead_display_name($d) . ($d['code'] ? ' (' . $d['code'] . ')' : '') . '.';
 foreach ($dups['contacts'] as $c) $notes[] = 'Já existe o contacto «' . $c['name'] . '».';
 
+// Leads v2 (§12): quem escreve é a pessoa de contacto; a empresa fica no seu campo.
+// Fora da quarentena entram já com os Contactos, o prazo do estado Novo e a chamada.
 $id = lead_create($pdo, [
-    'name' => $company !== '' ? $company . ' · ' . $name : $name, 'types' => '', 'links' => '', 'phone' => $phone, 'email' => $email,
+    'company' => $company, 'person' => $name, 'types' => '', 'links' => '', 'phone' => $phone, 'email' => $email,
     'service' => $services[$service] ?? '', 'priority' => 'media', 'detail' => $message, 'why' => '',
     'notes' => implode("\n", $notes), 'origin' => 'site', 'campaign' => '',
 ], null, null, (bool)$why);

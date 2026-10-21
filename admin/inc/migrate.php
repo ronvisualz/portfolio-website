@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -199,6 +199,15 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // notificações lidas e recuperação de palavra-passe.
     require_once __DIR__ . '/migrate_design.php';
     migrate_design($pdo);
+
+    // ── 13 · aba Leads v2 (§12) ─────────────────────────────
+    //
+    // Empresa e pessoa em cada lead, estados Novo · Sem resposta ·
+    // Follow-Up com prazo em horas, tarefas com tipo e hora. As leads
+    // antigas passam para a v2 (contactos separados, empresas criadas
+    // em Contactos sem duplicar).
+    require_once __DIR__ . '/migrate_leads_v2.php';
+    migrate_leads_v2($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

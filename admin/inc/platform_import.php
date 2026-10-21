@@ -285,14 +285,15 @@ function platform_migrate(PDO $pdo, array $opt): array {
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'manual\',?,?,?,?)'
             )->execute([
                 $phase, $state, mb_substr(trim((string)$l['name']) ?: 'Sem nome', 0, 160), implode(', ', $types['known']),
-                (string)$l['contacts'], mb_substr((string)$l['phone'], 0, 40), mb_substr((string)$l['email'], 0, 190),
+                (string)$l['contacts'], mb_substr((string)$l['phone'], 0, 255), mb_substr((string)$l['email'], 0, 190),
                 in_array($l['service'], LEAD_SERVICES_LIST, true) ? $l['service'] : '',   // VARCHAR(40); valores fora da lista ficam vazios
                 $prio[mb_strtolower(trim((string)$l['priority']))] ?? 'media', (string)$l['detail'], (string)$l['why'],
                 $notes, $owner, $owner, $touch, (string)($l['created_at'] ?: date('Y-m-d H:i:s')),
             ]);
             return (int)$pdo->lastInsertId();
         };
-        foreach ($plan['leads']['lead'] as $l) { $insLead($l, 'lead', (string)$l['stage']); $sum['leads']++; }
+        // Estados da v2 (§12.4): Contactado e Em conversa passam a Follow-Up.
+        foreach ($plan['leads']['lead'] as $l) { $insLead($l, 'lead', (string)$l['stage'] === 'novo' ? 'novo' : 'follow_up'); $sum['leads']++; }
         foreach ($plan['leads']['archived'] as $l) {
             $id = $insLead($l, 'archived', 'novo');
             $pdo->prepare("UPDATE deals SET archived_reason = 'perdido_migracao', archived_at = " . now_sql($pdo) . ' WHERE id = ?')->execute([$id]);
@@ -384,6 +385,8 @@ function platform_migrate(PDO $pdo, array $opt): array {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
+    // As leads entram já na v2 (§12): empresa, contactos separados, Contactos.
+    leads_v2_convert($pdo);
     return $sum;
 }
 

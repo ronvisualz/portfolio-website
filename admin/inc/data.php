@@ -127,7 +127,7 @@ function data_all(bool $fresh = false): array {
         $st = $pdo->prepare("SELECT * FROM deals WHERE phase = 'lead' AND is_quarantined = 0 AND ($sql"
                           . ($unassigned ? ' OR owner_id IS NULL' : '') . ') ORDER BY created_at DESC, id DESC');
         $st->execute($args);
-        $labels = ['novo' => 'Novo', 'contactado' => 'Contactado', 'em_conversa' => 'Em conversa'];
+        $labels = ['novo' => 'Novo', 'sem_resposta' => 'Sem resposta', 'follow_up' => 'Follow-Up'];
         $prio = ['alta' => 'Alta', 'media' => 'Média', 'baixa' => 'Baixa'];
         foreach ($st->fetchAll() as $l) {
             $leads[] = [

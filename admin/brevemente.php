@@ -9,11 +9,11 @@ const SOON = [
     'orcamentacao' => ['Orçamentação', 'Criação e gestão de orçamentos, ligados a cada negócio pelo ID.'],
     'criativo'     => ['Centro Criativo', 'Produção criativa: briefings, referências, versões, feedback e aprovações do cliente.'],
     'marketing'    => ['Marketing', 'Atração de leads e campanhas.'],
-    'conhecimento' => ['Centro de Conhecimento', 'Processos, templates e guias da equipa.'],
 ];
 
 $tab = (string)($_GET['t'] ?? '');
-if ($tab === 'relatorios') redirect('/admin/relatorios.php');   // já tem página própria
+if ($tab === 'relatorios') redirect('/admin/relatorios.php');   // já têm página própria
+if ($tab === 'conhecimento') redirect('/admin/conhecimento.php');
 if (!isset(SOON[$tab])) redirect(home_url());
 require_page($tab);
 [$title, $what] = SOON[$tab];

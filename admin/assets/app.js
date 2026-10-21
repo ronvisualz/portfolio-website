@@ -153,15 +153,20 @@
   // ── menu: recolher (guardado na conta) e gaveta no telemóvel (§11.18) ──
   var rail = $('#rail');
   var narrow = window.matchMedia('(max-width: 900px)');
-  $$('.rail-toggle').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var closed = root.getAttribute('data-nav') !== 'closed';
-      if (closed) root.setAttribute('data-nav', 'closed'); else root.removeAttribute('data-nav');
+  // A seta na borda do menu (§12.0) e o atalho «[».
+  function toggleNav() {
+    var closed = root.getAttribute('data-nav') !== 'closed';
+    if (closed) root.setAttribute('data-nav', 'closed'); else root.removeAttribute('data-nav');
+    $$('.rail-toggle').forEach(function (b) {
+      var label = closed ? 'Expandir menu' : 'Recolher menu';
       b.setAttribute('aria-expanded', closed ? 'false' : 'true');
-      hideTip();
-      api('prefs', { nav: closed ? 'closed' : '' }).catch(function () {});
+      b.setAttribute('aria-label', label + ' ( [ )');
+      b.setAttribute('data-tip', label + '  ·  [ ');
     });
-  });
+    hideTip();
+    api('prefs', { nav: closed ? 'closed' : '' }).catch(function () {});
+  }
+  $$('.rail-toggle').forEach(function (b) { b.addEventListener('click', toggleNav); });
   function navOpen(open) {
     body.classList.toggle('nav-open', open);
     $$('.menu-btn').forEach(function (b) { b.setAttribute('aria-expanded', open ? 'true' : 'false'); });
@@ -320,6 +325,26 @@
 
   // ── painel lateral de detalhe (§11.7) ────────────────────
   var sp = $('#sp'), spBack = $('.sp-back'), spKey = null, spReturn = null;
+  // As linhas da lista que abrem no painel, pela ordem e filtros atuais (setas ↑ ↓, §12.5).
+  function panelRows() { return $$('tr[data-panel]').filter(function (r) { return r.offsetParent !== null; }); }
+  function panelStep(dir) {
+    var rows = panelRows(), keys = rows.map(function (r) { return r.getAttribute('data-panel'); });
+    var i = keys.indexOf(spKey);
+    if (i < 0 || !keys[i + dir]) return;
+    openPanel(keys[i + dir]);
+    rows[i + dir].scrollIntoView({ block: 'nearest' });
+  }
+  function panelNav() {
+    var nav = sp && $('.sp-nav', sp);
+    if (!nav) return;
+    var keys = panelRows().map(function (r) { return r.getAttribute('data-panel'); }), i = keys.indexOf(spKey);
+    nav.hidden = i < 0;
+    $('[data-step="-1"]', nav).disabled = i <= 0;
+    $('[data-step="1"]', nav).disabled = i < 0 || i >= keys.length - 1;
+  }
+  if (sp) $$('.sp-nav [data-step]', sp).forEach(function (b) {
+    b.addEventListener('click', function () { panelStep(+b.getAttribute('data-step')); });
+  });
   function openPanel(key) {
     if (!sp) return;
     var parts = String(key).split(':');
@@ -330,13 +355,22 @@
     sp.classList.add('open'); spBack.classList.add('open');
     var bodyEl = $('.sp-body', sp);
     bodyEl.innerHTML = '<div class="sp-loading">A carregar…</div>';
+    panelNav();
     api('panel', { type: parts[0], id: parts[1] }, 'GET').then(function (j) {
       if (spKey !== key) return;
+      sp.classList.toggle('wide', !!j.wide);
       $('#sp-title').textContent = j.title;
       $('.sp-full', sp).setAttribute('href', j.url);
       bodyEl.innerHTML = j.html;
       bodyEl.scrollTop = 0;
       sp.focus({ preventScroll: true });
+      // O comportamento próprio do registo (ex.: leads.js), se a página ainda não o tiver.
+      if (j.script && !window.topperLeads && !$('script[data-panel-js="' + j.script.split('?')[0] + '"]')) {
+        var s = document.createElement('script');
+        s.src = j.script; s.defer = true; s.setAttribute('data-panel-js', j.script.split('?')[0]);
+        document.body.appendChild(s);
+      }
+      document.dispatchEvent(new CustomEvent('topper:panel', { detail: { key: key, el: bodyEl } }));
     }).catch(function (e) { bodyEl.innerHTML = '<div class="sp-loading">' + esc(e.message) + '</div>'; });
   }
   function closePanel() {
@@ -347,6 +381,9 @@
     if (spReturn && spReturn.focus) spReturn.focus({ preventScroll: true });
   }
   window.topper.openPanel = openPanel;
+  window.topper.closePanel = closePanel;
+  window.topper.reloadPanel = function () { if (spKey) openPanel(spKey); };
+  window.topper.panelKey = function () { return spKey; };
   $$('[data-sp-close]').forEach(function (b) { b.addEventListener('click', closePanel); });
   // Clicar numa linha (fora dos controlos) ou no nome abre o painel; Ctrl/⌘-clique abre a página completa.
   document.addEventListener('click', function (e) {
@@ -376,6 +413,21 @@
       Object.keys(opts).forEach(function (k) {
         var o = document.createElement('option'); o.value = k; o.textContent = opts[k]; if (k === value) o.selected = true; input.appendChild(o);
       });
+    } else if (type === 'multi') {
+      // Várias opções (ex.: tipos da lead): caixas de escolha; o valor fica «a, b».
+      input = document.createElement('div');
+      input.className = 'ie-multi';
+      var chosen = value.split(',').map(function (x) { return x.trim(); });
+      var mopts = JSON.parse(ie.getAttribute('data-options') || '{}');
+      Object.keys(mopts).forEach(function (k) {
+        var l = document.createElement('label'); l.className = 'check';
+        var c = document.createElement('input'); c.type = 'checkbox'; c.value = k; c.checked = chosen.indexOf(k) >= 0;
+        l.appendChild(c); l.appendChild(document.createTextNode(' ' + mopts[k])); input.appendChild(l);
+      });
+      Object.defineProperty(input, 'value', { get: function () {
+        return $$('input:checked', input).map(function (c) { return c.value; }).join(', ');
+      } });
+      input.focus = function () { var c = $('input', input); if (c) c.focus(); };
     } else if (type === 'textarea') {
       input = document.createElement('textarea'); input.value = value; input.rows = 4;
     } else {
@@ -411,7 +463,10 @@
           end(); pen.focus();
           ie.classList.remove('saved'); void ie.offsetWidth; ie.classList.add('saved');
           var inPanel = ie.closest('.sp');
-          toast('Guardado.', j.undo ? { undo: j.undo, afterUndo: inPanel && spKey ? function () { openPanel(spKey); } : null } : {});
+          var refresh = inPanel && spKey ? function () { openPanel(spKey); } : null;
+          toast('Guardado.', j.undo ? { undo: j.undo, afterUndo: refresh } : {});
+          // Campos que mudam o resto (prazo, nome, contactos): volta a desenhar o painel ou a página.
+          if (j.reload) setTimeout(function () { if (refresh) refresh(); else location.reload(); }, inPanel ? 250 : 700);
         })
         .catch(function (e) { input.disabled = ok.disabled = false; input.focus(); toast(e.message, { err: true }); });
     }
@@ -520,8 +575,16 @@
       if (ck && ck.classList.contains('open')) ckClose(); else ckOpen();
       return;
     }
+    if (!typing(document.activeElement) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === '[' && !(ck && ck.classList.contains('open'))) { e.preventDefault(); toggleNav(); return; }
+      if (sp && sp.classList.contains('open') && !$('.mdl.open')) {
+        if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'J') { e.preventDefault(); panelStep(1); return; }
+        if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'K') { e.preventDefault(); panelStep(-1); return; }
+      }
+    }
     if (e.key === 'Escape') {
       if (ck && ck.classList.contains('open')) return;
+      if ($('.mdl.open')) return;   // os formulários (leads.js) fecham-se a si próprios
       if (pop && pop.classList.contains('open')) { popOpen(false); bell.focus(); return; }
       if (sp && sp.classList.contains('open') && !typing(document.activeElement)) { closePanel(); return; }
       if (body.classList.contains('nav-open')) navOpen(false);

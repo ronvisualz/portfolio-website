@@ -57,6 +57,49 @@ const ICONS = [
     'meeting'      => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/>',
     'enter'        => '<path d="M9 10l-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
     'file'         => '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+    'star'         => '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>',
+    'user-arrow'   => '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 11.5-5.4"/><path d="M15.5 18h6M18.5 15l3 3-3 3"/>',
+    'arrows'       => '<path d="m17 3 4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/>',
+    'phone-off'    => '<path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.4 19.4 0 0 1-3.33-2.67m-2.67-3.34a19.8 19.8 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/><path d="M22 2 2 22"/>',
+    'box'          => '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/>',
+    'bubble'       => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    'pin'          => '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    'refresh'      => '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    'chev-left'    => '<path d="m15 18-6-6 6-6"/>',
+    'chev-right'   => '<path d="m9 18 6-6-6-6"/>',
+    'chev-up'      => '<path d="m18 15-6-6-6 6"/>',
+    'chev-down'    => '<path d="m6 9 6 6 6-6"/>',
+    'whatsapp'     => '<path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/><path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1"/>',
+    'globe'        => '<circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19"/><path d="M12 2.5a14.5 14.5 0 0 1 4 9.5 14.5 14.5 0 0 1-4 9.5 14.5 14.5 0 0 1-4-9.5 14.5 14.5 0 0 1 4-9.5z"/>',
+    'instagram'    => '<rect x="2.5" y="2.5" width="19" height="19" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
+    'linkedin'     => '<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/>',
+    'facebook'     => '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+    'youtube'      => '<path d="M2.5 17a24 24 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.6 49.6 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24 24 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.6 49.6 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/>',
+    'vimeo'        => '<path d="M3 9.5 4 10.7c1-.7 1.6-1 1.9-.7.6.5 1.7 6.8 3.3 8.2 1.5 1.3 4.3-.7 6.6-3.6C18.3 11.4 21 7.7 21 6.1c0-2.6-2.3-2.8-4.1-1.7-1 .6-1.8 1.7-2.4 3.4 1.6-.9 2.7-.4 2.1 1.6-.6 1.9-2.6 4.6-3.4 4.6-.8 0-1.6-6-2.6-8.2C9.8 3.6 7.9 4.6 3 9.5z"/>',
+    'tiktok'       => '<path d="M9 12a4 4 0 1 0 4 4V2a5 5 0 0 0 5 5"/>',
+    'keyboard'     => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/>',
+];
+
+/** Ícone de cada rede social reconhecida (social_kind → ícone). */
+const SOCIAL_ICONS = ['instagram' => 'instagram', 'linkedin' => 'linkedin', 'facebook' => 'facebook', 'youtube' => 'youtube',
+                      'vimeo' => 'vimeo', 'tiktok' => 'tiktok', 'x' => 'x', 'behance' => 'globe', 'site' => 'globe'];
+
+/**
+ * Atalhos de teclado e gestos da plataforma (Conhecimento › Navegação).
+ * Acrescentar aqui sempre que surgir um atalho novo (§12.11).
+ */
+const SHORTCUTS = [
+    ['⌘K / Ctrl+K',  'Pesquisa global (IDs, negócios, leads, contactos, ficheiros, tarefas, «ir para»)', 'Em todas as páginas'],
+    ['Enter',         'Abrir o resultado escolhido', 'Pesquisa'],
+    ['⌘ Enter / Ctrl+Enter', 'Abrir o resultado no painel lateral', 'Pesquisa'],
+    ['↑ / ↓',         'Escolher o resultado', 'Pesquisa'],
+    ['[',             'Recolher ou expandir o menu lateral', 'Em todas as páginas'],
+    ['N',             'Nova lead', 'Leads'],
+    ['↑ / ↓  ou  J / K', 'Lead anterior / seguinte (pela ordem e filtros da lista)', 'Painel lateral da lead'],
+    ['Esc',           'Fechar o painel, o formulário ou a pesquisa', 'Em todas as páginas'],
+    ['Enter', 'Gravar uma edição no próprio campo (nos textos longos: ⌘ Enter ou Ctrl+Enter)', 'Edição no campo'],
+    ['Toque longo',   'Ver o nome de um ícone', 'Ecrãs de toque'],
+    ['Passar o cursor', 'Ver o nome de um ícone (~0,3 s)', 'Rato, touchpad, trackpad'],
 ];
 
 /** Um ícone. Decorativo por omissão; o nome vai no elemento que o contém (aria-label + data-tip). */
@@ -98,7 +141,7 @@ const NAV_ITEMS = [
     'financeiro'   => ['Financeiro',      '/admin/financeiro.php',                 'financeiro'],
     'relatorios'   => ['Relatórios',      '/admin/relatorios.php',                 'relatorios'],
     'equipa'       => ['Equipa',          '/admin/equipa.php',                     'equipa'],
-    'conhecimento' => ['Conhecimento',    '/admin/brevemente.php?t=conhecimento',  'conhecimento'],
+    'conhecimento' => ['Conhecimento',    '/admin/conhecimento.php',               'conhecimento'],
     'tools'        => ['Tools',           '/admin/tools.php',                      'tools'],
 ];
 

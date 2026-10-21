@@ -68,7 +68,7 @@ if (in_array($do, ['move', 'done', 'reopen'], true)) {
     $snap = ['id' => $id, 'status' => $task['status'], 'done_at' => $task['done_at'], 'member_id' => $task['member_id'], 'position' => $task['position']];
     try {
         if ($toDone) {
-            task_done($pdo, $id);
+            $snap['spawned'] = task_done($pdo, $id);
             $final = [];
         } else {
             $final = task_move($pdo, $id, $to, $order);

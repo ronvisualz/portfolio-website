@@ -475,6 +475,79 @@ Ficheiros novos: `assets/app.js`, `ui_api.php`, `relatorios.php`, `documento.php
 `ui.php`, `alerts.php`, `reach.php`, `inline.php`, `undo.php`, `interactions.php`, `panel.php`,
 `billing.php`, `charts.php`, `migrate_design.php`.
 
+### 10.2 Aba Leads v2 — §12 (21 out 2026)
+
+A §12 está aplicada. Base de dados **versão 13** (`inc/migrate_leads_v2.php`): em `deals` os campos
+`company`, `person`, `company_id`, `person_id`, `state_since`, `no_answer`, `last_contact_at`; em
+`tasks` os campos `kind`, `due_time`, `duration_min`, `repeat_rule`; em `settings` os prazos
+`lead_deadline_novo` = 24, `lead_deadline_sem_resposta` = 24 e `lead_deadline_follow_up` = 48.
+Ponto a ponto:
+
+- **12.0 Seta do menu:** botão redondo fixo na borda direita do menu, a meio do ecrã; aparece ao
+  passar o cursor no menu e fica sempre visível (discreta) em ecrãs só de toque. `‹` aberto, `›`
+  recolhido, dica «Recolher menu» / «Expandir menu», atalho `[`. Substitui o botão do rodapé.
+- **12.1 Criar lead:** «+ Adicionar Lead» à direita dos separadores; o formulário cresce a partir
+  do botão (250 ms, fundo escurece, volta ao fechar; sem animação com `prefers-reduced-motion`),
+  atalho `N`. Pelo menos Empresa ou Pessoa (verificado no servidor). Responsável só aparece a quem
+  pode atribuir e é validado pelas regras de hierarquia. Aviso de duplicado enquanto se escreve
+  telefone/email: as leads fora do alcance de quem escreve só contam («1 registo fora do seu
+  alcance»), sem nome; «usar o existente» liga a pessoa que já está em Contactos. «Gravar» abre a
+  lead no painel; «Gravar e adicionar outra» reabre o formulário. A empresa e a pessoa ficam em
+  Contactos, reutilizadas pelo nome ou pelo mesmo email/telefone (sem duplicar), a pessoa ligada à
+  empresa. O formulário no fundo da lista saiu. O formulário do site (`contacto.php`) cria da
+  mesma forma (nome → pessoa, empresa → empresa; em quarentena só ao libertar).
+- **12.2 Nome:** a pessoa, com a empresa em pequeno; só empresa → a empresa.
+- **12.3 Contactos:** Telefone(s) (vários separados por «|»), Email e Redes sociais (um link por
+  linha, ícone reconhecido: Instagram, LinkedIn, Facebook, YouTube, Vimeo, TikTok, WhatsApp, site).
+  Botões Ligar (`tel:`), WhatsApp (`wa.me`) e Email, desativados quando falta o dado.
+- **12.4 Estados e prazos:** Novo · Sem resposta · Follow-Up, prazo em horas seguidas 24/7 a partir
+  de `state_since`. Recomeça ao mudar de estado, a cada chamada não atendida e a cada follow-up
+  (resultado da chamada, ou reunião/email/visita feitos em Follow-Up). Termina ao arquivar ou
+  converter. Coluna **Prazo** com anel (amarelo suave até 50 %, laranja até 100 %, vermelho depois)
+  e «18 h» / «+3 h atraso», hora limite (Lisboa) na dica. Botão **Urgente** com contador vermelho;
+  filtros por estado que combinam com «Urgente» e com as vistas. Contador no menu: superadmin e
+  admins todas as leads em atraso, os outros só as suas. Notificações ao responsável quando a lead
+  passa a «A aproximar» e a «Em atraso». Os prazos mudam-se em **A minha conta › Prazos das
+  leads**, que só superadmin e admins veem (o papel é confirmado na base de dados ao gravar).
+- **12.5 Painel:** largo (até 980 px) em duas colunas — dados com edição no campo e Converter /
+  Arquivar fixos no fundo; Nova ação, Foco, Notas & Histórico à direita; empilhado em ecrãs
+  estreitos. Setas ↑ ↓ fora do painel, em cima à esquerda, pela ordem e filtros da página atual
+  da lista; teclas ↑/↓ e J/K, Esc fecha. Aberto pela pesquisa ⌘K noutra aba, o painel traz consigo
+  os formulários e o `leads.js`.
+- **12.6 Ficha completa:** `admin/lead.php?id=…` com o caminho Comercial / Leads / nome; «Voltar
+  às leads» regressa com os mesmos filtros e à linha da lead.
+- **12.7 Tarefas e histórico:** Nova ação (7 tipos, Em 1h / Em 3h / Amanhã / Próxima semana, data,
+  hora, duração, para quem pelas regras de atribuição, repetir diário/semanal/mensal — a próxima
+  ocorrência cria-se ao concluir); as tarefas aparecem na aba Tarefas como «Lead · nome». Foco com
+  concluir e «Anular». Notas & Histórico automático + «Registar nota». Cada tipo de entrada tem
+  ícone, cor (tokens dos dois modos) e dica, em todos os históricos (leads, negócios, contactos).
+  Último contacto automático. Foco vazio = «Sem próxima ação» = vista **Em risco**.
+- **12.8 Chamada:** a lead nova (fora da quarentena) recebe a tarefa «Ligar a …» com prazo no fim
+  do prazo do estado. Concluí-la abre «Como correu?»: não atendida (Sem resposta, n.º da tentativa,
+  prazo recomeça, nova chamada num clique; à 3.ª sugere arquivar com «Sem resposta»), Follow-Up
+  (nota + foco na Nova ação), Arquivar, Converter. «Próxima urgente →» abre a lead em atraso há
+  mais tempo dentro do alcance de quem usa.
+- **12.9 Arquivar:** motivos em botões, «Outro» pede texto; aviso «Lead arquivada · Anular» (8 s).
+  As tarefas abertas saem com a lead e voltam com o «Anular».
+- **12.10 Lista:** Prazo · Nome · Estado · Responsável · Próxima ação · Último contacto; as notas
+  ficam no painel.
+- **12.11 Conhecimento › Navegação:** `admin/conhecimento.php` (deixou de ser «Em construção»); a
+  lista vem de `SHORTCUTS` em `inc/ui.php`, que é onde se acrescenta um atalho novo.
+- **Migração dos dados** (passo 13, automático): nome → Empresa; telefones (recuperados da tabela
+  `leads` da versão 10 quando tinham sido cortados), emails e links separados; o que não é claro
+  vai para as notas com «[Migração para a v2]»; Contactado e Em conversa → Follow-Up; empresas e
+  pessoas criadas em Contactos sem duplicar. O prazo das leads ativas começa **no momento da
+  migração** (contar desde a criação poria todas em atraso de uma vez). As leads migradas não
+  recebem a chamada automática: aparecem com «Sem próxima ação» até alguém marcar a primeira.
+- Também: Dashboard «Leads em atraso / a aproximar» (substitui «Leads paradas»); Excel com Empresa,
+  Pessoa de contacto e os estados novos.
+- **Permissões:** todas as ações (painel, Nova ação, concluir, resultado, arquivar, atribuir,
+  duplicados) passam por `ui_api.php` ou `leads.php`, que confirmam a aba, o alcance da lead
+  (`lead_in_reach` / `record_reach`) e as regras de atribuição (`can_assign_to`) em cada pedido.
+
+Ficheiros novos: `lead.php`, `conhecimento.php`, `assets/leads.js`, `inc/lead_view.php`,
+`inc/migrate_leads_v2.php`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

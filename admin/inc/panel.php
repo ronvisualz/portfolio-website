@@ -18,61 +18,26 @@ require_once __DIR__ . '/pipeline.php';
 
 /** Uma linha do resumo: rótulo + valor (editável quando $edit). */
 function panel_row(string $label, string $entity, int $id, string $field, array $row, bool $edit, array $opt = []): string {
-    $def = inline_fields()[$entity][$field] ?? ['text', 0];
+    $def = inline_fields($entity === 'lead' ? $row : null)[$entity][$field] ?? ['text', 0];
     $val = $row[$field] ?? '';
-    $shown = $opt['html'] ?? e(inline_display($entity, $field, $val));
-    $o = ['edit' => $edit, 'type' => $def[0], 'label' => 'Editar ' . mb_strtolower($label), 'value' => (string)$val];
-    if ($def[0] === 'select') $o['options'] = $def[1];
+    $shown = $opt['html'] ?? e(inline_display($entity, $field, $val, $row));
+    $o = ['edit' => $edit, 'type' => $opt['type'] ?? $def[0], 'label' => 'Editar ' . mb_strtolower($label), 'value' => $opt['value'] ?? (string)$val];
+    if (in_array($def[0], ['select', 'multi'], true)) $o['options'] = $def[1];
     if ($def[0] === 'money' && $val !== null && $val !== '') $o['value'] = number_format((float)$val, 2, ',', '');
     return '<span>' . e($label) . '</span><div>' . inline_field($entity, $id, $field, $shown, $o) . '</div>';
 }
 
+/** A lead no painel lateral: a vista larga em duas colunas (§12.5). */
 function panel_lead(PDO $pdo, array $l): array {
+    require_once __DIR__ . '/lead_view.php';
     $id = (int)$l['id'];
-    $edit = can('leads', PERM_EDIT);
-    $active = $l['phase'] === 'lead';
-    $owner = $l['owner_id'] ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$l['owner_id'])->fetchColumn() : 'Por atribuir';
-    $stale = $active && lead_is_stale($l, lead_stale_days($pdo));
-
-    $chips = '<span class="chip">' . e($active ? (LEAD_STATE[$l['lead_state']] ?? '') : 'Arquivada') . '</span>'
-           . ($l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '')
-           . ($stale ? ' <span class="chip risk">Parada</span>' : '')
-           . ((int)$l['is_quarantined'] ? ' <span class="chip wait">Quarentena</span>' : '');
-
-    $next = '';
-    if ($edit && $active) {
-        if (can('pipeline', PERM_EDIT) && !(int)$l['is_quarantined']) {
-            $next .= '<a class="btn" href="/admin/leads.php?conv=' . $id . '#converter">' . icon('arrow') . ' Converter em negócio</a>';
-        }
-        $next .= '<a class="btn ghost" href="/admin/leads.php?arch=' . $id . '#arquivar">' . icon('archive') . ' Arquivar</a>';
-    } elseif ($edit) {
-        $next .= '<form method="post" action="/admin/leads.php">' . csrf_field()
-               . '<input type="hidden" name="do" value="reactivate"><input type="hidden" name="id" value="' . $id . '">'
-               . '<button class="btn ghost" type="submit">' . icon('undo') . ' Reativar</button></form>';
-    }
-    $next .= '<a class="btn ghost" href="/admin/leads.php?edit=' . $id . '#lead">' . icon('external') . ' Abrir a ficha completa</a>';
-
-    $ed = $edit && $active;
-    $kv = panel_row('Estado', 'lead', $id, 'lead_state', $l, $ed)
-        . '<span>Responsável</span><div>' . e($owner) . '</div>'
-        . panel_row('Email', 'lead', $id, 'email', $l, $ed, $l['email'] ? ['html' => '<a href="mailto:' . e($l['email']) . '">' . e($l['email']) . '</a>'] : [])
-        . panel_row('Telefone', 'lead', $id, 'phone', $l, $ed, $l['phone'] ? ['html' => '<a href="tel:' . e(preg_replace('/[^\d+]/', '', $l['phone'])) . '">' . e($l['phone']) . '</a>'] : [])
-        . panel_row('Serviço', 'lead', $id, 'service', $l, $ed)
-        . panel_row('Prioridade', 'lead', $id, 'priority', $l, $ed)
-        . panel_row('Origem', 'lead', $id, 'origin', $l, $ed)
-        . panel_row('Campanha', 'lead', $id, 'campaign', $l, $ed)
-        . panel_row('Último contacto', 'lead', $id, 'last_touch', $l, $ed)
-        . '<span>Criada</span><div class="mono">' . e(date('d/m/Y', strtotime((string)$l['created_at']))) . '</div>'
-        . ($l['types'] ? '<span>Tipo</span><div>' . e($l['types']) . '</div>' : '');
-
-    $body = '<header><h2>' . inline_field('lead', $id, 'name', e($l['name']), ['edit' => $ed, 'label' => 'Editar nome', 'value' => $l['name']]) . '</h2>'
-          . '<div style="margin-top:6px">' . $chips . '</div></header>'
-          . '<section class="sp-next"><h4>Próxima ação</h4>' . $next . '</section>'
-          . '<section><h4>Resumo</h4><div class="kv">' . $kv . '</div></section>'
-          . '<section><h4>Notas</h4>' . inline_field('lead', $id, 'notes', e((string)$l['notes']), ['edit' => $ed, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$l['notes']]) . '</section>'
-          . '<section><h4>Porquê abordar</h4>' . inline_field('lead', $id, 'why', e((string)$l['why']), ['edit' => $ed, 'type' => 'textarea', 'label' => 'Editar porquê abordar', 'value' => (string)$l['why']]) . '</section>'
-          . '<section><h4>Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, '/admin/leads.php?open=' . $id, '') . '</section>';
-    return ['title' => 'Lead', 'html' => $body, 'url' => '/admin/leads.php?edit=' . $id . '#lead'];
+    $back = '/admin/leads.php?open=' . $id;
+    // Fora da aba Leads (⌘K → ⌘Enter), o painel traz consigo os formulários e o leads.js.
+    $modals = can('leads', PERM_EDIT) ? '<template data-lead-modals>' . lead_modals_html(null, $back) . '</template>' : '';
+    $js = __DIR__ . '/../assets/leads.js';
+    return ['title' => 'Lead', 'html' => lead_view($pdo, $l, 'panel', $back) . $modals,
+            'url' => '/admin/lead.php?id=' . $id, 'wide' => true,
+            'script' => '/admin/assets/leads.js?v=' . (is_file($js) ? filemtime($js) : 0)];
 }
 
 function panel_deal(PDO $pdo, array $d): array {

@@ -1,12 +1,36 @@
 <?php
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/leads.php';
 $user = require_login();
 
 // A minha conta: definições (como quer ser tratado, modo claro/escuro) e a
 // palavra-passe. Não depende de permissões — toda a gente com sessão tem acesso.
+// Superadmin e admins veem também os prazos das leads, que valem para toda a
+// plataforma (§12.4).
 
 const ACCOUNT_PASSWORD_MIN = 10;
+
+// O papel confirma-se na base de dados (não só na sessão).
+$st = $pdo->prepare('SELECT role FROM users WHERE id = ?');
+$st->execute([(int)$user['id']]);
+$isAdmin = role_is_admin((string)$st->fetchColumn());
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'deadlines') {
+    csrf_check();
+    if (!$isAdmin) { http_response_code(403); exit('Sem permissão.'); }
+    $set = $pdo->prepare(db_is_sqlite($pdo)
+        ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+        : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)');
+    $bad = false;
+    foreach (array_keys(LEAD_DEADLINE_DEFAULTS) as $k) {
+        $h = (int)($_POST['h'][$k] ?? 0);
+        if ($h < 1 || $h > 720) { $bad = true; continue; }
+        $set->execute(['lead_deadline_' . $k, (string)$h]);
+    }
+    flash($bad ? 'Cada prazo tem de estar entre 1 e 720 horas; os outros foram guardados.' : 'Prazos das leads guardados para toda a plataforma.', $bad ? 'err' : 'ok');
+    redirect('/admin/conta.php#prazos');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
@@ -66,6 +90,24 @@ render_flashes();
   </div>
   <div class="actions"><button class="btn" type="submit">Guardar definições</button></div>
 </form>
+
+<?php if ($isAdmin): $dh = lead_deadline_hours($pdo); ?>
+<h2 id="prazos">Prazos das leads</h2>
+<form method="post" class="panel" style="max-width:720px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="deadlines">
+  <p class="muted" style="margin-top:0">Horas seguidas (24/7, sem pausas) até uma lead em cada estado ficar em atraso. Valem para
+    toda a plataforma e para as leads ativas que já existem. Só superadmin e admins podem mudar.</p>
+  <div class="grid">
+    <?php foreach (LEAD_STATE as $k => $label): ?>
+      <div class="field"><label for="dl-<?= $k ?>"><?= e($label) ?></label>
+        <input type="number" id="dl-<?= $k ?>" name="h[<?= $k ?>]" min="1" max="720" step="1" required value="<?= (int)$dh[$k] ?>" inputmode="numeric">
+        <span class="muted" style="font-size:12px"><?= e(['novo' => 'Conta desde a criação.', 'sem_resposta' => 'Recomeça a cada chamada não atendida.', 'follow_up' => 'Recomeça a cada follow-up.'][$k] ?? '') ?>
+          Por defeito <?= (int)LEAD_DEADLINE_DEFAULTS[$k] ?> h.</span></div>
+    <?php endforeach; ?>
+  </div>
+  <div class="actions"><button class="btn" type="submit">Guardar prazos</button></div>
+</form>
+<?php endif; ?>
 
 <h2>Mudar palavra-passe</h2>
 <form method="post" autocomplete="off">

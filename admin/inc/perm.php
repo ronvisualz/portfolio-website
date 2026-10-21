@@ -58,6 +58,7 @@ const TAB_PAGES = [
     'financeiro'=> '/admin/financeiro.php',
     'relatorios'=> '/admin/relatorios.php',
     'equipa'    => '/admin/equipa.php',
+    'conhecimento' => '/admin/conhecimento.php',
     'tools'     => '/admin/tools.php',
 ];
 

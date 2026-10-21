@@ -4,21 +4,23 @@ require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/paginate.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/undo.php';
-require_once __DIR__ . '/inc/interactions.php';
+require_once __DIR__ . '/inc/lead_view.php';
 $user = require_login();
 require_page('leads');
 
-// As leads vivem em MySQL (tabela deals, phase = 'lead'). Separadores:
-// Ativas · Por atribuir · Arquivadas · Quarentena. Quem vê o quê vem do
-// âmbito da aba Leads (inc/perm.php); a fila sem dono é dos gestores.
+// Aba Leads v2 (docs/ESPECIFICACAO-PLATAFORMA.md §12). As leads vivem em
+// MySQL (deals, phase = 'lead'). Separadores Ativas · Por atribuir ·
+// Arquivadas · Quarentena; filtros rápidos por estado, «Urgente» (em
+// atraso) e as vistas. Cada lead abre no painel lateral; a ficha completa
+// é lead.php. Quem vê o quê vem do âmbito da aba Leads (inc/perm.php).
 
 const VIEWS = ['ativas' => 'Ativas', 'fila' => 'Por atribuir', 'arquivadas' => 'Arquivadas', 'quarentena' => 'Quarentena'];
-/** Vistas guardadas (§11.12): filtram a lista aberta sem botão «Filtrar». */
-const LEAD_VISTAS = ['' => 'Todas', 'meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
+/** Vistas guardadas (§11.12). «Em risco» = sem próxima ação (§12.7). */
+const LEAD_VISTAS = ['meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
 
 function lead_filters(array $src): array {
     $f = [];
-    foreach (['v', 'vista', 'q', 'estado', 'tipo', 'prio', 'origem', 'dono', 'pl'] as $k) {
+    foreach (['v', 'vista', 'estado', 'urgente', 'q', 'tipo', 'prio', 'origem', 'dono', 'pl'] as $k) {
         $v = trim((string)($src[$k] ?? ''));
         if ($v !== '') $f[$k] = $v;
     }
@@ -67,116 +69,61 @@ function owner_from_post(PDO $pdo, array $me, ?int $current): ?int {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do   = (string)($_POST['do'] ?? '');
-    $back = leads_url(lead_filters(is_array($_POST['back'] ?? null) ? $_POST['back'] : []));
-
-    if ($do === 'stale_days') {
-        require_perm('leads', PERM_MANAGE);
-        $n = max(1, min(365, (int)($_POST['days'] ?? 14)));
-        $pdo->prepare(db_is_sqlite($pdo)
-            ? "INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('lead_stale_days', ?)"
-            : "INSERT INTO settings (skey, svalue) VALUES ('lead_stale_days', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)"
-        )->execute([(string)$n]);
-        flash("Alerta de lead parada: $n dias.");
-        redirect($back);
-    }
+    $bf   = lead_filters(is_array($_POST['back'] ?? null) ? $_POST['back'] : []);
+    $back = leads_url($bf);
+    $bu   = (string)($_POST['back_url'] ?? '');
+    if (str_starts_with($bu, '/admin/lead.php') || str_starts_with($bu, '/admin/leads.php')) $back = $bu;
 
     if ($do === 'create') {
         $v = lead_input($_POST);
-        $dups = find_duplicates($pdo, $v['email'], $v['phone']);
-        if (($dups['deals'] || $dups['contacts']) && empty($_POST['confirm_dup'])) {
-            $_SESSION['lead_dup'] = $_POST;
-            redirect(leads_url(['dup' => 1]) . '#duplicados');
+        if ($v['company'] === '' && $v['person'] === '') {
+            $_SESSION['lead_form'] = $_POST;
+            flash('Indique a empresa ou a pessoa de contacto.', 'err');
+            redirect(leads_url($bf + ['nova' => 1]));
         }
         $owner = owner_from_post($pdo, $me, (int)$me['id']);
-        $id = lead_create($pdo, $v, $owner, (int)$me['id']);
-        $cid = (int)($_POST['contact_id'] ?? 0);
-        if ($cid > 0) $pdo->prepare('UPDATE deals SET contact_id = ? WHERE id = ?')->execute([$cid, $id]);
-        unset($_SESSION['lead_dup']);
-        flash($owner === null ? 'Lead criada na fila «Por atribuir».' : 'Lead criada.');
-        redirect($back);
+        $use = (int)($_POST['use_contact'] ?? 0);
+        if ($use) { $st = $pdo->prepare('SELECT COUNT(*) FROM contacts WHERE id = ?'); $st->execute([$use]); if (!(int)$st->fetchColumn()) $use = 0; }
+        $id = lead_create($pdo, $v, $owner, (int)$me['id'], false, $use ?: null);
+        $dups = find_duplicates($pdo, $v['email'], $v['phone'], $id);
+        $warn = !$use && ($dups['deals'] || array_filter($dups['contacts'], fn($c) => (int)$c['id'] !== (int)lead_get($pdo, $id)['person_id'] && (int)$c['id'] !== (int)lead_get($pdo, $id)['company_id']));
+        unset($_SESSION['lead_form']);
+        flash(($owner === null ? 'Lead criada na fila «Por atribuir».' : 'Lead criada.') . ($warn ? ' Atenção: já existia alguém com este email ou telefone.' : ''));
+        redirect(!empty($_POST['again']) ? leads_url($bf + ['nova' => 1]) : leads_url($bf + ['open' => $id]));
     }
 
     // As restantes ações são sobre um registo: tem de estar ao meu alcance.
     $lead = lead_get($pdo, (int)($_POST['id'] ?? 0));
-    if (!$lead || !lead_in_reach($pdo, $lead, $me)) {
+    if (!$lead || !in_array($lead['phase'], ['lead', 'archived'], true) || !lead_in_reach($pdo, $lead, $me)) {
         flash('Lead não encontrada.', 'err');
         redirect($back);
     }
     $id = (int)$lead['id'];
 
-    if ($do === 'merge') {
-        $v = $_SESSION['lead_dup'] ?? null;
-        if (!$v || $lead['phase'] !== 'lead') { flash('Nada para juntar.', 'err'); redirect($back); }
-        lead_merge_into($pdo, $lead, lead_input($v));
-        unset($_SESSION['lead_dup']);
-        flash('Os dados foram juntados à lead «' . $lead['name'] . '».');
-        redirect(leads_url(['edit' => $id]) . '#lead');
-    }
-
-    if ($do === 'state') {
-        $s = (string)($_POST['lead_state'] ?? '');
-        if (isset(LEAD_STATE[$s]) && $lead['phase'] === 'lead' && $s !== $lead['lead_state']) {
-            $pdo->prepare('UPDATE deals SET lead_state = ?, last_touch = ? WHERE id = ?')->execute([$s, today_lisbon(), $id]);
-            deal_log($pdo, $id, 'state', ['note' => LEAD_STATE[$lead['lead_state']] . ' → ' . LEAD_STATE[$s]]);
-            flash('«' . $lead['name'] . '» passou a ' . LEAD_STATE[$s] . '.', 'ok',
-                  undo_push('lead_state', ['id' => $id, 'from' => $lead['lead_state'], 'to' => $s, 'last_touch' => $lead['last_touch']]));
-        }
-        redirect($back);
-    }
-
-    if ($do === 'assign') {
-        $owner = owner_from_post($pdo, $me, $lead['owner_id'] !== null ? (int)$lead['owner_id'] : null);
-        if ((string)$owner !== (string)$lead['owner_id']) {
-            $pdo->prepare('UPDATE deals SET owner_id = ? WHERE id = ?')->execute([$owner, $id]);
-            deal_log($pdo, $id, 'assign', ['note' => 'Responsável: ' . ($owner === null ? 'por atribuir' : $pdo->query('SELECT name FROM users WHERE id = ' . (int)$owner)->fetchColumn())]);
-            flash('Responsável atualizado.', 'ok', undo_push('assign', ['id' => $id, 'from' => $lead['owner_id'] !== null ? (int)$lead['owner_id'] : null, 'to' => $owner]));
-        }
-        redirect($back);
-    }
-
-    if ($do === 'save') {
-        $v = lead_input($_POST);
-        $s = (string)($_POST['lead_state'] ?? $lead['lead_state']);
-        $s = isset(LEAD_STATE[$s]) ? $s : $lead['lead_state'];
-        $touch = (string)($_POST['last_touch'] ?? '');
-        $touch = preg_match('/^\d{4}-\d{2}-\d{2}$/', $touch) ? $touch : $lead['last_touch'];
-        if ($s !== $lead['lead_state']) $touch = today_lisbon();
-        $owner = owner_from_post($pdo, $me, $lead['owner_id'] !== null ? (int)$lead['owner_id'] : null);
-        if ($s !== $lead['lead_state']) deal_log($pdo, $id, 'state', ['note' => LEAD_STATE[$lead['lead_state']] . ' → ' . LEAD_STATE[$s]]);
-        if ((string)$owner !== (string)$lead['owner_id']) {
-            deal_log($pdo, $id, 'assign', ['note' => 'Responsável: ' . ($owner === null ? 'por atribuir' : $pdo->query('SELECT name FROM users WHERE id = ' . (int)$owner)->fetchColumn())]);
-        }
-        $pdo->prepare(
-            'UPDATE deals SET name=?, types=?, links=?, phone=?, email=?, service=?, priority=?, detail=?, why=?, notes=?,
-                              origin=?, campaign=?, lead_state=?, last_touch=?, owner_id=? WHERE id=?'
-        )->execute([$v['name'], $v['types'], $v['links'], $v['phone'], $v['email'], $v['service'], $v['priority'],
-                    $v['detail'], $v['why'], $v['notes'], $v['origin'], $v['campaign'], $s, $touch, $owner, $id]);
-        flash('Lead guardada.');
-        redirect($back);
-    }
-
     if ($do === 'archive') {
         $r = (string)($_POST['reason'] ?? '');
-        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') { flash('Escolha o motivo.', 'err'); redirect($back); }
-        $pdo->prepare('UPDATE deals SET phase = \'archived\', archived_reason = ?, archived_note = ?, archived_at = ' . now_sql($pdo) . ' WHERE id = ? AND phase = \'lead\'')
-            ->execute([$r, mb_substr(trim((string)($_POST['note'] ?? '')), 0, 255), $id]);
-        deal_log($pdo, $id, 'archive', ['note' => ARCHIVE_REASONS[$r]]);
-        flash('«' . $lead['name'] . '» arquivada.', 'ok', undo_push('lead_archive', ['id' => $id]));
-        redirect($back);
+        $note = mb_substr(trim((string)($_POST['note'] ?? '')), 0, 255);
+        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') { flash('Escolha o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
+        if ($r === 'outro' && $note === '') { flash('Escreva o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
+        if ($lead['phase'] !== 'lead') { flash('Esta lead já não está ativa.', 'err'); redirect($back); }
+        flash('Lead arquivada.', 'ok', undo_push('lead_archive', lead_archive($pdo, $lead, $r, $note)));
+        redirect(str_starts_with($back, '/admin/lead.php') ? leads_url($bf) : $back);
     }
 
     if ($do === 'reactivate') {
-        $pdo->prepare('UPDATE deals SET phase = \'lead\', archived_reason = \'\', archived_note = \'\', archived_at = NULL, is_quarantined = 0, last_touch = ? WHERE id = ? AND phase = \'archived\'')
-            ->execute([today_lisbon(), $id]);
+        // Volta a contar o prazo do estado em que estava, a partir de agora.
+        $pdo->prepare('UPDATE deals SET phase = \'lead\', archived_reason = \'\', archived_note = \'\', archived_at = NULL, is_quarantined = 0, state_since = ?, last_touch = ? WHERE id = ? AND phase = \'archived\'')
+            ->execute([now_php(), today_lisbon(), $id]);
         deal_log($pdo, $id, 'reactivate');
         flash('Lead reativada.');
-        redirect($back);
+        redirect(leads_url($bf + ['open' => $id]));
     }
 
-    if ($do === 'release') {   // tirar da quarentena
-        $pdo->prepare('UPDATE deals SET is_quarantined = 0 WHERE id = ?')->execute([$id]);
+    if ($do === 'release') {   // tirar da quarentena: entra a sério (contactos, prazo, primeira chamada)
+        $pdo->prepare('UPDATE deals SET is_quarantined = 0, state_since = ? WHERE id = ?')->execute([now_php(), $id]);
+        lead_start($pdo, $id, null, (int)$me['id']);
         flash('Lead libertada da quarentena.');
-        redirect($back);
+        redirect(leads_url(['v' => 'quarentena']));
     }
 
     if ($do === 'convert') {
@@ -185,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $funnel = (int)($_POST['funnel_id'] ?? 0);
         $st = $pdo->prepare('SELECT COUNT(*) FROM funnels WHERE id = ? AND is_active = 1');
         $st->execute([$funnel]);
-        if (!(int)$st->fetchColumn()) { flash('Escolha o funil.', 'err'); redirect(leads_url(['conv' => $id]) . '#converter'); }
+        if (!(int)$st->fetchColumn()) { flash('Escolha o funil.', 'err'); redirect(leads_url($bf + ['conv' => $id]) . '#converter'); }
         try {
             $code = lead_convert($pdo, $lead, $funnel, (int)($_POST['contact_id'] ?? 0));
         } catch (Throwable $e) {
@@ -193,15 +140,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($back);
         }
         flash("Lead convertida: $code entrou no Pipeline, na etapa X-Ray.");
-        redirect($back);
+        redirect(leads_url($bf));
     }
 
     if ($do === 'delete') {
         require_perm('leads', PERM_MANAGE);
-        if (!in_array($lead['phase'], ['lead', 'archived'], true)) { flash('Só se eliminam leads.', 'err'); redirect($back); }
+        $pdo->prepare('DELETE FROM tasks WHERE deal_id = ? AND status <> \'done\'')->execute([$id]);
         $pdo->prepare('DELETE FROM deals WHERE id = ?')->execute([$id]);
         flash('Lead eliminada.');
-        redirect($back);
+        redirect(leads_url($bf));
     }
 
     redirect($back);
@@ -222,113 +169,107 @@ switch ($view) {
     case 'arquivadas': $where[] = "d.phase = 'archived'"; $where[] = $reach; $args = $scopeArgs; break;
     default:           $where[] = "d.phase = 'lead' AND d.owner_id IS NOT NULL AND d.is_quarantined = 0"; $where[] = $scopeSql; $args = $scopeArgs;
 }
-$stmt = $pdo->prepare('SELECT d.*, u.name AS owner_name FROM deals d LEFT JOIN users u ON u.id = d.owner_id WHERE '
-                    . implode(' AND ', $where));
+$stmt = $pdo->prepare('SELECT d.*, u.name AS owner_name FROM deals d LEFT JOIN users u ON u.id = d.owner_id WHERE ' . implode(' AND ', $where));
 $stmt->execute($args);
 $all = $stmt->fetchAll();
 
 // Contagens dos separadores (dentro do que posso ver).
-$cnt = static function (string $cond, bool $scoped) use ($pdo, $scopeSql, $scopeArgs, $reach) {
+$cnt = static function (string $cond, bool $scoped) use ($pdo, $scopeArgs, $reach) {
     $st = $pdo->prepare("SELECT COUNT(*) FROM deals d WHERE $cond" . ($scoped ? " AND $reach" : ''));
     $st->execute($scoped ? $scopeArgs : []);
     return (int)$st->fetchColumn();
 };
+$st = $pdo->prepare("SELECT COUNT(*) FROM deals d WHERE d.phase = 'lead' AND d.owner_id IS NOT NULL AND d.is_quarantined = 0 AND $scopeSql");
+$st->execute($scopeArgs);
 $counts = [
-    'ativas'     => (function () use ($pdo, $scopeSql, $scopeArgs) {
-        $st = $pdo->prepare("SELECT COUNT(*) FROM deals d WHERE d.phase = 'lead' AND d.owner_id IS NOT NULL AND d.is_quarantined = 0 AND $scopeSql");
-        $st->execute($scopeArgs); return (int)$st->fetchColumn(); })(),
+    'ativas'     => (int)$st->fetchColumn(),
     'fila'       => $manager ? $cnt("d.phase = 'lead' AND d.owner_id IS NULL AND d.is_quarantined = 0", false) : 0,
     'arquivadas' => $cnt("d.phase = 'archived'", true),
     'quarentena' => $manager ? $cnt("d.phase = 'lead' AND d.is_quarantined = 1", false) : 0,
 ];
 
-$staleDays = lead_stale_days($pdo);
-$q = $filters['q'] ?? '';
-$lc = static fn(string $s): string => mb_strtolower($s, 'UTF-8');
-$needle = $lc($q);
-$vista = isset(LEAD_VISTAS[$filters['vista'] ?? '']) ? (string)($filters['vista'] ?? '') : '';
+// Prazo, próxima ação e último contacto de cada lead.
+$hours = lead_deadline_hours($pdo);
+$open  = lead_open_tasks($pdo, array_column($all, 'id'));
+foreach ($all as &$l) {
+    $l['clock'] = lead_clock($l, $hours);
+    $l['next'] = $open[(int)$l['id']][0] ?? null;
+    [$l['dn'], $l['dc']] = lead_display($l);
+}
+unset($l);
+
 $monthStart = (new DateTimeImmutable(today_lisbon()))->format('Y-m-01');
-$inVista = static function (array $l, string $vista) use ($me, $staleDays, $monthStart): bool {
+$inVista = static function (array $l, string $vista) use ($me, $monthStart): bool {
     return match ($vista) {
         'meus'  => (int)$l['owner_id'] === (int)$me['id'],
-        'risco' => $l['phase'] === 'lead' && lead_is_stale($l, $staleDays),
+        'risco' => $l['phase'] === 'lead' && $l['next'] === null,
         'mes'   => substr((string)($l['phase'] === 'archived' ? $l['archived_at'] : $l['created_at']), 0, 10) >= $monthStart,
         default => true,
     };
 };
-$vistaCount = [];
-foreach (array_keys(LEAD_VISTAS) as $k) $vistaCount[$k] = count(array_filter($all, fn($l) => $inVista($l, $k)));
-$rows = array_values(array_filter($all, static function ($l) use ($filters, $needle, $lc, $inVista, $vista) {
-    if (!$inVista($l, $vista)) return false;
-    if (($filters['estado'] ?? '') !== '' && $l['lead_state'] !== $filters['estado']) return false;
+$vista   = isset(LEAD_VISTAS[$filters['vista'] ?? '']) ? (string)$filters['vista'] : '';
+$estado  = isset(LEAD_STATE[$filters['estado'] ?? '']) ? (string)$filters['estado'] : '';
+$urgente = !empty($filters['urgente']);
+$isLate  = static fn(array $l) => $l['clock'] && $l['clock']['level'] === 'late';
+
+$q = $filters['q'] ?? '';
+$lc = static fn(string $s): string => mb_strtolower($s, 'UTF-8');
+$needle = $lc($q);
+$rest = static function ($l) use ($filters, $needle, $lc) {
     if (($filters['prio'] ?? '') !== '' && $l['priority'] !== $filters['prio']) return false;
     if (($filters['origem'] ?? '') !== '' && $l['origin'] !== $filters['origem']) return false;
     if (($filters['dono'] ?? '') !== '' && (string)$l['owner_id'] !== $filters['dono']) return false;
     if (($filters['tipo'] ?? '') !== '' && !in_array($filters['tipo'], array_map('trim', explode(',', (string)$l['types'])), true)) return false;
     if ($needle !== '') {
-        $hay = $lc(implode(' ', [$l['name'], $l['links'], $l['notes'], $l['detail'], $l['why'], $l['email'], $l['phone'],
+        $hay = $lc(implode(' ', [$l['name'], $l['company'], $l['person'], $l['links'], $l['notes'], $l['detail'], $l['why'], $l['email'], $l['phone'],
                                  $l['types'], $l['service'], $l['campaign']]));
         if (strpos($hay, $needle) === false) return false;
     }
     return true;
-}));
-$order = ['em_conversa' => 0, 'contactado' => 1, 'novo' => 2];
-usort($rows, static function ($a, $b) use ($order, $view) {
+};
+// Os contadores dos botões rápidos contam dentro dos outros filtros (combinam, §12.4).
+$base = array_values(array_filter($all, $rest));
+$vistaCount = []; foreach (array_keys(LEAD_VISTAS) as $k) $vistaCount[$k] = count(array_filter($base, fn($l) => $inVista($l, $k) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
+$stateCount = []; foreach (array_keys(LEAD_STATE) as $k) $stateCount[$k] = count(array_filter($base, fn($l) => $l['lead_state'] === $k && $inVista($l, $vista) && (!$urgente || $isLate($l))));
+$lateCount = count(array_filter($base, fn($l) => $isLate($l) && $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado)));
+
+$rows = array_values(array_filter($base, fn($l) => $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
+usort($rows, static function ($a, $b) use ($view) {
     if ($view === 'arquivadas') return strcmp((string)$b['archived_at'], (string)$a['archived_at']);
-    return [$order[$a['lead_state']] ?? 9, (string)$b['last_touch'], $a['name']]
-       <=> [$order[$b['lead_state']] ?? 9, (string)$a['last_touch'], $b['name']];
+    // O mais urgente primeiro: o prazo que acaba mais cedo (ou já acabou há mais tempo).
+    return [$a['clock'] ? 0 : 1, $a['clock']['due'] ?? 0, $a['dn']] <=> [$b['clock'] ? 0 : 1, $b['clock']['due'] ?? 0, $b['dn']];
 });
 
-$stateCount = array_fill_keys(array_keys(LEAD_STATE), 0);
-foreach ($all as $l) if ($l['phase'] === 'lead' && isset($stateCount[$l['lead_state']])) $stateCount[$l['lead_state']]++;
-$staleCount = count(array_filter($all, fn($l) => $l['phase'] === 'lead' && lead_is_stale($l, $staleDays)));
+// KPIs (sobre as ativas que vejo).
+$kAll   = $view === 'ativas' ? $all : (function () use ($pdo, $scopeSql, $scopeArgs, $hours) {
+    $st = $pdo->prepare("SELECT d.* FROM deals d WHERE d.phase = 'lead' AND d.owner_id IS NOT NULL AND d.is_quarantined = 0 AND $scopeSql");
+    $st->execute($scopeArgs);
+    $r = $st->fetchAll();
+    foreach ($r as &$x) $x['clock'] = lead_clock($x, $hours);
+    return $r;
+})();
+$kLate = count(array_filter($kAll, $isLate));
+$kNear = count(array_filter($kAll, fn($l) => $l['clock'] && $l['clock']['level'] === 'near'));
+$kByState = array_count_values(array_column($kAll, 'lead_state'));
 
-$pending = (int)($_GET['del'] ?? 0);
-$editId  = (int)($_GET['edit'] ?? 0);
-$archId  = (int)($_GET['arch'] ?? 0);
-$convId  = (int)($_GET['conv'] ?? 0);
-$el = $editId ? lead_get($pdo, $editId) : null;
-if ($el && !lead_in_reach($pdo, $el, $me)) $el = null;
-$openLead = (int)($_GET['open'] ?? 0) ? lead_get($pdo, (int)$_GET['open']) : null;
-if ($openLead && (!lead_in_reach($pdo, $openLead, $me) || !in_array($openLead['phase'], ['lead', 'archived'], true))) $openLead = null;
-
-foreach ($rows as $n => $l) {
-    if (in_array((int)$l['id'], [$pending, $editId, $archId, $convId], true)) $_GET['pl'] = intdiv($n, PAGE_SIZE) + 1;
-}
 $pg = paginate($rows, 'pl');
 if ($pg['page'] > 1) $filters['pl'] = (string)$pg['page']; else unset($filters['pl']);
 
-$assignees = assignable_users($pdo, $me);
-$owners = $pdo->query('SELECT id, name FROM users ORDER BY name')->fetchAll(PDO::FETCH_KEY_PAIR);
-
-function owner_select(array $assignees, ?int $current, bool $manager, string $name = 'owner_id', array $owners = []): string {
-    $h = '<select name="' . $name . '" aria-label="Responsável">';
-    if ($manager) $h .= '<option value="none"' . ($current === null ? ' selected' : '') . '>— Por atribuir —</option>';
-    $ids = array_map(fn($u) => (int)$u['id'], $assignees);
-    if ($current !== null && !in_array($current, $ids, true)) {
-        $h .= '<option value="' . $current . '" selected>' . e($owners[$current] ?? '—') . '</option>';
-    }
-    foreach ($assignees as $u) {
-        $h .= '<option value="' . (int)$u['id'] . '"' . ($current === (int)$u['id'] ? ' selected' : '') . '>' . e($u['name']) . '</option>';
-    }
-    return $h . '</select>';
-}
-
-function contact_links(string $links): string {
-    $out = [];
-    foreach (array_filter(array_map('trim', explode('|', $links)), 'strlen') as $c) {
-        $url = preg_match('~^https?://~i', $c) ? $c
-             : (preg_match('~^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(/\S*)?$~i', $c) ? 'https://' . $c : '');
-        $out[] = $url === '' ? '<span class="muted">' . e($c) . '</span>'
-            : '<a href="' . e($url) . '" target="_blank" rel="noopener noreferrer nofollow">'
-              . e(shorten((string)preg_replace('~^https?://(www\.)?~i', '', rtrim($c, '/')), 30)) . '</a>';
-    }
-    return implode('<br>', $out);
-}
-
 $canEdit   = can('leads', PERM_EDIT);
 $canManage = can('leads', PERM_MANAGE);
-$funnels   = $pdo->query('SELECT id, name FROM funnels WHERE is_active = 1 ORDER BY position, name')->fetchAll();
+$owners    = $pdo->query('SELECT id, name FROM users ORDER BY name')->fetchAll(PDO::FETCH_KEY_PAIR);
+$self      = leads_url($filters);
+
+// Painel aberto por endereço (?open=ID), e os formulários por cima (sem JavaScript também).
+$byId = static function (int $id) use ($pdo, $me) {
+    $l = $id ? lead_get($pdo, $id) : null;
+    return $l && in_array($l['phase'], ['lead', 'archived'], true) && lead_in_reach($pdo, $l, $me) ? $l : null;
+};
+$openLead = $byId((int)($_GET['open'] ?? 0));
+$archLead = $byId((int)($_GET['arch'] ?? 0));
+$convLead = $byId((int)($_GET['conv'] ?? 0));
+$delLead  = $canManage ? $byId((int)($_GET['del'] ?? 0)) : null;
+$newOpen  = $canEdit && !empty($_GET['nova']);
 
 render_header('Leads', 'leads');
 render_flashes();
@@ -336,318 +277,195 @@ echo paginate_css();
 ?>
 <?php if ($openLead): ?><div data-open-panel="lead:<?= (int)$openLead['id'] ?>" hidden></div><?php endif; ?>
 <h1>Leads</h1>
-<div class="sub"><?= $counts['ativas'] ?> leads ativas<?= $staleCount ? ' · <b>' . $staleCount . ' parada' . ($staleCount > 1 ? 's' : '') . '</b> há mais de ' . $staleDays . ' dias' : '' ?></div>
 
 <div class="stats">
-  <a class="stat hero" href="<?= e(leads_url(['estado' => 'em_conversa'])) ?>"><div class="k">Em conversa</div><div class="v"><?= $stateCount['em_conversa'] ?></div><div class="n">de <?= $counts['ativas'] ?> ativas</div></a>
-  <a class="stat" href="<?= e(leads_url(['estado' => 'novo'])) ?>"><div class="k">Novas</div><div class="v"><?= $stateCount['novo'] ?></div><div class="n"><?= $stateCount['contactado'] ?> contactadas</div></a>
-  <a class="stat<?= $staleCount ? ' risk' : '' ?>" href="<?= e(leads_url(['vista' => 'risco'])) ?>"><div class="k">Paradas</div><div class="v"><?= $staleCount ?></div><div class="n">sem atividade há mais de <?= $staleDays ?> dias</div></a>
+  <a class="stat hero" href="<?= e(leads_url(['urgente' => 1])) ?>"><div class="k">Em atraso</div><div class="v"><?= $kLate ?></div><div class="n"><?= $kNear ?> a aproximar do prazo</div></a>
+  <a class="stat" href="<?= e(leads_url(['estado' => 'novo'])) ?>"><div class="k">Novas</div><div class="v"><?= (int)($kByState['novo'] ?? 0) ?></div><div class="n">nunca contactadas</div></a>
+  <a class="stat" href="<?= e(leads_url(['estado' => 'follow_up'])) ?>"><div class="k">Follow-Up</div><div class="v"><?= (int)($kByState['follow_up'] ?? 0) ?></div><div class="n"><?= (int)($kByState['sem_resposta'] ?? 0) ?> sem resposta</div></a>
   <?php if ($manager): ?>
     <a class="stat<?= $counts['fila'] ? ' risk' : '' ?>" href="<?= e(leads_url(['v' => 'fila'])) ?>"><div class="k">Por atribuir</div><div class="v"><?= $counts['fila'] ?></div><div class="n">na fila de entrada</div></a>
   <?php else: ?>
-    <a class="stat" href="<?= e(leads_url(['vista' => 'mes'])) ?>"><div class="k">Este mês</div><div class="v"><?= $vistaCount['mes'] ?></div><div class="n">leads novas</div></a>
+    <a class="stat" href="<?= e(leads_url(['vista' => 'risco'])) ?>"><div class="k">Sem próxima ação</div><div class="v"><?= count(array_filter($kAll, fn($l) => !isset($open[(int)$l['id']]))) ?></div><div class="n">em risco</div></a>
   <?php endif; ?>
 </div>
 
-<div class="tabs">
-  <?php foreach (VIEWS as $k => $label): if (in_array($k, ['fila', 'quarentena'], true) && !$manager) continue; ?>
-    <a href="<?= e(leads_url($k === 'ativas' ? [] : ['v' => $k])) ?>" class="<?= $view === $k ? 'on' : '' ?>"><?= e($label) ?> (<?= $counts[$k] ?>)</a>
-  <?php endforeach; ?>
+<div class="tabs-row">
+  <div class="tabs">
+    <?php foreach (VIEWS as $k => $label): if (in_array($k, ['fila', 'quarentena'], true) && !$manager) continue; ?>
+      <a href="<?= e(leads_url($k === 'ativas' ? [] : ['v' => $k])) ?>" class="<?= $view === $k ? 'on' : '' ?>"><?= e($label) ?> (<?= $counts[$k] ?>)</a>
+    <?php endforeach; ?>
+  </div>
+  <?php if ($canEdit): ?>
+    <a class="btn dark add-lead" href="<?= e(leads_url($filters + ['nova' => 1])) ?>" data-new-lead aria-keyshortcuts="N" data-tip="Nova lead  ·  N"><?= icon('plus') ?> Adicionar Lead</a>
+  <?php endif; ?>
 </div>
-<?php if (in_array($view, ['ativas', 'arquivadas'], true)): ?>
-<?= views_bar(LEAD_VISTAS, $vista, fn($k) => leads_url(array_filter(['v' => $view === 'ativas' ? null : $view, 'vista' => $k ?: null])), $vistaCount) ?>
-<?php endif; ?>
 
-<?php // ── duplicados: avisar e propor juntar ──
-if (!empty($_GET['dup']) && !empty($_SESSION['lead_dup'])):
-    $dv = lead_input($_SESSION['lead_dup']);
-    $dups = find_duplicates($pdo, $dv['email'], $dv['phone']);
+<?php if ($view !== 'arquivadas'):
+    $chip = fn(array $set, array $unset = []) => leads_url(array_diff_key(array_merge($filters, $set), array_flip(array_merge($unset, ['pl']))));
 ?>
-<div class="flash err" id="duplicados">
-  <b>Já existe alguém com este email ou telefone.</b> Junte a nova informação a um registo existente ou crie a lead mesmo assim.
-  <ul style="margin:0.6rem 0">
-  <?php foreach ($dups['deals'] as $d): $reachable = lead_in_reach($pdo, $d, $me); ?>
-    <li><b><?= e($d['name']) ?></b> <?= $d['code'] ? '(' . e($d['code']) . ')' : '' ?> · <?= e(['lead' => 'lead', 'archived' => 'lead arquivada', 'pipeline' => 'no Pipeline', 'production' => 'em produção', 'done' => 'concluído', 'lost' => 'perdido'][$d['phase']] ?? $d['phase']) ?>
-      <?php if ($d['phase'] === 'lead' && $reachable): ?>
-        <form method="post" style="display:inline"><?= csrf_field() ?>
-          <input type="hidden" name="do" value="merge"><input type="hidden" name="id" value="<?= (int)$d['id'] ?>">
-          <button class="btn sm" type="submit">Juntar a esta lead</button></form>
-      <?php endif; ?>
-    </li>
+<nav class="views lead-views" aria-label="Filtros rápidos">
+  <a class="urg<?= $urgente ? ' on' : '' ?>" href="<?= e($urgente ? $chip([], ['urgente']) : $chip(['urgente' => 1])) ?>"<?= $urgente ? ' aria-current="true"' : '' ?>>Urgente <i><?= $lateCount ?></i></a>
+  <span class="sep" aria-hidden="true"></span>
+  <a href="<?= e($chip([], ['estado'])) ?>" class="<?= $estado === '' ? 'on' : '' ?>">Todos os estados</a>
+  <?php foreach (LEAD_STATE as $k => $label): ?>
+    <a href="<?= e($estado === $k ? $chip([], ['estado']) : $chip(['estado' => $k])) ?>" class="<?= $estado === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $stateCount[$k] ?></span></a>
   <?php endforeach; ?>
-  <?php foreach ($dups['contacts'] as $c): ?>
-    <li>Contacto <b><?= e($c['name']) ?></b>
-      <form method="post" style="display:inline"><?= csrf_field() ?>
-        <?php foreach ($_SESSION['lead_dup'] as $k => $val): if (in_array($k, ['csrf', 'contact_id', 'confirm_dup'], true)) continue;
-              foreach ((array)$val as $kk => $vv): ?>
-          <input type="hidden" name="<?= e(is_array($val) ? $k . '[' . $kk . ']' : $k) ?>" value="<?= e((string)$vv) ?>">
-        <?php endforeach; endforeach; ?>
-        <input type="hidden" name="confirm_dup" value="1"><input type="hidden" name="contact_id" value="<?= (int)$c['id'] ?>">
-        <button class="btn sm" type="submit">Criar lead ligada a este contacto</button></form>
-    </li>
+  <span class="sep" aria-hidden="true"></span>
+  <?php foreach (LEAD_VISTAS as $k => $label): ?>
+    <a href="<?= e($vista === $k ? $chip([], ['vista']) : $chip(['vista' => $k])) ?>" class="<?= $vista === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $vistaCount[$k] ?></span></a>
   <?php endforeach; ?>
-  </ul>
-  <form method="post" style="display:inline"><?= csrf_field() ?>
-    <?php foreach ($_SESSION['lead_dup'] as $k => $val): if (in_array($k, ['csrf', 'confirm_dup'], true)) continue;
-          foreach ((array)$val as $kk => $vv): ?>
-      <input type="hidden" name="<?= e(is_array($val) ? $k . '[' . $kk . ']' : $k) ?>" value="<?= e((string)$vv) ?>">
-    <?php endforeach; endforeach; ?>
-    <input type="hidden" name="confirm_dup" value="1">
-    <button class="btn ghost sm" type="submit">Criar mesmo assim</button></form>
-  <a class="lnk" href="<?= e(leads_url()) ?>">Cancelar</a>
-</div>
+</nav>
 <?php endif; ?>
 
 <form class="bar" method="get" data-auto>
-  <?php if ($view !== 'ativas'): ?><input type="hidden" name="v" value="<?= e($view) ?>"><?php endif; ?>
-  <?php if ($vista !== ''): ?><input type="hidden" name="vista" value="<?= e($vista) ?>"><?php endif; ?>
-  <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, contacto, nota" aria-label="Procurar" data-refocus>
-  <?php if ($view !== 'arquivadas'): ?>
-  <select name="estado" onchange="this.form.submit()" aria-label="Estado">
-    <option value="">Todos os estados</option>
-    <?php foreach (LEAD_STATE as $k => $l): ?><option value="<?= $k ?>" <?= ($filters['estado'] ?? '') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
-  </select>
-  <?php endif; ?>
-  <select name="tipo" onchange="this.form.submit()" aria-label="Tipo">
+  <?php foreach (['v', 'vista', 'estado', 'urgente'] as $k): if (isset($filters[$k])): ?><input type="hidden" name="<?= $k ?>" value="<?= e($filters[$k]) ?>"><?php endif; endforeach; ?>
+  <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, empresa, contacto, nota" aria-label="Procurar" data-refocus>
+  <select name="tipo" aria-label="Tipo">
     <option value="">Todos os tipos</option>
     <?php foreach (LEAD_TYPES_LIST as $t): ?><option <?= ($filters['tipo'] ?? '') === $t ? 'selected' : '' ?>><?= e($t) ?></option><?php endforeach; ?>
   </select>
-  <select name="prio" onchange="this.form.submit()" aria-label="Prioridade">
+  <select name="prio" aria-label="Prioridade">
     <option value="">Prioridade</option>
     <?php foreach (LEAD_PRIORITY as $k => $l): ?><option value="<?= $k ?>" <?= ($filters['prio'] ?? '') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
   </select>
-  <select name="origem" onchange="this.form.submit()" aria-label="Origem">
+  <select name="origem" aria-label="Origem">
     <option value="">Origem</option>
     <?php foreach (LEAD_ORIGIN as $k => $l): ?><option value="<?= $k ?>" <?= ($filters['origem'] ?? '') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
   </select>
   <?php if (my_scope('leads') !== 'own' && $view !== 'fila'): ?>
-  <select name="dono" onchange="this.form.submit()" aria-label="Responsável">
+  <select name="dono" aria-label="Responsável">
     <option value="">Responsável</option>
     <?php foreach ($owners as $oid => $on): ?><option value="<?= (int)$oid ?>" <?= ($filters['dono'] ?? '') === (string)$oid ? 'selected' : '' ?>><?= e($on) ?></option><?php endforeach; ?>
   </select>
   <?php endif; ?>
   <button class="btn sm apply" type="submit">Filtrar</button>
-  <?php if (array_diff_key($filters, ['pl' => 1, 'v' => 1, 'vista' => 1])): ?><a class="lnk" href="<?= e(leads_url(array_filter(['v' => $view === 'ativas' ? null : $view, 'vista' => $vista ?: null]))) ?>">Limpar</a><?php endif; ?>
+  <?php if (array_diff_key($filters, ['pl' => 1, 'v' => 1])): ?><a class="lnk" href="<?= e(leads_url($view === 'ativas' ? [] : ['v' => $view])) ?>">Limpar</a><?php endif; ?>
 </form>
 
 <div class="tablewrap">
-<table>
+<table class="leads-t">
   <thead>
-    <tr><th>Nome</th><th class="hide-sm">Contactos</th><th class="hide-sm">Notas</th>
-        <th><?= $view === 'arquivadas' ? 'Motivo' : 'Estado' ?></th><th>Responsável</th><th class="hide-sm">Último contacto</th><th></th></tr>
+    <tr><th><?= $view === 'arquivadas' ? 'Arquivada' : 'Prazo' ?></th><th>Nome</th><th><?= $view === 'arquivadas' ? 'Motivo' : 'Estado' ?></th><th>Responsável</th>
+        <th class="hide-sm">Próxima ação</th><th class="hide-sm">Último contacto</th></tr>
   </thead>
   <tbody>
-  <?php if (!$rows): ?><tr><td colspan="7" class="empty">Nenhuma lead aqui.</td></tr><?php endif; ?>
-  <?php foreach ($pg['rows'] as $l): $lid = (int)$l['id']; $stale = $l['phase'] === 'lead' && lead_is_stale($l, $staleDays); ?>
-    <tr class="<?= in_array($lid, [$pending, $editId, $archId, $convId], true) ? 'pending' : '' ?> <?= $stale ? 'stale' : '' ?>" data-panel="lead:<?= $lid ?>">
-      <td>
-        <a class="b" style="color:inherit;text-decoration:none" href="<?= e(leads_url($filters + ['edit' => $lid])) ?>#lead" data-panel="lead:<?= $lid ?>"><?= e($l['name']) ?></a>
-        <div class="muted" style="font-size:0.62rem">
-          <?= implode(' · ', array_filter([
-                e((string)$l['types']), e((string)$l['service']),
-                $l['origin'] !== 'manual' ? '<span class="chip">' . e(LEAD_ORIGIN[$l['origin']]) . ($l['campaign'] ? ': ' . e($l['campaign']) : '') . '</span>' : '',
-                $l['priority'] === 'alta' ? '<span class="chip no">Alta</span>' : '',
-              ], 'strlen')) ?>
-        </div>
+  <?php if (!$rows): ?><tr><td colspan="6" class="empty">Nenhuma lead aqui.</td></tr><?php endif; ?>
+  <?php foreach ($pg['rows'] as $l): $lid = (int)$l['id']; $c = $l['clock']; ?>
+    <tr id="l-<?= $lid ?>" data-panel="lead:<?= $lid ?>" class="<?= $c ? 'lvl-' . $c['level'] : '' ?>">
+      <td class="nowrap"><?= $view === 'arquivadas' ? '<span class="mono muted">' . e($l['archived_at'] ? lisbon_fmt(strtotime((string)$l['archived_at']), 'd/m/Y') : '—') . '</span>' : lead_ring($c) ?></td>
+      <td class="nm">
+        <a class="b" href="/admin/lead.php?id=<?= $lid ?>&amp;back=<?= e(rawurlencode($self)) ?>" data-panel="lead:<?= $lid ?>"><?= e($l['dn']) ?></a>
+        <small><?= e($l['dc'] !== '' ? $l['dc'] : implode(' · ', array_filter([(string)$l['types'], (string)$l['service']]))) ?><?= $l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '' ?></small>
       </td>
-      <td class="hide-sm" style="font-size:0.7rem">
-        <?php if ($l['email']): ?><div><a href="mailto:<?= e($l['email']) ?>"><?= e(shorten($l['email'], 30)) ?></a></div><?php endif; ?>
-        <?php if ($l['phone']): ?><div><a href="tel:<?= e(preg_replace('/[^\d+]/', '', $l['phone'])) ?>"><?= e($l['phone']) ?></a></div><?php endif; ?>
-        <?= contact_links((string)$l['links']) ?>
-      </td>
-      <td class="muted hide-sm" style="font-size:0.7rem"><?= e(shorten((string)$l['notes'], 55)) ?>
-        <?php if ($l['why']): ?><div><b>Porquê:</b> <?= e(shorten((string)$l['why'], 40)) ?></div><?php endif; ?></td>
-      <td>
-        <?php if ($view === 'arquivadas'): ?>
-          <?= e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) ?>
-          <?php if ($l['archived_note']): ?><div class="muted" style="font-size:0.62rem"><?= e(shorten($l['archived_note'], 40)) ?></div><?php endif; ?>
-        <?php elseif ($canEdit): ?>
-          <form method="post"><?= csrf_field() ?><?= back_fields($filters) ?>
-            <input type="hidden" name="do" value="state"><input type="hidden" name="id" value="<?= $lid ?>">
-            <select class="mini" name="lead_state" onchange="this.form.submit()" aria-label="Estado">
-              <?php foreach (LEAD_STATE as $k => $lab): ?><option value="<?= $k ?>" <?= $l['lead_state'] === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?>
-            </select><noscript><button class="btn sm">OK</button></noscript></form>
-        <?php else: ?>
-          <?= e(LEAD_STATE[$l['lead_state']]) ?>
-        <?php endif; ?>
-      </td>
-      <td>
-        <?php if ($canEdit && $l['phase'] === 'lead' && ($manager || my_scope('leads') !== 'own')): ?>
-          <form method="post"><?= csrf_field() ?><?= back_fields($filters) ?>
-            <input type="hidden" name="do" value="assign"><input type="hidden" name="id" value="<?= $lid ?>">
-            <?= str_replace('<select ', '<select class="mini" onchange="this.form.submit()" ', owner_select($assignees, $l['owner_id'] !== null ? (int)$l['owner_id'] : null, $manager, 'owner_id', $owners)) ?>
-          </form>
-        <?php else: ?>
-          <?= e($l['owner_name'] ?? '—') ?>
-        <?php endif; ?>
-      </td>
-      <td class="hide-sm nowrap"><?= e($l['last_touch'] ? date('d/m/Y', strtotime($l['last_touch'])) : '—') ?>
-        <?php if ($stale): ?><div><span class="chip wait">parada</span></div><?php endif; ?></td>
-      <td class="num nowrap">
-      <?php if ($pending === $lid && $canManage): ?>
-        <form method="post" style="display:inline"><?= csrf_field() ?><?= back_fields($filters) ?>
-          <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $lid ?>">
-          <button class="btn danger sm" type="submit">Sim, eliminar</button></form>
-        <a class="lnk" href="<?= e(leads_url($filters)) ?>">Cancelar</a>
-      <?php elseif ($canEdit): ?>
-        <?php if ($l['phase'] === 'archived'): ?>
-          <form method="post" style="display:inline"><?= csrf_field() ?><?= back_fields($filters) ?>
-            <input type="hidden" name="do" value="reactivate"><input type="hidden" name="id" value="<?= $lid ?>">
-            <button class="btn ghost sm" type="submit">Reativar</button></form>
-        <?php else: ?>
-          <?php if ((int)$l['is_quarantined'] === 1): ?>
-            <form method="post" style="display:inline"><?= csrf_field() ?><?= back_fields($filters) ?>
-              <input type="hidden" name="do" value="release"><input type="hidden" name="id" value="<?= $lid ?>">
-              <button class="btn ghost sm" type="submit">Não é spam</button></form>
-          <?php elseif (can('pipeline', PERM_EDIT)): ?>
-            <a class="btn sm" href="<?= e(leads_url($filters + ['conv' => $lid])) ?>#converter">Converter</a>
-          <?php endif; ?>
-          <?= icon_button('pencil', 'Editar «' . $l['name'] . '»', ['href' => leads_url($filters + ['edit' => $lid]) . '#lead']) ?>
-          <?= icon_button('archive', 'Arquivar «' . $l['name'] . '»', ['href' => leads_url($filters + ['arch' => $lid]) . '#arquivar']) ?>
-        <?php endif; ?>
-        <?php if ($canManage): ?><?= icon_button('x', 'Eliminar «' . $l['name'] . '»', ['href' => leads_url($filters + ['del' => $lid]), 'class' => 'ibtn del']) ?><?php endif; ?>
-      <?php endif; ?>
-      </td>
+      <td><?= $view === 'arquivadas' ? e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
+      <td><?= e($l['owner_name'] ?? 'Por atribuir') ?></td>
+      <td class="hide-sm"><?php if ($l['next']): [$kl] = LEAD_TASK_KINDS[$l['next']['kind'] ?? 'task'] ?? LEAD_TASK_KINDS['task']; ?>
+        <span class="<?= task_is_late($l['next']) ? 'neg' : '' ?>"><?= e($kl) ?> · <?= e(lead_task_when($l['next'])) ?></span>
+      <?php elseif ($l['phase'] === 'lead'): ?><span class="risk-txt">Sem próxima ação</span><?php else: ?><span class="muted">—</span><?php endif; ?></td>
+      <td class="hide-sm nowrap muted"><?= e(lead_ago($l['last_contact_at'])) ?></td>
     </tr>
   <?php endforeach; ?>
   </tbody>
 </table>
 </div>
-<?= page_nav($pg, ['del', 'edit', 'arch', 'conv']) ?>
+<?= page_nav($pg, ['open']) ?>
+
+<?php // ── nova lead: cresce a partir do botão (§12.1) ──
+if ($canEdit):
+    $old = $_SESSION['lead_form'] ?? []; unset($_SESSION['lead_form']);
+    $assignees = assignable_users($pdo, $me);
+    $canAssign = $manager || count($assignees) > 1;
+    $companies = $pdo->query("SELECT name FROM contacts WHERE kind = 'company' ORDER BY name LIMIT 1000")->fetchAll(PDO::FETCH_COLUMN);
+    $ov = fn(string $k) => e((string)($old[$k] ?? ''));
+?>
+<div class="mdl<?= $newOpen ? ' open' : '' ?>" id="mdl-new" role="dialog" aria-modal="true" aria-labelledby="mdl-new-t"<?= $newOpen ? '' : ' hidden' ?>>
+  <div class="mdl-back" data-mdl-close></div>
+  <form class="mdl-card wide" method="post" action="/admin/leads.php" autocomplete="off" data-new-form>
+    <?= csrf_field() ?><?= back_fields(array_diff_key($filters, ['nova' => 1])) ?>
+    <input type="hidden" name="do" value="create"><input type="hidden" name="use_contact" value="">
+    <h3 id="mdl-new-t">Nova lead</h3>
+    <p class="muted">Pelo menos a empresa ou a pessoa de contacto. A empresa e a pessoa ficam também em Contactos.</p>
+    <div class="grid">
+      <div class="field"><label for="nl-co">Empresa</label>
+        <input type="text" id="nl-co" name="company" maxlength="160" list="dl-companies" value="<?= $ov('company') ?>" placeholder="Procurar ou criar">
+        <datalist id="dl-companies"><?php foreach ($companies as $cn): ?><option value="<?= e($cn) ?>"><?php endforeach; ?></datalist></div>
+      <div class="field"><label for="nl-pe">Pessoa de contacto</label><input type="text" id="nl-pe" name="person" maxlength="160" value="<?= $ov('person') ?>"></div>
+      <div class="field"><label for="nl-ph">Telefone(s)</label><input type="text" id="nl-ph" name="phone" maxlength="255" inputmode="tel" value="<?= $ov('phone') ?>" placeholder="+351 … (vários: separe com |)" data-dup></div>
+      <div class="field"><label for="nl-em">Email</label><input type="email" id="nl-em" name="email" maxlength="190" value="<?= $ov('email') ?>" data-dup></div>
+      <div class="dup field wide" hidden aria-live="polite"></div>
+      <div class="field wide"><label for="nl-li">Redes sociais</label><textarea id="nl-li" name="links" rows="2" placeholder="Um link por linha (Instagram, LinkedIn, site…)"><?= $ov('links') ?></textarea></div>
+      <div class="field wide"><label>Tipo</label>
+        <div class="chips-check">
+          <?php foreach (LEAD_TYPES_LIST as $t): ?><label class="rb"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, (array)($old['types'] ?? []), true) ? 'checked' : '' ?>><span><?= e($t) ?></span></label><?php endforeach; ?>
+        </div></div>
+      <div class="field"><label for="nl-se">Serviço</label>
+        <select id="nl-se" name="service"><option value="">—</option><?php foreach (LEAD_SERVICES_LIST as $sv): ?><option <?= ($old['service'] ?? '') === $sv ? 'selected' : '' ?>><?= e($sv) ?></option><?php endforeach; ?></select></div>
+      <div class="field"><label for="nl-or">Origem</label>
+        <select id="nl-or" name="origin"><?php foreach (LEAD_ORIGIN as $k => $lab): ?><option value="<?= $k ?>" <?= ($old['origin'] ?? 'manual') === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?></select></div>
+      <?php if ($canAssign): ?>
+      <div class="field"><label for="nl-ow">Responsável</label>
+        <select id="nl-ow" name="owner_id">
+          <?php if ($manager): ?><option value="none">— Por atribuir —</option><?php endif; ?>
+          <?php foreach ($assignees as $u): ?><option value="<?= (int)$u['id'] ?>" <?= (int)$u['id'] === (int)$me['id'] ? 'selected' : '' ?>><?= e($u['name']) ?></option><?php endforeach; ?>
+        </select></div>
+      <?php endif; ?>
+      <div class="field wide"><label for="nl-no">Notas</label><textarea id="nl-no" name="notes" rows="2"><?= $ov('notes') ?></textarea></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn ghost" data-mdl-close>Cancelar</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" type="submit" name="again" value="1">Gravar e adicionar outra</button>
+      <button class="btn" type="submit">Gravar</button>
+    </div>
+  </form>
+</div>
+<?php endif; ?>
 
 <?php // ── converter ──
-$cl = $convId ? lead_get($pdo, $convId) : null;
-if ($cl && $cl['phase'] === 'lead' && lead_in_reach($pdo, $cl, $me) && can('pipeline', PERM_EDIT)):
-    $cdup = find_duplicates($pdo, (string)$cl['email'], (string)$cl['phone'])['contacts'];
-    if ($cl['contact_id']) {
-        $st = $pdo->prepare('SELECT id, name, email, phone FROM contacts WHERE id = ?');
-        $st->execute([(int)$cl['contact_id']]);
-        if ($c = $st->fetch()) array_unshift($cdup, $c);
+if ($convLead && $convLead['phase'] === 'lead' && can('pipeline', PERM_EDIT)):
+    $funnels = $pdo->query('SELECT id, name FROM funnels WHERE is_active = 1 ORDER BY position, name')->fetchAll();
+    $opts = [];
+    foreach (['company_id', 'person_id', 'contact_id'] as $f) {
+        if ($convLead[$f]) { $s2 = $pdo->prepare('SELECT id, kind, name, email, phone FROM contacts WHERE id = ?'); $s2->execute([(int)$convLead[$f]]); if ($c = $s2->fetch()) $opts[(int)$c['id']] = $c; }
     }
-    $cdup = array_values(array_column($cdup, null, 'id'));
+    foreach (find_duplicates($pdo, (string)$convLead['email'], (string)$convLead['phone'])['contacts'] as $c) $opts[(int)$c['id']] ??= $c;
 ?>
-<h2 id="converter">Converter «<?= e($cl['name']) ?>»</h2>
-<form method="post">
-  <?= csrf_field() ?><?= back_fields($filters) ?>
-  <input type="hidden" name="do" value="convert"><input type="hidden" name="id" value="<?= (int)$cl['id'] ?>">
-  <div class="grid">
+<div class="mdl open" id="mdl-conv" role="dialog" aria-modal="true" aria-labelledby="converter">
+  <a class="mdl-back" href="<?= e($self) ?>" aria-label="Fechar"></a>
+  <form class="mdl-card pop-in" method="post" action="/admin/leads.php">
+    <?= csrf_field() ?><?= back_fields($filters) ?>
+    <input type="hidden" name="do" value="convert"><input type="hidden" name="id" value="<?= (int)$convLead['id'] ?>">
+    <h3 id="converter">Converter «<?= e(lead_display_name($convLead)) ?>» em negócio</h3>
+    <p class="muted">Recebe o ID do negócio (ex.: ID<?= date('ym') ?>-01), sai das Leads e entra no Pipeline na etapa X-Ray. O prazo da lead termina.</p>
     <div class="field"><label for="cfunnel">Funil</label>
       <select id="cfunnel" name="funnel_id" required><option value="">Escolher…</option>
         <?php foreach ($funnels as $f): ?><option value="<?= (int)$f['id'] ?>"><?= e($f['name']) ?></option><?php endforeach; ?>
       </select></div>
-    <div class="field wide"><label>Contacto</label>
-      <?php foreach ($cdup as $i => $c): ?>
-        <label class="check"><input type="radio" name="contact_id" value="<?= (int)$c['id'] ?>" <?= $i === 0 ? 'checked' : '' ?>>
-          Associar a <b><?= e($c['name']) ?></b> <span class="muted"><?= e(trim($c['email'] . ' ' . $c['phone'])) ?></span></label>
-      <?php endforeach; ?>
-      <label class="check"><input type="radio" name="contact_id" value="0" <?= $cdup ? '' : 'checked' ?>>
-        Criar o contacto «<?= e($cl['name']) ?>» (cliente)</label>
+    <div class="field" style="margin-top:12px"><label>Cliente (contacto)</label>
+      <?php $first = true; foreach ($opts as $c): ?>
+        <label class="check"><input type="radio" name="contact_id" value="<?= (int)$c['id'] ?>" <?= $first ? 'checked' : '' ?>>
+          <b><?= e($c['name']) ?></b> <span class="muted"><?= ($c['kind'] ?? '') === 'person' ? 'pessoa' : 'empresa' ?> <?= e(trim($c['email'] . ' ' . $c['phone'])) ?></span></label>
+      <?php $first = false; endforeach; ?>
+      <label class="check"><input type="radio" name="contact_id" value="0" <?= $opts ? '' : 'checked' ?>> Criar um contacto novo</label>
     </div>
-  </div>
-  <p class="muted" style="font-size:0.7rem">Ao converter, a lead recebe o ID do negócio (ex.: ID<?= date('ym') ?>-01), sai das Leads e entra no Pipeline na etapa X-Ray.</p>
-  <div class="actions"><button class="btn" type="submit">Converter</button>
-    <a class="btn ghost" href="<?= e(leads_url($filters)) ?>">Cancelar</a></div>
-</form>
+    <div class="actions"><a class="btn ghost" href="<?= e($self) ?>">Cancelar</a><button class="btn" type="submit"><?= icon('arrow') ?> Converter</button></div>
+  </form>
+</div>
 <?php endif; ?>
 
-<?php // ── arquivar ──
-$al = $archId ? lead_get($pdo, $archId) : null;
-if ($al && $al['phase'] === 'lead' && lead_in_reach($pdo, $al, $me) && $canEdit): ?>
-<h2 id="arquivar">Arquivar «<?= e($al['name']) ?>»</h2>
-<form method="post">
-  <?= csrf_field() ?><?= back_fields($filters) ?>
-  <input type="hidden" name="do" value="archive"><input type="hidden" name="id" value="<?= (int)$al['id'] ?>">
-  <div class="grid">
-    <div class="field"><label for="areason">Motivo</label>
-      <select id="areason" name="reason" required><option value="">Escolher…</option>
-        <?php foreach (ARCHIVE_REASONS as $k => $lab): if ($k === 'perdido_migracao') continue; ?><option value="<?= $k ?>"><?= e($lab) ?></option><?php endforeach; ?>
-      </select></div>
-    <div class="field wide"><label for="anote">Nota (opcional)</label>
-      <input type="text" id="anote" name="note" maxlength="255"></div>
-  </div>
-  <div class="actions"><button class="btn" type="submit">Arquivar</button>
-    <a class="btn ghost" href="<?= e(leads_url($filters)) ?>">Cancelar</a></div>
-</form>
+<?php if ($delLead): ?>
+<div class="mdl open" role="dialog" aria-modal="true" aria-labelledby="mdl-del-t">
+  <a class="mdl-back" href="<?= e($self) ?>" aria-label="Fechar"></a>
+  <form class="mdl-card pop-in" method="post" action="/admin/leads.php">
+    <?= csrf_field() ?><?= back_fields($filters) ?>
+    <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= (int)$delLead['id'] ?>">
+    <h3 id="mdl-del-t">Eliminar «<?= e(lead_display_name($delLead)) ?>»?</h3>
+    <p class="muted">A lead e o seu histórico desaparecem. Isto não se anula — para tirar uma lead da lista sem a perder, arquive-a.</p>
+    <div class="actions"><a class="btn ghost" href="<?= e($self) ?>">Cancelar</a><button class="btn danger" type="submit">Sim, eliminar</button></div>
+  </form>
+</div>
 <?php endif; ?>
 
-<?php if ($canEdit):
-  $v = $el ?? ['name' => '', 'types' => '', 'links' => '', 'phone' => '', 'email' => '', 'service' => '', 'priority' => 'media',
-               'detail' => '', 'why' => '', 'notes' => '', 'origin' => 'manual', 'campaign' => '', 'lead_state' => 'novo',
-               'last_touch' => '', 'owner_id' => (int)$me['id']];
-  $vTypes = array_map('trim', explode(',', (string)$v['types']));
-?>
-<h2 id="lead"><?= $el ? 'Editar lead' : 'Adicionar lead' ?></h2>
-<form method="post">
-  <?= csrf_field() ?><?= back_fields($filters) ?>
-  <?php if ($el): ?><input type="hidden" name="do" value="save"><input type="hidden" name="id" value="<?= (int)$el['id'] ?>">
-  <?php else: ?><input type="hidden" name="do" value="create"><?php endif; ?>
-  <div class="grid">
-    <div class="field"><label for="lname">Nome</label>
-      <input type="text" id="lname" name="name" required maxlength="160" value="<?= e($v['name']) ?>"></div>
-    <div class="field"><label>Responsável</label>
-      <?= owner_select($assignees, $v['owner_id'] !== null ? (int)$v['owner_id'] : null, $manager, 'owner_id', $owners) ?></div>
-    <?php if ($el): ?>
-    <div class="field"><label for="lstate">Estado</label>
-      <select id="lstate" name="lead_state">
-        <?php foreach (LEAD_STATE as $k => $lab): ?><option value="<?= $k ?>" <?= $v['lead_state'] === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?>
-      </select></div>
-    <?php endif; ?>
-    <div class="field wide"><label>Tipo</label>
-      <div class="actions" style="margin-top:0.2rem">
-        <?php foreach (LEAD_TYPES_LIST as $t): ?>
-          <label class="check"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, $vTypes, true) ? 'checked' : '' ?>> <?= e($t) ?></label>
-        <?php endforeach; ?>
-      </div></div>
-    <div class="field"><label for="lemail">Email</label>
-      <input type="text" id="lemail" name="email" maxlength="190" value="<?= e($v['email']) ?>"></div>
-    <div class="field"><label for="lphone">Telefone</label>
-      <input type="text" id="lphone" name="phone" maxlength="40" inputmode="tel" value="<?= e($v['phone']) ?>"></div>
-    <div class="field wide"><label for="llinks">Contactos / redes</label>
-      <input type="text" id="llinks" name="links" value="<?= e($v['links']) ?>" placeholder="https://site.pt | instagram.com/…"></div>
-    <div class="field"><label for="lservice">Serviço</label>
-      <select id="lservice" name="service"><option value="">—</option>
-        <?php foreach (LEAD_SERVICES_LIST as $s): ?><option <?= $v['service'] === $s ? 'selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
-      </select></div>
-    <div class="field"><label for="lprio">Prioridade</label>
-      <select id="lprio" name="priority">
-        <?php foreach (LEAD_PRIORITY as $k => $lab): ?><option value="<?= $k ?>" <?= $v['priority'] === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?>
-      </select></div>
-    <div class="field"><label for="lorigin">Origem</label>
-      <select id="lorigin" name="origin">
-        <?php foreach (LEAD_ORIGIN as $k => $lab): ?><option value="<?= $k ?>" <?= $v['origin'] === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?>
-      </select></div>
-    <div class="field"><label for="lcamp">Campanha</label>
-      <input type="text" id="lcamp" name="campaign" maxlength="160" value="<?= e($v['campaign']) ?>"></div>
-    <div class="field wide"><label for="ldetail">Detalhe</label>
-      <textarea id="ldetail" name="detail"><?= e($v['detail']) ?></textarea></div>
-    <div class="field wide"><label for="lwhy">Porquê abordar</label>
-      <textarea id="lwhy" name="why"><?= e($v['why']) ?></textarea></div>
-    <div class="field wide"><label for="lnotes">Notas</label>
-      <textarea id="lnotes" name="notes"><?= e($v['notes']) ?></textarea></div>
-    <?php if ($el): ?>
-    <div class="field"><label for="ltouch">Último contacto</label>
-      <input type="date" id="ltouch" name="last_touch" value="<?= e((string)$v['last_touch']) ?>"></div>
-    <?php endif; ?>
-  </div>
-  <div class="actions">
-    <button class="btn" type="submit"><?= $el ? 'Guardar' : 'Adicionar' ?></button>
-    <?php if ($el): ?><a class="btn ghost" href="<?= e(leads_url($filters)) ?>">Cancelar</a><?php endif; ?>
-  </div>
-</form>
-<?php if ($el): ?>
-<?= history_block($pdo, 'deal', (int)$el['id'], true, leads_url($filters + ['edit' => (int)$el['id']]) . '#historico') ?>
-<?php endif; ?>
-<?php endif; ?>
-
-<?php if ($canManage): ?>
-<form class="bar" method="post" style="margin-top:2rem">
-  <?= csrf_field() ?><?= back_fields($filters) ?>
-  <input type="hidden" name="do" value="stale_days">
-  <label for="sdays" class="muted" style="font-size:0.75rem">Marcar como parada uma lead sem atividade há mais de</label>
-  <input type="number" id="sdays" name="days" min="1" max="365" value="<?= $staleDays ?>" style="flex:0 0 80px">
-  <span class="muted" style="font-size:0.75rem">dias</span>
-  <button class="btn sm ghost" type="submit">Guardar</button>
-</form>
-<?php endif; ?>
-
+<?= $canEdit ? lead_modals_html($archLead && $archLead['phase'] === 'lead' ? $archLead : null, $self) : '' ?>
+<script src="<?= asset_url('leads.js') ?>" defer></script>
 <?php render_footer();

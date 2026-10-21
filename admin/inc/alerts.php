@@ -2,8 +2,8 @@
 /**
  * topper. admin — alertas (§11.4, §11.6, §11.18)
  *
- * O que pede atenção a quem tem sessão: leads paradas, negócios sem
- * movimento no Pipeline, tarefas a vencer ou atrasadas, valores por
+ * O que pede atenção a quem tem sessão: leads a aproximar do prazo ou em
+ * atraso (§12.4), negócios sem movimento no Pipeline, tarefas a vencer ou atrasadas, valores por
  * receber em atraso e, para quem gere a fila, leads por atribuir.
  * Daqui saem o «O teu dia» do Dashboard, o centro de notificações e os
  * contadores do menu — sempre com as permissões verificadas aqui, no
@@ -21,7 +21,6 @@ require_once __DIR__ . '/leads.php';
 /** Os limites dos alertas (dias). */
 function alert_limits(PDO $pdo): array {
     return [
-        'lead'    => lead_stale_days($pdo),
         'deal'    => max(1, (int)setting($pdo, 'deal_stale_days', 10)),
         'task'    => max(0, (int)setting($pdo, 'task_due_days', 2)),
         'invoice' => max(1, (int)setting($pdo, 'invoice_overdue_days', 30)),
@@ -129,22 +128,24 @@ function my_alerts(PDO $pdo): array {
         }
     }
 
-    // Leads minhas paradas.
+    // Leads minhas a aproximar do prazo ou em atraso (§12.4). A chave muda a cada
+    // novo prazo e a cada nível, por isso cada passagem é uma notificação nova.
     if (can('leads')) {
-        $st = $pdo->prepare("SELECT id, name, last_touch, created_at FROM deals
-                              WHERE phase = 'lead' AND is_quarantined = 0 AND owner_id = ?");
+        $st = $pdo->prepare("SELECT * FROM deals WHERE phase = 'lead' AND is_quarantined = 0 AND owner_id = ?");
         $st->execute([$uid]);
+        $hours = lead_deadline_hours($pdo);
         foreach ($st->fetchAll() as $l) {
-            if (!lead_is_stale($l, $lim['lead'])) continue;
-            $ref = (string)($l['last_touch'] ?: substr((string)$l['created_at'], 0, 10));
+            $c = lead_clock($l, $hours);
+            if (!$c || $c['level'] === 'ok') continue;
+            $late = $c['level'] === 'late';
             $out['lead'][] = [
-                'key' => 'lead:' . $l['id'] . ':' . $ref, 'kind' => 'lead', 'icon' => 'leads',
-                'title' => $l['name'], 'sev' => 'warn', 'date' => $ref,
-                'sub' => 'Lead parada · último contacto ' . ago_days($ref),
+                'key' => 'ldl:' . $l['id'] . ':' . $c['start'] . ':' . $c['level'], 'kind' => 'lead', 'icon' => 'clock',
+                'title' => lead_display_name($l), 'sev' => $late ? 'bad' : 'warn', 'date' => date('Y-m-d', $c['due']), 'due' => $c['due'],
+                'sub' => ($late ? 'Em atraso há ' . lead_fmt_span(max(60, time() - $c['due'])) : 'A aproximar do prazo · faltam ' . $c['label']) . ' · ' . (LEAD_STATE[$l['lead_state']] ?? ''),
                 'url' => '/admin/leads.php?open=' . (int)$l['id'],
             ];
         }
-        usort($out['lead'], fn($a, $b) => strcmp($a['date'], $b['date']));
+        usort($out['lead'], fn($a, $b) => $a['due'] <=> $b['due']);
 
         // Fila «Por atribuir» (admins e chefes de equipa).
         $full = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -229,8 +230,10 @@ function notifications_mark(PDO $pdo, ?array $keys = null): void {
 function nav_badges(PDO $pdo): array {
     $a = my_alerts($pdo);
     $out = [];
-    $leads = count($a['lead']) + (int)($a['queue'][0]['n'] ?? 0);
-    if ($leads) $out['leads'] = ['n' => $leads, 'al' => true, 'tip' => trim((count($a['lead']) ? count($a['lead']) . ' paradas' : '') . ($a['queue'] ? ' · ' . $a['queue'][0]['title'] : ''), ' ·')];
+    // Leads em atraso: todas para superadmin e admins; as suas para os outros (§12.4).
+    if (can('leads') && ($late = lead_late_count($pdo, current_user()))) {
+        $out['leads'] = ['n' => $late, 'al' => true, 'tip' => $late === 1 ? '1 lead em atraso' : "$late leads em atraso"];
+    }
     if ($a['deal']) $out['pipeline'] = ['n' => count($a['deal']), 'al' => true, 'tip' => count($a['deal']) . ' sem movimento'];
     if ($a['task']) {
         $late = count(array_filter($a['task'], fn($t) => $t['sev'] === 'bad'));
@@ -238,4 +241,18 @@ function nav_badges(PDO $pdo): array {
     }
     if ($a['invoice']) $out['financeiro'] = ['n' => count($a['invoice']), 'al' => true, 'tip' => count($a['invoice']) . ' por receber em atraso'];
     return $out;
+}
+
+/** Quantas leads em atraso conta o menu para $user (§12.4). */
+function lead_late_count(PDO $pdo, array $user): int {
+    static $memo = [];
+    $k = (int)$user['id'];
+    if (isset($memo[$k])) return $memo[$k];
+    $hours = lead_deadline_hours($pdo);
+    $n = 0;
+    foreach (lead_counted($pdo, $user) as $l) {
+        $c = lead_clock($l, $hours);
+        if ($c && $c['level'] === 'late') $n++;
+    }
+    return $memo[$k] = $n;
 }

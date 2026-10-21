@@ -49,13 +49,13 @@ function export_sheets(PDO $pdo): array {
                   $net, $v, round($net + $v, 2), (int)$c['is_closed'] === 1, (string)$c['notes']];
     }
 
-    $state = ['novo' => 'Novo', 'contactado' => 'Contactado', 'em_conversa' => 'Em conversa'];
+    $state = ['novo' => 'Novo', 'sem_resposta' => 'Sem resposta', 'follow_up' => 'Follow-Up'];   // §12.4
     $leads = [];
     foreach ($pdo->query("SELECT d.*, u.name AS owner_name FROM deals d LEFT JOIN users u ON u.id = d.owner_id
                            WHERE d.phase IN ('lead','archived') ORDER BY d.created_at, d.id") as $l) {
-        $leads[] = [$l['name'], $phase[$l['phase']], $l['phase'] === 'lead' ? ($state[$l['lead_state']] ?? $l['lead_state']) : '',
+        $leads[] = [$l['name'], (string)($l['company'] ?? ''), (string)($l['person'] ?? ''), $phase[$l['phase']], $l['phase'] === 'lead' ? ($state[$l['lead_state']] ?? $l['lead_state']) : '',
                     $l['types'], $l['service'], $l['priority'], $l['email'], $l['phone'], (string)$l['links'], $l['origin'],
-                    $l['campaign'], $l['owner_name'] ?? 'Por atribuir', (string)($l['last_touch'] ?? ''), $l['archived_reason'], (string)$l['notes']];
+                    $l['campaign'], $l['owner_name'] ?? 'Por atribuir', (string)($l['last_contact_at'] ?? $l['last_touch'] ?? ''), $l['archived_reason'], (string)$l['notes']];
     }
 
     $contacts = [];
@@ -79,9 +79,9 @@ function export_sheets(PDO $pdo): array {
          'widths' => [12, 24, 7, 11, 22, 22, 13, 13, 14, 12, 13, 14, 36],
          'rows' => $cst],
         ['name' => 'Leads',
-         'head' => ['Nome', 'Fase', 'Estado', 'Tipo', 'Serviço', 'Prioridade', 'Email', 'Telefone', 'Contactos', 'Origem', 'Campanha', 'Responsável', 'Último contacto', 'Motivo (arquivo)', 'Notas'],
-         'types' => array_fill(0, 15, 's'),
-         'widths' => [26, 14, 13, 20, 14, 11, 26, 16, 36, 9, 16, 18, 14, 16, 36],
+         'head' => ['Nome', 'Empresa', 'Pessoa de contacto', 'Fase', 'Estado', 'Tipo', 'Serviço', 'Prioridade', 'Email', 'Telefone(s)', 'Redes sociais', 'Origem', 'Campanha', 'Responsável', 'Último contacto', 'Motivo (arquivo)', 'Notas'],
+         'types' => array_fill(0, 17, 's'),
+         'widths' => [26, 24, 22, 14, 13, 20, 14, 11, 26, 16, 36, 9, 16, 18, 16, 16, 36],
          'rows' => $leads],
         ['name' => 'Contactos',
          'head' => ['Nome', 'Tipo', 'Categoria', 'Serviço', 'Pessoa de contacto', 'Email', 'Telefone', 'NIF', 'Site / redes', 'Tarifa', 'Avaliação', 'Notas'],

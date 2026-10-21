@@ -126,20 +126,21 @@ function task_can_assign(PDO $pdo, ?int $to, array $members, ?array $visible): b
     return $target && can_assign_to($me->fetch(), $target);
 }
 
-/** Negócios a que se pode ligar uma tarefa ou um evento: os ativos, mais o atual. */
+/** Negócios a que se pode ligar uma tarefa ou um evento: os ativos, mais o atual (que pode ser uma lead). */
 function task_deal_options(PDO $pdo, ?int $current = null): array {
-    $st = $pdo->prepare("SELECT id, code, name FROM deals WHERE code IS NOT NULL
-                          AND (phase IN ('pipeline','production') OR id = ?) ORDER BY code DESC");
+    $st = $pdo->prepare("SELECT id, code, name FROM deals WHERE (code IS NOT NULL AND phase IN ('pipeline','production')) OR id = ?
+                          ORDER BY code IS NULL, code DESC");
     $st->execute([(int)$current]);
     $out = [];
-    foreach ($st->fetchAll() as $d) $out[(int)$d['id']] = $d['code'] . ' · ' . $d['name'];
+    foreach ($st->fetchAll() as $d) $out[(int)$d['id']] = ($d['code'] ? $d['code'] : 'Lead') . ' · ' . $d['name'];
     return $out;
 }
 
+/** Um negócio (com ID) ou uma lead: as tarefas das leads ficam ligadas à lead (§12.7). */
 function task_deal_in($raw, PDO $pdo): ?int {
     $id = (int)$raw;
     if ($id <= 0) return null;
-    $st = $pdo->prepare('SELECT COUNT(*) FROM deals WHERE id = ? AND code IS NOT NULL');
+    $st = $pdo->prepare("SELECT COUNT(*) FROM deals WHERE id = ? AND (code IS NOT NULL OR phase IN ('lead','archived'))");
     $st->execute([$id]);
     return (int)$st->fetchColumn() > 0 ? $id : null;
 }
@@ -245,12 +246,37 @@ function task_update(PDO $pdo, array $old, array $v): void {
 
 /**
  * Marca como feita. A pessoa fica a mesma (sem dono continua sem dono):
- * é ela que dá a cor ao cartão na coluna «Feito».
+ * é ela que dá a cor ao cartão na coluna «Feito». Fica no histórico do
+ * negócio ou da lead ligados, e uma tarefa que se repete cria logo a
+ * seguinte. Devolve o id dessa seguinte (ou null).
  */
-function task_done(PDO $pdo, int $id): void {
+function task_done(PDO $pdo, int $id): ?int {
+    $t = task_by_id($pdo, $id);
     $now = task_now();
-    $pdo->prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ? AND status <> 'done'")
-        ->execute([$now, $now, $id]);
+    $st = $pdo->prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ? AND status <> 'done'");
+    $st->execute([$now, $now, $id]);
+    if (!$t || $t['status'] === 'done' || $st->rowCount() === 0) return null;
+    if (!empty($t['deal_id']) && function_exists('deal_log')) {
+        $kind = defined('LEAD_TASK_KINDS') && isset(LEAD_TASK_KINDS[$t['kind'] ?? '']) ? LEAD_TASK_KINDS[$t['kind']][0] . ' · ' : '';
+        deal_log($pdo, (int)$t['deal_id'], 'task_done', ['note' => $kind . $t['title']]);
+    }
+    return task_repeat_next($pdo, $t);
+}
+
+/** A próxima vez de uma tarefa que se repete (todos os dias, semanas ou meses). */
+function task_repeat_next(PDO $pdo, array $t): ?int {
+    $step = ['daily' => '+1 day', 'weekly' => '+1 week', 'monthly' => '+1 month'][$t['repeat_rule'] ?? ''] ?? null;
+    if (!$step) return null;
+    $base = $t['due_date'] ?: date('Y-m-d');
+    $next = (new DateTimeImmutable($base))->modify($step)->format('Y-m-d');
+    $member = $t['member_id'] !== null ? (int)$t['member_id'] : null;
+    $now = task_now();
+    $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, due_time, duration_min, kind, repeat_rule,
+                                      priority, status, position, created_at, updated_at, created_by)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,\'todo\',?,?,?,?)')
+        ->execute([$t['title'], $t['description'], $member, $t['job_name'], $t['deal_id'], $next, $t['due_time'], $t['duration_min'],
+                   $t['kind'] ?: 'task', $t['repeat_rule'], $t['priority'], task_next_position($pdo, $member), $now, $now, $t['created_by']]);
+    return (int)$pdo->lastInsertId();
 }
 
 /** Reabre uma feita na pilha $member (null = Por atribuir), no fim. */
