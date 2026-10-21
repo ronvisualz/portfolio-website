@@ -548,6 +548,32 @@ Ponto a ponto:
 Ficheiros novos: `lead.php`, `conhecimento.php`, `assets/leads.js`, `inc/lead_view.php`,
 `inc/migrate_leads_v2.php`.
 
+### 10.3 A plataforma em topperhub.xyz (21 out 2026)
+
+A plataforma passou a abrir em **https://topperhub.xyz/admin/** (a raiz do domínio abre-a também).
+O `topperdigital.xyz` fica como portefólio público e mantém o formulário de contacto, que continua
+a criar leads na mesma base de dados.
+
+- **No alojamento:** os dois domínios estão na mesma conta. `topperhub.xyz/public_html/admin` é
+  uma ligação simbólica para `topperdigital.xyz/public_html/admin` — o mesmo código, o mesmo
+  `config.php`, a mesma base de dados e as mesmas tarefas agendadas; não há cópias. A letra dos
+  títulos vem por `topperhub.xyz/public_html/assets/fonts` (outra ligação simbólica).
+- **Raiz do domínio** (`hub/` no repositório: `.htaccess`, `index.php`, `robots.txt`): sempre
+  HTTPS e sem `www` (a sessão vale para um só endereço), a raiz e a página de omissão do
+  alojamento abrem `/admin/`, nada é indexado.
+- **Endereço antigo:** `topperdigital.xyz/admin/…` redireciona para `topperhub.xyz/admin/…` com o
+  mesmo caminho e parâmetros (regra no `admin/.htaccess`, só para o anfitrião antigo). Os links de
+  recuperação e de partilha do Drive já enviados continuam a funcionar.
+- **Emails:** o link de «Recuperar palavra-passe» aponta para `topperhub.xyz`; o remetente
+  continua `no-reply@topperdigital.xyz`, o domínio com o email configurado.
+- **Publicar:** os ficheiros de `admin/` e do portefólio continuam a ir para `topperdigital.xyz`;
+  os de `hub/` vão para a raiz de `topperhub.xyz`.
+- **Falta (no painel da Cloudflare):** acrescentar `https://topperhub.xyz` às origens permitidas da
+  política CORS do bucket do Drive (R2 › bucket › Settings › CORS Policy), senão o browser recusa
+  os envios de ficheiros para o Drive a partir do domínio novo (e as leituras que o JavaScript do
+  Drive faz diretamente ao R2).
+- Cada pessoa tem de entrar outra vez uma vez (a sessão está presa ao endereço).
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
