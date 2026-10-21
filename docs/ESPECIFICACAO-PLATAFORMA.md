@@ -658,6 +658,23 @@ cores de estado.
 20. **Motion:** 150–200 ms, só para confirmar ações (cartão que muda de coluna,
     gravação feita, contagem de números). Respeitar `prefers-reduced-motion`.
 
+21. **Profundidade e degradês (sem exageros):** painéis, fichas e cartões deixam de ser
+    branco/preto lisos. Tudo a partir da paleta topper. e em tokens com valor para os
+    dois modos:
+    - **Fundo da área de trabalho:** brilho radial muito suave de céu (canto superior
+      direito) e coral (canto inferior esquerdo) sobre o off-white / quase-preto.
+    - **Painéis laterais e fichas:** degradê vertical subtil (branco → off-white; grafite →
+      quase-preto) + brilho de céu/azul no canto superior direito.
+    - **Cabeçalho da ficha:** faixa com degradê céu → azul transparente por trás do nome.
+    - **Cartões e blocos:** degradê de 2–3% + linha de luz no topo (`inset 0 1px`) + sombra
+      suave em duas camadas, para dar sensação de relevo.
+    - **Amarelo (ação principal, indicador em destaque, separador ativo):** degradê
+      #FFD84F → #FFC718 → #F2B300 com reflexo no topo.
+    - **Botões escuros:** degradê grafite com reflexo; no modo escuro, o inverso.
+    - **Menu lateral:** degradê vertical grafite → preto; item ativo com brilho amarelo.
+    - Regras: no máximo 2 camadas de degradê por elemento; nunca por trás de tabelas
+      densas ou texto longo; contraste do texto mantém-se AA; sem animação nos degradês.
+
 Fora: navegação em pílulas no topo (não serve para 15 abas), recompensas, mensagens.
 
 ---
