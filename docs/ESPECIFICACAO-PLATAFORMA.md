@@ -486,9 +486,13 @@ Ponto a ponto:
 - **12.0 Seta do menu:** botão redondo fixo na borda direita do menu, a meio do ecrã; aparece ao
   passar o cursor no menu e fica sempre visível (discreta) em ecrãs só de toque. `‹` aberto, `›`
   recolhido, dica «Recolher menu» / «Expandir menu», atalho `[`. Substitui o botão do rodapé.
-- **12.1 Criar lead:** «+ Adicionar Lead» à direita dos separadores; o formulário cresce a partir
-  do botão (250 ms, fundo escurece, volta ao fechar; sem animação com `prefers-reduced-motion`),
-  atalho `N`. Pelo menos Empresa ou Pessoa (verificado no servidor). Responsável só aparece a quem
+- **12.1 Criar lead:** «+ Adicionar Lead» à direita dos separadores, atalho `N`. A animação segue a
+  regra geral da §13.8: o botão transforma-se no formulário (estica da sua posição e forma até ao
+  centro, o fundo escurece, o conteúdo aparece a seguir, pequeno ressalto no fim, ~350 ms) e, ao
+  fechar, o conteúdo desaparece e o formulário encolhe de volta para dentro do botão, que recebe o
+  foco. O mesmo em «Como correu?» (a partir do visto do Foco) e em Arquivar (a partir do botão
+  Arquivar da lead, também quando se escolhe Arquivar em «Como correu?»). Com
+  `prefers-reduced-motion` aparece e fecha sem movimento. Pelo menos Empresa ou Pessoa (verificado no servidor). Responsável só aparece a quem
   pode atribuir e é validado pelas regras de hierarquia. Aviso de duplicado enquanto se escreve
   telefone/email: as leads fora do alcance de quem escreve só contam («1 registo fora do seu
   alcance»), sem nome; «usar o existente» liga a pessoa que já está em Contactos. «Gravar» abre a

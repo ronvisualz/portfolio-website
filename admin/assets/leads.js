@@ -49,8 +49,12 @@
   adoptModals();
   document.addEventListener('topper:panel', adoptModals);
 
-  // ── formulários por cima (§12.1): crescem a partir do botão ──
-  var opener = null;
+  // ── formulários por cima (§13.8, regra geral; substitui a da §12.1) ──
+  // O botão transforma-se no formulário: estica da sua posição e forma até ao
+  // centro, o conteúdo aparece a seguir e há um pequeno ressalto no fim
+  // (~350 ms). Ao fechar, o inverso: o conteúdo desaparece e o formulário
+  // encolhe de volta para dentro do botão. Sem movimento com reduced-motion.
+  var MORPH_IN = 350, MORPH_OUT = 300, CARD_RADIUS = 14;
   function focusables(m) {
     return $$('a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])', m)
       .filter(function (n) { return n.offsetParent !== null && !n.closest('[hidden]'); });
@@ -59,40 +63,103 @@
     var f = $('input:not([type=hidden]):not([type=radio]):not([type=checkbox]), textarea', $('.mdl-card', m));
     return f && f.offsetParent !== null ? f : focusables(m)[0];
   }
+  function rectOf(el) {
+    if (!el || !el.getBoundingClientRect || !document.contains(el)) return null;
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 ? r : null;
+  }
+  // O transform (e o raio, que a escala deforma) que põe o cartão em cima do botão.
+  function overButton(card, a) {
+    var b = card.getBoundingClientRect();
+    var sx = Math.max(0.04, a.width / b.width), sy = Math.max(0.03, a.height / b.height);
+    var cr = card.__btn ? getComputedStyle(card.__btn).borderRadius : '8px';
+    var r = /%$/.test(cr) ? Math.min(a.width, a.height) * parseFloat(cr) / 100 : (parseFloat(cr) || 0);
+    return {
+      transform: 'translate(' + (a.left + a.width / 2 - (b.left + b.width / 2)).toFixed(1) + 'px,'
+               + (a.top + a.height / 2 - (b.top + b.height / 2)).toFixed(1) + 'px) scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')',
+      borderRadius: (r / sx).toFixed(1) + 'px / ' + (r / sy).toFixed(1) + 'px'
+    };
+  }
+  function btnColor(el) {
+    var c = el ? getComputedStyle(el).backgroundColor : '';
+    return c && c !== 'transparent' ? c : 'rgba(0, 0, 0, 0)';
+  }
+  function hideOrigin(m, on) {
+    var el = m.__from;
+    if (el && el.style) el.style.visibility = on ? 'hidden' : '';
+  }
+  function morphIn(m) {
+    var card = $('.mdl-card', m), back = $('.mdl-back', m), a = m.__rect;
+    if (reduced.matches || !card.animate) return;
+    card.classList.remove('pop-in');
+    if (back) back.animate([{ opacity: 0 }, { opacity: 1 }], { duration: MORPH_IN, easing: 'ease-out' });
+    var kids = Array.prototype.slice.call(card.children);
+    kids.forEach(function (k) { k.animate([{ opacity: 0 }, { opacity: 0, offset: 0.55 }, { opacity: 1 }], { duration: MORPH_IN, easing: 'ease-out' }); });
+    if (!a) {   // sem botão à vista: só surge, com o mesmo ressalto
+      card.animate([{ transform: 'translateY(10px) scale(.96)', opacity: 0 }, { transform: 'scale(1.01)', opacity: 1, offset: 0.75 }, { transform: 'none', opacity: 1 }],
+                   { duration: MORPH_IN, easing: EASE });
+      return;
+    }
+    card.__btn = m.__from;
+    var from = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
+    card.style.overflow = 'hidden';
+    hideOrigin(m, true);
+    card.animate([
+      { transform: from.transform, borderRadius: from.borderRadius, backgroundColor: btnColor(m.__from), easing: 'cubic-bezier(.3,.7,.25,1)' },
+      { transform: 'scale(1.015)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.78, easing: 'ease-out' },
+      { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg }
+    ], { duration: MORPH_IN }).onfinish = function () { card.style.overflow = ''; };
+  }
   function openMdl(m, from) {
     if (!m) return;
-    opener = from || document.activeElement;
+    m.__from = from || document.activeElement;
+    m.__rect = rectOf(from);
     m.hidden = false;
     m.classList.add('open');
     document.documentElement.classList.add('mdl-lock');
-    var card = $('.mdl-card', m), back = $('.mdl-back', m);
-    if (!reduced.matches && card.animate) {
-      card.classList.remove('pop-in');
-      if (back) back.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: 'ease-out' });
-      var a = from && from.getBoundingClientRect ? from.getBoundingClientRect() : null;
-      var b = card.getBoundingClientRect();
-      var start = a && a.width
-        ? 'translate(' + Math.round(a.left + a.width / 2 - (b.left + b.width / 2)) + 'px,' + Math.round(a.top + a.height / 2 - (b.top + b.height / 2)) + 'px) scale('
-          + Math.max(0.08, a.width / b.width).toFixed(3) + ',' + Math.max(0.04, a.height / b.height).toFixed(3) + ')'
-        : 'translateY(8px) scale(.97)';
-      card.animate([{ transform: start, opacity: 0.2 }, { transform: 'none', opacity: 1 }], { duration: 250, easing: EASE });
-    }
+    morphIn(m);
     var f = firstField(m);
-    if (f) setTimeout(function () { f.focus({ preventScroll: true }); }, reduced.matches ? 0 : 60);
+    if (f) setTimeout(function () { f.focus({ preventScroll: true }); }, reduced.matches ? 0 : MORPH_IN - 50);
   }
   function closeMdl(m) {
-    if (!m || !m.classList.contains('open')) return;
+    if (!m || !m.classList.contains('open') || m.__closing) return;
     // Os que só existem por endereço (converter, eliminar) fecham voltando à lista.
     var link = $('a.mdl-back[href]', m);
     if (link) { location.href = link.href; return; }
-    var card = $('.mdl-card', m);
+    var card = $('.mdl-card', m), back = $('.mdl-back', m), origin = m.__from;
+    // Volta para onde o botão está agora; se já não estiver à vista, para onde estava.
+    var a = rectOf(origin) || m.__rect;
+    m.__closing = true;
+    var fades = [];
     function done() {
+      m.__closing = false;
+      card.style.overflow = '';
       m.classList.remove('open');
       m.hidden = true;
+      fades.forEach(function (f) { f.cancel(); });   // já escondido: o conteúdo volta ao normal sem piscar
+      hideOrigin(m, false);
       if (!$('.mdl.open')) document.documentElement.classList.remove('mdl-lock');
+      if (origin && origin.focus && document.contains(origin)) origin.focus({ preventScroll: true });
+      m.__from = m.__rect = null;
     }
     if (!reduced.matches && card.animate) {
-      card.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 140, easing: 'ease-in' }).onfinish = done;
+      Array.prototype.slice.call(card.children).forEach(function (k) {
+        fades.push(k.animate([{ opacity: 1 }, { opacity: 0, offset: 0.35 }, { opacity: 0 }], { duration: MORPH_OUT, fill: 'forwards' }));
+      });
+      if (back) back.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MORPH_OUT, easing: 'ease-in' });
+      if (a) {
+        card.__btn = origin;
+        var to = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
+        card.style.overflow = 'hidden';
+        card.animate([
+          { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg },
+          { transform: 'scale(1.01)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.3, easing: 'cubic-bezier(.5,0,.75,0)' },
+          { transform: to.transform, borderRadius: to.borderRadius, backgroundColor: btnColor(origin) }
+        ], { duration: MORPH_OUT, fill: 'forwards' }).onfinish = function (ev) { done(); ev.target.cancel(); };
+      } else {
+        card.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.96)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' })
+          .onfinish = function (ev) { done(); ev.target.cancel(); };
+      }
     } else done();
     // Tirar ?nova=1 / ?arch= do endereço, para não reabrir ao recarregar.
     if (/[?&](nova|arch)=/.test(location.search) && history.replaceState) {
@@ -100,8 +167,6 @@
       u.searchParams.delete('nova'); u.searchParams.delete('arch');
       history.replaceState(null, '', u.pathname + u.search + u.hash);
     }
-    if (opener && opener.focus && document.contains(opener)) opener.focus({ preventScroll: true });
-    opener = null;
   }
   function topMdl() { var o = $$('.mdl.open'); return o[o.length - 1] || null; }
 
@@ -130,9 +195,11 @@
     }
   });
 
-  // Os que já vêm abertos do servidor (?nova=1 depois de «Gravar e adicionar outra», ?arch=).
+  // Os que já vêm abertos do servidor (?nova=1 depois de «Gravar e adicionar outra», ?arch=):
+  // a nova lead sai outra vez do botão «Adicionar Lead».
   $$('.mdl.open').forEach(function (m) {
     document.documentElement.classList.add('mdl-lock');
+    if (m.id === 'mdl-new') { m.__from = $('[data-new-lead]'); m.__rect = rectOf(m.__from); morphIn(m); }
     var f = firstField(m); if (f) f.focus({ preventScroll: true });
   });
 
@@ -360,7 +427,8 @@
       } else if (what === 'archive' || what === 'archive-noanswer') {
         closeMdl(m);
         var v = viewsOf(id)[0];
-        openArchive(id, v ? v.getAttribute('data-name') : '', null, what === 'archive-noanswer' ? 'sem_resposta' : '');
+        // Sai do botão Arquivar da própria lead (painel ou ficha), como se tivesse sido carregado.
+        openArchive(id, v ? v.getAttribute('data-name') : '', v ? $('[data-archive]', v) : o, what === 'archive-noanswer' ? 'sem_resposta' : '');
       }
       return;
     }
