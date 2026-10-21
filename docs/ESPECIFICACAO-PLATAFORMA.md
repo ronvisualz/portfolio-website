@@ -560,3 +560,111 @@ cores de estado.
     gravação feita, contagem de números). Respeitar `prefers-reduced-motion`.
 
 Fora: navegação em pílulas no topo (não serve para 15 abas), recompensas, mensagens.
+
+---
+
+## 12. Aba Leads v2 (decidido 21 out 2026)
+
+Substitui o que contradiga a §3.1. Aplica também a §11 (design transversal).
+
+### 12.0 Menu lateral — seta de recolher/expandir
+Ao passar o cursor na barra lateral aparece uma seta pequena na **borda direita, a meio
+da altura do ecrã, fixa** (não acompanha o scroll da barra): `‹` com o menu aberto, `›`
+recolhido. Tem dica («Recolher menu» / «Expandir menu»). Atalho `[`. Em ecrãs só de
+toque a seta está sempre visível (discreta).
+
+### 12.1 Criar lead
+- Botão **«+ Adicionar Lead»** na linha dos separadores (Ativas · Por atribuir ·
+  Arquivadas · Quarentena), encostado à direita. O formulário no fundo da página desaparece.
+- Abre um formulário que **cresce a partir do botão** até ao centro (~250 ms, fundo
+  escurece); ao fechar volta ao botão. Atalho `N`.
+- Campos: **Empresa** (procura existentes ou cria; opcional) · **Pessoa de contacto** ·
+  **Telefone(s)** · **Email** · **Redes sociais** (links; ícone reconhecido automaticamente) ·
+  Tipo · Serviço · Origem · Notas · **Responsável** (só para quem pode atribuir).
+  Pelo menos Empresa ou Pessoa preenchido.
+- Aviso de duplicado enquanto se escreve telefone/email, com opção de usar o existente.
+- Botões «Gravar» e «Gravar e adicionar outra».
+- Ao gravar: a pessoa é criada (ou reutilizada) na aba **Contactos**, ligada à empresa
+  quando indicada; a empresa também fica registada.
+
+### 12.2 Nome apresentado
+- Só empresa → mostra a empresa.
+- Com pessoa de contacto → mostra **sempre a pessoa**; se houver empresa, aparece em
+  pequeno ao lado/abaixo do nome.
+- Migração das leads atuais: o «nome» atual passa a Empresa; pessoa fica por preencher.
+
+### 12.3 Contactos separados
+Telefone(s), Email e Redes sociais são campos distintos. Botões **Ligar** (`tel:`),
+**WhatsApp** e **Email** junto aos campos. Migração: números → telefone, endereços com @ →
+email, links → redes sociais; o que não for claro vai para as notas.
+
+### 12.4 Prazo de contacto (timer)
+- Cada lead tem um prazo de **24 horas úteis** para ser contactada, desde a criação.
+- **Horas úteis:** segunda a sábado; domingo não conta. Horário diário configurável pelos
+  admins (por defeito 09:00–19:00 — a confirmar). Fora desse horário o relógio pára.
+- Estados: 0–50% **No prazo** (amarelo suave, só no indicador) · 50–100% **A aproximar**
+  (laranja) · >100% **Em atraso** (vermelho).
+- **Uma chamada registada, atendida ou não, conta como contacto.** Chamada não atendida
+  → o prazo **recomeça do zero** (novas 24 h úteis) para a próxima tentativa. Chamada
+  atendida (Follow-Up), Converter ou Arquivar → o prazo termina.
+- Coluna **«Prazo»** à esquerda do Nome: anel que enche + tempo restante («18 h» /
+  «+3 h atraso»); dica com a hora limite. (O campo «Prioridade» Alta/Média/Baixa mantém-se.)
+- Botão **«Urgente»** junto às vistas, com contador vermelho das leads em atraso; filtra-as.
+- Contador de leads em atraso junto a **Leads** no menu lateral: total para superadmin e
+  admins; para os outros, só as suas.
+- Notificações quando uma lead passa a «A aproximar» e a «Em atraso».
+
+### 12.5 Painel lateral da lead
+- Abre à direita, **mais largo e em duas colunas**:
+  - esquerda: dados da lead e do contacto (edição no campo), botões **Converter em
+    negócio** e **Arquivar** fixos no fundo;
+  - direita: **Nova ação** · **Foco** · **Notas & Histórico** (12.7).
+  - ecrãs estreitos: colunas empilhadas.
+- Setas `↑ ↓` pequenas **fora do painel, no canto superior esquerdo**, para passar à lead
+  de cima/baixo **na ordem e filtros atuais** da lista. Teclas `↑/↓` (ou `J/K`); `Esc` fecha.
+
+### 12.6 Ficha completa
+«Abrir a ficha completa» abre uma **página própria da lead** (ex.: `admin/lead.php?id=…`)
+com o menu lateral e o caminho Comercial / Leads / <nome>. «Voltar» regressa à lista com
+os mesmos filtros e posição. Acaba a ficha no fundo da página da lista.
+
+### 12.7 Tarefas, Foco e Histórico
+- **Nova ação:** tipo por ícones (Chamada, Reunião, Tarefa, Documento, Email, Visita,
+  Evento) · notas · atalhos Em 1h / Em 3h / Amanhã / Próxima semana · data, hora, duração ·
+  para quem (regras de atribuição) · repetir · «Criar tarefa». As tarefas aparecem também
+  na aba Tarefas, ligadas à lead.
+- **Foco:** tarefas abertas da lead, por prazo, com botão concluir.
+- **Notas & Histórico:** linha do tempo automática de tudo o que acontece (criada,
+  atribuída, estado, tarefa criada/concluída, chamada atendida/não atendida com nº da
+  tentativa, arquivada com motivo, convertida) + notas manuais («Registar nota»); data,
+  hora e autor em cada entrada.
+- **Último contacto** passa a ser automático, a partir do histórico.
+- **Sem próxima ação:** lead ativa com Foco vazio mostra «Sem próxima ação» e conta como
+  **Em risco** nas vistas.
+
+### 12.8 Chamada automática e resultado
+- Ao criar a lead é criada a tarefa **«Ligar a <pessoa/empresa>»** em Foco, com prazo
+  igual ao fim do prazo de contacto.
+- Ao concluí-la abre **«Como correu?»** (animação de surgimento) com 4 botões:
+  1. **Chamada não atendida** — regista a tentativa (nº), recomeça o prazo e propõe a
+     próxima chamada num clique (ex.: em 3h). À **3.ª tentativa** sem resposta sugere
+     arquivar com motivo «Sem resposta».
+  2. **Follow-Up** — nota rápida da conversa + abre Nova ação para o passo seguinte;
+     estado passa a Contactado (ou Em conversa, se escolhido).
+  3. **Arquivar** — abre o formulário de motivo (12.9).
+  4. **Converter em Negócio** — conversão existente (funil, ID, X-Ray).
+- Depois do resultado, botão **«Próxima urgente →»** abre a lead em atraso seguinte.
+
+### 12.9 Arquivar
+Formulário com animação de surgimento e motivos em botões: Sem interesse · Sem resposta ·
+Fora de perfil · Spam · Outro (pede texto). Depois aviso «Lead arquivada · Anular» (8 s).
+
+### 12.10 Lista
+Colunas: **Prazo** · Nome (pessoa + empresa em pequeno) · Estado · Responsável ·
+Próxima ação · Último contacto. A coluna Notas sai da lista (fica no painel).
+
+### 12.11 Aba Conhecimento — separador «Navegação»
+Criar o separador **Navegação** na aba Centro de Conhecimento com a lista de atalhos de
+teclado e gestos da plataforma: `⌘K/Ctrl+K` pesquisa · `[` recolher/expandir menu ·
+`N` nova lead · `↑/↓` ou `J/K` lead anterior/seguinte no painel · `Esc` fechar painel ou
+formulário · toque longo = ver nome de um ícone. Atualizar sempre que surgir um atalho novo.
