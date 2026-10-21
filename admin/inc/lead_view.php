@@ -110,6 +110,57 @@ function lead_new_action_html(PDO $pdo, array $l): string {
 }
 
 /**
+ * «Editar» (§12.5): todos os campos da lead num só formulário; «Gravar» grava-os de uma vez
+ * (ui_api.php?a=lead_save, com as mesmas regras e permissões da edição no campo).
+ */
+function lead_edit_form_html(array $l): string {
+    $id = (int)$l['id'];
+    $def = inline_fields($l)['lead'];
+    $f = fn(string $k) => 'le-' . $id . '-' . $k;
+    $text = fn(string $k, string $label, array $a = []) =>
+        '<div class="field' . (!empty($a['wide']) ? ' wide' : '') . '"><label for="' . $f($k) . '">' . e($label) . '</label>'
+        . (!empty($a['area'])
+            ? '<textarea id="' . $f($k) . '" name="f[' . $k . ']" rows="' . ($a['rows'] ?? 3) . '" maxlength="' . (int)$def[$k][1] . '"' . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . '>' . e((string)$l[$k]) . '</textarea>'
+            : '<input type="text" id="' . $f($k) . '" name="f[' . $k . ']" maxlength="' . (int)$def[$k][1] . '" value="' . e((string)$l[$k]) . '"'
+              . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . (isset($a['im']) ? ' inputmode="' . $a['im'] . '"' : '') . '>')
+        . '</div>';
+    $select = function (string $k, string $label, ?string $cur = null) use ($def, $f, $l) {
+        $cur ??= (string)$l[$k];
+        $o = '';
+        foreach ($def[$k][1] as $v => $t) $o .= '<option value="' . e((string)$v) . '"' . ((string)$v === $cur ? ' selected' : '') . '>' . e($t) . '</option>';
+        return '<div class="field"><label for="' . $f($k) . '">' . e($label) . '</label><select id="' . $f($k) . '" name="f[' . $k . ']">' . $o . '</select></div>';
+    };
+    $chosen = array_map('trim', explode(',', (string)$l['types']));
+    $types = '';
+    foreach ($def['types'][1] as $v => $t) {
+        $types .= '<label class="rb"><input type="checkbox" name="f[types][]" value="' . e($v) . '"' . (in_array($v, $chosen, true) ? ' checked' : '') . '><span>' . e($t) . '</span></label>';
+    }
+    return '<form class="lv-form" data-lead-edit autocomplete="off" hidden>'
+         . '<input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="f[types_sent]" value="1">'
+         . '<div class="grid">'
+         . $text('person', 'Pessoa de contacto')
+         . $text('company', 'Empresa')
+         . $text('phone', 'Telefone(s)', ['ph' => '+351 … (vários: separe com |)', 'im' => 'tel'])
+         . $text('email', 'Email', ['im' => 'email'])
+         . $text('links', 'Redes sociais', ['area' => true, 'rows' => 2, 'wide' => true, 'ph' => 'Um link por linha (Instagram, LinkedIn, site…)'])
+         . $select('lead_state', 'Estado')
+         . $select('owner_id', 'Responsável', $l['owner_id'] === null ? 'none' : (string)$l['owner_id'])
+         . $select('service', 'Serviço')
+         . $select('priority', 'Prioridade')
+         . $select('origin', 'Origem')
+         . $text('campaign', 'Campanha')
+         . '<div class="field wide"><span class="lbl">Tipo</span><div class="chips-check" role="group" aria-label="Tipo">' . $types . '</div></div>'
+         . $text('why', 'Porquê abordar', ['area' => true, 'wide' => true])
+         . $text('detail', 'Detalhe', ['area' => true, 'wide' => true])
+         . $text('notes', 'Notas', ['area' => true, 'wide' => true, 'rows' => 4])
+         . '</div>'
+         . '<div class="lv-foot lv-edit-foot"><button type="button" class="btn ghost" data-edit-cancel>Cancelar</button>'
+         . '<span class="spacer"></span><span class="muted kbd-hint">Esc cancela · ⌘/Ctrl+Enter grava</span>'
+         . '<button type="submit" class="btn">' . icon('check') . ' Gravar</button></div>'
+         . '</form>';
+}
+
+/**
  * A vista completa. $mode 'panel' (painel lateral) ou 'page' (lead.php).
  * $back: para onde voltar depois de converter/arquivar sem JavaScript.
  */
@@ -122,7 +173,8 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
     $clock = lead_clock($l, lead_deadline_hours($pdo));
     [$name, $company] = lead_display($l);
     $tasks = lead_open_tasks($pdo, [$id])[$id] ?? [];
-    $row = fn(string $label, string $field, array $o = []) => panel_row($label, 'lead', $id, $field, $l, $ed && empty($o['ro']), $o);
+    // Só leitura: edita-se tudo de uma vez com «Editar» (sem lápis campo a campo).
+    $row = fn(string $label, string $field, array $o = []) => panel_row($label, 'lead', $id, $field, $l, false, $o);
 
     // Botões de contacto (§12.3).
     $dial = lead_phone_dial((string)$l['phone']);
@@ -163,7 +215,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
     if (can('leads', PERM_MANAGE)) $foot .= '<a class="lnk del" href="/admin/leads.php?del=' . $id . '">Eliminar</a>';
 
     $head = '<header class="lv-head">'
-          . ($mode === 'panel' ? '' : '')
+          . ($ed ? '<button type="button" class="btn ghost sm lv-edit-btn" data-edit-start aria-keyshortcuts="E" data-tip="Editar a lead  ·  E">' . icon('pencil') . ' Editar</button>' : '')
           . '<h2 class="lv-name">' . e($name) . '</h2>'
           . ($company !== '' ? '<div class="lv-co">' . e($company) . '</div>' : '')
           . '<div class="lv-chips">' . lead_state_chip($l) . ($clock ? ' ' . lead_ring($clock) : '')
@@ -173,11 +225,14 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
           . '</div></header>';
 
     $left = '<div class="lv-l">' . $head . $acts
+          . '<div class="lv-read">'
           . '<div class="kv">' . $kv . '</div>'
-          . '<section><h4>Porquê abordar</h4>' . inline_field('lead', $id, 'why', e((string)$l['why']), ['edit' => $ed, 'type' => 'textarea', 'label' => 'Editar porquê abordar', 'value' => (string)$l['why']]) . '</section>'
-          . '<section><h4>Detalhe</h4>' . inline_field('lead', $id, 'detail', e((string)$l['detail']), ['edit' => $ed, 'type' => 'textarea', 'label' => 'Editar detalhe', 'value' => (string)$l['detail']]) . '</section>'
-          . '<section><h4>Notas</h4>' . inline_field('lead', $id, 'notes', e((string)$l['notes']), ['edit' => $ed, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$l['notes']]) . '</section>'
+          . '<section><h4>Porquê abordar</h4>' . inline_field('lead', $id, 'why', e((string)$l['why'])) . '</section>'
+          . '<section><h4>Detalhe</h4>' . inline_field('lead', $id, 'detail', e((string)$l['detail'])) . '</section>'
+          . '<section><h4>Notas</h4>' . inline_field('lead', $id, 'notes', e((string)$l['notes'])) . '</section>'
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '')
+          . '</div>'
+          . ($ed ? lead_edit_form_html($l) : '')
           . '</div>';
 
     $right = '<div class="lv-r">'

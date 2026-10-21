@@ -14,6 +14,7 @@
  *
  *   Leads v2 (§12):
  *   GET  a=lead_dups&email=&phone=   duplicados enquanto se escreve (nova lead)
+ *   POST a=lead_save          id, f[campo] — «Gravar» na ficha (todos os campos de uma vez, com «Anular»)
  *   POST a=lead_task          id, kind, title, notes, date, time, duration, assignee, repeat — Nova ação
  *   POST a=lead_task_done     id, task — concluir no Foco (uma chamada abre «Como correu?»)
  *   POST a=lead_outcome       id, result (missed | followup), note
@@ -79,7 +80,8 @@ function lead_parts(PDO $pdo, int $id): array {
 function lead_task_default_title(string $kind, string $who): string {
     return match ($kind) {
         'call' => 'Ligar a ' . $who, 'meeting' => 'Reunião com ' . $who, 'email' => 'Email para ' . $who,
-        'visit' => 'Visita a ' . $who, 'document' => 'Documento para ' . $who, 'event' => 'Evento · ' . $who,
+        'lunch' => 'Almoço com ' . $who, 'dinner' => 'Jantar com ' . $who,
+        'document' => 'Documento para ' . $who, 'event' => 'Evento · ' . $who,
         default => 'Tarefa · ' . $who,
     };
 }
@@ -304,6 +306,67 @@ try {
 
 
     // ── Leads v2 (§12) ──────────────────────────────────────
+    // Ficha da lead: «Editar» abre todos os campos, «Gravar» grava-os de uma vez, com as mesmas
+    // regras da edição no campo (empresa/pessoa em Contactos, prazo ao mudar de estado,
+    // atribuição pela hierarquia) e um só «Anular». Tudo ou nada.
+    case 'lead_save':
+        if (!$post) break;
+        $l = lead_for_edit($pdo);
+        $id = (int)$l['id'];
+        $in = $_POST['f'] ?? null;
+        if (!is_array($in)) throw new RuntimeException('Nada para gravar.');
+        $fields = inline_fields($l)['lead'];
+        $want = [];
+        foreach ($fields as $f => $def) {
+            if (!array_key_exists($f, $in) && $def[0] !== 'multi') continue;
+            $v = $in[$f] ?? [];
+            if ($def[0] === 'multi') {
+                if (!array_key_exists('types_sent', $in)) continue;   // o formulário marca que mandou os tipos
+                $v = implode(', ', array_map('strval', is_array($v) ? $v : []));
+            }
+            if (!is_string($v)) throw new RuntimeException('Valor inválido.');
+            $v = str_replace("\r\n", "\n", $v);   // as caixas de texto do browser mandam \r\n
+            $cur = $f === 'owner_id' ? ($l['owner_id'] === null ? 'none' : (string)$l['owner_id']) : (string)$l[$f];
+            if (trim($v) !== trim($cur)) $want[$f] = $v;
+        }
+        $co = trim($want['company'] ?? (string)$l['company']);
+        $pe = trim($want['person'] ?? (string)$l['person']);
+        if ($co === '' && $pe === '') throw new RuntimeException('A lead precisa de empresa ou de pessoa de contacto.');
+        // A que fica preenchida grava primeiro (a regra «empresa ou pessoa» vê o valor já gravado).
+        uksort($want, fn($a, $b) => (int)!(in_array($a, ['company', 'person'], true) && trim($want[$a]) !== '')
+                                  <=> (int)!(in_array($b, ['company', 'person'], true) && trim($want[$b]) !== ''));
+        $subs = [];
+        $pdo->beginTransaction();
+        try {
+            foreach ($want as $f => $v) {
+                $before = record_get($pdo, $id);
+                $r = inline_save($pdo, 'lead', $id, $f, $v);
+                if ((string)$r['prev'] === (string)$r['value']) continue;
+                if ($f === 'lead_state') {
+                    $subs[] = ['lead_state', ['id' => $id, 'from' => $before['lead_state'], 'to' => $r['value'], 'last_touch' => $before['last_touch'],
+                                              'state_since' => $before['state_since'], 'no_answer' => (int)$before['no_answer']]];
+                } elseif ($f === 'owner_id') {
+                    $subs[] = ['assign', ['id' => $id, 'from' => $before['owner_id'] !== null ? (int)$before['owner_id'] : null, 'to' => $r['value']]];
+                } else {
+                    $subs[] = ['inline', ['entity' => 'lead', 'id' => $id, 'field' => $f, 'prev' => $r['prev']]];
+                }
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+        $n = count($subs);
+        $msg = $n === 0 ? 'Sem alterações.' : ($n === 1 ? '1 campo gravado.' : $n . ' campos gravados.');
+        $token = $n ? undo_push('multi', ['subs' => array_reverse($subs), 'msg' => 'Ficha reposta como estava.']) : '';
+        // Na ficha completa a página recarrega: o aviso com «Anular» aparece a seguir.
+        if (!empty($_POST['flash'])) $_SESSION['flash'][] = ['m' => $msg, 'k' => 'ok', 'u' => $token];   // como flash() do layout
+        $l = record_get($pdo, $id);
+        [$dn, $dc] = lead_display($l);
+        $owner = $l['owner_id'] ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$l['owner_id'])->fetchColumn() : 'Por atribuir';
+        out(200, ['ok' => true, 'changed' => $n, 'msg' => $msg, 'undo' => $token,
+                  'name' => $dn, 'company' => $dc, 'owner' => $owner] + lead_parts($pdo, $id));
+
     // Duplicados enquanto se escreve telefone/email (§12.1). Leads fora do meu
     // alcance aparecem só como «existe outro registo», sem nome.
     case 'lead_dups':
@@ -362,8 +425,8 @@ try {
         if (!$t || $t['status'] === 'done') throw new RuntimeException('Essa tarefa já não está aberta.');
         $snap = ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
         $snap['spawned'] = task_done($pdo, (int)$t['id']);   // fica no histórico da lead; se se repete, cria a seguinte
-        // Reunião, email ou visita feitos contam como contacto e, em Follow-Up, como follow-up.
-        if (in_array($t['kind'], ['meeting', 'email', 'visit'], true) && $l['phase'] === 'lead') {
+        // Reunião, email, almoço ou jantar feitos contam como contacto e, em Follow-Up, como follow-up.
+        if (in_array($t['kind'], ['meeting', 'email', 'lunch', 'dinner'], true) && $l['phase'] === 'lead') {
             lead_touch($pdo, (int)$l['id']);
             if ($l['lead_state'] === 'follow_up') $pdo->prepare('UPDATE deals SET state_since = ? WHERE id = ?')->execute([now_php(), $l['id']]);
         }

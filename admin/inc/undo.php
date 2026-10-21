@@ -40,10 +40,26 @@ function undo_run(PDO $pdo, string $token): string {
     if (!$u || $u['exp'] < time() || $u['uid'] !== (int)current_user()['id']) {
         throw new RuntimeException('Já não é possível anular.');
     }
-    $d = $u['data'];
+    return undo_apply($pdo, $u['kind'], $u['data']);
+}
+
+/** Desfaz uma ação já validada (quem, prazo). Também usado pelas ações compostas. */
+function undo_apply(PDO $pdo, string $kind, array $d): string {
     $changed = 'O registo mudou entretanto; não foi anulado.';
 
-    switch ($u['kind']) {
+    switch ($kind) {
+        case 'multi':
+            // Várias alterações de uma vez (ex.: «Gravar» na ficha da lead): desfaz todas ou nenhuma.
+            $pdo->beginTransaction();
+            try {
+                foreach ($d['subs'] as [$k, $data]) undo_apply($pdo, $k, $data);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                $pdo->rollBack();
+                throw $e;
+            }
+            return $d['msg'] ?? 'Alterações repostas.';
+
         case 'deal_stage':
             $deal = record_get($pdo, (int)$d['id']);
             if (!$deal) throw new RuntimeException($changed);

@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -208,6 +208,12 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // em Contactos sem duplicar).
     require_once __DIR__ . '/migrate_leads_v2.php';
     migrate_leads_v2($pdo);
+
+    // ── 14 · tipos de tarefa ────────────────────────────────
+    //
+    // Sai «Visita» e entram «Almoço» e «Jantar»: as visitas que existam
+    // passam a Reunião (também conta como contacto com a lead).
+    $pdo->exec("UPDATE tasks SET kind = 'meeting' WHERE kind = 'visit'");
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -36,10 +36,11 @@ const LEAD_DEADLINE_DEFAULTS = ['novo' => 24, 'sem_resposta' => 24, 'follow_up' 
 const LEAD_TASK_KINDS = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],
-    'task'     => ['Tarefa', 'box'],
+    'task'     => ['Tarefa', 'checklist'],
     'document' => ['Documento', 'note'],
     'email'    => ['Email', 'mail'],
-    'visit'    => ['Visita', 'pin'],
+    'lunch'    => ['Almoço', 'utensils'],
+    'dinner'   => ['Jantar', 'wine'],
     'event'    => ['Evento', 'calendar'],
 ];
 

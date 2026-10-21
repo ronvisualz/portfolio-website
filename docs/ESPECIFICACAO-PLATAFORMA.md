@@ -513,14 +513,18 @@ Ponto a ponto:
   admins todas as leads em atraso, os outros só as suas. Notificações ao responsável quando a lead
   passa a «A aproximar» e a «Em atraso». Os prazos mudam-se em **A minha conta › Prazos das
   leads**, que só superadmin e admins veem (o papel é confirmado na base de dados ao gravar).
-- **12.5 Painel:** largo (até 980 px) em duas colunas — dados com edição no campo e Converter /
-  Arquivar fixos no fundo; Nova ação, Foco, Notas & Histórico à direita; empilhado em ecrãs
+- **12.5 Painel:** largo (até 980 px) em duas colunas — dados e Converter / Arquivar fixos no
+  fundo; **«Editar»** (ou a tecla `E`) troca os dados por um formulário com todos os campos e
+  **«Gravar»** (ou ⌘/Ctrl+Enter) grava-os de uma vez (`ui_api.php?a=lead_save`): mesmas regras e
+  permissões da edição no campo, tudo ou nada, um só «Anular»; Esc cancela; Nova ação, Foco, Notas & Histórico à direita; empilhado em ecrãs
   estreitos. Setas ↑ ↓ fora do painel, em cima à esquerda, pela ordem e filtros da página atual
   da lista; teclas ↑/↓ e J/K, Esc fecha. Aberto pela pesquisa ⌘K noutra aba, o painel traz consigo
   os formulários e o `leads.js`.
 - **12.6 Ficha completa:** `admin/lead.php?id=…` com o caminho Comercial / Leads / nome; «Voltar
   às leads» regressa com os mesmos filtros e à linha da lead.
-- **12.7 Tarefas e histórico:** Nova ação (7 tipos, Em 1h / Em 3h / Amanhã / Próxima semana, data,
+- **12.7 Tarefas e histórico:** Nova ação (8 tipos: Chamada, Reunião, Tarefa, Documento, Email,
+  Almoço, Jantar, Evento — base de dados **versão 14**: as tarefas «Visita» passaram a Reunião;
+  reunião, email, almoço e jantar feitos contam como contacto; Em 1h / Em 3h / Amanhã / Próxima semana, data,
   hora, duração, para quem pelas regras de atribuição, repetir diário/semanal/mensal — a próxima
   ocorrência cria-se ao concluir); as tarefas aparecem na aba Tarefas como «Lead · nome». Foco com
   concluir e «Anular». Notas & Histórico automático + «Registar nota». Cada tipo de entrada tem
@@ -541,8 +545,9 @@ Ponto a ponto:
   `leads` da versão 10 quando tinham sido cortados), emails e links separados; o que não é claro
   vai para as notas com «[Migração para a v2]»; Contactado e Em conversa → Follow-Up; empresas e
   pessoas criadas em Contactos sem duplicar. O prazo das leads ativas começa **no momento da
-  migração** (contar desde a criação poria todas em atraso de uma vez). As leads migradas não
-  recebem a chamada automática: aparecem com «Sem próxima ação» até alguém marcar a primeira.
+  migração** (contar desde a criação poria todas em atraso de uma vez). Depois da migração
+  foi criada, a pedido, a chamada «Ligar a …» em cada uma das 111 leads migradas (para o
+  responsável, com prazo no fim do prazo do estado), como numa lead nova.
 - Também: Dashboard «Leads em atraso / a aproximar» (substitui «Leads paradas»); Excel com Empresa,
   Pessoa de contacto e os estados novos.
 - **Permissões:** todas as ações (painel, Nova ação, concluir, resultado, arquivar, atribuir,
@@ -745,8 +750,10 @@ email, links → redes sociais; o que não for claro vai para as notas.
 
 ### 12.5 Painel lateral da lead
 - Abre à direita, **mais largo e em duas colunas**:
-  - esquerda: dados da lead e do contacto (edição no campo), botões **Converter em
-    negócio** e **Arquivar** fixos no fundo;
+  - esquerda: dados da lead e do contacto, botões **Converter em negócio** e **Arquivar**
+    fixos no fundo. **Sem lápis campo a campo:** um botão **«Editar»** abre todos os campos
+    num formulário e **«Gravar»** grava-os de uma vez, com «Anular» (decidido 21 out 2026;
+    substitui a §11.8 na lead);
   - direita: **Nova ação** · **Foco** · **Notas & Histórico** (12.7).
   - ecrãs estreitos: colunas empilhadas.
 - Setas `↑ ↓` pequenas **fora do painel, no canto superior esquerdo**, para passar à lead
@@ -758,8 +765,8 @@ com o menu lateral e o caminho Comercial / Leads / <nome>. «Voltar» regressa �
 os mesmos filtros e posição. Acaba a ficha no fundo da página da lista.
 
 ### 12.7 Tarefas, Foco e Histórico
-- **Nova ação:** tipo por ícones (Chamada, Reunião, Tarefa, Documento, Email, Visita,
-  Evento) · notas · atalhos Em 1h / Em 3h / Amanhã / Próxima semana · data, hora, duração ·
+- **Nova ação:** tipo por ícones (Chamada, Reunião, Tarefa, Documento, Email, Almoço,
+  Jantar, Evento — «Visita» saiu, decidido 21 out 2026) · notas · atalhos Em 1h / Em 3h / Amanhã / Próxima semana · data, hora, duração ·
   para quem (regras de atribuição) · repetir · «Criar tarefa». As tarefas aparecem também
   na aba Tarefas, ligadas à lead.
 - **Foco:** tarefas abertas da lead, por prazo, com botão concluir.

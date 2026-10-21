@@ -320,8 +320,69 @@
   }
   function leadOf(el) { var v = el.closest('[data-lead]'); return v ? v.getAttribute('data-lead') : null; }
 
+  // ── Editar a ficha (§12.5): todos os campos de uma vez, «Gravar» ──
+  function editing(v) { var f = v && $('form[data-lead-edit]', v); return f && !f.hidden ? f : null; }
+  function startEdit(v) {
+    var f = v && $('form[data-lead-edit]', v);
+    if (!f || !f.hidden) return;
+    $('.lv-read', v).hidden = true;
+    f.hidden = false;
+    var b = $('[data-edit-start]', v); if (b) b.hidden = true;
+    var first = $('input:not([type=hidden]), textarea, select', f);
+    if (first) first.focus();
+    if (!reduced.matches && f.animate) f.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 160, easing: 'ease-out' });
+  }
+  function stopEdit(v) {
+    var f = editing(v); if (!f) return;
+    f.reset();
+    f.hidden = true;
+    $('.lv-read', v).hidden = false;
+    var b = $('[data-edit-start]', v); if (b) { b.hidden = false; b.focus({ preventScroll: true }); }
+  }
+  document.addEventListener('click', function (e) {
+    var s = e.target.closest && e.target.closest('[data-edit-start]');
+    if (s) { e.preventDefault(); startEdit(s.closest('.lv')); return; }
+    var c = e.target.closest && e.target.closest('[data-edit-cancel]');
+    if (c) { e.preventDefault(); stopEdit(c.closest('.lv')); }
+  });
+  document.addEventListener('keydown', function (e) {
+    var f = e.target.closest && e.target.closest('form[data-lead-edit]');
+    if (f) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stopEdit(f.closest('.lv')); }
+      else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); f.requestSubmit ? f.requestSubmit() : f.submit(); }
+      return;
+    }
+    // E: editar a lead aberta (no painel ou na ficha), fora dos campos de escrita.
+    if ((e.key === 'e' || e.key === 'E') && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(document.activeElement) && !topMdl() && !$('.cmdk-back.open')) {
+      var v = $('#sp.open .lv') || $('.lv-page');
+      if (v && $('[data-edit-start]', v) && !editing(v)) { e.preventDefault(); startEdit(v); }
+    }
+  }, true);
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f.matches || !f.matches('form[data-lead-edit]')) return;
+    e.preventDefault();
+    var v = f.closest('.lv'), id = v.getAttribute('data-lead'), page = v.classList.contains('lv-page');
+    var btn = $('button[type=submit]', f), fd = new FormData(f);
+    if (page) fd.append('flash', '1');
+    btn.disabled = true;
+    T.api('lead_save', fd).then(function (j) {
+      if (page) { location.reload(); return; }   // o aviso com «Anular» vem com a página
+      T.toast(j.msg, j.undo ? { undo: j.undo, afterUndo: function () { refreshView(id); } } : {});
+      applyParts(id, j);
+      var tr = document.getElementById('l-' + id);
+      if (tr) {
+        var a = $('td.nm a.b', tr), sm = $('td.nm small', tr);
+        if (a) a.textContent = j.name;
+        if (sm && j.company) sm.firstChild ? (sm.firstChild.textContent = j.company) : (sm.textContent = j.company);
+        if (tr.children[3]) tr.children[3].textContent = j.owner;
+      }
+      if (j.changed) refreshView(id); else stopEdit(v);
+    }).catch(function (er) { btn.disabled = false; fail(er); });
+  });
+
   // ── Nova ação (§12.7) ───────────────────────────────────────
-  var TITLES = { call: 'Ligar a ', meeting: 'Reunião com ', email: 'Email para ', visit: 'Visita a ', document: 'Documento para ', event: 'Evento · ', task: 'Tarefa · ' };
+  var TITLES = { call: 'Ligar a ', meeting: 'Reunião com ', email: 'Email para ', lunch: 'Almoço com ', dinner: 'Jantar com ', document: 'Documento para ', event: 'Evento · ', task: 'Tarefa · ' };
   // Os atalhos de tempo, pela hora do browser.
   function quickWhen(k) {
     var d = new Date();

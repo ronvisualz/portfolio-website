@@ -577,7 +577,7 @@
     }
     if (!typing(document.activeElement) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (e.key === '[' && !(ck && ck.classList.contains('open'))) { e.preventDefault(); toggleNav(); return; }
-      if (sp && sp.classList.contains('open') && !$('.mdl.open')) {
+      if (sp && sp.classList.contains('open') && !$('.mdl.open') && !$('.lv-form:not([hidden])', sp)) {
         if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'J') { e.preventDefault(); panelStep(1); return; }
         if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'K') { e.preventDefault(); panelStep(-1); return; }
       }
