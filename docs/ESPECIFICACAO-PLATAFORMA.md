@@ -647,6 +647,26 @@ os mesmos filtros e posição. Acaba a ficha no fundo da página da lista.
   atribuída, estado, tarefa criada/concluída, chamada atendida/não atendida com nº da
   tentativa, arquivada com motivo, convertida) + notas manuais («Registar nota»); data,
   hora e autor em cada entrada.
+- **Cada tipo de entrada do histórico tem ícone e cor próprios**; ao passar o cursor
+  (ou toque longo) sobre o ícone aparece o nome do tipo. Aplica-se a todos os históricos
+  da plataforma (leads, negócios, contactos). Cores sempre a partir dos tokens dos dois modos:
+  | Tipo | Ícone | Cor |
+  |---|---|---|
+  | Lead criada | estrela/+ | neutro |
+  | Atribuída / reatribuída | pessoa com seta | céu |
+  | Mudança de estado | setas | neutro |
+  | Chamada atendida (Follow-Up) | telefone | azul |
+  | Chamada não atendida | telefone cortado | laranja |
+  | Email | envelope | azul |
+  | Reunião / visita | pessoas / pin | azul |
+  | Tarefa criada | caixa vazia | neutro |
+  | Tarefa concluída | caixa com visto | verde |
+  | Nota manual | balão | amarelo suave |
+  | Arquivada | caixa de arquivo | vermelho |
+  | Reativada | seta circular | céu |
+  | Convertida em negócio | seta para a direita | amarelo |
+  | Prazo em atraso | relógio | vermelho |
+  Novos tipos que surjam seguem a mesma regra (ícone + cor + nome na dica).
 - **Último contacto** passa a ser automático, a partir do histórico.
 - **Sem próxima ação:** lead ativa com Foco vazio mostra «Sem próxima ação» e conta como
   **Em risco** nas vistas.
