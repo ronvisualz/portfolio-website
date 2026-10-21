@@ -1221,3 +1221,58 @@ negócio. Relatórios: margem média real por funil e por serviço; serviços qu
   preço s/ e c/ IVA, condições — nunca custos nem margens. Guardada na pasta do negócio no Drive.
 - **Permissões:** quem não tem acesso ao Financeiro preenche linhas mas não vê preços de
   fornecedores, margens nem lucro; admins veem tudo; configurável na grelha da aba Equipa.
+
+---
+
+## 15. Aba Negócios — ficha central (decidido 22 out 2026)
+
+Substitui o que contradiga a §3.3 e a §9.5. Aplica a §11 (design, degradês, «Anular»,
+dicas, histórico com ícones/cores).
+
+### 15.1 Quando aparece e onde vivem os concluídos
+- O negócio aparece na aba Negócios quando chega a **Kickoff** em qualquer funil.
+- **Os concluídos passam a viver na aba Negócios** (separador Concluídos). O Pipeline
+  fica só com a fase comercial e com os Perdidos (o separador «Concluídos» do Pipeline sai).
+- Lista: separadores **Em produção** (por defeito) · **Concluídos** · **Todos**; vistas
+  Os meus · Entrega esta semana · Em risco · Por receber; colunas ID · negócio (cliente em
+  pequeno) · etapa · valor · margem real · % recebido · entrega.
+
+### 15.2 Regra de ouro
+A ficha **não cria dados**: cada cartão lê de outra aba pelo ID. «Ver detalhe» abre o
+**painel lateral dessa aba já filtrado para este negócio**, sem sair da ficha; edita-se
+sempre no sítio de origem.
+
+### 15.3 Topo da ficha
+- ID, nome, tipo, estado; cliente · trazido por · responsável · funil · IVA.
+- **Barra de etapas de produção**: por agora Pré-produção · Produção · Pós-produção ·
+  Entrega · Concluído; **no futuro usa as etapas de produção do funil** (quando definidas).
+  Clicar avança a etapa, com «Anular».
+- Ações: pasta no Drive · abrir orçamento · nova tarefa · adicionar documento · mais.
+- **Pulso** (5 indicadores): valor s/ IVA · custos reais · margem real vs meta · % recebido ·
+  lucro (e lucro/mês quando há prazo).
+- **«Precisa de atenção»** (chips automáticos): margem abaixo da meta, entrega próxima,
+  fatura em atraso, custos por pagar, fornecedores por avaliar, sem orçamento.
+
+### 15.4 Cartões
+| Cartão | Origem / conteúdo |
+|---|---|
+| Cliente e contactos | Contactos: cliente, pessoas, trazido por, outros negócios do cliente |
+| Orçamento | Orçamentação: versão aceite, preço e margem orçados, abrir folha |
+| Resultado | Orçamentação + Financeiro: preço, custos, gross profit, gross margin, orçado vs real |
+| Equipa e fornecedores | Custos por pessoa/fornecedor, valor, IVA, pago/fechado |
+| Produção e tarefas | Tarefas: etapa, tarefas abertas/concluídas, entregas, prazo real vs orçado |
+| Ficheiros | Drive: pasta `<ID>_<NOME>`, contagens por tipo, último ficheiro |
+| Documentos | Contratuais (proposta, contrato) · fiscais (faturas emitidas) · faturas de fornecedores |
+| Criativos | Centro Criativo (quando desenhado): versões, aprovações do cliente |
+| Histórico | linha do tempo de **todas as fontes** com ícones/cores da §12.7 |
+| Fecho do negócio | checklist (15.5) |
+
+### 15.5 Fecho do negócio
+Ao passar a Concluído aparece a checklist: custos todos pagos · cliente pagou · entregas
+feitas · fornecedores avaliados (§13.3) · resultado fechado (§14.5). Ações opcionais:
+**«Enviar para o portfólio»** (Marketing) e **«Pedir testemunho»** ao cliente. Pode concluir
+com itens em falta, mas o negócio fica assinalado e conta como «Em risco» até fechar.
+
+### 15.6 Negócios anteriores à plataforma
+Negócios migrados sem orçamento mostram «Sem orçamento na plataforma» e usam o valor e
+os custos existentes para o Resultado.
