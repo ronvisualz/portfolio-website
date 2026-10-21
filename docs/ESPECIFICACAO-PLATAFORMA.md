@@ -568,10 +568,10 @@ a criar leads na mesma base de dados.
   continua `no-reply@topperdigital.xyz`, o domínio com o email configurado.
 - **Publicar:** os ficheiros de `admin/` e do portefólio continuam a ir para `topperdigital.xyz`;
   os de `hub/` vão para a raiz de `topperhub.xyz`.
-- **Falta (no painel da Cloudflare):** acrescentar `https://topperhub.xyz` às origens permitidas da
-  política CORS do bucket do Drive (R2 › bucket › Settings › CORS Policy), senão o browser recusa
-  os envios de ficheiros para o Drive a partir do domínio novo (e as leituras que o JavaScript do
-  Drive faz diretamente ao R2).
+- **Drive (Cloudflare R2):** a política CORS do bucket (R2 › bucket › Settings › CORS Policy)
+  permite `https://topperhub.xyz` e `https://topperdigital.xyz`; confirmado com pedidos de teste
+  (PUT e GET autorizados para os dois, recusados para outra origem). Sem isto o browser recusaria
+  os envios para o Drive a partir do domínio novo.
 - Cada pessoa tem de entrar outra vez uma vez (a sessão está presa ao endereço).
 
 ---
