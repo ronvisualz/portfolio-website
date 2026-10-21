@@ -796,3 +796,80 @@ Criar o separador **Navegação** na aba Centro de Conhecimento com a lista de a
 teclado e gestos da plataforma: `⌘K/Ctrl+K` pesquisa · `[` recolher/expandir menu ·
 `N` nova lead · `↑/↓` ou `J/K` lead anterior/seguinte no painel · `Esc` fechar painel ou
 formulário · toque longo = ver nome de um ícone. Atualizar sempre que surgir um atalho novo.
+
+---
+
+## 13. Aba Contactos v2 (decidido 21 out 2026)
+
+Substitui o que contradiga a §3.4. Aplica a §11 (design transversal) e o padrão das Leads
+(painel lateral, histórico com ícones/cores, «Anular»).
+
+### 13.1 Modelo: Pessoa e Empresa
+- **Empresa:** nome, NIF, site/redes, morada, tipos (cliente · fornecedor · parceiro).
+- **Pessoa:** nome, cargo, telefone(s), email, redes sociais, empresa (opcional), tipos
+  (cliente · fornecedor · freelancer · parceiro). Uma empresa tem **várias pessoas**; se a
+  pessoa muda de empresa fica o histórico. Freelancer = pessoa sem empresa.
+- Migração: cada contacto atual vira Empresa (se tiver «Pessoa de contacto», cria também a
+  Pessoa ligada). Contactos criados pelas Leads (§12.1) usam este modelo.
+
+### 13.2 Separadores e criação
+- **Todos** abre por defeito (pessoas, com a empresa em pequeno). Depois: Clientes ·
+  Fornecedores · Freelancers · Parceiros · **Empresas** · **Relações**.
+- **Empresas:** lista com nº de pessoas; abrir mostra todas as pessoas (telefones, emails)
+  e os negócios da empresa.
+- Botão **«+ Adicionar contacto»** na linha dos separadores (o formulário no fundo da
+  página desaparece), com a animação da §13.8.
+
+### 13.3 Serviços e preçário (fornecedores e freelancers)
+- Ao marcar fornecedor/freelancer aparece, em destaque, **«Serviços e preços»**: linhas com
+  **Serviço** (lista comum) · **Unidade** (hora, dia, meio dia, projeto, segundo de animação,
+  peça) · **Preço s/ IVA** · cobra IVA (sim/não) · notas · válido desde. Histórico de preços.
+- **Lista de serviços** gerida por admins em Definições. Inicial: **3D Animation · 2D
+  Animation · VFX · CGI · Edição · Compositing**.
+- **Estado Ativo / Inativo** do fornecedor/freelancer, alterado **só por superadmin e
+  admins**. Só os **ativos** aparecem como disponíveis na calculadora da Orçamentação.
+- Orçamentação (a desenhar): ao escolher um serviço, a calculadora lista os fornecedores
+  ativos que o prestam, com preço, unidade e avaliação.
+- **Avaliação por trabalho:** quando um custo de fornecedor é marcado como pago no
+  Financeiro, pede 1–5 estrelas; a avaliação do fornecedor é a média real.
+
+### 13.4 Fontes de negócio
+- Cada lead e negócio tem **«Trazido por»** (pessoa ou empresa externa que originou o
+  negócio — ex.: agência que traz o cliente final), separado do **Cliente** (quem paga) e
+  do **Criado por** (utilizador da plataforma, automático). — significado a confirmar.
+- Ficha do contacto: bloco **«Fontes de negócio»** com leads ativas, negócios no Pipeline,
+  concluídos e perdidos que vieram dele (estado, valor, cliente final); abrir mostra o
+  histórico. Totais no topo: nº gerado, faturado, taxa de conversão.
+
+### 13.5 Relações (nurturing)
+- Botão **«Acompanhar relação»** na ficha pede: **Formalidade** (Próxima · Cordial ·
+  Formal) · **Potencial** (1–5) · **Tipo de negócio** (Corporate · Médio · Pequeno) e o
+  responsável da relação.
+- **Nível automático** A/B/C a partir dessas classificações; cadência por nível em
+  Definições (admins, global): **A 7 dias · B 15 · C 30**; exceção por contacto possível.
+- Na data, cria a tarefa **«Follow-up de relação: <nome>»** para o responsável. Ao
+  concluir, «Como correu?»: **Falámos** (nota + próxima data) · **Não atendeu** (nova
+  tentativa em 2 dias) · **Reunião marcada** (cria tarefa) · **Gerou uma lead** (abre
+  «+ Adicionar Lead» com «Trazido por» preenchido).
+- Separador **Relações:** nível, **saúde** (anel: dias desde o último toque vs cadência),
+  próxima data, valor gerado; filtros Em atraso · Esta semana · Por nível.
+- **Revisão de nível a cada 6 meses** (o sistema propõe subir/descer conforme negócios
+  gerados) · **variação do toque** (sugere enviar projeto novo, convite para café/almoço,
+  aniversário se houver data) · **Pausar relação** com data de regresso.
+
+### 13.6 Outras
+- **Juntar duplicados** (mesmo telefone/email), mantendo o histórico dos dois.
+- **Importar** CSV e vCard, com deteção de duplicados.
+- Painel lateral, histórico com ícones/cores e «Anular» como nas Leads.
+
+### 13.7 Ficha do contacto (painel lateral → ficha completa)
+Dados · empresa/pessoas ligadas · Serviços e preços (se aplicável) · Fontes de negócio ·
+Relação (se acompanhada) · Nova ação / Foco / Notas & Histórico.
+
+### 13.8 Animação dos formulários de criação (regra geral, substitui a da §12.1)
+Todos os «+ Adicionar …»: **o botão transforma-se no formulário** — estica a partir da sua
+posição e forma (como a sair de um funil) até ao centro; o conteúdo aparece a seguir;
+pequeno ressalto no fim (~350 ms). **Ao fechar, o inverso:** conteúdo desaparece, o
+formulário encolhe de volta para dentro do botão. `prefers-reduced-motion`: aparece sem
+movimento. O mesmo vale para os formulários «Como correu?» e Arquivar, a partir do botão
+que os abre.
