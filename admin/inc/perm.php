@@ -53,6 +53,7 @@ const TAB_PAGES = [
     'pipeline'  => '/admin/pipeline.php',
     'contactos' => '/admin/contactos.php',
     'negocios'  => '/admin/negocios.php',
+    'orcamentacao' => '/admin/orcamentacao.php',
     'tarefas'   => '/admin/calendar.php',
     'drive'     => '/admin/drive.php',
     'financeiro'=> '/admin/financeiro.php',

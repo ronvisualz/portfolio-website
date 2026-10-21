@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -222,6 +222,14 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // contacto. Os contactos atuais passam ao modelo novo uma vez.
     require_once __DIR__ . '/migrate_contacts_v2.php';
     migrate_contacts_v2($pdo);
+
+    // ── 16 · aba Orçamentação (§14) ─────────────────────────
+    //
+    // Uma folha por negócio com versões, linhas de custo e histórico,
+    // modelos, custo/hora e horas por mês de cada pessoa da Equipa e as
+    // definições globais (MSO, margem, horas por dia, meta mensal).
+    require_once __DIR__ . '/migrate_budget.php';
+    migrate_budget($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

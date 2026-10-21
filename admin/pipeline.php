@@ -262,7 +262,8 @@ if ($open):
 <div class="sub"><?= e(funnel_get($pdo, (int)$open['funnel_id'])['name'] ?? '—') ?> · <?= e($curStage['name'] ?? '—') ?>
   <?= $open['phase'] === 'lost' ? ' · <span class="chip no">Perdido</span>' : '' ?>
   <?= $open['phase'] === 'done' ? ' · <span class="chip ok">Concluído</span>' : '' ?>
-  <?= can('negocios') ? ' · <a class="lnk" href="/admin/negocio.php?id=' . (int)$open['id'] . '">Abrir a ficha completa</a>' : '' ?></div>
+  <?= can('negocios') ? ' · <a class="lnk" href="/admin/negocio.php?id=' . (int)$open['id'] . '">Abrir a ficha completa</a>' : '' ?>
+  <?= can('orcamentacao') ? ' · <a class="btn ghost sm" href="/admin/orcamento.php?id=' . (int)$open['id'] . '" data-tip="A folha de orçamento deste negócio">' . icon('orcamentacao') . ' Orçamento</a>' : '' ?></div>
 
 <?php if ($canEdit): ?>
 <form method="post">

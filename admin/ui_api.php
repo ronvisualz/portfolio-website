@@ -37,6 +37,19 @@
  *   POST a=contact_merge      id, other — juntar duplicados (gestores)
  *   POST a=cost_rate          cost, stars — avaliação de um trabalho pago (Financeiro)
  *
+ *   Orçamentação (§14) — o cálculo volta sempre filtrado: sem Financeiro não seguem
+ *   preços de fornecedores, custos internos, margens nem lucro:
+ *   GET  a=budget_suppliers&service=   fornecedores ATIVOS desse serviço (preço só com Financeiro)
+ *   POST a=budget_set         version, field, value — duração, datas, fases, ocupação, margem*, custos fixos*, textos (*Financeiro)
+ *   POST a=budget_fixed_avg   version — volta à média dos 3 meses (Financeiro)
+ *   POST a=budget_line_save   version, line, kind, service_id, contact_id, user_id, …, qty, qty_unit, note
+ *   POST a=budget_line_qty    line, qty | qty_unit
+ *   POST a=budget_line_remove line — com «Anular»
+ *   POST a=budget_version_new version — nova versão a partir desta, com «Anular»
+ *   POST a=budget_accept      version — com «Anular»
+ *   POST a=budget_tpl_save    version, name  ·  budget_tpl_apply sheet, template (com «Anular»)
+ *   POST a=budget_pdf         version — proposta em PDF guardada na pasta do negócio no Drive
+ *
  * Os POST pedem o token CSRF (campo «csrf» ou cabeçalho X-CSRF-Token).
  * Todas as permissões se verificam aqui, em cada pedido (§4).
  */
@@ -121,6 +134,33 @@ function contact_parts(PDO $pdo, int $id): array {
             'relation' => contact_relation_html($pdo, $c, relation_get($pdo, $id), can('contactos', PERM_EDIT))];
 }
 
+/** A versão do pedido, para editar (Orçamentação, nível editar; só a última, não aceite, com a folha aberta). */
+function budget_version_for_edit(PDO $pdo, int $versionId): array {
+    require_perm('orcamentacao', PERM_EDIT);
+    require_once __DIR__ . '/inc/budget_view.php';
+    $v = budget_version_get($pdo, $versionId);
+    $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+    if (!$v || !$sheet) throw new RuntimeException('Versão não encontrada. Recarregue a página.');
+    if (!budget_editable($sheet, $v, budget_versions($pdo, (int)$sheet['id']))) {
+        throw new RuntimeException('Esta versão já não se edita (aceite, anterior ou negócio concluído). Recarregue a página.');
+    }
+    return [$sheet, $v];
+}
+
+/** Depois de mudar a folha: o cálculo (filtrado pelas permissões) e o custo de cada linha; com $rows, as linhas desenhadas. */
+function budget_parts(PDO $pdo, int $versionId, bool $rows = false): array {
+    $rc = budget_recalc($pdo, $versionId);
+    $money = budget_money();
+    $costs = [];
+    foreach ($rc['lines'] as $l) if ($money || $l['kind'] === 'other') $costs[(int)$l['id']] = budget_eur((float)$l['cost']);
+    $out = ['calc' => budget_calc_view($rc['calc'], $money), 'costs' => $costs];
+    if ($rows) {
+        $out['rows'] = budget_lines_rows($pdo, $rc['lines'], $money, true);
+        $out['lines'] = json_decode(budget_lines_json($rc['lines'], $money), true);
+    }
+    return $out;
+}
+
 /** Para LIKE … ESCAPE '!'. */
 function like(string $s): string {
     return '%' . strtr($s, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
@@ -178,6 +218,22 @@ try {
                 foreach ($st->fetchAll() as $d) {
                     $add('Negócios', ['title' => $d['name'], 'id' => $d['code'], 'sub' => ($ph[$d['phase']] ?? '') . ($d['stage'] ? ' · ' . $d['stage'] : ''),
                                       'url' => deal_url($d), 'panel' => 'deal:' . $d['id'], 'icon' => icon('negocios')]);
+                }
+            }
+
+            // Folhas de orçamento (§14): pelo ID, pelo negócio ou pelo cliente, em qualquer separador.
+            if (can('orcamentacao') && db_has_table($pdo, 'budget_sheets')) {
+                $st = $pdo->prepare("SELECT d.id, d.code, d.name, d.phase, s.accepted_version_id, (SELECT MAX(num) FROM budget_versions v WHERE v.sheet_id = s.id) AS nv,
+                                            COALESCE(co.name, c.name, NULLIF(d.company, '')) AS client
+                                       FROM budget_sheets s JOIN deals d ON d.id = s.deal_id
+                                       LEFT JOIN contacts co ON co.id = d.company_id LEFT JOIN contacts c ON c.id = d.contact_id
+                                      WHERE d.code LIKE ? ESCAPE '!' OR d.name LIKE ? ESCAPE '!' OR co.name LIKE ? ESCAPE '!' OR c.name LIKE ? ESCAPE '!'
+                                      ORDER BY d.code DESC LIMIT 5");
+                $st->execute([$l, $l, $l, $l]);
+                $tabName = ['pipeline' => 'Em orçamentação', 'production' => 'Em produção', 'done' => 'Ganhos', 'lost' => 'Arquivo'];
+                foreach ($st->fetchAll() as $b) {
+                    $add('Orçamentos', ['title' => $b['name'], 'id' => $b['code'], 'sub' => trim(($tabName[$b['phase']] ?? '') . ' · v' . (int)$b['nv'] . ($b['accepted_version_id'] ? ' · com versão aceite' : '') . ($b['client'] ? ' · ' . $b['client'] : '')),
+                                        'url' => '/admin/orcamento.php?id=' . (int)$b['id'], 'icon' => icon('orcamentacao')]);
                 }
             }
 
@@ -789,6 +845,229 @@ try {
         cost_rate($pdo, $cost, (int)($_POST['stars'] ?? 0), (int)current_user()['id']);
         [$avg, $n] = contact_rating($pdo, (int)$cost['contact_id']);
         out(200, ['ok' => true, 'msg' => $cost['contact_name'] . ' avaliado: média ' . number_format((float)$avg, 1, ',', '') . ' (' . $n . ').']);
+
+    // ── Orçamentação (§14) ──────────────────────────────────
+    case 'budget_suppliers':
+        require_perm('orcamentacao', PERM_VIEW);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $money = budget_money();
+        $items = [];
+        foreach (suppliers_for_service($pdo, (int)($_GET['service'] ?? 0)) as $o) {
+            $items[] = ['id' => (int)$o['id'], 'name' => $o['name'], 'unit' => (string)$o['unit'], 'unit_label' => SERVICE_UNITS[$o['unit']] ?? (string)$o['unit'],
+                        'timed' => budget_unit_hours((string)$o['unit'], 8) !== null, 'missing' => $o['price'] === null,
+                        'price' => $money && $o['price'] !== null ? budget_unit_price_label(['unit_price' => $o['price'], 'price_unit' => $o['unit']]) : null,
+                        'rating' => $o['rating'] !== null ? number_format((float)$o['rating'], 1, ',', '') : null];
+        }
+        out(200, ['ok' => true, 'items' => $items, 'money' => $money]);
+
+    case 'budget_set':
+        if (!$post) break;
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)($_POST['version'] ?? 0));
+        $field = (string)($_POST['field'] ?? '');
+        $raw = (string)($_POST['value'] ?? '');
+        $money = budget_money();
+        $date = function (string $x): ?string {
+            if ($x === '') return null;
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $x) || !strtotime($x)) throw new RuntimeException('Data inválida.');
+            return $x;
+        };
+        $set = [];
+        switch ($field) {
+            case 'dur_mode':
+                if (!isset(BUDGET_DUR_MODES[$raw])) throw new RuntimeException('Modo de duração inválido.');
+                $set['dur_mode'] = $raw;
+                if ($raw === 'phases' && !budget_phases($v)) {
+                    $set['phases'] = json_encode(array_map(fn($n) => ['name' => $n, 'days' => 0], BUDGET_PHASES), JSON_UNESCAPED_UNICODE);
+                }
+                break;
+            case 'start_date': case 'end_date':
+                $set[$field] = $date($raw);
+                $s0 = $field === 'start_date' ? $set[$field] : $v['start_date'];
+                $e0 = $field === 'end_date' ? $set[$field] : $v['end_date'];
+                if ($s0 && $e0 && $e0 < $s0) throw new RuntimeException('O fim tem de ser depois do início.');
+                break;
+            case 'weeks': $set['weeks'] = $raw === '' ? null : budget_num($raw, 520); break;
+            case 'days':  $set['days'] = $raw === '' ? null : budget_num($raw, 2600); break;
+            case 'phases':
+                $ph = json_decode($raw, true);
+                if (!is_array($ph)) throw new RuntimeException('Fases inválidas.');
+                $clean = budget_phases(['phases' => json_encode(array_slice(array_map(fn($p) => ['name' => (string)($p['name'] ?? ''), 'days' => budget_num($p['days'] ?? 0, 1000)], $ph), 0, 20))]);
+                $set['phases'] = json_encode($clean, JSON_UNESCAPED_UNICODE);
+                break;
+            case 'occupancy': $set['occupancy'] = $raw === '' ? null : budget_num($raw, 100); break;
+            case 'margin':
+                if (!$money) throw new RuntimeException('Só quem vê o Financeiro muda a margem.');
+                $m = budget_num($raw, 95);
+                if ($raw === '') throw new RuntimeException('Indique a margem.');
+                if (abs($m - (float)$v['margin']) > 0.001) budget_log_margin($pdo, (int)$sheet['id'], (int)$v['num'], (float)$v['margin'], $m);
+                $set['margin'] = $m;
+                break;
+            case 'fixed_monthly':
+                if (!$money) throw new RuntimeException('Só quem vê o Financeiro muda os custos fixos.');
+                $set['fixed_monthly'] = budget_num($raw, 10000000);
+                $set['fixed_manual'] = 1;
+                break;
+            case 'description': $set['description'] = mb_substr(trim($raw), 0, 6000); break;
+            case 'conditions':  $set['conditions'] = mb_substr(trim($raw), 0, 4000); break;
+            default: throw new RuntimeException('Campo inválido.');
+        }
+        $pdo->prepare('UPDATE budget_versions SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ' WHERE id = ?')
+            ->execute([...array_values($set), $v['id']]);
+        $v2 = budget_version_get($pdo, (int)$v['id']);
+        out(200, ['ok' => true] + budget_parts($pdo, (int)$v['id']) + (in_array($field, ['phases', 'start_date', 'dur_mode'], true) ? ['phases' => budget_phases_rows($v2, true)] : []));
+
+    case 'budget_fixed_avg':
+        if (!$post) break;
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)($_POST['version'] ?? 0));
+        if (!budget_money()) throw new RuntimeException('Só quem vê o Financeiro muda os custos fixos.');
+        $avg = budget_fixed_average($pdo)['avg'];
+        $pdo->prepare('UPDATE budget_versions SET fixed_monthly = ?, fixed_manual = 0 WHERE id = ?')->execute([$avg, $v['id']]);
+        out(200, ['ok' => true, 'msg' => 'Custos fixos: média dos 3 últimos meses (' . budget_eur($avg) . ').', 'fixed' => budget_n($avg)] + budget_parts($pdo, (int)$v['id']));
+
+    case 'budget_line_save':
+        if (!$post) break;
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)($_POST['version'] ?? 0));
+        $lineId = (int)($_POST['line'] ?? 0);
+        $old = null;
+        if ($lineId) {
+            $st = $pdo->prepare('SELECT * FROM budget_lines WHERE id = ? AND version_id = ?');
+            $st->execute([$lineId, $v['id']]);
+            $old = $st->fetch();
+            if (!$old) throw new RuntimeException('Esta linha já não existe. Recarregue a página.');
+        }
+        $kind = (string)($_POST['kind'] ?? '');
+        $src = ['kind' => $kind, 'service_id' => $_POST['service_id'] ?? 0, 'contact_id' => $_POST['contact_id'] ?? 0, 'user_id' => $_POST['user_id'] ?? 0,
+                'label' => $kind === 'team' ? ($_POST['team_label'] ?? '') : ($_POST['other_label'] ?? ''), 'price_unit' => $_POST['price_unit'] ?? 'fixed',
+                'unit_price' => $_POST['unit_price'] ?? 0, 'qty' => $_POST['qty'] ?? 0, 'qty_unit' => $_POST['qty_unit'] ?? 'hour', 'note' => $_POST['note'] ?? ''];
+        // Alterar uma linha de quem já lá estava não muda o preço copiado (§14.2).
+        $keep = $old && $old['kind'] === $kind && (($kind === 'supplier' && (int)$old['service_id'] === (int)$src['service_id'] && (int)$old['contact_id'] === (int)$src['contact_id'])
+                                                  || ($kind === 'team' && (int)$old['user_id'] === (int)$src['user_id']));
+        if ($keep && $kind === 'supplier') {
+            // O fornecedor pode ter ficado inativo ou mudado o preço: a linha guarda o que foi copiado.
+            $d = ['kind' => 'supplier', 'service_id' => (int)$old['service_id'], 'contact_id' => (int)$old['contact_id'], 'user_id' => null, 'label' => $old['label'],
+                  'price_unit' => $old['price_unit'], 'unit_price' => (float)$old['unit_price'], 'qty' => budget_num($src['qty']),
+                  'qty_unit' => budget_unit_hours((string)$old['price_unit'], 8) !== null ? (($src['qty_unit'] === 'day') ? 'day' : 'hour') : $old['price_unit'],
+                  'note' => mb_substr(trim((string)$src['note']), 0, 255)];
+            if ($d['qty'] <= 0) throw new RuntimeException('Indique a quantidade.');
+        } else {
+            if (!budget_money() && $kind === 'other' && $old && $old['kind'] === 'other' && trim((string)$src['unit_price']) === '') $src['unit_price'] = $old['unit_price'];
+            $d = budget_line_input($pdo, $v, $src);
+            if ($keep && $kind === 'team') $d['unit_price'] = (float)$old['unit_price'];
+        }
+        $lid = budget_line_save($pdo, $v, $lineId ?: null, $d);
+        $who = $kind === 'supplier' ? (string)$pdo->query('SELECT name FROM contacts WHERE id = ' . (int)$d['contact_id'])->fetchColumn()
+             : ($kind === 'team' ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$d['user_id'])->fetchColumn() : 'interno');
+        $ql = budget_qty_label($d);
+        budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · ' . ($old ? 'alterada: ' : 'nova: ') . $d['label'] . ' · ' . $who . ($ql !== '—' ? ' · ' . $ql : ''));
+        out(200, ['ok' => true, 'msg' => $old ? 'Linha alterada.' : 'Linha adicionada.', 'line' => $lid] + budget_parts($pdo, (int)$v['id'], true));
+
+    case 'budget_line_qty':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $st = $pdo->prepare('SELECT * FROM budget_lines WHERE id = ?');
+        $st->execute([(int)($_POST['line'] ?? 0)]);
+        $l = $st->fetch();
+        if (!$l) throw new RuntimeException('Esta linha já não existe. Recarregue a página.');
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)$l['version_id']);
+        if (isset($_POST['qty'])) {
+            $q = budget_num($_POST['qty']);
+            if ($q <= 0) throw new RuntimeException('A quantidade tem de ser maior que zero. Para tirar a linha, use o ×.');
+            $pdo->prepare('UPDATE budget_lines SET qty = ? WHERE id = ?')->execute([$q, $l['id']]);
+        }
+        if (isset($_POST['qty_unit']) && isset(BUDGET_QTY_UNITS[$_POST['qty_unit']])
+            && ($l['kind'] === 'team' || ($l['kind'] === 'supplier' && budget_unit_hours((string)$l['price_unit'], 8) !== null))) {
+            $pdo->prepare('UPDATE budget_lines SET qty_unit = ? WHERE id = ?')->execute([$_POST['qty_unit'], $l['id']]);
+        }
+        out(200, ['ok' => true] + budget_parts($pdo, (int)$v['id']));
+
+    case 'budget_line_remove':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $st = $pdo->prepare('SELECT * FROM budget_lines WHERE id = ?');
+        $st->execute([(int)($_POST['line'] ?? 0)]);
+        $l = $st->fetch();
+        if (!$l) throw new RuntimeException('Esta linha já não existe. Recarregue a página.');
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)$l['version_id']);
+        $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$l['id']]);
+        budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · tirada: ' . $l['label']);
+        out(200, ['ok' => true, 'msg' => '«' . $l['label'] . '» tirada.', 'undo' => undo_push('budget_line', $l)] + budget_parts($pdo, (int)$v['id'], true));
+
+    case 'budget_version_new':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $from = budget_version_get($pdo, (int)($_POST['version'] ?? 0));
+        $sheet = $from ? budget_sheet_by_id($pdo, (int)$from['sheet_id']) : null;
+        if (!$sheet) throw new RuntimeException('Folha não encontrada.');
+        if ($sheet['closed_at']) throw new RuntimeException('Negócio concluído: a folha está fechada.');
+        $vid = budget_version_new($pdo, $sheet, $from, (int)current_user()['id']);
+        budget_recalc($pdo, $vid);
+        $nv = budget_version_get($pdo, $vid);
+        out(200, ['ok' => true, 'msg' => 'v' . $nv['num'] . ' criada a partir da v' . $from['num'] . '.',
+                  'url' => '/admin/orcamento.php?id=' . (int)$sheet['deal_id'] . '&v=' . (int)$nv['num'],
+                  'undo' => undo_push('budget_version', ['version' => $vid, 'sheet' => (int)$sheet['id'], 'updated' => (string)$nv['updated_at']])]);
+
+    case 'budget_accept':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $v = budget_version_get($pdo, (int)($_POST['version'] ?? 0));
+        $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+        if (!$sheet) throw new RuntimeException('Versão não encontrada.');
+        if ($sheet['closed_at']) throw new RuntimeException('Negócio concluído: a folha está fechada.');
+        if ((int)$sheet['accepted_version_id'] === (int)$v['id']) throw new RuntimeException('Esta versão já é a aceite.');
+        $deal = record_get($pdo, (int)$sheet['deal_id']);
+        $snap = ['sheet' => (int)$sheet['id'], 'version' => (int)$v['id'], 'prev' => $sheet['accepted_version_id'] !== null ? (int)$sheet['accepted_version_id'] : null,
+                 'occupancy' => $v['occupancy'], 'value' => $deal['value_estimate'], 'deal' => (int)$deal['id']];
+        budget_accept($pdo, $sheet, $v, (int)current_user()['id']);
+        $v = budget_version_get($pdo, (int)$v['id']);
+        out(200, ['ok' => true, 'msg' => 'v' . $v['num'] . ' aceite' . (budget_money() ? ': ' . budget_eur((float)$v['price']) . ' passa a ser o valor do negócio.' : '.'),
+                  'undo' => undo_push('budget_accept', $snap)]);
+
+    case 'budget_tpl_save':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $v = budget_version_get($pdo, (int)($_POST['version'] ?? 0));
+        if (!$v) throw new RuntimeException('Versão não encontrada.');
+        $lines = budget_lines($pdo, (int)$v['id']);
+        if (!$lines) throw new RuntimeException('Esta versão ainda não tem linhas.');
+        budget_template_save($pdo, $v, $lines, (string)($_POST['name'] ?? ''), (int)current_user()['id']);
+        out(200, ['ok' => true, 'msg' => 'Modelo «' . trim((string)$_POST['name']) . '» guardado.']);
+
+    case 'budget_tpl_apply':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_EDIT);
+        require_once __DIR__ . '/inc/budget_view.php';
+        $sheet = budget_sheet_by_id($pdo, (int)($_POST['sheet'] ?? 0));
+        if (!$sheet) throw new RuntimeException('Folha não encontrada.');
+        if ($sheet['closed_at']) throw new RuntimeException('Negócio concluído: a folha está fechada.');
+        $st = $pdo->prepare('SELECT * FROM budget_templates WHERE id = ?');
+        $st->execute([(int)($_POST['template'] ?? 0)]);
+        $tpl = $st->fetch();
+        if (!$tpl) throw new RuntimeException('Escolha o modelo.');
+        $versions = budget_versions($pdo, (int)$sheet['id']);
+        $last = end($versions);
+        $before = $last;
+        $res = budget_template_apply($pdo, $sheet, $tpl, (int)current_user()['id']);
+        $nv = budget_version_get($pdo, $res['version_id']);
+        $undo = (int)$res['version_id'] === (int)$last['id']
+            ? undo_push('budget_fill', ['version' => (int)$last['id'], 'params' => array_intersect_key($before, array_flip(['dur_mode', 'weeks', 'days', 'phases', 'occupancy', 'description']))])
+            : undo_push('budget_version', ['version' => (int)$nv['id'], 'sheet' => (int)$sheet['id'], 'updated' => (string)$nv['updated_at']]);
+        out(200, ['ok' => true, 'msg' => 'Modelo «' . $tpl['name'] . '» aplicado na v' . $nv['num'] . '.' . ($res['skipped'] ? ' De fora: ' . implode('; ', $res['skipped']) : ''),
+                  'url' => '/admin/orcamento.php?id=' . (int)$sheet['deal_id'] . '&v=' . (int)$nv['num'], 'undo' => $undo]);
+
+    case 'budget_pdf':
+        if (!$post) break;
+        require_perm('orcamentacao', PERM_VIEW);
+        require_once __DIR__ . '/inc/budget_pdf.php';
+        $v = budget_version_get($pdo, (int)($_POST['version'] ?? 0));
+        $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+        if (!$sheet) throw new RuntimeException('Versão não encontrada.');
+        $r = budget_pdf_publish($pdo, $sheet, $v);
+        out(200, ['ok' => true, 'msg' => $r['msg'], 'url' => '/admin/orcamento_pdf.php?v=' . (int)$v['id']]);
 
     // ── Pipeline: mover sem recarregar ──────────────────────
     case 'deal_move':

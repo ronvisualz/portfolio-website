@@ -1151,6 +1151,152 @@ button.on-dot:disabled { opacity: .5; cursor: default; }
   .mini3 b { font-size: 14px; }
 }
 
+/* ── Orçamentação (§14) ─────────────────────────────────── */
+/* folha: cabeçalho com versões, duas colunas (linhas e tempo · cálculo e preço) */
+.bs-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; margin: 0 0 12px; }
+.bs-who .id { color: var(--mute); }
+.bs-who h1 { margin: 2px 0 2px; }
+.bs-sub { margin: 0; color: var(--mute); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bs-vers { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vchip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px var(--mono); padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-2);
+  background: var(--panel); color: var(--fg); text-decoration: none; cursor: pointer; }
+.vchip .ico { width: 13px; height: 13px; }
+.vchip:hover { border-color: var(--mute-2); color: var(--fg); }
+.vchip.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.vchip.acc { background: var(--hi); background-image: var(--g-yel); color: var(--on-hi); border-color: transparent; box-shadow: var(--sh-btn); }
+.vchip.acc.on { box-shadow: var(--sh-btn), 0 0 0 2px var(--fg); }
+.vchip.add { border-style: dashed; color: var(--mute); }
+.bs-tabs { margin-bottom: 12px; }
+.bs-note { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; padding: 9px 12px; border-radius: var(--r); background: var(--info-bg); color: var(--info-fg); font-size: 13px; }
+.bs-note .ico { flex: none; }
+.bs-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.bs-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.bs .lv-blk { background-color: var(--panel); background-image: var(--g-card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; box-shadow: var(--hl), var(--sh-card); min-width: 0; }
+.bs h4 { margin: 0 0 8px; font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); display: flex; gap: 8px; align-items: center; }
+.bs h4 .h-sub { color: var(--mute-2); letter-spacing: .06em; text-transform: none; }
+.bs .hint { font-size: 12px; color: var(--mute); margin: 6px 0 0; line-height: 1.45; }
+.bs .auto { font: 500 10.5px var(--mono); color: var(--info-fg); letter-spacing: 0; text-transform: none; }
+
+/* ⓘ: a ajuda de cada campo de cálculo (§14.4) */
+.ii { display: inline-grid; place-items: center; width: 15px; height: 15px; flex: none; border-radius: 50%; border: 1px solid var(--mute-2); color: var(--mute);
+  font: 600 9.5px/1 var(--body); font-style: normal; cursor: help; letter-spacing: 0; text-transform: none; vertical-align: 1px; }
+.ii:hover, .ii:focus-visible { border-color: var(--fg); color: var(--fg); }
+
+/* linhas de custo */
+.bl-wrap { position: relative; overflow-x: auto; margin: 0 -4px; }
+.bl-t, .br-t, .cmp-t, .ph-t, .bo-t { font-size: 13px; }
+.bl-t th, .br-t th, .cmp-t th, .ph-t th { padding: 4px 6px; font-size: 10px; }
+.bl-t td, .br-t td, .cmp-t td, .ph-t td { padding: 7px 6px; border-bottom: 0; border-top: 1px solid var(--line); }
+.bl-t tbody tr:hover td, .br-t tbody tr:hover td, .cmp-t tbody tr:hover td, .ph-t tbody tr:hover td { background: transparent; }
+.bl-t td small, .br-t td small { display: block; color: var(--mute); font-size: 11.5px; font-weight: 400; }
+.bl-t .bl-nm b { font-weight: 600; }
+.bl-t .bl-q { width: 70px; padding: 4px 7px; font: 500 12.5px var(--mono); text-align: right; }
+.bl-t .bl-u { width: auto; padding: 4px 6px; font-size: 12.5px; }
+.bl-t td.act { width: 1%; text-align: right; }
+.bl-t td.act .ibtn, .ph-t td.act .ibtn { width: 26px; height: 26px; }
+.bl-t tr.bl-off td:first-child { box-shadow: inset 3px 0 0 var(--coral); }
+.bl-t tr.bl-new td { animation: bl-new 1.6s ease-out; }
+@keyframes bl-new { from { background: color-mix(in srgb, var(--hi) 28%, transparent); } }
+.bl-t tfoot td { background: transparent; font-weight: 600; }
+.bl-foot { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 10px; }
+.flash-v { animation: flash-v .7s ease-out; }
+@keyframes flash-v { from { color: var(--info-fg); } }
+
+/* tempo */
+.bt-row { padding: 9px 0; border-top: 1px solid var(--line); }
+.bt-row:first-of-type { border-top: 0; padding-top: 0; }
+.bt-row > .lbl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.bt-row > .lbl small { font-weight: 400; color: var(--mute); }
+.bt-modes .rb span { padding: 4px 11px; font-size: 12.5px; }
+.bt-in { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 8px 0 0; }
+.bt-in label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--mute); }
+.bt-in input { width: 9.5rem; padding: 6px 9px; font: 500 13px var(--mono); }
+.bt-in input[type=date] { font-family: var(--body); }
+.bt-res { margin: 8px 0 4px; font-size: 13px; color: var(--mute); }
+.bt-res b { color: var(--fg); font-family: var(--mono); font-weight: 600; }
+.ph-t { margin-top: 8px; }
+.ph-t input { padding: 4px 7px; font-size: 12.5px; }
+.ph-t .ph-d { width: 70px; text-align: right; font-family: var(--mono); }
+
+/* cálculo e preço */
+.fx { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.bs h4 + .fx { border-top: 0; }
+.fx .lbl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.fx > b { font: 600 13.5px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bc-in { display: inline-flex; gap: 6px; align-items: center; }
+.bc-in input { width: 74px; padding: 5px 8px; font: 600 13px var(--mono); text-align: right; }
+.bs .bp-blk { background-image: linear-gradient(180deg, color-mix(in srgb, var(--hi) 12%, transparent), transparent 70%), var(--g-glow), var(--g-panel); border: 1.5px solid var(--hi); }
+.bp-price { font: 700 30px/1.1 var(--head); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.bp-blk .hint { margin-top: 2px; }
+.bp-blk .fx:first-of-type { margin-top: 8px; }
+.bp-sem { margin-top: 10px; }
+.sem { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 100px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.sem i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.sem.g { background: var(--ok-bg); color: var(--ok-fg); }
+.sem.o { background: var(--or-bg); color: var(--or-fg); }
+.sem.r { background: var(--bad-bg); color: var(--bad-fg); }
+.bs-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.bs-acts .btn { flex: 1 1 auto; }
+.bs-saved { margin: 0; min-height: 1.2em; }
+.bq-l { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--mute); margin-bottom: 10px; }
+.bq-l textarea { min-height: 64px; font-size: 13.5px; }
+
+/* resultado e comparação */
+.br-t tr.br-bad td:first-child, .cmp-t tr.cmp-chg td:first-child { box-shadow: inset 3px 0 0 var(--coral); }
+.br-t tr.br-bad td { background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.br-t .br-tot td, .cmp-t .br-tot td { border-top: 1px solid var(--line-2); }
+.br-t .br-tot tr:first-child td, .cmp-t .br-tot tr:first-child td { border-top-width: 2px; }
+.cmp-t th small { font-family: var(--body); letter-spacing: 0; text-transform: none; }
+
+/* «+ Adicionar linha» */
+.bline-form .kind-pick { margin: 10px 0 14px; }
+.bline-form .kind-pick .rb span { display: inline-flex; align-items: center; gap: 6px; }
+.bline-form .kind-pick .rb .ico { width: 15px; height: 15px; }
+.bl-sec { display: grid; gap: 12px; margin-bottom: 12px; }
+.bl-sup { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.sup { position: relative; display: block; cursor: pointer; }
+.sup input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.sup > span { display: grid; gap: 2px; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--panel); transition: border-color var(--t), box-shadow var(--t); }
+.sup b { font-size: 13.5px; }
+.sup small { color: var(--mute); font: 500 11.5px var(--mono); }
+.sup:hover > span { border-color: var(--mute-2); }
+.sup input:checked + span { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg), var(--sh-card); }
+.sup input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sup.off { opacity: .55; cursor: not-allowed; }
+.bl-qty { margin-bottom: 12px; }
+.bl-fixu { margin: 0; padding: 9px 0; font-size: 14px; }
+.bl-prev:empty { display: none; }
+.bt-opts { grid-template-columns: 1fr; }
+.bt-opt { position: relative; grid-template-columns: 1fr; }
+.bt-opt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bt-opt:has(input:checked) { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+
+/* lista de folhas */
+.bo-t td.nm small { display: block; color: var(--mute); font-size: 12px; }
+.bo-t td.nm a.b { color: var(--fg); text-decoration: none; font-weight: 600; }
+.bo-t td.nm a.b:hover { text-decoration: underline; }
+.bo-year { margin: 0 0 10px; }
+.bo-year > summary { cursor: pointer; padding: 10px 14px; font: 600 14px var(--body); display: flex; gap: 10px; align-items: center; list-style: none; }
+.bo-year > summary::-webkit-details-marker { display: none; }
+.bo-year > summary::before { content: '▸'; color: var(--mute); transition: transform var(--t); }
+.bo-year[open] > summary::before { transform: rotate(90deg); }
+.bo-year > summary .muted { font-weight: 400; font-size: 13px; }
+.bo-search { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; }
+.bo-search input { max-width: 340px; }
+.bud-sum { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.bud-sum .fx { border: 0; padding: 0; gap: 6px; }
+
+@media (max-width: 1060px) {
+  .bs-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .bp-price { font-size: 26px; }
+  .bt-in input { width: 100%; }
+  .bt-in label { flex: 1 1 140px; }
+  .bl-t .bl-q { width: 58px; }
+  .bl-t th:nth-child(2), .bl-t td:nth-child(2) { display: none; }   /* o preço unitário vê-se ao alterar a linha */
+}
+
 /* ── profundidade e degradês (§11.21) ───────────────────────
    O relevo diz o que está por cima do quê, o que se pega ou abre e qual é a
    ação principal. Nunca por trás de tabelas densas ou texto longo (fundo

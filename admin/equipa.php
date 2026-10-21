@@ -56,9 +56,20 @@ function user_input(PDO $pdo, array $actor, ?array $editing): array {
     $st->execute([$email, (int)($editing['id'] ?? 0)]);
     if ($st->fetchColumn() !== false) return [null, 'Já existe um utilizador com esse email.'];
 
+    // Orçamentação (§14): custo/hora interno (só quem vê o Financeiro) e horas disponíveis por mês.
+    $num = function (string $k, float $max): ?float {
+        $raw = trim(str_replace([' ', '€'], '', (string)($_POST[$k] ?? '')));
+        if ($raw === '') return null;
+        $raw = str_contains($raw, ',') ? str_replace(['.', ','], ['', '.'], $raw) : $raw;
+        return is_numeric($raw) ? max(0, min($max, round((float)$raw, 2))) : null;
+    };
+    $hours = $num('monthly_hours', 744);
+    $cost = can('financeiro') && array_key_exists('hourly_cost', $_POST) ? $num('hourly_cost', 10000) : ($editing['hourly_cost'] ?? null);
+
     return [[
         'name' => $name, 'email' => $email, 'role' => $role, 'department_id' => $dept,
         'job_title' => mb_substr($job, 0, 80), 'color' => strtoupper($color),
+        'hourly_cost' => $cost, 'monthly_hours' => $hours,
     ], null];
 }
 
@@ -87,9 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($err || $perr) { flash($err ?: $perr, 'err'); $_SESSION['team_form'] = $_POST; redirect(team_url('pessoas', ['new' => 1]) . '#utilizador'); }
             $pos = (int)$pdo->query('SELECT COALESCE(MAX(position),0) FROM users')->fetchColumn() + 1;
             $pdo->prepare(
-                'INSERT INTO users (name, email, password_hash, role, department_id, job_title, color, position, is_active, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,1,?)'
-            )->execute([$v['name'], $v['email'], $hash, $v['role'], $v['department_id'], $v['job_title'], $v['color'], $pos, (int)$user['id']]);
+                'INSERT INTO users (name, email, password_hash, role, department_id, job_title, color, position, is_active, created_by, hourly_cost, monthly_hours)
+                 VALUES (?,?,?,?,?,?,?,?,1,?,?,?)'
+            )->execute([$v['name'], $v['email'], $hash, $v['role'], $v['department_id'], $v['job_title'], $v['color'], $pos, (int)$user['id'], $v['hourly_cost'], $v['monthly_hours']]);
             flash('Utilizador criado. Entregue-lhe o email e a palavra-passe por um canal privado.');
             redirect(team_url('pessoas'));
         }
@@ -104,8 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [$v, $err] = user_input($pdo, $actor, $target);
             [$hash, $perr] = $v ? password_input(false) : [null, null];
             if ($err || $perr) { flash($err ?: $perr, 'err'); redirect(team_url('pessoas', ['edit' => $target['id']]) . '#utilizador'); }
-            $pdo->prepare('UPDATE users SET name=?, email=?, role=?, department_id=?, job_title=?, color=? WHERE id=?')
-                ->execute([$v['name'], $v['email'], $v['role'], $v['department_id'], $v['job_title'], $v['color'], $target['id']]);
+            $pdo->prepare('UPDATE users SET name=?, email=?, role=?, department_id=?, job_title=?, color=?, hourly_cost=?, monthly_hours=? WHERE id=?')
+                ->execute([$v['name'], $v['email'], $v['role'], $v['department_id'], $v['job_title'], $v['color'], $v['hourly_cost'], $v['monthly_hours'], $target['id']]);
             if ($hash) $pdo->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([$hash, $target['id']]);
             // Um chefe que deixou de o ser, ou mudou de departamento, deixa de chefiar o antigo.
             $pdo->prepare('UPDATE departments SET head_user_id = NULL WHERE head_user_id = ? AND (? <> \'lead\' OR id <> COALESCE(?, 0))')
@@ -242,7 +253,9 @@ render_flashes();
 <div class="sub"><?= count(array_filter($users, fn($u) => (int)$u['is_active'] === 1)) ?> pessoas ativas</div>
 <div class="tablewrap">
 <table>
-  <thead><tr><th>Nome</th><th>Papel</th><th class="hide-sm">Departamento</th><th class="hide-sm">Função</th><th class="hide-sm">Email</th><th></th></tr></thead>
+  <thead><tr><th>Nome</th><th>Papel</th><th class="hide-sm">Departamento</th><th class="hide-sm">Função</th><th class="hide-sm">Email</th>
+    <th class="num hide-sm" data-tip="Horas disponíveis por mês (Orçamentação: sugestão da % de ocupação)" tabindex="0">Horas/mês</th>
+    <?php if (can('financeiro')): ?><th class="num hide-sm" data-tip="Custo interno por hora (Orçamentação: linhas da equipa)" tabindex="0">Custo/hora</th><?php endif; ?><th></th></tr></thead>
   <tbody>
   <?php foreach ($users as $u): $off = (int)$u['is_active'] !== 1; $mine = can_manage_user($actor, $u); ?>
     <tr class="<?= $off ? 'muted' : '' ?> <?= ($pendingOff === (int)$u['id'] || ($eu && (int)$eu['id'] === (int)$u['id'])) ? 'pending' : '' ?>">
@@ -252,6 +265,8 @@ render_flashes();
       <td class="hide-sm"><?= e($deptName[$u['department_id']] ?? '—') ?></td>
       <td class="hide-sm"><?= e($u['job_title'] ?: '—') ?></td>
       <td class="hide-sm" style="font-size:0.7rem"><?= e($u['email']) ?></td>
+      <td class="num hide-sm"><?= $u['monthly_hours'] !== null ? e(rtrim(rtrim(number_format((float)$u['monthly_hours'], 1, ',', ' '), '0'), ',')) . ' h' : '<span class="muted">—</span>' ?></td>
+      <?php if (can('financeiro')): ?><td class="num hide-sm"><?= $u['hourly_cost'] !== null ? e(rtrim(rtrim(number_format((float)$u['hourly_cost'], 2, ',', ' '), '0'), ',')) . ' €' : '<span class="muted">—</span>' ?></td><?php endif; ?>
       <td class="num nowrap">
       <?php if ($canManage && $mine): ?>
         <?php if ($pendingOff === (int)$u['id']): ?>
@@ -282,8 +297,10 @@ render_flashes();
     $v = $eu ?? ($old ? [
         'name' => $old['name'] ?? '', 'email' => $old['email'] ?? '', 'role' => $old['role'] ?? 'member',
         'department_id' => $old['department_id'] ?? '', 'job_title' => $old['job_title'] ?? '', 'color' => $old['color'] ?? '',
+        'hourly_cost' => $old['hourly_cost'] ?? null, 'monthly_hours' => $old['monthly_hours'] ?? null,
     ] : ['name' => '', 'email' => '', 'role' => 'member', 'department_id' => '', 'job_title' => '',
-         'color' => TEAM_COLORS_ALL[count($users) % count(TEAM_COLORS_ALL)]]);
+         'color' => TEAM_COLORS_ALL[count($users) % count(TEAM_COLORS_ALL)], 'hourly_cost' => null, 'monthly_hours' => 168]);
+    $numv = fn($x, int $d) => $x === null || $x === '' ? '' : rtrim(rtrim(number_format((float)str_replace(',', '.', (string)$x), $d, ',', ''), '0'), ',');
 ?>
 <h2 id="utilizador"><?= $eu ? 'Editar ' . e($eu['name']) : 'Novo utilizador' ?></h2>
 <form method="post" autocomplete="off">
@@ -311,6 +328,12 @@ render_flashes();
       <input type="text" id="ujob" name="job_title" maxlength="80" value="<?= e($v['job_title']) ?>" placeholder="Comercial, orçamentista, engenheiro de VFX…"></div>
     <div class="field"><label for="ucolor">Cor (nas Tarefas)</label>
       <input type="color" id="ucolor" name="color" value="<?= e($v['color'] ?: TEAM_COLORS_ALL[0]) ?>"></div>
+    <div class="field"><label for="uhours">Horas disponíveis por mês <span class="ii" tabindex="0" role="img" aria-label="Ajuda: horas de trabalho disponíveis num mês (ex.: 168 = 21 dias × 8 h). Somadas, dão a capacidade da equipa para a sugestão da % de ocupação na Orçamentação." data-tip="Horas de trabalho disponíveis num mês (ex.: 168 = 21 dias × 8 h). Somadas, dão a capacidade da equipa para a sugestão da % de ocupação na Orçamentação.">i</span></label>
+      <input type="text" id="uhours" name="monthly_hours" inputmode="decimal" maxlength="6" value="<?= e($numv($v['monthly_hours'], 1)) ?>" placeholder="168"></div>
+    <?php if (can('financeiro')): ?>
+    <div class="field"><label for="ucost">Custo/hora interno (€) <span class="ii" tabindex="0" role="img" aria-label="Ajuda: quanto custa à empresa uma hora desta pessoa. Usado nas linhas da equipa da Orçamentação; só quem vê o Financeiro o vê." data-tip="Quanto custa à empresa uma hora desta pessoa. Usado nas linhas da equipa da Orçamentação; só quem vê o Financeiro o vê.">i</span></label>
+      <input type="text" id="ucost" name="hourly_cost" inputmode="decimal" maxlength="10" value="<?= e($numv($v['hourly_cost'], 2)) ?>" placeholder="25"></div>
+    <?php endif; ?>
     <div class="field"><label for="upw"><?= $eu ? 'Nova palavra-passe (opcional)' : 'Palavra-passe inicial' ?></label>
       <input type="password" id="upw" name="password" minlength="<?= PASSWORD_MIN ?>" autocomplete="new-password" <?= $eu ? '' : 'required' ?>></div>
     <div class="field"><label for="upw2">Repetir palavra-passe</label>

@@ -59,7 +59,8 @@ function panel_deal(PDO $pdo, array $d): array {
         . ($d['phase'] === 'pipeline' ? '<span>Último movimento</span><div>' . e(ago_days(deal_last_move($d))) . '</div>' : '');
     $body = '<header><div class="id mono">' . e($d['code']) . '</div><h2>' . inline_field('deal', $id, 'name', e($d['name']), ['edit' => $edit, 'label' => 'Editar nome', 'value' => $d['name']]) . '</h2>'
           . '<div style="margin-top:6px"><span class="chip">' . e($phase) . '</span>' . ($risk ? ' <span class="chip risk">Sem movimento há ' . $idle . ' dias</span>' : '') . '</div></header>'
-          . '<section class="sp-next"><h4>Próxima ação</h4><a class="btn" href="' . e(deal_url($d)) . '">' . icon('external') . ' Abrir a ficha completa</a></section>'
+          . '<section class="sp-next"><h4>Próxima ação</h4><a class="btn" href="' . e(deal_url($d)) . '">' . icon('external') . ' Abrir a ficha completa</a>'
+          . (can('orcamentacao') && in_array($d['phase'], ['pipeline', 'production', 'done', 'lost'], true) ? ' <a class="btn ghost" href="/admin/orcamento.php?id=' . $id . '">' . icon('orcamentacao') . ' Orçamento</a>' : '') . '</section>'
           . '<section><h4>Resumo</h4><div class="kv">' . $kv . '</div></section>'
           . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
           . '<section><h4>Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, deal_url($d), '') . '</section>';

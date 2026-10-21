@@ -8,6 +8,7 @@ require_once __DIR__ . '/inc/deal_drive.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/interactions.php';
 require_once __DIR__ . '/inc/lead_view.php';   // ligações a contactos; «Trazido por» (inc/contacts.php)
+require_once __DIR__ . '/inc/budget_view.php';  // folha de orçamento (§14) e ligação dos custos às linhas
 $user = require_login();
 require_page('negocios');
 
@@ -80,16 +81,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $c = cost_input($_POST);
                 if ($c['name'] === '' && $c['role'] === '') throw new RuntimeException('Indique a pessoa ou a função.');
                 $contact = (int)($_POST['contact_id'] ?? 0) ?: null;
+                // A linha do orçamento a que o custo corresponde (para o Resultado, §14.5).
+                $bk = (string)($_POST['budget_key'] ?? '');
+                $bk = $bk === 'auto' ? budget_auto_key($pdo, $id, $contact) : (isset(budget_link_options($pdo, $id)[$bk]) ? $bk : null);
                 if ($do === 'add_cost') {
-                    $pdo->prepare('INSERT INTO costs (deal_id, year, month, name, role, contact_id, amount, vat_mode, is_closed, notes, created_by)
-                                   VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-                        ->execute([$id, $deal['year'], $deal['month'], $c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], (int)$me['id']]);
+                    $pdo->prepare('INSERT INTO costs (deal_id, year, month, name, role, contact_id, amount, vat_mode, is_closed, notes, created_by, budget_key)
+                                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+                        ->execute([$id, $deal['year'], $deal['month'], $c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], (int)$me['id'], $bk]);
                     $costId = (int)$pdo->lastInsertId();
                     flash('Custo adicionado.');
                 } else {
                     $costId = (int)($_POST['cost_id'] ?? 0);
-                    $pdo->prepare('UPDATE costs SET name=?, role=?, contact_id=?, amount=?, vat_mode=?, is_closed=?, notes=? WHERE id=? AND deal_id=?')
-                        ->execute([$c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], $costId, $id]);
+                    $pdo->prepare('UPDATE costs SET name=?, role=?, contact_id=?, amount=?, vat_mode=?, is_closed=?, notes=?, budget_key=? WHERE id=? AND deal_id=?')
+                        ->execute([$c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], $bk, $costId, $id]);
                     flash('Custo guardado.');
                 }
                 if ($c['is_closed'] && cost_needs_rating($pdo, $costId)) $rateAsk = $costId;
@@ -194,7 +198,8 @@ render_flashes();
 <p><a class="lnk" href="<?= $deal['phase'] === 'production' ? '/admin/negocios.php' : '/admin/pipeline.php' ?>">← <?= $deal['phase'] === 'production' ? 'Negócios' : 'Pipeline' ?></a></p>
 <h1><span class="keep"><span class="id"><?= e($deal['code']) ?></span> · <?= inline_field('deal', $id, 'name', e($deal['name']), ['edit' => $canEdit && record_reach($pdo, $deal, PERM_EDIT), 'label' => 'Editar nome', 'value' => $deal['name']]) ?></span></h1>
 <div class="sub"><?= e($funnel['name'] ?? '—') ?> · <?= e($stage['name'] ?? '—') ?> · <span class="chip"><?= e($phaseChip) ?></span>
-  · Responsável: <?= e($owner ?: 'por atribuir') ?></div>
+  · Responsável: <?= e($owner ?: 'por atribuir') ?>
+  <?php if (can('orcamentacao')): ?> · <a class="btn ghost sm" href="/admin/orcamento.php?id=<?= $id ?>" data-tip="A folha de orçamento deste negócio (aba Orçamentação)"><?= icon('orcamentacao') ?> Orçamento</a><?php endif; ?></div>
 
 <?php if ($money): ?>
 <div class="stats" style="margin:1rem 0 1.6rem">
@@ -288,7 +293,32 @@ render_flashes();
 <?php endif; ?>
 
 <h2 id="orcamentacao">Orçamentação</h2>
-<p class="muted">Os orçamentos feitos na aba Orçamentação vão aparecer aqui. A aba ainda está em construção.</p>
+<?php if (!can('orcamentacao')): ?>
+<p class="muted">A folha de orçamento está na aba Orçamentação (sem acesso com esta conta).</p>
+<?php else:
+    $bSheet = budget_sheet_ensure($pdo, $deal, (int)$me['id']);
+    $bVers = budget_versions($pdo, (int)$bSheet['id']);
+    $bCur = budget_current_version($pdo, $bSheet);
+    $bLines = budget_lines($pdo, (int)$bCur['id']);
+    $bCalc = budget_calc($pdo, $bCur, $bLines);
+    $bMoney = budget_money(); ?>
+<div class="panel bud-sum">
+  <a class="btn" href="/admin/orcamento.php?id=<?= $id ?>"><?= icon('orcamentacao') ?> Orçamento</a>
+  <span>v<?= (int)$bCur['num'] ?><?= $bSheet['accepted_version_id'] ? ' <span class="chip wait">aceite</span>' : ' <span class="muted small">ainda sem versão aceite</span>' ?><?= count($bVers) > 1 ? ' <span class="muted small">· ' . count($bVers) . ' versões</span>' : '' ?></span>
+  <?php if ($bLines): ?>
+    <span class="fx"><span class="lbl">Preço s/ IVA</span><b><?= e(budget_eur($bCalc['price'])) ?></b></span>
+    <?php if ($bMoney): ?>
+      <span class="fx"><span class="lbl">Margem</span><b><?= e(budget_pct($bCalc['gm'])) ?></b></span>
+      <span class="fx"><span class="lbl">Lucro/mês</span><?= budget_status_chip($bCalc['status'], $bCalc['profit_month']) ?></span>
+      <?php if (in_array($deal['phase'], ['production', 'done'], true)): $bRes = budget_result($pdo, $bSheet, $deal); ?>
+        <a class="lnk" href="/admin/orcamento.php?id=<?= $id ?>&amp;tab=res">Resultado: custos <?= e(budget_eur($bRes['real']['direct'])) ?> de <?= e(budget_eur($bRes['budget']['direct'])) ?> orçados</a>
+      <?php endif; ?>
+    <?php endif; ?>
+  <?php else: ?>
+    <span class="muted">Ainda sem linhas de custo.</span>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php if ($money): ?>
 <h2 id="financeiro">Contas</h2>
@@ -317,6 +347,7 @@ render_flashes();
 </form>
 <?php endif; ?>
 
+<?php $bLinks = budget_link_options($pdo, $id); ?>
 <h2 id="custos">Custos do negócio</h2>
 <div class="tablewrap"><table>
   <thead><tr><th>Pessoa</th><th>Função</th><th class="num">Valor</th><th>O valor é</th><th class="num hide-sm">s/ IVA</th><th class="num hide-sm">IVA</th><th>Estado</th><th></th></tr></thead>
@@ -325,7 +356,7 @@ render_flashes();
   <?php foreach ($costs as $c): ?>
     <tr id="cost-<?= (int)$c['id'] ?>" class="<?= ($ec && (int)$ec['id'] === (int)$c['id']) || (int)($_GET['delcost'] ?? 0) === (int)$c['id'] ? 'pending' : '' ?>">
       <td><?= e($c['name'] ?: '—') ?><?= $c['contact_name'] ? '<div class="muted" style="font-size:0.62rem">' . e($c['contact_name']) . (isset($rated[(int)$c['id']]) ? ' · <span class="stars" aria-label="Avaliado ' . (int)$rated[(int)$c['id']] . ' de 5">' . str_repeat('★', (int)$rated[(int)$c['id']]) . '</span>' : '') . '</div>' : '' ?></td>
-      <td><?= e($c['role'] ?: '—') ?></td>
+      <td><?= e($c['role'] ?: '—') ?><?= $c['budget_key'] && isset($bLinks[$c['budget_key']]) ? '<div class="muted" style="font-size:0.62rem" data-tip="Linha do orçamento (para o Resultado)" tabindex="0">↳ ' . e(shorten($bLinks[$c['budget_key']], 48)) . '</div>' : '' ?></td>
       <td class="num"><?= eur((float)$c['amount']) ?></td>
       <td><?= e(VAT_MODES[$c['vat_mode']] ?? $c['vat_mode']) ?></td>
       <td class="num hide-sm"><?= eur($c['net']) ?></td>
@@ -364,6 +395,11 @@ render_flashes();
       <?php foreach (VAT_MODES as $k => $l): ?><option value="<?= $k ?>" <?= $cv['vat_mode'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></div>
     <div class="field"><label for="cc">Fornecedor (contacto)</label><select id="cc" name="contact_id"><option value="">—</option>
       <?php foreach ($allContacts as $cid => $cn): ?><option value="<?= (int)$cid ?>" <?= (string)$cv['contact_id'] === (string)$cid ? 'selected' : '' ?>><?= e($cn) ?></option><?php endforeach; ?></select></div>
+    <div class="field"><label for="cbk">Linha do orçamento</label><select id="cbk" name="budget_key">
+      <?php if (!$ec): ?><option value="auto" selected>Automática (pelo fornecedor)</option><?php endif; ?>
+      <option value="" <?= $ec && !$ec['budget_key'] ? 'selected' : '' ?>>— Fora do orçamento —</option>
+      <?php foreach ($bLinks as $k => $l): ?><option value="<?= e($k) ?>" <?= $ec && $ec['budget_key'] === $k ? 'selected' : '' ?>><?= e(shorten($l, 70)) ?></option><?php endforeach; ?></select>
+      <span class="muted" style="font-size:12px">Compara o real com o orçado no Resultado.</span></div>
     <div class="field"><label class="check" style="margin-top:1.6rem"><input type="checkbox" name="is_closed" value="1" <?= (int)$cv['is_closed'] ? 'checked' : '' ?>> Fechado</label></div>
     <div class="field wide"><label for="cno">Notas</label><input type="text" id="cno" name="notes" maxlength="2000" value="<?= e((string)$cv['notes']) ?>"></div>
   </div>

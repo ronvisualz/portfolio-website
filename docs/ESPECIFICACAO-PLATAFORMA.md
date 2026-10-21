@@ -36,7 +36,7 @@ Contexto do código atual: ver `README.md`, `sheets/CONTRACT.md`,
 | 3 | Pipeline | Oportunidades em fase comercial, vários funis | Novo |
 | 4 | Contactos | Base única de pessoas/empresas. Separadores: Clientes · Fornecedores · Parceiros · Todos | Fornecedores existe (passa a tipo de contacto) |
 | 5 | Negócios | **Central de informação de cada negócio** (ver §3.3) | Existe como Carteira › Trabalhos + Ficha |
-| 6 | Orçamentação | Criação e gestão de orçamentos | Novo — **PENDENTE** detalhe |
+| 6 | Orçamentação | Criação e gestão de orçamentos | Novo — decidido na §14, aplicado (§10.6) |
 | 7 | Centro Criativo | Produção criativa (1.ª hipótese: briefings, referências, versões, feedback e aprovações do cliente) | Novo — **PENDENTE** conceito |
 | 8 | Tarefas | Kanban de tarefas + calendário | Existe como «Calendário» |
 | 9 | Drive | Ficheiros (Cloudflare R2) | Existe |
@@ -620,7 +620,7 @@ histórico), `contact_ratings` (uma avaliação por custo) e `relations`; em `se
   «Anular». **Lista de serviços** em A minha conta › Serviços (só superadmin e admins): nome, ordem,
   ativo e acrescentar; não se apagam (os preços apontam para eles). **Ativo / Inativo** só para
   superadmin e admins (papel confirmado na base de dados em cada pedido; os outros veem o estado sem
-  o poder mudar), com «Anular». Para a calculadora da Orçamentação (ainda por desenhar) fica pronta
+  o poder mudar), com «Anular». Para a calculadora da Orçamentação (§14, aplicada na §10.6) fica pronta
   `suppliers_for_service()`: só fornecedores/freelancers ativos, com preço em vigor, unidade e
   avaliação média. **Avaliação por trabalho:** ao fechar (= pago) um custo de fornecedor ou
   freelancer na ficha do negócio — na lista ou ao gravar o custo — aparece «Como correu o
@@ -723,6 +723,101 @@ claro, o escuro e o «como o sistema»; sem animação nos degradês; no máximo
 - **Sem degradê:** tabelas e listas (só o contorno ganha relevo), histórico, notas e texto longo,
   campos, filtros, chips, gráficos, calendário, barra de topo e login. O Drive não foi alterado
   (herda o menu e os botões, como o resto da plataforma).
+
+### 10.6 Aba Orçamentação — §14 (22 out 2026)
+
+A §14 está aplicada. Base de dados **versão 16** (`inc/migrate_budget.php`): em `users` os campos
+`hourly_cost` (custo/hora interno) e `monthly_hours` (horas disponíveis por mês); em `costs` o campo
+`budget_key` (a linha do orçamento a que o custo corresponde); tabelas novas `budget_sheets` (uma
+por negócio), `budget_versions`, `budget_lines`, `budget_history` e `budget_templates`; em `settings`
+`budget_mso_pct` = 5, `budget_margin_pct` = 65, `budget_day_hours` = 8, `budget_month_target` = 8000
+e `budget_conditions` (condições por defeito da proposta). A migração cria logo a folha (v1) de todos
+os negócios que já existem. O cálculo está em `inc/budget.php`; as partes da folha em
+`inc/budget_view.php`; a proposta em `inc/budget_pdf.php`. Ponto a ponto:
+
+- **14.1 Folha e separadores:** a folha nasce na conversão da lead (X-Ray) com o mesmo ID, nunca se
+  apaga e segue o negócio — o gancho está no `deal_log()` (conversão, etapa, perdido, reaberto, funil),
+  por isso vale para o Pipeline, a ficha, o «Anular» e a migração. `orcamentacao.php` (no menu, em
+  Produção): **Em orçamentação** (fase comercial; por defeito) · **Em produção** (desde o Kickoff) ·
+  **Ganhos** (concluídos) · **Arquivo** (perdidos, agrupados por ano e fechados por defeito; a
+  pesquisa própria abre os anos com resultados). Colunas: ID · Negócio (cliente · trazido por) ·
+  Versão (aceite / há uma mais recente) · Preço s/ IVA · Lucro/mês (semáforo, só com Financeiro) ·
+  Etapa. Indicadores: em orçamentação (e quantas sem linhas), valor em proposta, abaixo da meta (com
+  Financeiro) e fechados no ano. Um negócio reaberto volta a Em orçamentação. A pesquisa ⌘K tem o
+  grupo «Orçamentos» (ID, negócio ou cliente, em qualquer separador). Botão **«Orçamento»** na ficha
+  do negócio (com um resumo: versão, preço, margem, lucro/mês e, em produção, custos reais vs
+  orçados), no Pipeline e no painel lateral do negócio.
+- **14.2 Linhas de custo** (`orcamento.php?id=<negócio>`): «+ Adicionar linha» (tecla `N`, com a
+  animação da §13.8) em três tipos — **Fornecedor / freelancer:** serviço → só os fornecedores
+  **ativos** com esse serviço, com preço, unidade e avaliação (os «por rever» aparecem mas não se
+  escolhem) → quantidade; o preço é **copiado** para a folha nesse momento (alterar a quantidade, a
+  nota ou a unidade da mesma linha não o muda; trocar de fornecedor ou serviço copia o preço novo).
+  **Equipa interna:** a pessoa (só quem tem custo/hora na Equipa) e a descrição, em horas ou dias.
+  **Outro custo interno:** descrição, unidade (valor fixo, unidade, hora, dia) e custo. Horas ↔ dias
+  convertem-se sozinhos (1 dia = 8 h, das Definições; a versão guarda o valor com que nasceu);
+  projeto, peça e segundo de animação são unidades fixas. Quantidade e unidade mudam-se no próprio
+  campo; alterar (lápis) reabre o formulário preenchido; tirar tem «Anular». Uma linha cujo
+  fornecedor ficou inativo continua na folha, marcada «agora inativo».
+- **14.3 Cálculo** (no servidor, a cada mudança; cada campo grava-se sozinho): custos diretos = Σ
+  linhas · MSO = diretos × 5% · duração em dias úteis seg–sex por **Datas** (conta os dias úteis),
+  **Semanas** (× 5), **Dias úteis** ou **Fases** (Pré-produção, Produção, Pós-produção, Entregas —
+  editáveis; com data de início mostram as datas de cada fase) · meses = dias ÷ 21 (mínimo 1 dia) ·
+  **custos fixos mensais** = média dos custos da empresa (Financeiro, sem negócio, valor sem IVA;
+  um custo sem mês conta 1/12) nos 3 meses completos anteriores, editável com «Usar a média» para
+  voltar · **% de ocupação** sugerida = horas internas ÷ (horas por mês da equipa ativa × meses),
+  sempre editável à mão, com «Usar a sugestão» e a conta escrita por baixo · estrutura = fixos ×
+  meses × ocupação · base = diretos + MSO + estrutura · **preço = base ÷ (1 − margem)** (margem 65% por
+  defeito, até 95%, editável em cada folha; mudanças seguidas da mesma pessoa juntam-se numa entrada
+  «65% → 60%» no histórico) · c/ IVA e markup equivalente · gross profit e gross margin · lucro por
+  mês = gross profit ÷ meses contra a meta (8 000 €): 🟢 na meta, 🟠 abaixo, 🔴 abaixo de 75%, com
+  «Para cumprir a meta: preço mínimo X € (base + meta × meses) ou entrega em ≤ Y meses». Verificado
+  com o caso da referência: 8 400 € diretos, 4 000 € fixos, 30%, 21 dias → **28 629 €**, lucro/mês
+  **18 609 €**.
+- **14.4 Ajuda:** um ⓘ em cada campo do cálculo (custos diretos, MSO, duração, ocupação, custos
+  fixos — com o detalhe dos 3 meses —, estrutura, base, margem, preço, gross, lucro por mês, meta)
+  com os textos da §14.4, por cima do cursor, do teclado (foco) ou do toque longo.
+- **14.5 Resultado** (separador da folha, só com Financeiro): orçado vs real por linha — o real são
+  os custos do negócio no Financeiro ligados à linha. Na ficha do negócio, o custo tem «Linha do
+  orçamento»: por defeito **automática** (a linha desse fornecedor, se houver uma só), ou outra, ou
+  «Fora do orçamento» (aparece à parte). Diferença em € e %, derrapagens a vermelho; linhas da equipa
+  sem registo contam o orçado. Totais: custos diretos, **MSO usado** (a derrapagem paga pela
+  almofada), prazo real (do Kickoff ou da data de início até à conclusão ou hoje) vs orçado, preço
+  (o valor do negócio no Financeiro, quando existe), gross profit, gross margin (em pp) e lucro por
+  mês. Ao concluir o negócio o Resultado **fecha** (fica o retrato desse dia); reabrir o negócio
+  reabre a folha. **Relatórios** (com Financeiro): margem orçada vs real média e lucro/mês real por
+  funil e por tipo de trabalho, e os serviços que mais derrapam, dos Resultados fechados no ano.
+- **14.6 Versões, modelos, proposta:** v1, v2… com data e autor; «+ nova versão» copia a versão vista
+  (com «Anular»); só a **última** se edita, e só enquanto não for a aceite e a folha estiver aberta.
+  **«Marcar vN como aceite»** passa o preço para o valor do negócio no Pipeline e conta para o
+  Resultado (com «Anular»); uma versão aceite (ou que ficou para trás) fica com a % de ocupação fixa,
+  para o preço proposto não mudar quando a Equipa muda. **Comparar** duas versões lado a lado (linhas
+  e totais, diferenças marcadas). **Modelos:** «Guardar como modelo» (linhas e duração, sem preços) e
+  «A partir de um modelo» (numa versão vazia preenche-a; senão cria uma versão nova; os preços vêm do
+  preçário e da Equipa desse dia; fornecedores que deixaram de estar ativos ficam de fora e são
+  ditos), com «Anular»; a lista de modelos está no fundo da Orçamentação (apaga quem o criou ou quem
+  gere a aba, com «Anular»). **«Gerar proposta (PDF)»:** logótipo topper., descrição, fases e prazos,
+  preço s/ IVA, IVA e total, condições — nunca custos nem margens; guarda em
+  `Projetos/<ID>_<NOME>/Propostas/Proposta_<ID>_vN.pdf` no Drive (quando o R2 está ligado) e
+  descarrega. PDF gerado pelo próprio servidor (Helvetica, A4), sem bibliotecas novas.
+- **Equipa:** «Horas disponíveis por mês» (por defeito 168 nas pessoas novas; coluna Horas/mês) e
+  «Custo/hora interno (€)» (campo e coluna só para quem vê o Financeiro; quem não o vê não o apaga
+  ao gravar), com ⓘ.
+- **Definições** (A minha conta › Orçamentação, só superadmin e admins): MSO, margem por defeito,
+  horas de um dia, meta mensal e condições por defeito da proposta. MSO, margem e horas entram nas
+  folhas novas (as existentes guardam os seus); a meta vale já para todas.
+- **Permissões (no servidor):** a aba Orçamentação, como Contactos, não tem âmbito — quem a vê vê
+  todas as folhas (editar para mexer; gerir para apagar modelos de outros). **Quem não vê o
+  Financeiro** preenche linhas mas não recebe preços de fornecedores, custos da equipa, custos fixos,
+  base, MSO, margem, lucro nem o Resultado — nem na página, nem nas respostas do `ui_api.php`
+  (o cálculo volta filtrado por `budget_public`/`budget_calc_view`), nem no PDF (que nunca os tem);
+  vê a duração, a ocupação e o preço final. Mudar a margem ou os custos fixos pede o Financeiro.
+- **§11:** modo claro e escuro com os tokens, degradês da §11.21 (cartões, bloco do preço em
+  destaque amarelo, versão aceite em amarelo), animação dos formulários, «Anular» em vez de «Tens a
+  certeza?», dicas em todos os ícones e ⓘ, e a página cabe num telemóvel (as tabelas rolam por
+  dentro; o preço unitário esconde-se em ecrãs estreitos).
+
+Ficheiros novos: `orcamentacao.php`, `orcamento.php`, `orcamento_pdf.php`, `assets/budget.js`,
+`inc/budget.php`, `inc/budget_view.php`, `inc/budget_pdf.php`, `inc/migrate_budget.php`.
 
 ---
 

@@ -84,6 +84,23 @@ function deal_log(PDO $pdo, int $dealId, string $event, array $d = []): void {
         mb_substr((string)($d['note'] ?? ''), 0, 255),
         $d['user_id'] ?? ($u['id'] ?? null),
     ]);
+    if (in_array($event, ['convert', 'stage', 'lost', 'reopen', 'funnel'], true)) budget_follow_deal($pdo, $dealId);
+}
+
+/**
+ * A folha de orçamento segue o negócio (§14.1): nasce na conversão da lead e o
+ * Resultado fecha quando o negócio é concluído (reabre se voltar atrás).
+ */
+function budget_follow_deal(PDO $pdo, int $dealId): void {
+    static $has = null;
+    $has ??= db_has_table($pdo, 'budget_sheets') && db_has_column($pdo, 'costs', 'budget_key');
+    if (!$has) return;
+    require_once __DIR__ . '/budget.php';
+    $st = $pdo->prepare('SELECT * FROM deals WHERE id = ?');
+    $st->execute([$dealId]);
+    $d = $st->fetch();
+    if (!$d || $d['code'] === null || !in_array($d['phase'], ['pipeline', 'production', 'done', 'lost'], true)) return;
+    budget_sync_state($pdo, budget_sheet_ensure($pdo, $d), $d);
 }
 
 /** A etapa fixa de um funil (xray, kickoff ou done). */

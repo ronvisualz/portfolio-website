@@ -142,6 +142,39 @@ render_flashes();
 </section>
 <?php endforeach; ?>
 
+<?php if ($money && can('orcamentacao')):
+    require_once __DIR__ . '/inc/budget_view.php';
+    $br = budget_reports($pdo, $year);
+    $mt = function (array $rows, string $label) use ($year) {
+        if (!$rows) return '<p class="empty">Ainda não há negócios concluídos com Resultado em ' . $year . '.</p>';
+        $h = '<table><thead><tr><th>' . e($label) . '</th><th class="num">Concluídos</th><th class="num">Margem orçada</th><th class="num">Margem real</th><th class="num">Lucro/mês real</th></tr></thead><tbody>';
+        foreach ($rows as $k => $r) {
+            $d = $r['gm_r_avg'] - $r['gm_b_avg'];
+            $h .= '<tr><td>' . e((string)$k) . '</td><td class="num">' . $r['n'] . '</td><td class="num">' . e(budget_pct($r['gm_b_avg'])) . '</td>'
+                . '<td class="num ' . ($d < -0.05 ? 'neg b' : '') . '">' . e(budget_pct($r['gm_r_avg'])) . ($d < -0.05 ? ' <small>(' . e(budget_n(round($d, 1), 1)) . ' pp)</small>' : '') . '</td>'
+                . '<td class="num">' . e(budget_eur($r['pm_r_avg'])) . '</td></tr>';
+        }
+        return $h . '</tbody></table>';
+    }; ?>
+<h2 id="orcamentacao">Orçamentação · orçado vs real <?= budget_ii('margin', 'Aqui: médias dos Resultados fechados (negócios concluídos em ' . $year . ').') ?></h2>
+<div class="flow-grid">
+  <div class="tablewrap"><?= $mt($br['funnel'], 'Funil') ?></div>
+  <div class="tablewrap"><?= $mt($br['type'], 'Tipo de trabalho') ?></div>
+</div>
+<div class="tablewrap" style="margin-top:12px">
+  <?php if (!$br['over']): ?><p class="empty">Ainda não há custos ligados a linhas de fornecedores nos Resultados de <?= $year ?>.</p>
+  <?php else: ?>
+  <table><thead><tr><th>Serviço (linhas de fornecedores)</th><th class="num">Linhas</th><th class="num">Orçado</th><th class="num">Real</th><th class="num">Derrapagem</th><th class="num">Linhas acima</th></tr></thead><tbody>
+  <?php foreach ($br['over'] as $k => $o): ?>
+    <tr><td><?= e($k) ?></td><td class="num"><?= $o['lines'] ?></td><td class="num"><?= e(budget_eur($o['budget'])) ?></td><td class="num"><?= e(budget_eur($o['real'])) ?></td>
+      <td class="num <?= ($o['pct'] ?? 0) > 2 ? 'neg b' : (($o['pct'] ?? 0) < -2 ? 'pos' : '') ?>"><?= $o['pct'] === null ? '—' : (($o['pct'] > 0 ? '+' : '') . e(budget_pct($o['pct']))) ?></td>
+      <td class="num"><?= $o['over'] ?></td></tr>
+  <?php endforeach; ?>
+  </tbody></table>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <script>
 // Mudar o agrupamento sem sair da página (sem JavaScript, os separadores são links).
 (function () {

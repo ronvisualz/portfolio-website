@@ -227,6 +227,66 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             }
             return 'Relação reposta.';
 
+        case 'budget_line':
+            // Tirar uma linha do orçamento: volta tal como estava (preço copiado incluído).
+            require_once __DIR__ . '/budget.php';
+            require_perm('orcamentacao', PERM_EDIT);
+            $v = budget_version_get($pdo, (int)$d['version_id']);
+            $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+            if (!$sheet || !budget_editable($sheet, $v, budget_versions($pdo, (int)$sheet['id']))) throw new RuntimeException($changed);
+            $cols = array_keys($d);
+            $pdo->prepare('INSERT INTO budget_lines (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($d));
+            budget_recalc($pdo, (int)$v['id']);
+            budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · reposta: ' . $d['label'] . ' (anulado)');
+            return 'Linha reposta.';
+
+        case 'budget_version':
+            // Uma versão acabada de criar (nova ou de um modelo) sai, se ninguém mexeu nela.
+            require_once __DIR__ . '/budget.php';
+            require_perm('orcamentacao', PERM_EDIT);
+            $v = budget_version_get($pdo, (int)$d['version']);
+            $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+            $versions = $sheet ? budget_versions($pdo, (int)$sheet['id']) : [];
+            if (!$v || (int)end($versions)['id'] !== (int)$v['id'] || (int)$sheet['accepted_version_id'] === (int)$v['id']
+                || (string)$v['updated_at'] !== (string)$d['updated']) throw new RuntimeException($changed);
+            $pdo->prepare('DELETE FROM budget_versions WHERE id = ?')->execute([$v['id']]);
+            budget_log($pdo, (int)$sheet['id'], 'b_version', 'v' . $v['num'] . ' anulada');
+            return 'v' . $v['num'] . ' anulada.';
+
+        case 'budget_fill':
+            // Um modelo aplicado numa versão vazia: a versão volta a ficar vazia.
+            require_once __DIR__ . '/budget.php';
+            require_perm('orcamentacao', PERM_EDIT);
+            $v = budget_version_get($pdo, (int)$d['version']);
+            $sheet = $v ? budget_sheet_by_id($pdo, (int)$v['sheet_id']) : null;
+            if (!$sheet || !budget_editable($sheet, $v, budget_versions($pdo, (int)$sheet['id']))) throw new RuntimeException($changed);
+            $pdo->prepare('DELETE FROM budget_lines WHERE version_id = ?')->execute([$v['id']]);
+            $p = $d['params'];
+            $pdo->prepare('UPDATE budget_versions SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($p))) . ' WHERE id = ?')->execute([...array_values($p), $v['id']]);
+            budget_recalc($pdo, (int)$v['id']);
+            budget_log($pdo, (int)$sheet['id'], 'b_model', 'v' . $v['num'] . ' · modelo anulado');
+            return 'Modelo anulado.';
+
+        case 'budget_accept':
+            // Aceitar uma versão: volta a aceite de antes (ou nenhuma) e o valor do negócio.
+            require_once __DIR__ . '/budget.php';
+            require_perm('orcamentacao', PERM_EDIT);
+            $sheet = budget_sheet_by_id($pdo, (int)$d['sheet']);
+            if (!$sheet || (int)$sheet['accepted_version_id'] !== (int)$d['version'] || $sheet['closed_at']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE budget_sheets SET accepted_version_id = ? WHERE id = ?')->execute([$d['prev'], $sheet['id']]);
+            $pdo->prepare('UPDATE budget_versions SET accepted_at = NULL, accepted_by = NULL, occupancy = ? WHERE id = ?')->execute([$d['occupancy'], $d['version']]);
+            $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$d['value'], $d['deal']]);
+            budget_recalc($pdo, (int)$d['version']);
+            budget_log($pdo, (int)$sheet['id'], 'b_accept', 'Aceitação anulada');
+            return 'Aceitação anulada.';
+
+        case 'budget_tpl':
+            // Um modelo apagado volta.
+            require_perm('orcamentacao', PERM_EDIT);
+            $cols = ['id', 'name', 'data', 'created_by', 'created_at'];
+            $pdo->prepare('INSERT INTO budget_templates (' . implode(',', $cols) . ') VALUES (?,?,?,?,?)')->execute(array_map(fn($c) => $d[$c], $cols));
+            return 'Modelo reposto.';
+
         case 'relation_drop':
             // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.
             require_once __DIR__ . '/contacts.php';

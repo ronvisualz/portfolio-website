@@ -64,6 +64,16 @@ const HISTORY_TYPES = [
     'rel_resume' => ['Relação retomada', 'refresh', 'sky'],
     'rel_level'  => ['Nível revisto', 'arrows', 'neutral'],
     'rel_stop'   => ['Deixou de ser acompanhada', 'x', 'neutral'],
+    // Orçamentação (§14)
+    'b_create'   => ['Folha criada', 'orcamentacao', 'neutral'],
+    'b_line'     => ['Linha de custo', 'euro', 'neutral'],
+    'b_version'  => ['Nova versão', 'file', 'sky'],
+    'b_accept'   => ['Versão aceite', 'check', 'yellow'],
+    'b_margin'   => ['Margem alterada', 'arrows', 'neutral'],
+    'b_model'    => ['Modelo aplicado', 'checklist', 'sky'],
+    'b_pdf'      => ['Proposta gerada', 'file', 'blue'],
+    'b_close'    => ['Resultado fechado', 'won', 'green'],
+    'b_reopen'   => ['Folha reaberta', 'refresh', 'sky'],
 ];
 
 /** O ícone de uma entrada: cor do tipo e o nome do tipo como dica e nome acessível. */

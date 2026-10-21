@@ -75,6 +75,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['cade
     redirect('/admin/conta.php#servicos');
 }
 
+// Orçamentação (§14): MSO, margem, horas de um dia, meta mensal e condições da proposta. Só admins.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'budget') {
+    csrf_check();
+    if (!$isAdmin) { http_response_code(403); exit('Sem permissão.'); }
+    require_once __DIR__ . '/inc/budget.php';
+    $set = $pdo->prepare(db_is_sqlite($pdo)
+        ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+        : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)');
+    $lim = ['budget_mso_pct' => [0, 50], 'budget_margin_pct' => [0, 95], 'budget_day_hours' => [1, 24], 'budget_month_target' => [0, 10000000]];
+    $bad = false;
+    foreach ($lim as $k => [$min, $max]) {
+        $v = budget_num($_POST[$k] ?? '', 10000000);
+        if (trim((string)($_POST[$k] ?? '')) === '' || $v < $min || $v > $max) { $bad = true; continue; }
+        $set->execute([$k, (string)$v]);
+    }
+    $set->execute(['budget_conditions', mb_substr(trim((string)($_POST['budget_conditions'] ?? '')), 0, 4000)]);
+    flash($bad ? 'Um dos valores estava fora dos limites e ficou como estava; o resto foi guardado.' : 'Definições da Orçamentação guardadas.', $bad ? 'err' : 'ok');
+    redirect('/admin/conta.php#orcamentacao');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -190,6 +210,32 @@ render_flashes();
     </tbody>
   </table></div>
   <div class="actions"><button class="btn" type="submit">Guardar serviços</button></div>
+</form>
+
+<?php require_once __DIR__ . '/inc/budget.php';
+    $bs = fn(string $k) => rtrim(rtrim(number_format(budget_setting($pdo, $k), 2, ',', ''), '0'), ','); ?>
+<h2 id="orcamentacao">Orçamentação</h2>
+<form method="post" class="panel" style="max-width:720px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="budget">
+  <p class="muted" style="margin-top:0">Valores da calculadora para toda a plataforma. MSO, margem e horas de um dia entram nas folhas novas
+    (as que já existem guardam os seus; a margem muda-se em cada folha, com histórico). A meta mensal vale já para todas. Só superadmin e admins podem mudar.</p>
+  <div class="grid">
+    <div class="field"><label for="b-mso">MSO (% dos custos diretos)</label>
+      <input type="text" id="b-mso" name="budget_mso_pct" inputmode="decimal" maxlength="6" required value="<?= e($bs('budget_mso_pct')) ?>">
+      <span class="muted" style="font-size:12px">Margem de segurança operacional. Por defeito 5%.</span></div>
+    <div class="field"><label for="b-mg">Margem por defeito (%)</label>
+      <input type="text" id="b-mg" name="budget_margin_pct" inputmode="decimal" maxlength="6" required value="<?= e($bs('budget_margin_pct')) ?>">
+      <span class="muted" style="font-size:12px">Preço = base ÷ (1 − margem). Por defeito 65%; até 95%.</span></div>
+    <div class="field"><label for="b-dh">1 dia de trabalho (horas)</label>
+      <input type="text" id="b-dh" name="budget_day_hours" inputmode="decimal" maxlength="5" required value="<?= e($bs('budget_day_hours')) ?>">
+      <span class="muted" style="font-size:12px">Converte dias em horas nas linhas. Por defeito 8 h.</span></div>
+    <div class="field"><label for="b-mt">Meta de lucro por mês (€)</label>
+      <input type="text" id="b-mt" name="budget_month_target" inputmode="decimal" maxlength="12" required value="<?= e($bs('budget_month_target')) ?>">
+      <span class="muted" style="font-size:12px">O semáforo de cada folha: 🟢 na meta, 🟠 abaixo, 🔴 abaixo de 75%. Por defeito 8 000 €.</span></div>
+    <div class="field wide"><label for="b-cond">Condições por defeito da proposta</label>
+      <textarea id="b-cond" name="budget_conditions" rows="3" maxlength="4000"><?= e((string)lead_setting($pdo, 'budget_conditions', '')) ?></textarea></div>
+  </div>
+  <div class="actions"><button class="btn" type="submit">Guardar Orçamentação</button></div>
 </form>
 <?php endif; ?>
 
