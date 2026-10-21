@@ -598,18 +598,27 @@ Telefone(s), Email e Redes sociais são campos distintos. Botões **Ligar** (`te
 **WhatsApp** e **Email** junto aos campos. Migração: números → telefone, endereços com @ →
 email, links → redes sociais; o que não for claro vai para as notas.
 
-### 12.4 Prazo de contacto (timer)
-- Cada lead tem um prazo de **24 horas úteis** para ser contactada, desde a criação.
-- **Horas úteis:** segunda a sábado; domingo não conta. Horário diário configurável pelos
-  admins (por defeito 09:00–19:00 — a confirmar). Fora desse horário o relógio pára.
-- Estados: 0–50% **No prazo** (amarelo suave, só no indicador) · 50–100% **A aproximar**
-  (laranja) · >100% **Em atraso** (vermelho).
-- **Uma chamada registada, atendida ou não, conta como contacto.** Chamada não atendida
-  → o prazo **recomeça do zero** (novas 24 h úteis) para a próxima tentativa. Chamada
-  atendida (Follow-Up), Converter ou Arquivar → o prazo termina.
+### 12.4 Estados e prazo (timer)
+- **Estados da lead:** **Novo** (nunca contactada) · **Sem resposta** (última chamada não
+  atendida) · **Follow-Up** (houve conversa, há passo seguinte). Substituem os estados
+  anteriores (Contactado, Em conversa) — a confirmar a migração destes (ver nota).
+- **Prazo em horas seguidas (24/7, sem pausas).** Cada estado tem o seu prazo, editável
+  em **Definições** só por superadmin e admins; a alteração vale **para toda a plataforma**:
+  | Estado | Prazo por defeito | Recomeça quando |
+  |---|---|---|
+  | Novo | 24 h | — (conta desde a criação) |
+  | Sem resposta | 24 h | cada chamada não atendida registada |
+  | Follow-Up | 48 h | cada follow-up registado |
+- O prazo **só termina** quando a lead é **arquivada** ou **convertida**.
+- Mudar de estado recomeça o prazo com o valor do novo estado. Alterar um prazo nas
+  Definições aplica-se a todas as leads ativas (os indicadores são recalculados).
+- Indicador por percentagem do prazo do estado atual: 0–50% **No prazo** (amarelo suave,
+  só no indicador) · 50–100% **A aproximar** (laranja) · >100% **Em atraso** (vermelho).
 - Coluna **«Prazo»** à esquerda do Nome: anel que enche + tempo restante («18 h» /
   «+3 h atraso»); dica com a hora limite. (O campo «Prioridade» Alta/Média/Baixa mantém-se.)
 - Botão **«Urgente»** junto às vistas, com contador vermelho das leads em atraso; filtra-as.
+- **Filtro por estado** em botões rápidos (Novo · Sem resposta · Follow-Up), para quem
+  está a tratar só de um tipo (ex.: só follow-ups). Combina com «Urgente» e com as vistas.
 - Contador de leads em atraso junto a **Leads** no menu lateral: total para superadmin e
   admins; para os outros, só as suas.
 - Notificações quando uma lead passa a «A aproximar» e a «Em atraso».
@@ -643,14 +652,14 @@ os mesmos filtros e posição. Acaba a ficha no fundo da página da lista.
   **Em risco** nas vistas.
 
 ### 12.8 Chamada automática e resultado
-- Ao criar a lead é criada a tarefa **«Ligar a <pessoa/empresa>»** em Foco, com prazo
-  igual ao fim do prazo de contacto.
+- Ao criar a lead (estado **Novo**) é criada a tarefa **«Ligar a <pessoa/empresa>»** em
+  Foco, com prazo igual ao fim do prazo do estado.
 - Ao concluí-la abre **«Como correu?»** (animação de surgimento) com 4 botões:
-  1. **Chamada não atendida** — regista a tentativa (nº), recomeça o prazo e propõe a
-     próxima chamada num clique (ex.: em 3h). À **3.ª tentativa** sem resposta sugere
-     arquivar com motivo «Sem resposta».
+  1. **Chamada não atendida** — estado passa a **Sem resposta**, regista a tentativa (nº),
+     recomeça o prazo (24 h) e propõe a próxima chamada num clique (ex.: em 3h). À
+     **3.ª tentativa** sem resposta sugere arquivar com motivo «Sem resposta».
   2. **Follow-Up** — nota rápida da conversa + abre Nova ação para o passo seguinte;
-     estado passa a Contactado (ou Em conversa, se escolhido).
+     estado passa a **Follow-Up** e o prazo recomeça (48 h).
   3. **Arquivar** — abre o formulário de motivo (12.9).
   4. **Converter em Negócio** — conversão existente (funil, ID, X-Ray).
 - Depois do resultado, botão **«Próxima urgente →»** abre a lead em atraso seguinte.
