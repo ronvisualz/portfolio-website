@@ -572,7 +572,12 @@ a criar leads na mesma base de dados.
   alojamento abrem `/admin/`, nada é indexado.
 - **Endereço antigo:** `topperdigital.xyz/admin/…` redireciona para `topperhub.xyz/admin/…` com o
   mesmo caminho e parâmetros (regra no `admin/.htaccess`, só para o anfitrião antigo). Os links de
-  recuperação e de partilha do Drive já enviados continuam a funcionar.
+  recuperação e de partilha do Drive já enviados continuam a funcionar. Só as páginas abertas
+  são redirecionadas: um envio (gravar um formulário, mudar o modo, qualquer ação) feito num
+  separador antigo recebe a explicação «A plataforma mudou-se para topperhub.xyz… nada foi
+  gravado», em vez de os dados se perderem no redirecionamento (`inc/bootstrap.php`). Foi o que
+  aconteceu a 21 out: num separador antigo o modo escuro não ficou guardado e a lead nova não foi
+  criada. O botão de modo passou também a repor o modo anterior se a escolha não ficar guardada.
 - **Emails:** o link de «Recuperar palavra-passe» aponta para `topperhub.xyz`; o remetente
   continua `no-reply@topperdigital.xyz`, o domínio com o email configurado.
 - **Publicar:** os ficheiros de `admin/` e do portefólio continuam a ir para `topperdigital.xyz`;

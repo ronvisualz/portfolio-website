@@ -125,9 +125,10 @@
 
   // ── modo claro / escuro, com a transição em círculo (§11.1–2) ──
   function theme() { return root.getAttribute('data-theme') || (darkMq.matches ? 'dark' : 'light'); }
+  // Devolve uma promessa que se cumpre quando o modo novo já está aplicado.
   function setTheme(next, x, y) {
     function apply() { root.setAttribute('data-theme', next); }
-    if (!document.startViewTransition || reduced.matches) { apply(); return; }
+    if (!document.startViewTransition || reduced.matches) { apply(); return Promise.resolve(); }
     var r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
     root.classList.add('theme-switching');
     var vt = document.startViewTransition(apply);
@@ -136,11 +137,19 @@
                    { duration: 560, easing: 'cubic-bezier(.2,.7,.2,1)', pseudoElement: '::view-transition-new(root)' });
     }).catch(function () {});
     vt.finished.then(function () { root.classList.remove('theme-switching'); }, function () { root.classList.remove('theme-switching'); });
+    return vt.updateCallbackDone.catch(function () {});
   }
   function toggleTheme(x, y) {
+    var before = root.getAttribute('data-theme');
     var next = theme() === 'dark' ? 'light' : 'dark';
-    setTheme(next, x, y);
-    api('prefs', { theme: next }).catch(function (e) { toast(e.message, { err: true }); });
+    var shown = setTheme(next, x, y);
+    // Se não ficar guardado na conta, volta ao que estava: o que se vê é sempre o que está guardado.
+    api('prefs', { theme: next }).catch(function (e) {
+      shown.then(function () {
+        if (before === null) root.removeAttribute('data-theme'); else root.setAttribute('data-theme', before);
+      });
+      toast('O modo não ficou guardado: ' + e.message, { err: true });
+    });
   }
   $$('.theme-btn').forEach(function (b) {
     b.addEventListener('click', function (e) {

@@ -32,6 +32,27 @@ if (!$https && !IS_LOCAL && PHP_SAPI !== 'cli') {
     exit;
 }
 
+// ── endereço antigo (§10.3) ─────────────────────────────────
+// A plataforma está em topperhub.xyz. As páginas do endereço antigo são redirecionadas no
+// .htaccess; um envio ou pedido de dados de um separador antigo chega aqui e recebe uma
+// explicação, em vez de os dados se perderem num redirecionamento.
+if (!IS_LOCAL && PHP_SAPI !== 'cli'
+    && preg_match('/^(www\.)?topperdigital\.xyz$/', strtolower(explode(':', (string)($_SERVER['HTTP_HOST'] ?? ''))[0]))) {
+    $__moved = 'A plataforma mudou-se para topperhub.xyz e este separador ainda é do endereço antigo. Abra https://topperhub.xyz e repita o que estava a fazer (nada foi gravado).';
+    http_response_code(409);
+    header('Cache-Control: no-store');
+    if (str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json')) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => $__moved], JSON_UNESCAPED_UNICODE);
+    } else {
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><html lang="pt"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>topper.</title>'
+           . '<p style="font:16px/1.5 system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px">' . htmlspecialchars($__moved)
+           . '<br><br><a href="https://topperhub.xyz/admin/">Abrir topperhub.xyz</a> · ou volte atrás no browser para copiar o que tinha escrito.</p></html>';
+    }
+    exit;
+}
+
 // ── headers: keep this page out of indexes, caches, frames ──
 header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
 header('X-Frame-Options: DENY');

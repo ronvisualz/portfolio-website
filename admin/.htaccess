@@ -11,7 +11,11 @@
   # A plataforma mudou-se para topperhub.xyz (a mesma pasta, por ligação
   # simbólica): quem chega pelo endereço antigo segue para lá, com o mesmo
   # caminho e os mesmos parâmetros (links de recuperação e de partilha antigos).
+  # Envios (POST) e pedidos de dados de um separador antigo não seguem: um redirecionamento
+  # perderia os dados sem aviso; o bootstrap.php responde-lhes a explicar a mudança.
   RewriteCond %{HTTP_HOST} ^(www\.)?topperdigital\.xyz$ [NC]
+  RewriteCond %{REQUEST_METHOD} ^(GET|HEAD)$
+  RewriteCond %{HTTP_ACCEPT} !application/json
   RewriteRule ^(.*)$ https://topperhub.xyz/admin/$1 [L,R=302]
   RewriteCond %{HTTPS} off
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
