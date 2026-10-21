@@ -1,0 +1,22 @@
+# topperhub.xyz — a plataforma topper. (docs/ESPECIFICACAO-PLATAFORMA.md §10.3)
+#
+# Esta é a raiz pública de topperhub.xyz no alojamento. A pasta admin/ daqui é
+# uma ligação simbólica para a de topperdigital.xyz (o mesmo código e a mesma
+# base de dados); assets/fonts/ também, para a letra dos títulos.
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Sempre HTTPS e sempre sem www: a sessão vale só para um endereço.
+  RewriteCond %{HTTPS} off [OR]
+  RewriteCond %{HTTP_HOST} ^www\. [NC]
+  RewriteRule ^(.*)$ https://topperhub.xyz/$1 [L,R=301]
+  # A raiz (e a página de omissão do alojamento) abre a plataforma.
+  RewriteRule ^(default\.php)?$ /admin/ [L,R=302]
+</IfModule>

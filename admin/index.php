@@ -38,8 +38,8 @@ function reset_link(string $token): string {
     $base = (string)($CONFIG['app_url'] ?? '');
     if ($base === '') {
         $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
-        $base = IS_LOCAL ? 'http://' . $host
-              : (in_array($host, ['topperdigital.xyz', 'www.topperdigital.xyz'], true) ? 'https://' . $host : 'https://topperdigital.xyz');
+        // A plataforma vive em topperhub.xyz (§10.3); topperdigital.xyz/admin redireciona para lá.
+        $base = IS_LOCAL ? 'http://' . $host : 'https://topperhub.xyz';
     }
     return rtrim($base, '/') . '/admin/index.php?reset=' . $token;
 }

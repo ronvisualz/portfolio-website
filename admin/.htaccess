@@ -8,6 +8,11 @@
 # Force HTTPS (PHP re-checks this too).
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  # A plataforma mudou-se para topperhub.xyz (a mesma pasta, por ligação
+  # simbólica): quem chega pelo endereço antigo segue para lá, com o mesmo
+  # caminho e os mesmos parâmetros (links de recuperação e de partilha antigos).
+  RewriteCond %{HTTP_HOST} ^(www\.)?topperdigital\.xyz$ [NC]
+  RewriteRule ^(.*)$ https://topperhub.xyz/admin/$1 [L,R=302]
   RewriteCond %{HTTPS} off
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 </IfModule>
