@@ -699,6 +699,31 @@ histórico), `contact_ratings` (uma avaliação por custo) e `relations`; em `se
 Ficheiros novos: `contact.php`, `assets/contacts.js`, `inc/contacts.php`, `inc/contact_view.php`,
 `inc/migrate_contacts_v2.php`.
 
+### 10.5 Profundidade e degradês — §11.21 (21 out 2026)
+
+A §11.21 está aplicada em toda a zona admin, só onde ajuda a ler a página (o que está por cima de
+quê, o que se pega ou abre, qual é a ação principal). Exemplos antes/depois aprovados antes de
+implementar. Tudo em tokens no `assets/app.css` (`--g-*`, `--hl`, `--sh-*`), com valor para o modo
+claro, o escuro e o «como o sistema»; sem animação nos degradês; no máximo 2 camadas por elemento.
+
+- **Fundo da área de trabalho:** brilho radial muito suave de céu (canto superior direito) e coral
+  (canto inferior esquerdo), preso ao ecrã.
+- **Menu lateral:** degradê grafite → preto; item ativo com brilho amarelo além da barra.
+- **Amarelo** (botão principal, separador ativo, indicador em destaque, «Converter em Negócio» /
+  «Gerou uma lead» no «Como correu?»): degradê #FFD84F → #FFC718 → #F2B300 com reflexo.
+  **Botões escuros** («+ Adicionar …»): degradê grafite com reflexo; no escuro, o inverso.
+- **Cartões** (indicadores, «O teu dia», destaques do Dashboard, empresas, Pipeline, Tarefas):
+  degradê de 2–3%, linha de luz no topo e sombra em duas camadas, que sobe ao passar o rato.
+- **Painel lateral e fichas** (lead, contacto, resumo do negócio): fundo com degradê vertical e
+  brilho céu/azul; faixa céu → azul por trás do nome; os blocos da coluna direita em cartão; o
+  rodapé fixo (Converter / Arquivar / Eliminar) fica translúcido.
+- **Camadas por cima** (formulários, pesquisa ⌘K, notificações): o mesmo fundo do painel. Enquanto
+  um formulário sai do botão ou volta para ele (§13.8), o degradê sai de cena para a animação
+  partir da cor do botão.
+- **Sem degradê:** tabelas e listas (só o contorno ganha relevo), histórico, notas e texto longo,
+  campos, filtros, chips, gráficos, calendário, barra de topo e login. O Drive não foi alterado
+  (herda o menu e os botões, como o resto da plataforma).
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

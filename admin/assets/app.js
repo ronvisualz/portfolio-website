@@ -639,12 +639,13 @@
     card.__btn = m.__from;
     var from = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
     card.style.overflow = 'hidden';
+    card.classList.add('morphing');   // sem o degradê do cartão: parte da cor do botão (§11.21)
     hideOrigin(m, true);
     card.animate([
       { transform: from.transform, borderRadius: from.borderRadius, backgroundColor: btnColor(m.__from), easing: 'cubic-bezier(.3,.7,.25,1)' },
       { transform: 'scale(1.015)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.78, easing: 'ease-out' },
       { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg }
-    ], { duration: MORPH_IN }).onfinish = function () { card.style.overflow = ''; };
+    ], { duration: MORPH_IN }).onfinish = function () { card.style.overflow = ''; card.classList.remove('morphing'); };
   }
   function openMdl(m, from) {
     if (!m) return;
@@ -671,6 +672,7 @@
     function done() {
       m.__closing = false;
       card.style.overflow = '';
+      card.classList.remove('morphing');
       m.classList.remove('open');
       m.hidden = true;
       fades.forEach(function (f) { f.cancel(); });   // já escondido: o conteúdo volta ao normal sem piscar
@@ -688,6 +690,7 @@
         card.__btn = origin;
         var to = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
         card.style.overflow = 'hidden';
+        card.classList.add('morphing');
         card.animate([
           { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg },
           { transform: 'scale(1.01)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.3, easing: 'cubic-bezier(.5,0,.75,0)' },

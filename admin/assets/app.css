@@ -53,6 +53,24 @@
   --or-bg:  #FDE8D7;  --or-fg:  #9A4A0E;
   --sky-bg: #DDF1F7;  --sky-fg: #1C6175;
 
+  /* profundidade (§11.21): degradês suaves a partir da paleta, sem animação */
+  --g-bg:    radial-gradient(90% 55% at 100% 0%, rgba(129,207,227,.16), transparent 62%),
+             radial-gradient(70% 55% at 0% 100%, rgba(232,132,109,.09), transparent 62%);
+  --g-panel: linear-gradient(180deg, #FFFFFF 0%, #F8F7F3 100%);
+  --g-glow:  radial-gradient(120% 55% at 100% 0%, rgba(129,207,227,.22), transparent 60%);
+  --g-card:  linear-gradient(180deg, #FFFFFF 0%, #F9F8F5 100%);
+  --g-band:  linear-gradient(135deg, rgba(129,207,227,.36) 0%, rgba(47,119,177,.10) 55%, transparent 100%);
+  --g-yel:   linear-gradient(160deg, #FFD84F 0%, #FFC718 55%, #F2B300 100%);
+  --g-dark:  linear-gradient(180deg, #2C2C2E 0%, #0F0F10 100%);
+  --g-side:  linear-gradient(180deg, #141416 0%, #070708 100%);
+  --g-sheen: linear-gradient(160deg, rgba(255,255,255,.28), transparent 60%);
+  --hl:      inset 0 1px 0 rgba(255,255,255,.9);
+  --sh-card: 0 1px 2px rgba(17,17,17,.05), 0 6px 18px -8px rgba(17,17,17,.14);
+  --sh-lift: 0 2px 4px rgba(17,17,17,.06), 0 12px 26px -10px rgba(17,17,17,.24);
+  --sh-yel:  inset 0 1px 0 rgba(255,255,255,.55), 0 4px 12px -4px rgba(242,179,0,.55);
+  --sh-btn:  inset 0 1px 0 rgba(255,255,255,.5), 0 2px 8px -3px rgba(242,179,0,.6);
+  --sh-dark: inset 0 1px 0 rgba(255,255,255,.14), 0 3px 10px -4px rgba(0,0,0,.45);
+
   /* letra */
   --head: 'Futura Now Headline', 'Jost', 'Futura', 'Century Gothic', ui-rounded, system-ui, sans-serif;
   --body: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
@@ -88,6 +106,12 @@
   --ring-ok: #C9A93A; --ring-near: #F09A55; --ring-trk: #2A2D33; --or-bg: #3A2414; --or-fg: #F5B07A; --sky-bg: #12303A; --sky-fg: #8FD7EA;
   --shadow: 0 1px 0 rgba(0,0,0,.5), 0 10px 26px -16px rgba(0,0,0,.9);
   --shadow-lg: 0 22px 54px -18px rgba(0,0,0,.85), 0 2px 6px rgba(0,0,0,.5);
+  --g-bg: radial-gradient(90% 55% at 100% 0%, rgba(47,119,177,.20), transparent 62%), radial-gradient(70% 55% at 0% 100%, rgba(251,174,156,.06), transparent 62%);
+  --g-panel: linear-gradient(180deg, #1A1C20 0%, #111215 100%); --g-glow: radial-gradient(120% 55% at 100% 0%, rgba(47,119,177,.28), transparent 60%);
+  --g-card: linear-gradient(180deg, #181A1E 0%, #131518 100%); --g-band: linear-gradient(135deg, rgba(47,119,177,.42) 0%, rgba(129,207,227,.09) 55%, transparent 100%);
+  --g-dark: linear-gradient(180deg, #F4F4F1 0%, #D9D9D4 100%); --hl: inset 0 1px 0 rgba(255,255,255,.06);
+  --sh-card: 0 1px 2px rgba(0,0,0,.4), 0 10px 24px -12px rgba(0,0,0,.75); --sh-lift: 0 2px 4px rgba(0,0,0,.45), 0 16px 30px -12px rgba(0,0,0,.85);
+  --sh-dark: inset 0 1px 0 rgba(255,255,255,.7), 0 3px 10px -4px rgba(0,0,0,.6);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -102,6 +126,13 @@
     --ring-ok: #C9A93A; --ring-near: #F09A55; --ring-trk: #2A2D33; --or-bg: #3A2414; --or-fg: #F5B07A; --sky-bg: #12303A; --sky-fg: #8FD7EA;
     --shadow: 0 1px 0 rgba(0,0,0,.5), 0 10px 26px -16px rgba(0,0,0,.9);
     --shadow-lg: 0 22px 54px -18px rgba(0,0,0,.85), 0 2px 6px rgba(0,0,0,.5);
+
+    --g-bg: radial-gradient(90% 55% at 100% 0%, rgba(47,119,177,.20), transparent 62%), radial-gradient(70% 55% at 0% 100%, rgba(251,174,156,.06), transparent 62%);
+    --g-panel: linear-gradient(180deg, #1A1C20 0%, #111215 100%); --g-glow: radial-gradient(120% 55% at 100% 0%, rgba(47,119,177,.28), transparent 60%);
+    --g-card: linear-gradient(180deg, #181A1E 0%, #131518 100%); --g-band: linear-gradient(135deg, rgba(47,119,177,.42) 0%, rgba(129,207,227,.09) 55%, transparent 100%);
+    --g-dark: linear-gradient(180deg, #F4F4F1 0%, #D9D9D4 100%); --hl: inset 0 1px 0 rgba(255,255,255,.06);
+    --sh-card: 0 1px 2px rgba(0,0,0,.4), 0 10px 24px -12px rgba(0,0,0,.75); --sh-lift: 0 2px 4px rgba(0,0,0,.45), 0 16px 30px -12px rgba(0,0,0,.85);
+    --sh-dark: inset 0 1px 0 rgba(255,255,255,.7), 0 3px 10px -4px rgba(0,0,0,.6);
   }
 }
 
@@ -1028,7 +1059,7 @@ button.on-dot:disabled { opacity: .5; cursor: default; }
 
 /* a ficha do contacto: blocos à direita */
 .lv-blk h4 .h-sub { background: none; color: var(--mute-2); letter-spacing: .08em; padding: 0; font: inherit; text-transform: none; }
-.cv-svc { border: 1.5px solid var(--hi); border-radius: var(--r-lg); padding: 12px 14px; background: linear-gradient(180deg, color-mix(in srgb, var(--hi) 9%, transparent), transparent 70%), var(--panel); }
+.cv-svc { border: 1.5px solid var(--hi); border-radius: var(--r-lg); padding: 12px 14px; background-color: var(--panel); }   /* o degradê vem na §11.21, mais abaixo */
 .svc-t, .src-t, .svc-new, .imp-t { width: 100%; font-size: 13px; }
 .svc-t th, .src-t th, .svc-new th, .imp-t th { padding: 4px 6px; font-size: 10px; display: table-cell; }
 .svc-t td, .src-t td, .svc-new td, .imp-t td { padding: 6px; border-top: 1px solid var(--line); vertical-align: middle; }
@@ -1118,6 +1149,60 @@ button.on-dot:disabled { opacity: .5; cursor: default; }
   .svc-new tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
   .svc-new td { border: 0; padding: 0; width: auto !important; }
   .mini3 b { font-size: 14px; }
+}
+
+/* ── profundidade e degradês (§11.21) ───────────────────────
+   O relevo diz o que está por cima do quê, o que se pega ou abre e qual é a
+   ação principal. Nunca por trás de tabelas densas ou texto longo (fundo
+   liso, só o contorno ganha relevo); no máximo 2 camadas por elemento; sem
+   animação. As cores de fundo ficam por baixo do degradê (é delas que a
+   animação dos formulários parte, §13.8). */
+.shell { background-color: var(--bg); background-image: var(--g-bg); background-attachment: fixed; }
+.rail { background-image: var(--g-side); }
+.rail .ni.on, .rail-foot .who.on { background-image: linear-gradient(90deg, rgba(255,199,24,.17), rgba(255,255,255,.03) 70%); }
+.av, .lvl { background-image: var(--g-sheen); }
+
+/* ação principal e estado ativo: amarelo com reflexo; botões escuros em grafite */
+.btn { background-image: var(--g-yel); box-shadow: var(--sh-btn); }
+.btn.ghost, .btn.danger { background-image: none; box-shadow: none; }
+.btn.dark { background-image: var(--g-dark); box-shadow: var(--sh-dark); }
+.btn:disabled, .btn.off { box-shadow: none; }
+.tabs a.on { background-image: var(--g-yel); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 2px 6px -2px rgba(242,179,0,.5); }
+.stat.hero { background-image: var(--g-yel); box-shadow: var(--sh-yel); }
+.stat.hero.neg { background-image: none; }
+.opt.cv { background-color: var(--hi); background-image: var(--g-yel); border-color: transparent; color: var(--on-hi); box-shadow: var(--sh-btn); }
+.opt.cv small, .opt.cv .ico { color: rgba(0,0,0,.7); }
+.opt.cv:hover { color: var(--on-hi); filter: brightness(.97); }
+
+/* cartões: indicadores, «O teu dia», destaques, empresas, Pipeline e Tarefas (sobem ao passar o rato) */
+.stat:not(.hero), .today-col, .hot a, .cocard, .dcard, .card { background-image: var(--g-card); box-shadow: var(--hl), var(--sh-card); }
+.hot a, .cocard, a.stat { transition: border-color var(--t), box-shadow var(--t); }
+a.stat:hover, .hot a:hover, .cocard:hover, .dcard:hover, .card:hover { box-shadow: var(--hl), var(--sh-lift); }
+.stat.risk:not(.hero), .dcard.risk, .hot a.risk { box-shadow: inset 3px 0 0 var(--coral), var(--hl), var(--sh-card); }
+.dcard.risk:hover, .hot a.risk:hover { box-shadow: inset 3px 0 0 var(--coral), var(--hl), var(--sh-lift); }
+.panel:not(.bare), .tablewrap { box-shadow: var(--hl), var(--sh-card); }
+
+/* painel lateral e fichas: fundo com brilho, faixa por trás do nome, blocos em cartão */
+.sp { background-image: var(--g-glow), var(--g-panel); }
+.lv-l, .lv-page .lv-l { background: transparent; }
+.lv-r { background: color-mix(in srgb, var(--bg) 45%, transparent); }
+.lv-foot { background: color-mix(in srgb, var(--raise) 84%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.lv-page { background-image: var(--g-glow), var(--g-panel); box-shadow: var(--hl), var(--sh-card); }
+.lv-head { margin: -18px -20px 0; padding: 18px 20px 16px; background-image: var(--g-band); border-bottom: 1px solid var(--line); }
+.lv-page .lv-head { border-top-left-radius: var(--r-lg); }
+.sp-body > header:first-child { margin: -16px -18px 0; padding: 16px 18px 14px; background-image: var(--g-band); border-bottom: 1px solid var(--line); }
+.lv-r > .lv-blk { background-color: var(--panel); background-image: var(--g-card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; box-shadow: var(--hl), var(--sh-card); }
+.lv-r > .lv-blk.lv-hist, .lv-r > .lv-blk.cv-src { background-image: none; }
+.lv-r > .lv-blk.cv-svc { background-image: linear-gradient(180deg, color-mix(in srgb, var(--hi) 10%, transparent), transparent 70%), var(--g-card); border: 1.5px solid var(--hi); }
+.cv-rel { background-image: var(--g-card); box-shadow: var(--hl), var(--sh-card); }
+.cv-rel.off { background: transparent; box-shadow: none; }
+
+/* camadas por cima: formulários, pesquisa ⌘K, notificações */
+.mdl-card, .cmdk, .pop { background-image: var(--g-glow), var(--g-panel); }
+.mdl-card.morphing { background-image: none; }   /* enquanto sai do botão ou volta para ele */
+
+@media (max-width: 1060px) {
+  .lv-page .lv-head { border-top-right-radius: var(--r-lg); }
 }
 
 /* ── responsivo ──────────────────────────────────────────── */
