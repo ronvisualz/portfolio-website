@@ -224,6 +224,8 @@ function task_card(array $t, array $members, ?int $person): void {
         <div class="card-job"><a href="/admin/negocio.php?id=<?= (int)$t['deal_id'] ?>"><?= e($t['deal_code'] . ' · ' . $t['deal_name']) ?></a></div>
       <?php elseif (!empty($t['deal_id']) && in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)): ?>
         <div class="card-job"><a href="/admin/lead.php?id=<?= (int)$t['deal_id'] ?>">Lead · <?= e($t['deal_name']) ?></a></div>
+      <?php elseif (!empty($t['contact_name'])): ?>
+        <div class="card-job"><a href="/admin/contact.php?id=<?= (int)$t['contact_id'] ?>"><?= ($t['kind'] ?? '') === 'relation' ? 'Relação' : 'Contacto' ?> · <?= e($t['contact_name']) ?></a></div>
       <?php elseif ($t['job_name'] !== ''): ?>
         <div class="card-job"><?= e($t['job_name']) ?></div>
       <?php endif; ?>
@@ -506,7 +508,10 @@ $pq      = $person ? '&amp;p=' . $person : '';
 </details>
 
 <?php elseif ($view === 'tarefas'):
-$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id
+require_once __DIR__ . '/inc/contacts.php';
+relation_tick($pdo);   // os follow-ups de relação que chegaram à data (§13.5)
+$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, c.name AS contact_name FROM tasks t
+                      LEFT JOIN deals d ON d.id = t.deal_id LEFT JOIN contacts c ON c.id = t.contact_id
                      WHERE 1=1' . $visSql . ' ORDER BY t.position, t.id')->fetchAll();
 $stacks = [0 => []];
 foreach ($members as $mid => $m) $stacks[$mid] = [];

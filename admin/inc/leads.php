@@ -282,7 +282,20 @@ function lead_company_contact(PDO $pdo, string $name, array $extra = [], ?int $b
         ->execute([mb_substr($name, 0, 160), mb_substr((string)($extra['email'] ?? ''), 0, 190),
                    mb_substr(lead_phones((string)($extra['phone'] ?? ''))[0] ?? '', 0, 40),
                    mb_substr((string)($extra['website'] ?? ''), 0, 255), $by]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    lead_contact_logged($pdo, $id, 'Empresa', $by);
+    return $id;
+}
+
+/**
+ * Contactos criados a partir de uma lead ou de uma pessoa (§13.1): o site passa para «Site e
+ * redes» (links) e fica no histórico do contacto. Antes do passo 15 da base de dados, nada.
+ */
+function lead_contact_logged(PDO $pdo, int $id, string $what, ?int $by): void {
+    if (!db_has_table($pdo, 'contact_history')) return;
+    $pdo->prepare("UPDATE contacts SET links = website WHERE id = ? AND website <> '' AND (links IS NULL OR links = '')")->execute([$id]);
+    $pdo->prepare("INSERT INTO contact_history (contact_id, event, note, user_id) VALUES (?, 'c_create', ?, ?)")
+        ->execute([$id, $what . ' · criada a partir de uma lead ou de um contacto', $by]);
 }
 
 /** A pessoa de contacto: a escolhida ($useId), a que já tem este email, ou criada agora. */
@@ -310,7 +323,9 @@ function lead_person_contact(PDO $pdo, string $name, ?int $companyId, array $ext
         ->execute([mb_substr($name, 0, 160), $companyId, mb_substr((string)($extra['email'] ?? ''), 0, 190),
                    mb_substr(lead_phones((string)($extra['phone'] ?? ''))[0] ?? '', 0, 40),
                    mb_substr((string)($extra['website'] ?? ''), 0, 255), $by]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    lead_contact_logged($pdo, $id, 'Pessoa', $by);
+    return $id;
 }
 
 /** Liga a lead à empresa e à pessoa na aba Contactos (cria o que faltar). */

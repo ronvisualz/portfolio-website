@@ -29,6 +29,7 @@ render_flashes();
 ?>
 <div class="lead-page-top">
   <a class="btn ghost sm" href="<?= e($back) ?>#l-<?= $id ?>" data-back><?= icon('chev-left') ?> Voltar às leads</a>
+  <?php if (can('leads', PERM_EDIT)): ?><a data-new href="/admin/leads.php?nova=1" hidden></a><?php endif; ?>
 </div>
 <?= lead_view($pdo, $l, 'page', $self) ?>
 <?= can('leads', PERM_EDIT) ? lead_modals_html(null, $self) : '' ?>

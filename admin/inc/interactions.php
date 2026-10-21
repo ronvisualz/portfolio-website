@@ -43,6 +43,27 @@ const HISTORY_TYPES = [
     'lost'       => ['Perdido', 'x', 'red'],
     'reopen'     => ['Reaberto', 'refresh', 'sky'],
     'import'     => ['Importado da folha', 'file', 'neutral'],
+    'brought'    => ['Trazido por', 'user-arrow', 'yellow'],
+    // Contactos (§13)
+    'c_create'   => ['Contacto criado', 'star', 'neutral'],
+    'c_edit'     => ['Dados alterados', 'pencil', 'neutral'],
+    'c_company'  => ['Mudou de empresa', 'user-arrow', 'sky'],
+    'c_price'    => ['Serviços e preços', 'euro', 'neutral'],
+    'c_rating'   => ['Avaliado', 'star', 'green'],
+    'c_active'   => ['Ativo / Inativo', 'power', 'sky'],
+    'c_merge'    => ['Juntado com um duplicado', 'merge', 'neutral'],
+    'c_import'   => ['Importado', 'upload', 'neutral'],
+    'c_source'   => ['Trouxe um negócio', 'arrow', 'yellow'],
+    'rel_start'  => ['Relação acompanhada', 'heart', 'sky'],
+    'rel_edit'   => ['Relação alterada', 'heart', 'neutral'],
+    'rel_touch'  => ['Follow-up de relação', 'heart', 'sky'],
+    'rel_miss'   => ['Não atendeu', 'phone-off', 'orange'],
+    'rel_meet'   => ['Reunião marcada', 'meeting', 'blue'],
+    'rel_lead'   => ['Gerou uma lead', 'arrow', 'yellow'],
+    'rel_pause'  => ['Relação pausada', 'pause', 'neutral'],
+    'rel_resume' => ['Relação retomada', 'refresh', 'sky'],
+    'rel_level'  => ['Nível revisto', 'arrows', 'neutral'],
+    'rel_stop'   => ['Deixou de ser acompanhada', 'x', 'neutral'],
 ];
 
 /** O ícone de uma entrada: cor do tipo e o nome do tipo como dica e nome acessível. */
@@ -150,6 +171,15 @@ function timeline(PDO $pdo, string $type, int $id, int $limit = 80): array {
                 $out[] = ['when' => date('Y-m-d H:i:s', $c['due']), 'type' => 'late', 'title' => 'Prazo em atraso',
                           'text' => (LEAD_STATE[$d['lead_state']] ?? '') . ' · ' . $c['label'], 'who' => 'Sistema', 'sys' => true];
             }
+        }
+    }
+    // O que acontece ao próprio contacto (§13): criado, preços, avaliações, relação, tarefas…
+    if ($type === 'contact' && db_has_table($pdo, 'contact_history')) {
+        $st = $pdo->prepare('SELECT h.*, u.name AS who FROM contact_history h LEFT JOIN users u ON u.id = h.user_id WHERE h.contact_id = ?');
+        $st->execute([$id]);
+        foreach ($st->fetchAll() as $h) {
+            $out[] = ['when' => $h['created_at'], 'type' => isset(HISTORY_TYPES[$h['event']]) ? $h['event'] : 'state',
+                      'title' => HISTORY_TYPES[$h['event']][0] ?? $h['event'], 'text' => (string)$h['note'], 'who' => $h['who'] ?? 'Sistema', 'sys' => true];
         }
     }
     usort($out, fn($a, $b) => strcmp((string)$b['when'], (string)$a['when']));

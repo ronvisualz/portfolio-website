@@ -108,6 +108,10 @@ function my_alerts(PDO $pdo): array {
     $uid = (int)$me['id'];
     $lim = alert_limits($pdo);
 
+    // Os follow-ups de relação que chegaram à data entram nas tarefas de quem as acompanha (§13.5).
+    require_once __DIR__ . '/contacts.php';
+    relation_tick($pdo);
+
     // Tarefas minhas, a vencer nos próximos dias ou atrasadas.
     if (can('tarefas') && ($mid = my_member_id($pdo)) !== null) {
         $until = (new DateTimeImmutable(today_lisbon()))->modify('+' . $lim['task'] . ' days')->format('Y-m-d');

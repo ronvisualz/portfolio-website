@@ -50,8 +50,11 @@ function panel_deal(PDO $pdo, array $d): array {
     $idle = $d['phase'] === 'pipeline' ? days_since(deal_last_move($d)) : 0;
     $risk = $d['phase'] === 'pipeline' && $idle > alert_limits($pdo)['deal'];
 
+    require_once __DIR__ . '/lead_view.php';   // ligações a contactos (Cliente, Trazido por)
     $kv = '<span>Funil · etapa</span><div>' . e(($funnel['name'] ?? '—') . ' · ' . ($stage['name'] ?? '—')) . '</div>'
         . '<span>Responsável</span><div>' . e($owner) . '</div>'
+        . '<span>Cliente</span><div>' . deal_people_link($pdo, $d['contact_id']) . '</div>'
+        . '<span>Trazido por</span><div>' . deal_people_link($pdo, $d['brought_by_id']) . '</div>'
         . panel_row('Valor estimado', 'deal', $id, 'value_estimate', $d, $edit)
         . ($d['phase'] === 'pipeline' ? '<span>Último movimento</span><div>' . e(ago_days(deal_last_move($d))) . '</div>' : '');
     $body = '<header><div class="id mono">' . e($d['code']) . '</div><h2>' . inline_field('deal', $id, 'name', e($d['name']), ['edit' => $edit, 'label' => 'Editar nome', 'value' => $d['name']]) . '</h2>'
@@ -63,29 +66,14 @@ function panel_deal(PDO $pdo, array $d): array {
     return ['title' => 'Negócio', 'html' => $body, 'url' => deal_url($d)];
 }
 
+/** O contacto no painel lateral: a vista larga em duas colunas (§13.7). */
 function panel_contact(PDO $pdo, array $c): array {
+    require_once __DIR__ . '/contact_view.php';
     $id = (int)$c['id'];
-    $edit = can('contactos', PERM_EDIT);
-    $types = array_filter(['is_client' => 'Cliente', 'is_supplier' => 'Fornecedor', 'is_partner' => 'Parceiro', 'is_freelancer' => 'Freelancer'],
-                          fn($k) => (int)($c[$k] ?? 0) === 1, ARRAY_FILTER_USE_KEY);
-    $st = $pdo->prepare('SELECT * FROM deals WHERE code IS NOT NULL AND (contact_id = ? OR id IN (SELECT deal_id FROM deal_contacts WHERE contact_id = ?)) ORDER BY code DESC');
-    $st->execute([$id, $id]);
-    $deals = '';
-    foreach ($st->fetchAll() as $d) {
-        if (!record_reach($pdo, $d)) continue;
-        $deals .= '<li><a href="' . e(deal_url($d)) . '"><span><span class="id">' . e($d['code']) . '</span> ' . e($d['name']) . '</span><small>'
-                . e(['pipeline' => 'comercial', 'production' => 'produção', 'done' => 'concluído', 'lost' => 'perdido'][$d['phase']] ?? '') . '</small></a></li>';
-    }
-    $kv = '';
-    foreach (['contact_person' => 'Pessoa', 'email' => 'Email', 'phone' => 'Telefone', 'nif' => 'NIF', 'website' => 'Site', 'service' => 'Serviço', 'rate' => 'Tarifa'] as $f => $label) {
-        $kv .= panel_row($label, 'contact', $id, $f, $c, $edit);
-    }
-    $body = '<header><h2>' . inline_field('contact', $id, 'name', e($c['name']), ['edit' => $edit, 'label' => 'Editar nome', 'value' => $c['name']]) . '</h2>'
-          . '<div style="margin-top:6px">' . implode(' ', array_map(fn($t) => '<span class="chip">' . e($t) . '</span>', $types)) . '</div></header>'
-          . '<section class="sp-next"><h4>Próxima ação</h4><a class="btn ghost" href="/admin/contactos.php?edit=' . $id . '#contacto">' . icon('external') . ' Abrir a ficha completa</a></section>'
-          . '<section><h4>Resumo</h4><div class="kv">' . $kv . '</div></section>'
-          . ($deals !== '' ? '<section class="today-col"><h3>Negócios</h3><ul>' . $deals . '</ul></section>' : '')
-          . '<section><h4>Notas</h4>' . inline_field('contact', $id, 'notes', e((string)$c['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$c['notes']]) . '</section>'
-          . '<section><h4>Histórico</h4>' . history_block($pdo, 'contact', $id, $edit, '/admin/contactos.php?edit=' . $id . '#contacto', '') . '</section>';
-    return ['title' => 'Contacto', 'html' => $body, 'url' => '/admin/contactos.php?edit=' . $id . '#contacto'];
+    // Fora da aba Contactos, o painel traz consigo os formulários e o contacts.js.
+    $modals = can('contactos', PERM_EDIT) ? '<template data-contact-modals>' . contact_modals_html($pdo) . '</template>' : '';
+    $js = __DIR__ . '/../assets/contacts.js';
+    return ['title' => $c['kind'] === 'company' ? 'Empresa' : 'Contacto', 'html' => contact_view($pdo, $c, 'panel', '/admin/contactos.php?open=' . $id) . $modals,
+            'url' => '/admin/contact.php?id=' . $id, 'wide' => true,
+            'script' => '/admin/assets/contacts.js?v=' . (is_file($js) ? filemtime($js) : 0)];
 }

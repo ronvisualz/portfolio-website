@@ -13,6 +13,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/interactions.php';
 require_once __DIR__ . '/inline.php';
+require_once __DIR__ . '/contacts.php';   // «Trazido por» (§13.4)
 
 /** Anel do prazo (enche com a percentagem) + texto, com a hora limite na dica. */
 function lead_ring(?array $c, bool $withLabel = true): string {
@@ -23,6 +24,13 @@ function lead_ring(?array $c, bool $withLabel = true): string {
          . '<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="trk" cx="10" cy="10" r="8"/>'
          . '<circle class="val" cx="10" cy="10" r="8" stroke-dasharray="' . round($fill, 2) . ' ' . $len . '"/></svg>'
          . ($withLabel ? '<b>' . e($c['label']) . '</b>' : '') . '</span>';
+}
+
+/** Um contacto (Cliente, Trazido por) como ligação para o painel; «—» sem contacto. */
+function deal_people_link(PDO $pdo, $contactId): string {
+    if (!$contactId || !($c = contact_get($pdo, (int)$contactId))) return '<span class="muted">—</span>';
+    $label = e($c['name']) . ($c['kind'] === 'person' && $c['company_name'] ? ' <span class="muted">· ' . e($c['company_name']) . '</span>' : '');
+    return can('contactos') ? '<a href="/admin/contact.php?id=' . (int)$c['id'] . '" data-panel="contact:' . (int)$c['id'] . '">' . $label . '</a>' : $label;
 }
 
 /** Chip do estado (Sem resposta mostra a tentativa). */
@@ -113,7 +121,7 @@ function lead_new_action_html(PDO $pdo, array $l): string {
  * «Editar» (§12.5): todos os campos da lead num só formulário; «Gravar» grava-os de uma vez
  * (ui_api.php?a=lead_save, com as mesmas regras e permissões da edição no campo).
  */
-function lead_edit_form_html(array $l): string {
+function lead_edit_form_html(PDO $pdo, array $l): string {
     $id = (int)$l['id'];
     $def = inline_fields($l)['lead'];
     $f = fn(string $k) => 'le-' . $id . '-' . $k;
@@ -149,6 +157,8 @@ function lead_edit_form_html(array $l): string {
          . $select('priority', 'Prioridade')
          . $select('origin', 'Origem')
          . $text('campaign', 'Campanha')
+         . '<div class="field"><label for="' . $f('brought_by') . '">Trazido por</label>'
+         . contact_pick_html($pdo, 'f[brought_by]', 'f[brought_by_id]', $l['brought_by_id'] !== null ? (int)$l['brought_by_id'] : null, $f('brought_by'), 'Quem originou (agência, parceiro…)') . '</div>'
          . '<div class="field wide"><span class="lbl">Tipo</span><div class="chips-check" role="group" aria-label="Tipo">' . $types . '</div></div>'
          . $text('why', 'Porquê abordar', ['area' => true, 'wide' => true])
          . $text('detail', 'Detalhe', ['area' => true, 'wide' => true])
@@ -198,8 +208,10 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
         . $row('Prioridade', 'priority')
         . $row('Origem', 'origin')
         . $row('Campanha', 'campaign')
+        . '<span>Trazido por</span><div>' . deal_people_link($pdo, $l['brought_by_id']) . '</div>'
         . '<span>Último contacto</span><div data-last>' . e(lead_ago($l['last_contact_at'])) . '</div>'
-        . '<span>Criada</span><div class="mono">' . e(lisbon_fmt(strtotime((string)$l['created_at']), 'd/m/Y')) . '</div>';
+        . '<span>Criada</span><div><span class="mono">' . e(lisbon_fmt(strtotime((string)$l['created_at']), 'd/m/Y')) . '</span>'
+        . ($l['created_by'] ? ' <span class="muted">por ' . e((string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$l['created_by'])->fetchColumn()) . '</span>' : '') . '</div>';
 
     $foot = '';
     if ($edit && $active && !$quar) {
@@ -232,7 +244,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
           . '<section><h4>Notas</h4>' . inline_field('lead', $id, 'notes', e((string)$l['notes'])) . '</section>'
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '')
           . '</div>'
-          . ($ed ? lead_edit_form_html($l) : '')
+          . ($ed ? lead_edit_form_html($pdo, $l) : '')
           . '</div>';
 
     $right = '<div class="lv-r">'

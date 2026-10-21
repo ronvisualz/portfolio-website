@@ -7,12 +7,16 @@ require_once __DIR__ . '/inc/finance.php';
 require_once __DIR__ . '/inc/deal_drive.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/interactions.php';
+require_once __DIR__ . '/inc/lead_view.php';   // ligações a contactos; «Trazido por» (inc/contacts.php)
 $user = require_login();
 require_page('negocios');
 
 // Ficha do negócio: a central que junta, pelo ID, o que as outras áreas
 // ligaram a este negócio — contactos, orçamentação, contas, ficheiros,
 // criativos, tarefas e etapas. Os dados financeiros pedem a aba Financeiro.
+// Cliente (quem paga), Trazido por (quem originou) e Criado por são três
+// coisas diferentes (§13.4). Fechar o custo de um fornecedor pede a
+// avaliação do trabalho (§13.3).
 
 $me = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $me->execute([(int)$user['id']]);
@@ -40,7 +44,8 @@ $moneyEdit= can('financeiro', PERM_EDIT);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = (string)($_POST['do'] ?? '');
-    $finance = ['save_finance', 'add_cost', 'save_cost', 'toggle_cost', 'del_cost'];
+    $finance = ['save_finance', 'add_cost', 'save_cost', 'toggle_cost', 'del_cost', 'rate_cost'];
+    $rateAsk = 0;   // custo fechado de um fornecedor ainda por avaliar: pede as estrelas a seguir
     if (in_array($do, $finance, true)) require_perm('financeiro', PERM_EDIT);
 
     try {
@@ -79,12 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare('INSERT INTO costs (deal_id, year, month, name, role, contact_id, amount, vat_mode, is_closed, notes, created_by)
                                    VALUES (?,?,?,?,?,?,?,?,?,?,?)')
                         ->execute([$id, $deal['year'], $deal['month'], $c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], (int)$me['id']]);
+                    $costId = (int)$pdo->lastInsertId();
                     flash('Custo adicionado.');
                 } else {
+                    $costId = (int)($_POST['cost_id'] ?? 0);
                     $pdo->prepare('UPDATE costs SET name=?, role=?, contact_id=?, amount=?, vat_mode=?, is_closed=?, notes=? WHERE id=? AND deal_id=?')
-                        ->execute([$c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], (int)($_POST['cost_id'] ?? 0), $id]);
+                        ->execute([$c['name'], $c['role'], $contact, $c['amount'], $c['vat_mode'], $c['is_closed'], $c['notes'], $costId, $id]);
                     flash('Custo guardado.');
                 }
+                if ($c['is_closed'] && cost_needs_rating($pdo, $costId)) $rateAsk = $costId;
                 break;
 
             case 'toggle_cost':
@@ -94,6 +102,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($was !== false) {
                     $pdo->prepare('UPDATE costs SET is_closed = 1 - is_closed WHERE id = ? AND deal_id = ?')->execute([(int)($_POST['cost_id'] ?? 0), $id]);
                     flash((int)$was ? 'Custo reaberto.' : 'Custo fechado.', 'ok', undo_push('cost_closed', ['id' => (int)$_POST['cost_id'], 'from' => (int)$was]));
+                    if (!(int)$was && cost_needs_rating($pdo, (int)$_POST['cost_id'])) $rateAsk = (int)$_POST['cost_id'];
+                }
+                break;
+
+            case 'rate_cost':
+                $cost = cost_needs_rating($pdo, (int)($_POST['cost_id'] ?? 0));
+                if (!$cost || (int)$cost['deal_id'] !== $id) throw new RuntimeException('Este trabalho já foi avaliado.');
+                cost_rate($pdo, $cost, (int)($_POST['stars'] ?? 0), (int)$me['id']);
+                [$avg, $nr] = contact_rating($pdo, (int)$cost['contact_id']);
+                flash($cost['contact_name'] . ' avaliado com ' . (int)$_POST['stars'] . '★ · média ' . number_format((float)$avg, 1, ',', '') . ' (' . $nr . ').');
+                break;
+
+            case 'brought_by':
+                if (!$canEdit || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão para mudar este negócio.');
+                $to = contact_pick_resolve($pdo, $_POST['brought_by_id'] ?? '', (string)($_POST['brought_by'] ?? ''));
+                $from = $deal['brought_by_id'] !== null ? (int)$deal['brought_by_id'] : null;
+                if (deal_set_brought_by($pdo, $deal, $to, (int)$me['id'])) {
+                    flash('«Trazido por» guardado.', 'ok', undo_push('brought_by', ['id' => $id, 'from' => $from, 'to' => $to]));
                 }
                 break;
 
@@ -132,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash($e->getMessage(), 'err');
     }
     $anchor = (string)($_POST['anchor'] ?? '');
-    redirect($self . (preg_match('/^[a-z]+$/', $anchor) ? '#' . $anchor : ''));
+    redirect($self . (!empty($rateAsk) ? '&avaliar=' . $rateAsk : '') . (preg_match('/^[a-z]+$/', $anchor) ? '#' . $anchor : ''));
 }
 
 // ── dados ───────────────────────────────────────────────────
@@ -155,6 +181,9 @@ if (db_has_column($pdo, 'tasks', 'deal_id')) {
     $tasks = $st->fetchAll();
 }
 
+$rated = $costs ? $pdo->query('SELECT cost_id, stars FROM contact_ratings WHERE cost_id IN (' . implode(',', array_map(fn($c) => (int)$c['id'], $costs)) . ')')->fetchAll(PDO::FETCH_KEY_PAIR) : [];
+$rateCost = $moneyEdit && !empty($_GET['avaliar']) ? cost_needs_rating($pdo, (int)$_GET['avaliar']) : null;
+if ($rateCost && (int)$rateCost['deal_id'] !== $id) $rateCost = null;
 $editCost = (int)($_GET['cost'] ?? 0);
 $ec = null; foreach ($costs as $c) if ((int)$c['id'] === $editCost) $ec = $c;
 $phaseChip = ['pipeline' => 'Fase comercial', 'production' => 'Em produção', 'done' => 'Concluído', 'lost' => 'Perdido'][$deal['phase']] ?? $deal['phase'];
@@ -190,7 +219,22 @@ render_flashes();
 <?php endif; ?>
 
 <h2 id="info">Informação</h2>
-<?php if ($canEdit && record_reach($pdo, $deal, PERM_EDIT)): ?>
+<?php $dealEdit = $canEdit && record_reach($pdo, $deal, PERM_EDIT);
+      $creator = $deal['created_by'] ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$deal['created_by'])->fetchColumn() : ''; ?>
+<div class="panel deal-who">
+  <div class="kv">
+    <span>Cliente</span><div><?= deal_people_link($pdo, $deal['contact_id']) ?> <span class="muted small">· quem paga</span></div>
+    <span>Trazido por</span><div>
+      <?php if ($dealEdit): ?>
+        <form method="post" class="bb-form"><?= csrf_field() ?><input type="hidden" name="do" value="brought_by"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="anchor" value="info">
+          <?= contact_pick_html($pdo, 'brought_by', 'brought_by_id', $deal['brought_by_id'] !== null ? (int)$deal['brought_by_id'] : null, 'dbb', 'Ninguém (quem originou: agência, parceiro…)') ?>
+          <button class="btn ghost sm" type="submit">Guardar</button></form>
+      <?php else: ?><?= deal_people_link($pdo, $deal['brought_by_id']) ?><?php endif; ?>
+      <span class="muted small">· quem originou o negócio</span></div>
+    <span>Criado por</span><div><?= $creator !== '' ? e($creator) : '<span class="muted">—</span>' ?> <span class="muted small mono"><?= e(lisbon_fmt(strtotime((string)$deal['created_at']), 'd/m/Y')) ?></span></div>
+  </div>
+</div>
+<?php if ($dealEdit): ?>
 <div class="panel js-only">
   <div class="kv">
     <span>Valor estimado</span><div><?= inline_field('deal', $id, 'value_estimate', $deal['value_estimate'] !== null ? e(eur0((float)$deal['value_estimate'])) : '', ['edit' => true, 'type' => 'money', 'label' => 'Editar valor estimado', 'value' => $deal['value_estimate'] !== null ? number_format((float)$deal['value_estimate'], 2, ',', '') : '']) ?></div>
@@ -218,7 +262,7 @@ render_flashes();
   <tbody>
   <?php if (!$contacts): ?><tr><td colspan="5" class="empty">Sem contactos ligados.</td></tr><?php endif; ?>
   <?php foreach ($contacts as $c): ?>
-    <tr><td><a class="b" style="color:inherit" href="/admin/contactos.php?edit=<?= (int)$c['id'] ?>#contacto"<?= can('contactos') ? ' data-panel="contact:' . (int)$c['id'] . '"' : '' ?>><?= e($c['name']) ?></a>
+    <tr><td><a class="b" style="color:inherit" href="/admin/contact.php?id=<?= (int)$c['id'] ?>"<?= can('contactos') ? ' data-panel="contact:' . (int)$c['id'] . '"' : '' ?>><?= e($c['name']) ?></a>
           <?= (int)$c['id'] === (int)$deal['contact_id'] ? ' <span class="chip">cliente</span>' : '' ?></td>
       <td><?= e($c['link_role'] ?: '—') ?></td>
       <td class="hide-sm"><?= $c['email'] ? '<a href="mailto:' . e($c['email']) . '">' . e($c['email']) . '</a>' : '—' ?></td>
@@ -239,7 +283,7 @@ render_flashes();
   </select>
   <input type="text" name="role" maxlength="80" placeholder="Papel (ex.: produtor)">
   <button class="btn sm" type="submit">Ligar</button>
-  <a class="lnk" href="/admin/contactos.php#contacto">Novo contacto</a>
+  <a class="lnk" href="/admin/contactos.php?novo=1">Novo contacto</a>
 </form>
 <?php endif; ?>
 
@@ -279,8 +323,8 @@ render_flashes();
   <tbody>
   <?php if (!$costs): ?><tr><td colspan="8" class="empty">Sem custos.</td></tr><?php endif; ?>
   <?php foreach ($costs as $c): ?>
-    <tr class="<?= ($ec && (int)$ec['id'] === (int)$c['id']) || (int)($_GET['delcost'] ?? 0) === (int)$c['id'] ? 'pending' : '' ?>">
-      <td><?= e($c['name'] ?: '—') ?><?= $c['contact_name'] ? '<div class="muted" style="font-size:0.62rem">' . e($c['contact_name']) . '</div>' : '' ?></td>
+    <tr id="cost-<?= (int)$c['id'] ?>" class="<?= ($ec && (int)$ec['id'] === (int)$c['id']) || (int)($_GET['delcost'] ?? 0) === (int)$c['id'] ? 'pending' : '' ?>">
+      <td><?= e($c['name'] ?: '—') ?><?= $c['contact_name'] ? '<div class="muted" style="font-size:0.62rem">' . e($c['contact_name']) . (isset($rated[(int)$c['id']]) ? ' · <span class="stars" aria-label="Avaliado ' . (int)$rated[(int)$c['id']] . ' de 5">' . str_repeat('★', (int)$rated[(int)$c['id']]) . '</span>' : '') . '</div>' : '' ?></td>
       <td><?= e($c['role'] ?: '—') ?></td>
       <td class="num"><?= eur((float)$c['amount']) ?></td>
       <td><?= e(VAT_MODES[$c['vat_mode']] ?? $c['vat_mode']) ?></td>
@@ -355,5 +399,21 @@ render_flashes();
 </table></div>
 
 <?= history_block($pdo, 'deal', $id, $canEdit, $self . '#historico') ?>
+
+<?php if ($rateCost): ?>
+<div class="mdl open" id="mdl-rate" data-from="#cost-<?= (int)$rateCost['id'] ?> .check" data-clear="avaliar" role="dialog" aria-modal="true" aria-labelledby="mdl-rate-t">
+  <div class="mdl-back" data-mdl-close></div>
+  <form class="mdl-card" method="post" action="<?= e($self) ?>">
+    <?= csrf_field() ?><input type="hidden" name="do" value="rate_cost"><input type="hidden" name="id" value="<?= $id ?>">
+    <input type="hidden" name="cost_id" value="<?= (int)$rateCost['id'] ?>"><input type="hidden" name="anchor" value="custos">
+    <h3 id="mdl-rate-t">Como correu o trabalho?</h3>
+    <p class="muted"><?= e($rateCost['contact_name']) ?> · <?= e($rateCost['role'] ?: $rateCost['name']) ?>. A avaliação do fornecedor é a média real dos trabalhos.</p>
+    <div class="rate-stars" role="radiogroup" aria-label="Avaliação de 1 a 5">
+      <?php for ($i = 5; $i >= 1; $i--): ?><input type="radio" id="rs-<?= $i ?>" name="stars" value="<?= $i ?>" required><label for="rs-<?= $i ?>" data-tip="<?= $i ?> de 5" aria-label="<?= $i ?> de 5">★</label><?php endfor; ?>
+    </div>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Agora não</button><button class="btn" type="submit"><?= icon('star') ?> Avaliar</button></div>
+  </form>
+</div>
+<?php endif; ?>
 
 <?php render_footer();

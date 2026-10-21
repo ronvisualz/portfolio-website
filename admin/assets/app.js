@@ -374,9 +374,10 @@
       bodyEl.scrollTop = 0;
       sp.focus({ preventScroll: true });
       // O comportamento próprio do registo (ex.: leads.js), se a página ainda não o tiver.
-      if (j.script && !window.topperLeads && !$('script[data-panel-js="' + j.script.split('?')[0] + '"]')) {
+      var base = j.script ? j.script.split('?')[0] : '';
+      if (base && !$$('script[src]').some(function (x) { return x.getAttribute('src').split('?')[0] === base; })) {
         var s = document.createElement('script');
-        s.src = j.script; s.defer = true; s.setAttribute('data-panel-js', j.script.split('?')[0]);
+        s.src = j.script; s.defer = true; s.setAttribute('data-panel-js', base);
         document.body.appendChild(s);
       }
       document.dispatchEvent(new CustomEvent('topper:panel', { detail: { key: key, el: bodyEl } }));
@@ -397,12 +398,14 @@
   // Clicar numa linha (fora dos controlos) ou no nome abre o painel; Ctrl/⌘-clique abre a página completa.
   document.addEventListener('click', function (e) {
     var t = e.target;
-    if (!t.closest || t.closest('.sp, .cmdk')) return;
+    if (!t.closest || t.closest('.cmdk')) return;
+    // Dentro do painel, um nome com data-panel troca o painel (ex.: a pessoa de uma empresa).
     var link = t.closest('a[data-panel]');
     if (link) {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
       e.preventDefault(); openPanel(link.getAttribute('data-panel')); return;
     }
+    if (t.closest('.sp')) return;
     var row = t.closest('tr[data-panel]');
     if (!row || t.closest('a, button, input, select, textarea, label, form, summary')) return;
     openPanel(row.getAttribute('data-panel'));
@@ -577,6 +580,198 @@
     ck.addEventListener('click', function (e) { if (e.target === ck) ckClose(); });
   }
 
+  // ── formulários por cima (§13.8, regra geral) ──────────
+  // O botão transforma-se no formulário: estica da sua posição e forma até ao
+  // centro, o conteúdo aparece a seguir e há um pequeno ressalto no fim
+  // (~350 ms). Ao fechar, o inverso: o conteúdo desaparece e o formulário
+  // encolhe de volta para dentro do botão, que recebe o foco. Sem movimento
+  // com reduced-motion. Vale para «+ Adicionar …», «Como correu?», Arquivar…
+  //   <a data-new="#mdl-x">  abre o formulário #mdl-x (e a tecla N abre-o também)
+  //   [data-mdl-close]       fecha o formulário em que está
+  //   .mdl.open[data-from]   aberto pelo servidor: sai do elemento indicado
+  var MORPH_IN = 350, MORPH_OUT = 300, CARD_RADIUS = 14, EASE = 'cubic-bezier(.2,.7,.2,1)';
+  function focusables(m) {
+    return $$('a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])', m)
+      .filter(function (n) { return n.offsetParent !== null && !n.closest('[hidden]'); });
+  }
+  function firstField(m) {
+    var f = $('input:not([type=hidden]):not([type=radio]):not([type=checkbox]):not([type=file]), textarea', $('.mdl-card', m));
+    return f && f.offsetParent !== null ? f : focusables(m)[0];
+  }
+  function rectOf(el) {
+    if (!el || !el.getBoundingClientRect || !document.contains(el)) return null;
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 ? r : null;
+  }
+  // O transform (e o raio, que a escala deforma) que põe o cartão em cima do botão.
+  function overButton(card, a) {
+    var b = card.getBoundingClientRect();
+    var sx = Math.max(0.04, a.width / b.width), sy = Math.max(0.03, a.height / b.height);
+    var cr = card.__btn ? getComputedStyle(card.__btn).borderRadius : '8px';
+    var r = /%$/.test(cr) ? Math.min(a.width, a.height) * parseFloat(cr) / 100 : (parseFloat(cr) || 0);
+    return {
+      transform: 'translate(' + (a.left + a.width / 2 - (b.left + b.width / 2)).toFixed(1) + 'px,'
+               + (a.top + a.height / 2 - (b.top + b.height / 2)).toFixed(1) + 'px) scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')',
+      borderRadius: (r / sx).toFixed(1) + 'px / ' + (r / sy).toFixed(1) + 'px'
+    };
+  }
+  function btnColor(el) {
+    var c = el ? getComputedStyle(el).backgroundColor : '';
+    return c && c !== 'transparent' ? c : 'rgba(0, 0, 0, 0)';
+  }
+  function hideOrigin(m, on) {
+    var el = m.__from;
+    if (el && el.style) el.style.visibility = on ? 'hidden' : '';
+  }
+  function morphIn(m) {
+    var card = $('.mdl-card', m), back = $('.mdl-back', m), a = m.__rect;
+    if (reduced.matches || !card.animate) return;
+    card.classList.remove('pop-in');
+    if (back) back.animate([{ opacity: 0 }, { opacity: 1 }], { duration: MORPH_IN, easing: 'ease-out' });
+    Array.prototype.slice.call(card.children).forEach(function (k) {
+      k.animate([{ opacity: 0 }, { opacity: 0, offset: 0.55 }, { opacity: 1 }], { duration: MORPH_IN, easing: 'ease-out' });
+    });
+    if (!a) {   // sem botão à vista: só surge, com o mesmo ressalto
+      card.animate([{ transform: 'translateY(10px) scale(.96)', opacity: 0 }, { transform: 'scale(1.01)', opacity: 1, offset: 0.75 }, { transform: 'none', opacity: 1 }],
+                   { duration: MORPH_IN, easing: EASE });
+      return;
+    }
+    card.__btn = m.__from;
+    var from = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
+    card.style.overflow = 'hidden';
+    hideOrigin(m, true);
+    card.animate([
+      { transform: from.transform, borderRadius: from.borderRadius, backgroundColor: btnColor(m.__from), easing: 'cubic-bezier(.3,.7,.25,1)' },
+      { transform: 'scale(1.015)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.78, easing: 'ease-out' },
+      { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg }
+    ], { duration: MORPH_IN }).onfinish = function () { card.style.overflow = ''; };
+  }
+  function openMdl(m, from) {
+    if (!m) return;
+    m.__from = from || document.activeElement;
+    m.__rect = rectOf(from);
+    m.hidden = false;
+    m.classList.add('open');
+    root.classList.add('mdl-lock');
+    hideTip();
+    morphIn(m);
+    var f = firstField(m);
+    if (f) setTimeout(function () { f.focus({ preventScroll: true }); }, reduced.matches ? 0 : MORPH_IN - 50);
+  }
+  function closeMdl(m) {
+    if (!m || !m.classList.contains('open') || m.__closing) return;
+    // Os que só existem por endereço (converter, eliminar) fecham voltando à lista.
+    var link = $('a.mdl-back[href]', m);
+    if (link) { location.href = link.href; return; }
+    var card = $('.mdl-card', m), back = $('.mdl-back', m), origin = m.__from;
+    // Volta para onde o botão está agora; se já não estiver à vista, para onde estava.
+    var a = rectOf(origin) || m.__rect;
+    m.__closing = true;
+    var fades = [];
+    function done() {
+      m.__closing = false;
+      card.style.overflow = '';
+      m.classList.remove('open');
+      m.hidden = true;
+      fades.forEach(function (f) { f.cancel(); });   // já escondido: o conteúdo volta ao normal sem piscar
+      hideOrigin(m, false);
+      if (!$('.mdl.open')) root.classList.remove('mdl-lock');
+      if (origin && origin.focus && document.contains(origin)) origin.focus({ preventScroll: true });
+      m.__from = m.__rect = null;
+    }
+    if (!reduced.matches && card.animate) {
+      Array.prototype.slice.call(card.children).forEach(function (k) {
+        fades.push(k.animate([{ opacity: 1 }, { opacity: 0, offset: 0.35 }, { opacity: 0 }], { duration: MORPH_OUT, fill: 'forwards' }));
+      });
+      if (back) back.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MORPH_OUT, easing: 'ease-in' });
+      if (a) {
+        card.__btn = origin;
+        var to = overButton(card, a), bg = getComputedStyle(card).backgroundColor;
+        card.style.overflow = 'hidden';
+        card.animate([
+          { transform: 'none', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg },
+          { transform: 'scale(1.01)', borderRadius: CARD_RADIUS + 'px', backgroundColor: bg, offset: 0.3, easing: 'cubic-bezier(.5,0,.75,0)' },
+          { transform: to.transform, borderRadius: to.borderRadius, backgroundColor: btnColor(origin) }
+        ], { duration: MORPH_OUT, fill: 'forwards' }).onfinish = function (ev) { done(); ev.target.cancel(); };
+      } else {
+        card.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.96)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' })
+          .onfinish = function (ev) { done(); ev.target.cancel(); };
+      }
+    } else done();
+    // Tirar do endereço o que o abriu (?nova=1, ?arch=…), para não reabrir ao recarregar.
+    var params = (m.getAttribute('data-clear') || 'nova arch novo').split(/\s+/);
+    if (history.replaceState && params.some(function (p) { return new RegExp('[?&]' + p + '=').test(location.search); })) {
+      var u = new URL(location.href);
+      params.forEach(function (p) { u.searchParams.delete(p); });
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  }
+  function topMdl() { var o = $$('.mdl.open'); return o[o.length - 1] || null; }
+  window.topper.openMdl = openMdl;
+  window.topper.closeMdl = closeMdl;
+  window.topper.topMdl = topMdl;
+
+  document.addEventListener('click', function (e) {
+    var c = e.target.closest && e.target.closest('[data-mdl-close]');
+    if (c) { e.preventDefault(); closeMdl(c.closest('.mdl')); return; }
+    var n = e.target.closest && e.target.closest('[data-new]');
+    if (!n || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    var target = n.getAttribute('data-new') ? $(n.getAttribute('data-new')) : null;
+    if (target) { e.preventDefault(); openMdl(target, n); }
+  });
+  document.addEventListener('keydown', function (e) {
+    var m = topMdl();
+    if (m) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeMdl(m); return; }
+      if (e.key === 'Tab') {   // o foco fica dentro do formulário
+        var f = focusables(m); if (!f.length) return;
+        var i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+      return;
+    }
+    // N: o «+ Adicionar …» da página (fora dos campos de escrita).
+    if ((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(document.activeElement)
+        && !(ck && ck.classList.contains('open'))) {
+      var nb = $('[data-new]');
+      if (!nb) return;
+      var t = nb.getAttribute('data-new') ? $(nb.getAttribute('data-new')) : null;
+      e.preventDefault();
+      if (t) openMdl(t, nb.hidden ? null : nb); else if (nb.href) location.href = nb.href;
+    }
+  });
+  // Os que já vêm abertos do servidor (?nova=1 depois de «Gravar e adicionar outra»…).
+  $$('.mdl.open').forEach(function (m) {
+    root.classList.add('mdl-lock');
+    var from = m.getAttribute('data-from') ? $(m.getAttribute('data-from')) : null;
+    if (from) { m.__from = from; m.__rect = rectOf(from); morphIn(m); }
+    var f = firstField(m); if (f) f.focus({ preventScroll: true });
+  });
+
+  // ── escolher um contacto escrevendo («Trazido por», §13.4) ──
+  //   <span data-contact-pick><input type="text" list="…"><input type="hidden"></span>
+  // As sugestões vêm de Contactos; escolher uma põe o id no campo escondido.
+  var pickSeq = 0;
+  document.addEventListener('input', function (e) {
+    var i = e.target, w = i.closest && i.closest('[data-contact-pick]');
+    if (!w || i.type !== 'text') return;
+    var hid = $('input[type=hidden]', w), dl = document.getElementById(i.getAttribute('list'));
+    w.__map = w.__map || {};
+    hid.value = w.__map[i.value] || '';
+    clearTimeout(w.__t);
+    if (hid.value || i.value.trim().length < 2 || !dl) return;
+    w.__t = setTimeout(function () {
+      var my = ++pickSeq;
+      api('contact_pick', { q: i.value.trim() }, 'GET').then(function (j) {
+        if (my !== pickSeq) return;
+        w.__map = {};
+        dl.innerHTML = j.items.map(function (x) { w.__map[x.label] = x.id; return '<option value="' + esc(x.label) + '">'; }).join('');
+        hid.value = w.__map[i.value] || '';
+      }).catch(function () { /* sem sugestões; o servidor procura pelo nome */ });
+    }, 220);
+  });
+
   // ── teclado: ⌘K, Esc ─────────────────────────────────────
   document.addEventListener('keydown', function (e) {
     if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
@@ -593,7 +788,7 @@
     }
     if (e.key === 'Escape') {
       if (ck && ck.classList.contains('open')) return;
-      if ($('.mdl.open')) return;   // os formulários (leads.js) fecham-se a si próprios
+      if ($('.mdl.open')) return;   // os formulários por cima fecham-se a si próprios
       if (pop && pop.classList.contains('open')) { popOpen(false); bell.focus(); return; }
       if (sp && sp.classList.contains('open') && !typing(document.activeElement)) { closePanel(); return; }
       if (body.classList.contains('nav-open')) navOpen(false);

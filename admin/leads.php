@@ -4,7 +4,7 @@ require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/paginate.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/undo.php';
-require_once __DIR__ . '/inc/lead_view.php';
+require_once __DIR__ . '/inc/lead_view.php';   // e inc/contacts.php («Trazido por»)
 $user = require_login();
 require_page('leads');
 
@@ -81,10 +81,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Indique a empresa ou a pessoa de contacto.', 'err');
             redirect(leads_url($bf + ['nova' => 1]));
         }
+        try {
+            $bb = contact_pick_resolve($pdo, $_POST['brought_by_id'] ?? '', (string)($_POST['brought_by'] ?? ''));
+        } catch (RuntimeException $e) {
+            $_SESSION['lead_form'] = $_POST;
+            flash($e->getMessage(), 'err');
+            redirect(leads_url($bf + ['nova' => 1]));
+        }
         $owner = owner_from_post($pdo, $me, (int)$me['id']);
         $use = (int)($_POST['use_contact'] ?? 0);
         if ($use) { $st = $pdo->prepare('SELECT COUNT(*) FROM contacts WHERE id = ?'); $st->execute([$use]); if (!(int)$st->fetchColumn()) $use = 0; }
         $id = lead_create($pdo, $v, $owner, (int)$me['id'], false, $use ?: null);
+        if ($bb) deal_set_brought_by($pdo, lead_get($pdo, $id), $bb, (int)$me['id']);
         $dups = find_duplicates($pdo, $v['email'], $v['phone'], $id);
         $warn = !$use && ($dups['deals'] || array_filter($dups['contacts'], fn($c) => (int)$c['id'] !== (int)lead_get($pdo, $id)['person_id'] && (int)$c['id'] !== (int)lead_get($pdo, $id)['company_id']));
         unset($_SESSION['lead_form']);
@@ -296,7 +304,7 @@ echo paginate_css();
     <?php endforeach; ?>
   </div>
   <?php if ($canEdit): ?>
-    <a class="btn dark add-lead" href="<?= e(leads_url($filters + ['nova' => 1])) ?>" data-new-lead aria-keyshortcuts="N" data-tip="Nova lead  ·  N"><?= icon('plus') ?> Adicionar Lead</a>
+    <a class="btn dark add-lead" href="<?= e(leads_url($filters + ['nova' => 1])) ?>" data-new="#mdl-new" data-new-lead aria-keyshortcuts="N" data-tip="Nova lead  ·  N"><?= icon('plus') ?> Adicionar Lead</a>
   <?php endif; ?>
 </div>
 
@@ -378,7 +386,7 @@ if ($canEdit):
     $companies = $pdo->query("SELECT name FROM contacts WHERE kind = 'company' ORDER BY name LIMIT 1000")->fetchAll(PDO::FETCH_COLUMN);
     $ov = fn(string $k) => e((string)($old[$k] ?? ''));
 ?>
-<div class="mdl<?= $newOpen ? ' open' : '' ?>" id="mdl-new" role="dialog" aria-modal="true" aria-labelledby="mdl-new-t"<?= $newOpen ? '' : ' hidden' ?>>
+<div class="mdl<?= $newOpen ? ' open' : '' ?>" id="mdl-new" data-from="[data-new-lead]" data-clear="nova trazido" role="dialog" aria-modal="true" aria-labelledby="mdl-new-t"<?= $newOpen ? '' : ' hidden' ?>>
   <div class="mdl-back" data-mdl-close></div>
   <form class="mdl-card wide" method="post" action="/admin/leads.php" autocomplete="off" data-new-form>
     <?= csrf_field() ?><?= back_fields(array_diff_key($filters, ['nova' => 1])) ?>
@@ -400,6 +408,8 @@ if ($canEdit):
         </div></div>
       <div class="field"><label for="nl-se">Serviço</label>
         <select id="nl-se" name="service"><option value="">—</option><?php foreach (LEAD_SERVICES_LIST as $sv): ?><option <?= ($old['service'] ?? '') === $sv ? 'selected' : '' ?>><?= e($sv) ?></option><?php endforeach; ?></select></div>
+      <div class="field"><label for="nl-bb">Trazido por</label>
+        <?= contact_pick_html($pdo, 'brought_by', 'brought_by_id', (int)($old['brought_by_id'] ?? 0) ?: ((int)($_GET['trazido'] ?? 0) ?: null), 'nl-bb', 'Quem originou (agência, parceiro…)') ?></div>
       <div class="field"><label for="nl-or">Origem</label>
         <select id="nl-or" name="origin"><?php foreach (LEAD_ORIGIN as $k => $lab): ?><option value="<?= $k ?>" <?= ($old['origin'] ?? 'manual') === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?></select></div>
       <?php if ($canAssign): ?>

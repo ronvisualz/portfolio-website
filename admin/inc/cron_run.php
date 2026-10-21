@@ -2,7 +2,9 @@
 /**
  * topper. admin — tarefas pela linha de comandos (cron do hPanel)
  *
- *   php …/admin/inc/cron_run.php backup    cópia de segurança da base para o R2 (todas as noites)
+ *   php …/admin/inc/cron_run.php backup    cópia de segurança da base para o R2 (todas as noites) e,
+ *                                          a seguir, os follow-ups de relação que chegaram à data
+ *   php …/admin/inc/cron_run.php relations só os follow-ups de relação (§13.5)
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -15,6 +17,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/export.php';
 require __DIR__ . '/platform_import.php';
+require __DIR__ . '/contacts.php';
 
 $job = $argv[1] ?? '';
 $out = '';
@@ -22,6 +25,9 @@ $code = 0;
 try {
     if ($job === 'backup') {
         $out = 'Cópia guardada: ' . backup_to_r2($pdo) . "\n";
+        $out .= 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
+    } elseif ($job === 'relations') {
+        $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {
         if ($d = platform_migrated($pdo)) {
             $out = "A migração já foi feita a $d.\n";
@@ -38,7 +44,7 @@ try {
             }
         }
     } else {
-        fwrite(STDERR, "Uso: php cron_run.php backup|plan|migrate\n");
+        fwrite(STDERR, "Uso: php cron_run.php backup|relations|plan|migrate\n");
         exit(2);
     }
 } catch (Throwable $e) {

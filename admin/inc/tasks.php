@@ -260,6 +260,15 @@ function task_done(PDO $pdo, int $id): ?int {
         $kind = defined('LEAD_TASK_KINDS') && isset(LEAD_TASK_KINDS[$t['kind'] ?? '']) ? LEAD_TASK_KINDS[$t['kind']][0] . ' · ' : '';
         deal_log($pdo, (int)$t['deal_id'], 'task_done', ['note' => $kind . $t['title']]);
     }
+    // Tarefa de um contacto (§13): fica no histórico dele; numa relação acompanhada, um
+    // follow-up, chamada, reunião, email, almoço ou jantar feito conta como toque.
+    if (!empty($t['contact_id'])) {
+        require_once __DIR__ . '/contacts.php';
+        if (($t['kind'] ?? '') !== 'relation') contact_log($pdo, (int)$t['contact_id'], 'task_done', task_kind_info($t['kind'] ?? 'task')[0] . ' · ' . $t['title']);
+        if (in_array($t['kind'] ?? '', ['relation', 'call', 'meeting', 'email', 'lunch', 'dinner'], true) && relation_get($pdo, (int)$t['contact_id'])) {
+            relation_touch($pdo, (int)$t['contact_id'], null, ($t['kind'] ?? '') === 'relation' ? 'Follow-up feito' : task_kind_info($t['kind'])[0] . ' feita');
+        }
+    }
     return task_repeat_next($pdo, $t);
 }
 
@@ -271,10 +280,10 @@ function task_repeat_next(PDO $pdo, array $t): ?int {
     $next = (new DateTimeImmutable($base))->modify($step)->format('Y-m-d');
     $member = $t['member_id'] !== null ? (int)$t['member_id'] : null;
     $now = task_now();
-    $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, due_time, duration_min, kind, repeat_rule,
+    $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, contact_id, due_date, due_time, duration_min, kind, repeat_rule,
                                       priority, status, position, created_at, updated_at, created_by)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,\'todo\',?,?,?,?)')
-        ->execute([$t['title'], $t['description'], $member, $t['job_name'], $t['deal_id'], $next, $t['due_time'], $t['duration_min'],
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'todo\',?,?,?,?)')
+        ->execute([$t['title'], $t['description'], $member, $t['job_name'], $t['deal_id'], $t['contact_id'] ?? null, $next, $t['due_time'], $t['duration_min'],
                    $t['kind'] ?: 'task', $t['repeat_rule'], $t['priority'], task_next_position($pdo, $member), $now, $now, $t['created_by']]);
     return (int)$pdo->lastInsertId();
 }

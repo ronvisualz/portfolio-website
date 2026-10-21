@@ -588,6 +588,117 @@ a criar leads na mesma base de dados.
   os envios para o Drive a partir do domínio novo.
 - Cada pessoa tem de entrar outra vez uma vez (a sessão está presa ao endereço).
 
+### 10.4 Aba Contactos v2 — §13 (21 out 2026)
+
+A §13 está aplicada. Base de dados **versão 15** (`inc/migrate_contacts_v2.php`): em `contacts` os
+campos `role` (cargo), `links` (site e redes), `address`, `is_active`, `birthday` e telefone até 255
+caracteres (vários); em `deals` o campo `brought_by_id` («Trazido por»); em `tasks` o campo
+`contact_id`; tabelas novas `contact_history`, `services`, `contact_services` (linhas de preço com
+histórico), `contact_ratings` (uma avaliação por custo) e `relations`; em `settings` as cadências
+`rel_cadence_a` = 7, `rel_cadence_b` = 15 e `rel_cadence_c` = 30. A lógica está em
+`inc/contacts.php`; a vista do contacto em `inc/contact_view.php`. Ponto a ponto:
+
+- **13.1 Modelo:** Pessoa (nome, cargo, telefone(s), email, site e redes, NIF, morada, aniversário,
+  empresa opcional; tipos Cliente · Fornecedor · Freelancer · Parceiro) e Empresa (nome, NIF, site e
+  redes, morada, telefone, email; tipos Cliente · Fornecedor · Parceiro). Uma empresa tem várias
+  pessoas; mudar a pessoa de empresa fica no histórico. Freelancer = pessoa sem empresa (confirmado
+  no servidor). Uma pessoa conta também os tipos da empresa (menos Freelancer). As leads criam a
+  empresa e a pessoa neste modelo (§12.1), com entrada no histórico do contacto. Pessoa ↔ Empresa
+  pode trocar-se em «Editar» (uma empresa com pessoas continua empresa).
+- **13.2 Separadores:** Todos (por defeito: pessoas com a empresa em pequeno, empresas com
+  «Empresa») · Clientes · Fornecedores · Freelancers · Parceiros · Empresas (cartões com tipos,
+  n.º de pessoas, negócios e fontes, e as pessoas com cargo, telefone e email) · Relações. Clientes
+  e Parceiros contam os tipos herdados da empresa; Fornecedores e Freelancers só os próprios (é aí
+  que vivem os preços). «+ Adicionar contacto» (tecla `N`) e «Importar» na linha dos separadores,
+  com a animação da §13.8; o formulário no fundo da página saiu. Indicadores: relações em atraso,
+  pessoas e empresas, fornecedores ativos, novos este mês. Em Todos, o filtro «Possíveis duplicados».
+- **13.3 Serviços e preços:** ao marcar Fornecedor ou Freelancer aparece, em destaque, «Serviços e
+  preços» — no formulário de criação e na ficha: Serviço (lista comum) · Unidade (hora, dia, meio
+  dia, projeto, segundo de animação, peça) · Preço s/ IVA (aceita «1 500», «1.500», «1.500,50»,
+  «32,5»; vazio = «por rever») · cobra IVA · notas · válido desde. Mudar o preço, a unidade, o IVA
+  ou o serviço guarda a linha antiga em «Histórico de preços» e abre outra; tirar uma linha tem
+  «Anular». **Lista de serviços** em A minha conta › Serviços (só superadmin e admins): nome, ordem,
+  ativo e acrescentar; não se apagam (os preços apontam para eles). **Ativo / Inativo** só para
+  superadmin e admins (papel confirmado na base de dados em cada pedido; os outros veem o estado sem
+  o poder mudar), com «Anular». Para a calculadora da Orçamentação (ainda por desenhar) fica pronta
+  `suppliers_for_service()`: só fornecedores/freelancers ativos, com preço em vigor, unidade e
+  avaliação média. **Avaliação por trabalho:** ao fechar (= pago) um custo de fornecedor ou
+  freelancer na ficha do negócio — na lista ou ao gravar o custo — aparece «Como correu o
+  trabalho?» com 1–5 estrelas (ou «Agora não»); uma avaliação por custo; a avaliação do contacto é
+  a média real, nas listas e na ficha. Os custos gerais do Financeiro (sem negócio) não têm contacto.
+- **13.4 Fontes de negócio:** «Trazido por» em cada lead e negócio, separado do Cliente (quem paga,
+  `contact_id`) e do Criado por (o utilizador, automático): no formulário da lead nova, no «Editar»
+  da lead (com «Anular»), na ficha da lead (com «Criada … por …»), na ficha do negócio (Cliente ·
+  Trazido por · Criado por; muda-o quem edita o negócio, com «Anular») e no painel do negócio. O
+  campo sugere a partir de Contactos enquanto se escreve; sem JavaScript aceita o nome exato. Fica no
+  histórico da lead/negócio e no do contacto. Na ficha do contacto, «Fontes de negócio» lista as
+  leads e negócios que vieram dele — de uma pessoa contam também os da empresa, de uma empresa os das
+  suas pessoas — com cliente, estado e valor; abrir uma linha mostra essa lead ou negócio no painel.
+  Totais: gerados, faturado (budget s/ IVA dos ganhos) e conversão (ganhos ÷ ganhos + perdidos +
+  leads arquivadas). Só entra o que quem vê pode ver. «+ Nova lead trazida por …» abre a lead nova
+  já preenchida.
+- **13.5 Relações:** «Acompanhar relação» na ficha: Formalidade · Potencial 1–5 · Tipo de negócio ·
+  responsável (pelas regras de atribuição) e exceção de cadência opcional. **Nível automático:**
+  pontos = potencial × 2 + tipo (Corporate 3 · Médio 2 · Pequeno 1) + formalidade (Próxima 2 ·
+  Cordial 1 · Formal 0); **A ≥ 11 · B ≥ 7 · C abaixo** — o formulário mostra o nível e a cadência
+  enquanto se escolhe. Cadências em A minha conta › Relações (só admins, globais). Na data, a tarefa
+  «Follow-up de relação: <nome>» (ícone de coração, com uma sugestão de toque) para o responsável,
+  uma de cada vez — criada ao abrir qualquer página (com as notificações), e também pela tarefa
+  agendada da noite (`cron_run.php backup`, ou só `cron_run.php relations`). Concluí-la conta como
+  toque e abre «Como correu?»: **Falámos** (nota + próxima data) · **Não atendeu** (o toque não conta,
+  nova tentativa em 2 dias) · **Reunião marcada** (cria a tarefa da reunião) · **Gerou uma lead** (abre
+  «+ Adicionar Lead» com «Trazido por» preenchido). Chamadas, reuniões, emails, almoços e jantares
+  feitos para o contacto, e chamadas/emails/reuniões registados, contam também como toque.
+  Separador **Relações:** nível, saúde (anel: tempo desde o último toque face à próxima data), próxima
+  data, valor gerado (faturado) e responsável; filtros Em atraso (com contador) · Todas · Esta semana ·
+  Nível A/B/C · Pausadas. **Revisão a cada 6 meses** na ficha: propõe subir o potencial (≥ 1 negócio
+  ganho ou ≥ 2 gerados nesse tempo), descer (nenhum) ou manter — Aceitar / Manter. **Variação do
+  toque:** uma sugestão diferente a cada follow-up (projeto novo, café, novidade, almoço, perguntar
+  pelos projetos) e o aniversário quando faltam 14 dias ou menos. **Pausar** com data de regresso (o
+  follow-up aberto sai e volta nesse dia), Retomar e Deixar de acompanhar — tudo com «Anular».
+- **13.6 Duplicados e importar:** a ficha avisa quando outro contacto do mesmo tipo tem o mesmo email
+  ou telefone; **«Juntar»** (quem gere Contactos, com confirmação) passa negócios, leads, custos,
+  tarefas, serviços, avaliações, pessoas, relação e o histórico dos dois para o que fica e preenche
+  os campos vazios; não se anula. O formulário de criação avisa enquanto se escreve (nome, email,
+  telefone). **Importar** CSV (cabeçalho em português ou inglês, «;» ou «,») ou vCard: mostra o que
+  encontrou antes de gravar; quem já existe (mesmo email, telefone ou nome) fica por defeito
+  «Completar» — só preenche o que falta e junta telefones e redes, nunca apaga —, ou «Criar outro» /
+  «Ignorar».
+- **13.7 Ficha:** painel lateral largo (clique na linha ou no nome; setas ↑ ↓ e J/K) e ficha completa
+  em `contact.php?id=…` com o caminho Comercial / Contactos / nome. À esquerda: dados com
+  Editar/Gravar (tecla `E`, ⌘/Ctrl+Enter, Esc, «Anular»), Ligar / WhatsApp / Email, Ativo/Inativo,
+  avaliação, a empresa ou as pessoas ligadas (abrem no próprio painel) e a Relação. À direita:
+  Serviços e preços, Fontes de negócio, Nova ação, Foco e Notas & Histórico (criado, dados
+  alterados, mudou de empresa, preços, avaliações, ativo/inativo, juntado, importado, trouxe um
+  negócio, relação, tarefas, notas e o que aconteceu nos negócios ligados — cada tipo com ícone,
+  cor e dica). Eliminar (quem gere Contactos) só sem ligações a negócios, leads, custos ou pessoas,
+  e continua a pedir confirmação. A pesquisa ⌘K mostra pessoas e empresas com empresa/cargo e abre
+  a ficha nova. As tarefas de um contacto aparecem em Tarefas como «Contacto · nome» ou
+  «Relação · nome».
+- **13.8 Animação:** a regra passou do `leads.js` para o `app.js` e vale para todos os formulários
+  por cima (`data-new`, `data-from`, `data-mdl-close`): «+ Adicionar Lead», «+ Adicionar contacto»,
+  «Importar» (e a pré-visualização), «Como correu?» das leads e das relações, Arquivar, Acompanhar
+  relação, Pausar, Juntar e a avaliação do trabalho. A tecla `N` abre o «+ Adicionar …» da página
+  (na ficha da lead ou do contacto, leva à lista com o formulário aberto).
+- **Migração dos contactos** (passo 15, automático, uma vez): cada contacto atual ficou Empresa; com
+  «Pessoa de contacto», criou-se a Pessoa ligada (com o email, o telefone e os tipos do contacto).
+  **Decisão:** quando a «Pessoa de contacto» é o próprio contacto (o mesmo nome), o registo é uma
+  pessoa e não uma empresa — passou a Pessoa, Freelancer se era fornecedor (é o caso dos dois
+  fornecedores atuais). O texto livre de «Tarifa» ficou nas notas das linhas de serviço («Tarifa por
+  rever: …», preço vazio = «por rever»), uma linha por serviço da lista reconhecido no texto ou uma
+  linha com o serviço antigo como etiqueta; «Site / redes» passou a «Site e redes» (um link por
+  linha); a avaliação antiga entrou como a primeira avaliação. Lista inicial de serviços:
+  3D Animation · 2D Animation · VFX · CGI · Edição · Compositing.
+- **Permissões:** tudo passa por `contactos.php`, `contact.php`, `negocio.php`, `conta.php` ou
+  `ui_api.php`, que confirmam em cada pedido o nível da aba Contactos (ver; editar; gerir para juntar
+  e eliminar), o papel na base de dados para Ativo/Inativo, cadências e serviços, o Financeiro
+  (editar) para avaliar trabalhos, o alcance de cada lead/negócio (`record_reach`) para «Trazido por»
+  e fontes, e as regras de atribuição (`can_assign_to`) para tarefas e responsáveis das relações. Um
+  «Gravar» só muda os campos que vêm no pedido.
+
+Ficheiros novos: `contact.php`, `assets/contacts.js`, `inc/contacts.php`, `inc/contact_view.php`,
+`inc/migrate_contacts_v2.php`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

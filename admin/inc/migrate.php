@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -214,6 +214,14 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // Sai «Visita» e entram «Almoço» e «Jantar»: as visitas que existam
     // passam a Reunião (também conta como contacto com a lead).
     $pdo->exec("UPDATE tasks SET kind = 'meeting' WHERE kind = 'visit'");
+
+    // ── 15 · aba Contactos v2 (§13) ─────────────────────────
+    //
+    // Pessoa e empresa, serviços e preços com histórico, avaliações por
+    // trabalho, relações acompanhadas, «Trazido por» e tarefas de um
+    // contacto. Os contactos atuais passam ao modelo novo uma vez.
+    require_once __DIR__ . '/migrate_contacts_v2.php';
+    migrate_contacts_v2($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

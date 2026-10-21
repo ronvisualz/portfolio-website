@@ -153,6 +153,87 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
         case 'inline':
             inline_save($pdo, $d['entity'], (int)$d['id'], $d['field'], $d['prev'] === null ? '' : (string)$d['prev']);
             return 'Valor reposto.';
+
+        case 'brought_by':
+            // «Trazido por» de uma lead ou negócio: volta ao contacto de antes.
+            $row = record_get($pdo, (int)$d['id']);
+            if (!$row || !record_reach($pdo, $row, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            if (($row['brought_by_id'] !== null ? (int)$row['brought_by_id'] : null) !== $d['to']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE deals SET brought_by_id = ? WHERE id = ?')->execute([$d['from'], $d['id']]);
+            deal_log($pdo, (int)$d['id'], 'brought', ['note' => 'Trazido por reposto (anulado)']);
+            return '«Trazido por» reposto.';
+
+        // ── Contactos (§13) ──
+        case 'contact_restore':
+            // «Gravar» na ficha: repõe os campos se ninguém lhes mexeu entretanto.
+            require_once __DIR__ . '/contacts.php';
+            require_perm('contactos', PERM_EDIT);
+            $c = contact_get($pdo, (int)$d['id']);
+            if (!$c || contact_snapshot($c) != $d['after'] || $c['kind'] !== $d['kind_after']) throw new RuntimeException($changed);
+            $cols = array_keys($d['before']);
+            $pdo->prepare('UPDATE contacts SET kind = ?, ' . implode(', ', array_map(fn($f) => "$f = ?", $cols)) . ' WHERE id = ?')
+                ->execute([$d['kind_before'], ...array_values($d['before']), $d['id']]);
+            contact_log($pdo, (int)$d['id'], 'c_edit', 'Alterações anuladas');
+            return 'Ficha reposta como estava.';
+
+        case 'contact_active':
+            require_once __DIR__ . '/contacts.php';
+            if (!contacts_admin($pdo)) throw new RuntimeException('Só superadmin e admins mudam o estado.');
+            $c = contact_get($pdo, (int)$d['id']);
+            if (!$c || (int)$c['is_active'] !== (int)$d['to']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE contacts SET is_active = ? WHERE id = ?')->execute([(int)$d['from'], $d['id']]);
+            contact_log($pdo, (int)$d['id'], 'c_active', ((int)$d['from'] ? 'Ativo' : 'Inativo') . ' (anulado)');
+            return 'Estado reposto.';
+
+        case 'service_line':
+            // Tirar uma linha de serviço: volta a estar em vigor.
+            require_once __DIR__ . '/contacts.php';
+            require_perm('contactos', PERM_EDIT);
+            $st = $pdo->prepare('SELECT * FROM contact_services WHERE id = ? AND contact_id = ?');
+            $st->execute([(int)$d['line'], (int)$d['id']]);
+            $r = $st->fetch();
+            if (!$r || $r['ended_at'] === null) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE contact_services SET ended_at = NULL WHERE id = ?')->execute([$r['id']]);
+            contact_log($pdo, (int)$d['id'], 'c_price', 'Serviço reposto (anulado)');
+            return 'Serviço reposto.';
+
+        case 'contact_task':
+            // Concluir no Foco do contacto: a tarefa reabre e a relação volta ao que estava.
+            require_once __DIR__ . '/contacts.php';
+            require_perm('contactos', PERM_EDIT);
+            $st = $pdo->prepare('SELECT * FROM tasks WHERE id = ? AND contact_id = ?');
+            $st->execute([(int)$d['task'], (int)$d['id']]);
+            $t = $st->fetch();
+            if (!$t || $t['status'] !== 'done') throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE tasks SET status = ?, done_at = NULL, member_id = ?, position = ?, updated_at = ? WHERE id = ?')
+                ->execute([$d['status'], $d['member_id'], $d['position'], date('Y-m-d H:i:s'), $t['id']]);
+            if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
+            if (!empty($d['rel'])) undo_apply($pdo, 'relation_row', $d['rel']);
+            return 'Tarefa reposta.';
+
+        case 'relation_row':
+            // Repõe a relação como estava (toques, datas, pausa, classificações); recria-a se saiu.
+            require_once __DIR__ . '/contacts.php';
+            require_perm('contactos', PERM_EDIT);
+            $cols = array_keys($d);
+            if (relation_get($pdo, (int)$d['contact_id'])) {
+                $set = array_values(array_diff($cols, ['contact_id']));
+                $pdo->prepare('UPDATE relations SET ' . implode(', ', array_map(fn($f) => "$f = ?", $set)) . ' WHERE contact_id = ?')
+                    ->execute([...array_map(fn($f) => $d[$f], $set), $d['contact_id']]);
+            } else {
+                $pdo->prepare('INSERT INTO relations (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')
+                    ->execute(array_values($d));
+                contact_log($pdo, (int)$d['contact_id'], 'rel_resume', 'Voltou a ser acompanhada (anulado)');
+            }
+            return 'Relação reposta.';
+
+        case 'relation_drop':
+            // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.
+            require_once __DIR__ . '/contacts.php';
+            require_perm('contactos', PERM_EDIT);
+            if (!relation_get($pdo, (int)$d['id'])) throw new RuntimeException($changed);
+            relation_stop($pdo, (int)$d['id']);
+            return 'Já não é acompanhada.';
     }
     throw new RuntimeException('Já não é possível anular.');
 }
