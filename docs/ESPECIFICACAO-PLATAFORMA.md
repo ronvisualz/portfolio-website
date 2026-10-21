@@ -1042,3 +1042,87 @@ pequeno ressalto no fim (~350 ms). **Ao fechar, o inverso:** conteúdo desaparec
 formulário encolhe de volta para dentro do botão. `prefers-reduced-motion`: aparece sem
 movimento. O mesmo vale para os formulários «Como correu?» e Arquivar, a partir do botão
 que os abre.
+
+---
+
+## 14. Aba Orçamentação (decidido 21–22 out 2026)
+
+Aplica a §11 (design, degradês, animação de formulários §13.8, «Anular», dicas) e o
+modelo de contactos/serviços da §13.
+
+### 14.1 Folha de orçamento e ciclo de vida
+- Cada negócio tem **uma folha de orçamento** (mesmo ID), criada **automaticamente na
+  conversão** da lead (X-Ray). Nunca se apaga; acompanha o estado do negócio.
+- Separadores:
+  | Separador | Conteúdo |
+  |---|---|
+  | **Em orçamentação** (por defeito) | negócios na fase comercial (X-Ray → Kickoff) |
+  | **Em produção** | aprovados (desde Kickoff); Resultado a acompanhar custos reais |
+  | **Ganhos** | negócios concluídos; consulta fácil |
+  | **Arquivo** | negócios perdidos, agrupados por ano (fechados por defeito), pesquisa própria |
+- Negócio reaberto → folha volta a «Em orçamentação». Pesquisa ⌘K encontra qualquer folha.
+- Ficha do negócio tem botão **«Orçamento»** que abre a folha.
+
+### 14.2 Linhas de custo
+- **Fornecedor/freelancer:** escolher serviço → lista só fornecedores **ativos** que o
+  prestam (preço, unidade, avaliação) → quantidade → custo. O preço é **copiado para a
+  folha** no momento (alterações futuras do preçário não mudam orçamentos feitos).
+- **Interno:** linhas manuais (descrição, quantidade, unidade, custo): equipa interna,
+  licenças, render farm, deslocações, aluguer…
+- **Custo/hora interno** de cada membro da Equipa, introduzido manualmente na aba Equipa;
+  usado nas linhas de equipa interna.
+- Quantidade em **horas ou dias**; **1 dia = 8 horas úteis** (editável em Definições);
+  conversão automática entre a unidade do fornecedor e a introduzida. «Projeto»/«peça» = fixo.
+- «+ Adicionar linha» com a animação da §13.8.
+
+### 14.3 Cálculo
+1. Custos diretos = Σ linhas.
+2. **MSO** = custos diretos × **5%** (Definições, superadmin/admins).
+3. **Duração** em dias úteis **segunda a sexta** (data de início e entrega, ou semanas;
+   fases opcionais: pré-produção, produção, pós-produção, entregas). 1 mês = 21 dias úteis.
+4. **Custos fixos mensais**: média dos últimos 3 meses dos custos da empresa no
+   Financeiro (corrigível à mão por quem tem permissão).
+5. **% de ocupação** — sugerida automaticamente:
+   ocupação = horas internas da folha ÷ (horas disponíveis da equipa por mês × meses);
+   requer horas disponíveis por mês de cada membro na aba Equipa. **Pode sempre ser
+   escrita à mão** (substitui a sugestão; botão para voltar à sugestão).
+6. **Custo de estrutura** = custos fixos mensais × meses × % ocupação.
+7. **Base** = custos diretos + MSO + custo de estrutura.
+8. **Preço s/ IVA = Base ÷ (1 − margem)**; margem por defeito **65%** (Definições;
+   ajustável por folha, com histórico). Mostrar também c/ IVA e o markup equivalente.
+9. **Gross profit** = preço − base · **Gross margin** = gross profit ÷ preço.
+10. **Lucro por mês** = gross profit ÷ meses. **Meta mensal** em Definições (provisório
+    **8 000 €/mês**): 🟢 ≥ meta · 🟠 abaixo · 🔴 muito abaixo (< 75% da meta), com
+    «Para cumprir a meta: preço mínimo X € ou entrega em ≤ Y meses»
+    (preço mínimo = base + meta × meses).
+
+### 14.4 Ícones de informação na calculadora
+Cada célula/campo de cálculo tem um ícone ⓘ discreto; ao passar o cursor (ou toque longo)
+mostra o significado. Textos:
+- **Custos diretos:** «O que pagamos a fornecedores, freelancers e custos internos deste projeto.»
+- **MSO:** «Margem de segurança operacional: almofada para imprevistos, em % dos custos diretos.»
+- **Duração:** «A duração diz durante quanto tempo o projeto usa a empresa.»
+- **% de ocupação:** «A % de ocupação diz quanto da capacidade da empresa é usada nesse tempo.»
+- **Custos fixos mensais:** «Renda, software, seguros e outros custos que a empresa paga todos os meses.»
+- **Custo de estrutura:** «A parte dos custos fixos que este projeto deve pagar: custos fixos × meses × ocupação.»
+- **Base:** «Tudo o que o projeto custa à empresa antes do lucro.»
+- **Margem:** «Percentagem do preço final que é lucro.»
+- **Preço:** «Valor a propor ao cliente: base ÷ (1 − margem).»
+- **Gross profit / Gross margin:** «Lucro esperado em € e em % do preço.»
+- **Lucro por mês:** «Lucro dividido pelos meses de duração; compara projetos de durações diferentes.»
+- **Meta mensal:** «Lucro por mês mínimo que a empresa quer em cada projeto.»
+
+### 14.5 Separador Resultado
+Orçado vs real linha a linha (real = custos do negócio no Financeiro, pelo ID), diferença
+em € e %, linhas que derraparam em destaque. Totais: custos, MSO usada, gross profit, gross
+margin, **prazo real vs orçado**, **lucro por mês real vs orçado**. Fecha ao concluir o
+negócio. Relatórios: margem média real por funil e por serviço; serviços que mais derrapam.
+
+### 14.6 Versões, modelos, PDF e permissões
+- **Versões** v1, v2… com data, autor e comparação lado a lado; a **aceite** é a que conta
+  para o Resultado e para o valor do negócio no Pipeline.
+- **Modelos** de orçamento (ex.: «Spot 3D 30s») com linhas típicas; criar folha a partir de modelo.
+- **Proposta em PDF** («Gerar proposta») com a imagem topper.: descrição, fases e prazos,
+  preço s/ e c/ IVA, condições — nunca custos nem margens. Guardada na pasta do negócio no Drive.
+- **Permissões:** quem não tem acesso ao Financeiro preenche linhas mas não vê preços de
+  fornecedores, margens nem lucro; admins veem tudo; configurável na grelha da aba Equipa.
