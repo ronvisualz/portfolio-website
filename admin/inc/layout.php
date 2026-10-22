@@ -50,6 +50,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
     $unread = notifications_unread($pdo);
     $html   = ($prefs['pref_theme'] !== '' ? ' data-theme="' . e($prefs['pref_theme']) . '"' : '')
             . ($prefs['pref_nav'] === 'closed' ? ' data-nav="closed"' : '');
+    $canIdea = mkt_idea_ready();
     $pageTitle = NAV_ITEMS[$active][0] ?? ($active === 'conta' ? 'A minha conta' : ($active === 'migracao' ? 'Migração' : $title));
     $crumbGroup = 'Conta';
     foreach (NAV_GROUPS as $g => $keys) if (in_array($active, $keys, true)) $crumbGroup = $g;
@@ -109,6 +110,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
     <button type="button" class="cmd-btn" data-cmdk aria-label="Pesquisar (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K">
       <?= icon('search') ?><span class="lbl">Procurar ID, negócio, lead…</span><span class="kbd" data-kbd>Ctrl K</span>
     </button>
+    <?php if ($canIdea): ?><button type="button" class="ibtn idea-btn" data-new="#mdl-idea" data-new-idea aria-keyshortcuts="I" aria-label="Nova ideia de conteúdo ( I )" data-tip><?= icon('bulb') ?></button><?php endif; ?>
     <button type="button" class="ibtn theme-btn" aria-label="Mudar de modo (claro / escuro)" data-tip><?= icon('moon', 'i-moon') . icon('sun', 'i-sun') ?></button>
     <button type="button" class="ibtn bell" aria-label="Notificações<?= $unread ? ' · ' . $unread . ' por ler' : '' ?>" data-tip aria-haspopup="dialog" aria-expanded="false" aria-controls="notif">
       <?= icon('bell') ?><span class="badge"<?= $unread ? '' : ' hidden' ?>><?= $unread ?></span>
@@ -143,6 +145,13 @@ function render_footer(): void {
 </div>
 </div>
 <div class="toasts" role="status" aria-live="polite"></div>
+<?php if (mkt_idea_ready()) {
+    // «+ Ideia» (Marketing, §16.3) em todas as páginas, com o atalho I.
+    global $pdo;
+    require_once __DIR__ . '/marketing_view.php';
+    $here = (string)($_SERVER['REQUEST_URI'] ?? '');
+    echo mkt_idea_modal_html($pdo, preg_match('~^/admin/[a-z_]+\.php(\?[^#\s]*)?$~', $here) ? $here : '/admin/marketing.php');
+} ?>
 <div class="sp-back" data-sp-close></div>
 <aside class="sp" id="sp" aria-labelledby="sp-title" tabindex="-1">
   <div class="sp-nav" hidden>
@@ -171,6 +180,19 @@ function render_footer(): void {
 </body>
 </html>
 <?php
+}
+
+/** Quem edita a Marketing tem o «+ Ideia» e o atalho I em todas as páginas (depois do passo 18 da base). */
+function mkt_idea_ready(): bool {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    global $pdo;
+    try {
+        $ok = can('marketing', PERM_EDIT) && (int)$pdo->query("SELECT svalue FROM settings WHERE skey = 'schema_version'")->fetchColumn() >= 18;
+    } catch (Throwable $e) {
+        $ok = false;
+    }
+    return $ok;
 }
 
 /**

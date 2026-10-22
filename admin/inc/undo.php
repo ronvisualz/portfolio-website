@@ -250,6 +250,22 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('UPDATE deals SET delivered_at = ?, portfolio_at = ?, testimonial_at = ? WHERE id = ?')
                 ->execute([$d['delivered_at'], $d['portfolio_at'], $d['testimonial_at'], $d['id']]);
             foreach ($d['tasks'] as $tid) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND deal_id = ? AND status <> 'done'")->execute([(int)$tid, $d['id']]);
+            // A ideia «Breakdown» criada em Marketing sai, se ninguém mexeu nela (§16.3).
+            foreach ($d['ideas'] ?? [] as $iid) {
+                $st = $pdo->prepare("SELECT rev FROM mkt_pieces WHERE id = ? AND deal_id = ? AND status = 'nova'");
+                $st->execute([(int)$iid, $d['id']]);
+                if ((int)$st->fetchColumn() !== 1) continue;
+                foreach (['mkt_votes', 'mkt_log'] as $t) $pdo->prepare("DELETE FROM $t WHERE piece_id = ?")->execute([(int)$iid]);
+                $pdo->prepare('DELETE FROM mkt_pieces WHERE id = ?')->execute([(int)$iid]);
+            }
+            return 'Reposto.';
+
+        case 'deal_disclose':
+            // «Pode ser divulgado?» (§16.3) volta ao que estava.
+            $deal = record_get($pdo, (int)$d['id']);
+            if (!$deal || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            $pdo->prepare('UPDATE deals SET disclose = ?, disclose_from = ? WHERE id = ?')->execute([$d['disclose'], $d['disclose_from'], $d['id']]);
+            deal_log($pdo, (int)$d['id'], 'disclose', ['note' => 'Anulado']);
             return 'Reposto.';
 
         case 'budget_line':
@@ -311,6 +327,11 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $cols = ['id', 'name', 'data', 'created_by', 'created_at'];
             $pdo->prepare('INSERT INTO budget_templates (' . implode(',', $cols) . ') VALUES (?,?,?,?,?)')->execute(array_map(fn($c) => $d[$c], $cols));
             return 'Modelo reposto.';
+
+        case 'mkt':
+            // Marketing (§16): triagem, etapas, revisão, agendar, publicar, textos — a peça volta ao que era.
+            require_once __DIR__ . '/marketing.php';
+            return mkt_undo_apply($pdo, $d);
 
         case 'relation_drop':
             // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.

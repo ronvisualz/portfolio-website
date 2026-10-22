@@ -895,6 +895,90 @@ concluídos ficam com as entregas feitas na data da conclusão. A lógica está 
 Ficheiros novos: `inc/deal_file.php`, `inc/migrate_deal_file.php`, `assets/deal.js`; `negocio.php` e
 `negocios.php` reescritos.
 
+### 10.8 Aba Marketing — §16 (22 out 2026)
+
+A §16 está aplicada (fase 1 de publicação; a fase 2 fica preparada). Base de dados **versão 18**
+(`inc/migrate_marketing.php`): pilares (`mkt_pillars`), peças (`mkt_pieces` — uma ideia que avança
+para Produção), votos, versões por rede (`mkt_versions`), publicações por rede com o link com
+rastreio e as métricas (`mkt_posts`), cliques nesse link (`mkt_clicks`), dias de gravação
+(`mkt_shoots`), histórico (`mkt_log`), registo de uso da IA (`mkt_ai_log`) e resumos mensais
+(`mkt_summaries`). Em `deals`: `disclose` / `disclose_from` («Pode ser divulgado?») e `mkt_post_id`
+(a publicação de onde a lead veio); a origem das leads ganha «Redes sociais» e «Talento». Em `tasks`:
+`mkt_piece_id`. Lógica em `inc/marketing.php`, ecrãs em `inc/marketing_view.php`, `marketing.php`
+(separadores), `marketing_peca.php` (a peça), pedidos em `mkt_api.php`, comportamento em
+`assets/marketing.js`.
+
+- **16.1 Separadores:** Ideias · Estúdio · Produção · Calendário · Desempenho (Comercial › Marketing).
+- **16.2 Pilares:** os 6 de partida (Portfólio e breakdowns · Bastidores · Educação · Casos de
+  cliente · Serviços · **Employer branding**), editáveis em Definições › Marketing (nome, nome curto,
+  cor, ordem, ativo, «Talento»). A descrição de cada pilar vai para a IA.
+- **16.3 Ideias:** «+ Ideia» na barra de topo e **tecla I em qualquer ecrã** (só o texto é
+  obrigatório; em Marketing também N), captura rápida na lista, pilar · formato · redes · modelo ·
+  autor · **votos**. Triagem Novas → **Avançar** (Produção, Ideia aprovada, com a checklist do modelo,
+  uma publicação e um link com rastreio por rede e a pasta no Drive) · Guardar · Descartar, tudo
+  com «Anular». **Automáticas:** «Enviar para o portfólio» na ficha do negócio cria «Breakdown:
+  <negócio>» ligada ao negócio e aos ficheiros dele no Drive (o «Anular» tira-a se ninguém mexeu);
+  peças com ≥ 1,5× a média de interações da rede sugerem «Criar parte 2». **Centro Criativo:**
+  enquanto não existir, o breakdown liga só ao negócio e ao Drive. **Carreiras:** a origem «Talento»
+  está preparada (o formulário de carreiras do site, quando existir, envia `form=careers`) —
+  **PENDENTE** a página de carreiras. **«Pode ser divulgado?»** na ficha do negócio (Dados e
+  contactos): por decidir · sim · não · a partir de <data>, com «Anular» e histórico; a nota está
+  também no cartão «Fecho do negócio».
+- **16.4 Estúdio (IA):** escolhe-se a ideia ou peça; a ideia base, o modelo, o pilar e o formato
+  gravam sozinhos; versão por rede (gancho, texto, CTA, hashtags) com contagem de caracteres (X: 280
+  por post; uma thread separa os posts com «---»). Botões: **Adaptar às redes · 5 ganchos · Guião
+  cena a cena · Encurtar · Alongar · Mudar o tom · Sugerir CTA · Criar thread · Hashtags**. A IA
+  **propõe**: as propostas aparecem ao lado e só gravam com «Usar» (com «Anular»). Modelos: Breakdown
+  VFX · Bastidores · Dica técnica · Caso de cliente · Antes e depois 3D · Apresentação de serviço ·
+  Pessoas da topper. · Um dia na topper. (cada um com checklist, material de gravação e pista para a
+  IA). **Voz da topper.** em Conhecimento › Voz da topper. (editável por quem edita o Conhecimento),
+  enviada em todos os pedidos. Motor: **Claude, API da Anthropic**, pelo mesmo cliente do assistente
+  do Drive (`inc/ai.php`): **chave só no servidor** em `admin/inc/ai_config.php` (fora do Git), nunca
+  no browser; o gasto conta em `ai_usage` (finalidade «mkt») com o mesmo limite mensal, e cada pedido
+  fica em `mkt_ai_log` (quem, peça, ação, tokens, custo, o que propôs). **Registo de uso** em
+  Definições › Marketing › IA do Estúdio. Sem chave, os botões ficam desativados com o aviso.
+- **16.5 Produção:** kanban Ideia aprovada → Guião → Gravação → Edição → Revisão → Agendado →
+  Publicado (arrastar, ou o seletor no cartão, com «Anular»); cartão com pilar, redes, responsável,
+  prazo, checklist n/m, negócio e autorização, dia de gravação. **Revisão:** aprovam **só superadmin
+  e admins** (papel lido na base em cada pedido); Aprovar · Pedir alterações (com comentário: volta a
+  Edição e o responsável recebe uma tarefa, que fecha com a aprovação). Depois de aprovada, os textos
+  fecham; voltar atrás tira a aprovação. **Agendado e Publicado** pedem a peça aprovada e, se ligada
+  a um negócio, autorização de divulgação nessa data — **bloqueio no servidor** (`mkt_block_reason`),
+  com a tentativa no histórico. **Dias de gravação:** juntar peças num dia gera a lista de planos (dos
+  guiões) e o material (dos modelos), para imprimir. **Pasta no Drive** `Marketing/AAAA-MM/<peça>/`
+  criada ao avançar (ou pelo botão na peça). Página da peça: dados (Editar/Gravar), checklist, etapas,
+  Revisão, publicação por rede, textos, guião e histórico com ícones.
+- **16.6 Calendário:** semana e mês, uma linha por rede; cores = pilares; coluna **Alvo** por semana
+  (Definições: **Instagram 2–3 · LinkedIn 5 · X 10**) e semanas abaixo do alvo destacadas;
+  **arrastar uma peça aprovada (da lista «Prontas a agendar») para um dia = agendar** (10:00, ou a
+  hora que já tinha); arrastar uma agendada para outro dia muda a data; **equilíbrio de pilares** do
+  mês (barra e pilares sem publicações).
+- **16.7 Publicação — fase 1 (assistida):** ao agendar, quem publica recebe a tarefa no dia e à hora
+  (Tarefas); na peça, «Copiar legenda» junta gancho, texto, CTA, link com rastreio e hashtags; o
+  ficheiro final está na pasta no Drive; «Marcar como publicada» pede o link de cada rede, fecha o
+  lembrete e cria o das **métricas 7 dias depois**. **Fase 2 (preparada, por fazer):** `mkt_accounts`
+  (rede, conta, estado da API), `mkt_posts.external_id` / `sync_source` / `synced_at`, e Definições ›
+  Marketing › Ligações às redes («por ligar»).
+- **16.8 Desempenho:** por mês: alcance, cliques (link com rastreio + cliques na rede), **leads**,
+  **negócios e €** (o valor só com Financeiro), **talento**, melhor pilar / rede / dia e hora;
+  métricas por publicação (à mão, com aviso quando faltam depois de 7 dias); médias por pilar,
+  formato, rede e dia/hora; **resumo do mês escrito pela IA** (guardado). **Link com rastreio por
+  publicação:** `https://topperdigital.xyz/go.php?c=<código>` conta o clique (sem guardar o IP,
+  sem contar robôs nem a mesma pessoa duas vezes em 30 min), lembra o código 30 dias e leva ao site
+  (destino escolhido na peça); a lead do formulário do site entra com origem **«<rede> · <peça>»**
+  (Origem «Redes sociais», Campanha «LinkedIn · Breakdown: …») e fica ligada à publicação.
+- **Também:** peças na pesquisa ⌘K e no painel lateral (`type=mkt`); atalhos I e N em Conhecimento ›
+  Navegação; ícones novos (ideia, IA, copiar, câmara, voto, X).
+- **§11:** modo claro e escuro com os tokens, degradês nos cartões, animação dos formulários (saem do
+  botão), «Anular» em triagem, etapas, revisão, agendar, publicar, métricas e textos, dicas em
+  ícones e chips, histórico com ícones e cores, e tudo cabe num telemóvel (o kanban e o calendário
+  deslizam).
+
+Ficheiros novos: `inc/migrate_marketing.php`, `inc/marketing.php`, `inc/marketing_view.php`,
+`marketing.php`, `marketing_peca.php`, `mkt_api.php`, `assets/marketing.js` e, na raiz do site,
+`go.php`. Alterados: `contacto.php` e `index.html` (origem «rede · peça»), Negócios (divulgação,
+portfólio → ideia), Conhecimento (Voz da topper.), Definições, menu, ⌘K.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -1429,6 +1513,7 @@ Métricas por publicação (alcance, interações, guardados, partilhas, cliques
 pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
 site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
 Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.
+<<<<<<< HEAD
 
 ---
 
@@ -1460,7 +1545,7 @@ Substitui o que contradiga a §3.9 e completa a §9.3/§9.6. Aplica a §11.
 | Comercial | Santiago Apolónio | COO e Business Developer |
 | Pós-Produção e VFX | Guilherme Albano | Post Production Lead |
 | Campanhas e Adverts (subdep.: **Adverts**, **Campanhas**; equipas a definir) | Valdir Furtado | CMO |
-| Produto e Otimização de Processos | Diogo Vasconcelos | Desenvolvedor de Produto — **cargo C-level PENDENTE** (CTO ou CPO) |
+| Produto e Otimização de Processos | Diogo Vasconcelos | **CTO** (e Desenvolvedor de Produto); passa a CPO, ou acumula, se a área vender produtos |
 - Os quatro departamentos respondem ao CEO. Suportar **subdepartamentos**.
 - A estrutura vai mudar: tudo editável pelos admins, sem código.
 
@@ -1502,3 +1587,34 @@ Criar utilizador → convite por email para definir palavra-passe. **Desativar, 
 apagar**; ao desativar, pede reatribuição de leads, negócios e tarefas abertas. Campos:
 papel, departamento/subdepartamento, cargo(s), sócio, responde a, horário, custo/hora,
 horas/mês. Permissões geridas aqui. Só o superadmin mexe em admins.
+=======
+>>>>>>> origin/main
+
+### 17.9 Contas iniciais dos sócios
+Criar com convite por email (definir palavra-passe), papel **Admin**, sócio = sim, e cada
+um como chefe do seu departamento. O superadmin continua a ser só `info@topperdigital.xyz`.
+| Nome | Email | Departamento | Cargo |
+|---|---|---|---|
+| Rodrigo Nicolau | rodrigonicolau@topperdigital.xyz | Direção | CEO |
+| Santiago Apolónio | santiagoapolonio@topperdigital.xyz | Comercial | COO · Business Developer |
+| Guilherme Albano | guilhermealbano@topperdigital.xyz | Pós-Produção e VFX | Post Production Lead |
+| Valdir Furtado | valdirfurtado@topperdigital.xyz | Campanhas e Adverts | CMO |
+| Diogo Vasconcelos | diogovasconcelos@topperdigital.xyz | Produto e Otimização de Processos | CTO |
+Se alguma destas contas já existir, atualizar em vez de duplicar.
+
+### 17.10 Gerir sem microgestão
+Princípios: **sem registo de horas, sem vigiar atividade**; online/offline diz só se a
+pessoa está na plataforma, nunca o que faz.
+- **Carga da equipa** (admins): mapa semanal por pessoa — horas Ocupado vs horas disponíveis
+  (🟢 <80% · 🟠 80–100% · 🔴 >100%), para distribuir trabalho.
+- **Entrada e saída:** checklist automática de entrada (conta, acessos, pasta no Drive,
+  apresentação à equipa, primeira tarefa); saída = reatribuir trabalho e retirar acessos.
+- **Férias e ausências:** pedido pela pessoa → aprovação por admin → bloqueia a agenda;
+  calendário de ausências da equipa.
+- **«Hoje na equipa»:** linha no topo do separador Equipa — ausentes, em reunião, aniversários.
+- **Modo Foco / Não incomodar:** a pessoa silencia chat e notificações por um período;
+  cartão mostra «Em foco até HH:MM»; pedidos de reunião ficam em espera até ao fim.
+- **«Quem sabe o quê»:** competências por pessoa (ex.: Houdini, Nuke, After Effects, color
+  grading), pesquisáveis no separador Equipa.
+- **O meu perfil:** cada pessoa edita foto, telemóvel, competências, horário e data de
+  aniversário (opcional).

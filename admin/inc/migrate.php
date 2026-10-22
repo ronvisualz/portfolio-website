@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -237,6 +237,14 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // que a checklist de fecho regista: entregas, portfólio, testemunho.
     require_once __DIR__ . '/migrate_deal_file.php';
     migrate_deal_file($pdo);
+
+    // ── 18 · aba Marketing (§16) ────────────────────────────
+    //
+    // Pilares, peças (ideias que avançam para Produção), versões por rede,
+    // publicações com link com rastreio e métricas, dias de gravação, uso da
+    // IA, «Pode ser divulgado?» nos negócios e a estrutura da fase 2.
+    require_once __DIR__ . '/migrate_marketing.php';
+    migrate_marketing($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

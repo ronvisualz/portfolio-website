@@ -749,16 +749,49 @@
       }
       return;
     }
+    // I: «+ Ideia» de conteúdo (Marketing, §16.3), em qualquer ecrã.
+    if ((e.key === 'i' || e.key === 'I') && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(document.activeElement)
+        && !(ck && ck.classList.contains('open')) && $('#mdl-idea')) {
+      e.preventDefault();
+      var ib = $('[data-new-idea]');
+      openMdl($('#mdl-idea'), ib && ib.offsetParent ? ib : null);
+      return;
+    }
     // N: o «+ Adicionar …» da página (fora dos campos de escrita).
     if ((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(document.activeElement)
         && !(ck && ck.classList.contains('open'))) {
-      var nb = $('[data-new]');
+      var nb = $('main [data-new]');   // o da página (o «+ Ideia» da barra de topo tem a tecla I)
       if (!nb) return;
       var t = nb.getAttribute('data-new') ? $(nb.getAttribute('data-new')) : null;
       e.preventDefault();
       if (t) openMdl(t, nb.hidden ? null : nb); else if (nb.href) location.href = nb.href;
     }
   });
+  // «+ Ideia» (Marketing, §16.3): grava sem sair da página, com «Anular».
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f.matches || !f.matches('form[data-idea-form]')) return;
+    e.preventDefault();
+    var fd = new FormData(f), btn = $('button[type=submit]', f);
+    if (btn) btn.disabled = true;
+    fetch('/admin/mkt_api.php', { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf } })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Não foi possível guardar. Tente outra vez.' }; }); },
+            function () { return { ok: false, error: 'Sem ligação. Tente outra vez.' }; })
+      .then(function (j) {
+        if (btn) btn.disabled = false;
+        if (!j.ok) { toast(j.error || 'Não foi possível guardar.', { err: true }); return; }
+        closeMdl(f.closest('.mdl'));
+        f.reset();
+        // Na lista de Ideias, a ideia nova aparece logo.
+        if (/\/admin\/marketing\.php/.test(location.pathname) && !/[?&]t=(?!ideias)/.test(location.search)) {
+          try { sessionStorage.setItem('mkt-toast', JSON.stringify({ m: j.msg, u: j.undo || '' })); } catch (x) { /* só recarrega */ }
+          location.reload();
+          return;
+        }
+        toast(j.msg, j.undo ? { undo: j.undo, afterUndo: function () {} } : {});
+      });
+  });
+
   // Os que já vêm abertos do servidor (?nova=1 depois de «Gravar e adicionar outra»…).
   $$('.mdl.open').forEach(function (m) {
     root.classList.add('mdl-lock');

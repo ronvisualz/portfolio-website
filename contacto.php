@@ -2,7 +2,8 @@
 /**
  * topper. — formulário de contacto do site
  *
- * Cada envio cria uma lead com origem «Site», sem responsável, na fila
+ * Cada envio cria uma lead com origem «Site» (ou «Redes sociais», com a rede e a
+ * peça, quando veio de um link com rastreio), sem responsável, na fila
  * «Por atribuir» do admin. Anti-spam: um campo escondido que as pessoas
  * não veem, um tempo mínimo de preenchimento e links a mais mandam a lead
  * para a quarentena (nada se perde); mais de 5 envios por hora do mesmo IP
@@ -83,12 +84,36 @@ $dups = find_duplicates($pdo, $email, $phone);
 foreach ($dups['deals'] as $d) $notes[] = 'Possível duplicado: ' . lead_display_name($d) . ($d['code'] ? ' (' . $d['code'] . ')' : '') . '.';
 foreach ($dups['contacts'] as $c) $notes[] = 'Já existe o contacto «' . $c['name'] . '».';
 
+// Marketing (§16.8): veio de uma publicação? O link com rastreio (go.php) deixou o código
+// no endereço (o formulário envia-o) e num cookie. A lead entra com a origem «<rede> · <peça>».
+$origin = 'site';
+$campaign = '';
+$postId = null;
+$src = strtolower($in('src', 12));
+if (!preg_match('/^[a-z0-9]{6,12}$/', $src)) $src = strtolower((string)($_COOKIE['tp_src'] ?? ''));
+if (preg_match('/^[a-z0-9]{6,12}$/', $src)) {
+    try {
+        $st = $pdo->prepare('SELECT mp.id, mp.network, p.title FROM mkt_posts mp JOIN mkt_pieces p ON p.id = mp.piece_id WHERE mp.code = ?');
+        $st->execute([$src]);
+        if ($post = $st->fetch()) {
+            $origin = 'rede';
+            $campaign = mb_substr((['ig' => 'Instagram', 'li' => 'LinkedIn', 'x' => 'X'][$post['network']] ?? 'Redes') . ' · ' . $post['title'], 0, 160);
+            $postId = (int)$post['id'];
+        }
+    } catch (Throwable $e) {
+        // Antes do passo 18 da base de dados não há publicações: fica «Site».
+    }
+}
+// Carreiras (employer branding): o formulário de carreiras do site, quando existir, envia form=careers.
+if (($_POST['form'] ?? '') === 'careers') $origin = 'talento';
+
 // Leads v2 (§12): quem escreve é a pessoa de contacto; a empresa fica no seu campo.
 // Fora da quarentena entram já com os Contactos, o prazo do estado Novo e a chamada.
 $id = lead_create($pdo, [
     'company' => $company, 'person' => $name, 'types' => '', 'links' => '', 'phone' => $phone, 'email' => $email,
     'service' => $services[$service] ?? '', 'priority' => 'media', 'detail' => $message, 'why' => '',
-    'notes' => implode("\n", $notes), 'origin' => 'site', 'campaign' => '',
+    'notes' => implode("\n", $notes), 'origin' => $origin, 'campaign' => $campaign,
 ], null, null, (bool)$why);
+if ($postId) $pdo->prepare('UPDATE deals SET mkt_post_id = ? WHERE id = ?')->execute([$postId, $id]);
 
 reply(true, 'Thank you — we will get back to you shortly.');

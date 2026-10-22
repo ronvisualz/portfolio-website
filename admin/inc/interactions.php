@@ -70,6 +70,7 @@ const HISTORY_TYPES = [
     'portfolio'   => ['Enviado para o portfólio', 'star', 'yellow'],
     'testimonial' => ['Testemunho pedido', 'bubble', 'blue'],
     'cost'        => ['Custo registado', 'euro', 'orange'],
+    'disclose'    => ['Pode ser divulgado?', 'marketing', 'sky'],
     // Orçamentação (§14)
     'b_create'   => ['Folha criada', 'orcamentacao', 'neutral'],
     'b_line'     => ['Linha de custo', 'euro', 'neutral'],
@@ -80,6 +81,20 @@ const HISTORY_TYPES = [
     'b_pdf'      => ['Proposta gerada', 'file', 'blue'],
     'b_close'    => ['Resultado fechado', 'won', 'green'],
     'b_reopen'   => ['Folha reaberta', 'refresh', 'sky'],
+    // Marketing (§16)
+    'm_create'   => ['Ideia criada', 'bulb', 'neutral'],
+    'm_edit'     => ['Dados alterados', 'pencil', 'neutral'],
+    'm_triage'   => ['Triagem', 'arrows', 'sky'],
+    'm_stage'    => ['Mudou de etapa', 'arrows', 'neutral'],
+    'm_version'  => ['Texto de uma rede', 'pencil', 'neutral'],
+    'm_ai'       => ['Proposta da IA usada', 'sparkle', 'sky'],
+    'm_approve'  => ['Aprovada', 'check', 'green'],
+    'm_changes'  => ['Alterações pedidas', 'bubble', 'orange'],
+    'm_schedule' => ['Agendada', 'calendar', 'blue'],
+    'm_publish'  => ['Publicada', 'won', 'yellow'],
+    'm_metrics'  => ['Métricas', 'trend', 'sky'],
+    'm_shoot'    => ['Dia de gravação', 'camera', 'neutral'],
+    'm_blocked'  => ['Bloqueada: divulgação', 'alert', 'red'],
 ];
 
 /** O ícone de uma entrada: cor do tipo e o nome do tipo como dica e nome acessível. */

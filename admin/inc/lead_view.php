@@ -206,7 +206,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
         . $row('Serviço', 'service')
         . $row('Tipo', 'types')
         . $row('Prioridade', 'priority')
-        . $row('Origem', 'origin')
+        . $row('Origem', 'origin', $l['origin'] === 'rede' && trim((string)$l['campaign']) !== '' ? ['html' => e($l['campaign']) . ' <span class="muted small">· redes sociais</span>'] : [])
         . $row('Campanha', 'campaign')
         . '<span>Trazido por</span><div>' . deal_people_link($pdo, $l['brought_by_id']) . '</div>'
         . '<span>Último contacto</span><div data-last>' . e(lead_ago($l['last_contact_at'])) . '</div>'

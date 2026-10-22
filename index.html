@@ -447,6 +447,7 @@ html.js .rvm.in > * { transform: none; }
         <label class="wide"><span>Message</span><textarea name="message" rows="5" required maxlength="4000"></textarea></label>
         <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
         <input type="hidden" name="ts" value="">
+        <input type="hidden" name="src" value="">
       </div>
       <div class="csend">
         <button type="submit" class="cbtn">Send message <span class="circ" aria-hidden="true">&rarr;</span></button>
@@ -482,6 +483,13 @@ html.js .rvm.in > * { transform: none; }
   var status = f.querySelector('.cstatus'), btn = f.querySelector('.cbtn');
   f.ts.value = String(Date.now());
   var q = location.search;
+  // Veio de uma publicação nas redes (link com rastreio): o código vai com a mensagem (30 dias).
+  var src = (q.match(/[?&]src=([a-z0-9]{6,12})(?:&|$)/) || [])[1] || '';
+  try {
+    if (src) localStorage.setItem('tp_src', JSON.stringify({ c: src, t: Date.now() }));
+    else { var o = JSON.parse(localStorage.getItem('tp_src') || 'null'); if (o && Date.now() - o.t < 2592e6) src = o.c; }
+  } catch (e) { /* sem armazenamento: fica só o cookie */ }
+  f.src.value = src;
   if (/[?&]sent=1/.test(q)) status.textContent = 'Thank you — we will get back to you shortly.';
   if (/[?&]error=1/.test(q)) { status.textContent = 'Something went wrong. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; }
   f.addEventListener('submit', function (e) {
@@ -493,7 +501,7 @@ html.js .rvm.in > * { transform: none; }
       .then(function (d) {
         status.textContent = d.message || (d.ok ? 'Thank you — we will get back to you shortly.' : 'Something went wrong. Please email info@topperdigital.xyz.');
         status.className = 'cstatus' + (d.ok ? '' : ' err');
-        if (d.ok) { f.reset(); f.ts.value = String(Date.now()); }
+        if (d.ok) { f.reset(); f.ts.value = String(Date.now()); f.src.value = src; }
       })
       .catch(function () { status.textContent = 'Network error. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; })
       .then(function () { btn.disabled = false; });
