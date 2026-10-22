@@ -383,6 +383,9 @@
         s.src = j.script; s.defer = true; s.setAttribute('data-panel-js', base);
         document.body.appendChild(s);
       }
+      // Os formulários do painel voltam a esta página com o painel aberto (?sp=…).
+      var self = location.pathname + location.search.replace(/([?&])sp=[^&]*&?/, '$1').replace(/[?&]$/, '');
+      $$('input[data-back-here]', bodyEl).forEach(function (i) { i.value = self + (self.indexOf('?') < 0 ? '?' : '&') + 'sp=' + encodeURIComponent(key); });
       document.dispatchEvent(new CustomEvent('topper:panel', { detail: { key: key, el: bodyEl } }));
     }).catch(function (e) { bodyEl.innerHTML = '<div class="sp-loading">' + esc(e.message) + '</div>'; });
   }
@@ -427,6 +430,10 @@
   document.addEventListener('auxclick', function (e) { var href = e.button === 1 && rowHref(e); if (href) window.open(href, '_blank', 'noopener'); });
   var auto = $('[data-open-panel]');
   if (auto) openPanel(auto.getAttribute('data-open-panel'));
+  else {
+    var spq = (location.search.match(/[?&]sp=([a-z]+(?:%3A|:)\d+)/) || [])[1];
+    if (spq) openPanel(decodeURIComponent(spq));
+  }
 
   // ── edição no próprio campo (§11.8) ──────────────────────
   function ieStart(ie) {
@@ -847,6 +854,103 @@
     }
   });
 
+
+  // ── Arrastar cartões entre colunas: rato, trackpad e toque (§18.4, §11.13) ──
+  // O arrastar nativo do browser (HTML5) não funciona com o dedo no iPad/iPhone e falha com o
+  // cursor no Safari do iPad; este funciona igual em todo o lado. Rato/trackpad: carregar e
+  // mover. Toque: carregar ~0,3 s no cartão (vibra, se puder) e arrastar; um toque rápido ou
+  // um deslize continuam a abrir/deslocar como sempre. Junto às margens o quadro desliza.
+  //   topper.dragCards(board, { card: '.bcard[data-drag]', col: '.bcol', drop: function (card, col) {} })
+  window.topper.dragCards = function (board, o) {
+    var st = null, HOLD = 280, SLOP = 8;
+    function colAt(x, y) {
+      var el = document.elementFromPoint(x, y);
+      return el && el.closest ? el.closest(o.col) : null;
+    }
+    function begin(card, x, y) {
+      var r = card.getBoundingClientRect();
+      var g = card.cloneNode(true);
+      g.classList.add('drag-ghost'); g.removeAttribute('id');
+      g.style.width = r.width + 'px'; g.style.left = r.left + 'px'; g.style.top = r.top + 'px';
+      document.body.appendChild(g);
+      card.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+      st.on = true; st.ghost = g; st.dx = x - r.left; st.dy = y - r.top; st.from = card.closest(o.col);
+      if (navigator.vibrate && st.touch) try { navigator.vibrate(12); } catch (e) { /* sem vibração */ }
+      track(x, y);
+    }
+    function track(x, y) {
+      st.ghost.style.left = (x - st.dx) + 'px'; st.ghost.style.top = (y - st.dy) + 'px';
+      var c = colAt(x, y);
+      if (c !== st.over) {
+        if (st.over) st.over.classList.remove('over');
+        st.over = c && c !== st.from ? c : null;
+        if (st.over) st.over.classList.add('over');
+      }
+      // Junto às margens do quadro (ou da janela), o quadro desliza.
+      var br = board.getBoundingClientRect(), edge = 48;
+      if (x < br.left + edge) board.scrollLeft -= 14; else if (x > br.right - edge) board.scrollLeft += 14;
+      if (y < edge) window.scrollBy(0, -14); else if (y > innerHeight - edge) window.scrollBy(0, 14);
+    }
+    function end(cancel) {
+      if (!st) return;
+      clearTimeout(st.timer);
+      var s = st; st = null;
+      if (!s.on) return;
+      s.ghost.remove();
+      s.card.classList.remove('dragging');
+      document.body.classList.remove('is-dragging');
+      if (s.over) s.over.classList.remove('over');
+      // Um arrastar não conta como clique no título do cartão.
+      var stop = function (e) { e.preventDefault(); e.stopPropagation(); };
+      document.addEventListener('click', stop, true);
+      setTimeout(function () { document.removeEventListener('click', stop, true); }, 0);
+      if (!cancel && s.over) o.drop(s.card, s.over);
+    }
+    // rato, caneta, trackpad
+    board.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'touch' || e.button !== 0) return;
+      var card = e.target.closest(o.card);
+      if (!card || e.target.closest('button, input, select, textarea, summary, form')) return;
+      st = { card: card, x: e.clientX, y: e.clientY, on: false, touch: false };
+    });
+    document.addEventListener('pointermove', function (e) {
+      if (!st || st.touch) return;
+      if (!st.on) {
+        if (Math.abs(e.clientX - st.x) + Math.abs(e.clientY - st.y) < SLOP) return;
+        begin(st.card, e.clientX, e.clientY);
+      }
+      e.preventDefault();
+      track(e.clientX, e.clientY);
+    });
+    document.addEventListener('pointerup', function () { if (st && !st.touch) end(false); });
+    document.addEventListener('pointercancel', function () { if (st && !st.touch) end(true); });
+    // toque: pressão longa e arrastar
+    board.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { end(true); return; }
+      var card = e.target.closest(o.card);
+      if (!card || e.target.closest('button, input, select, textarea, summary, form')) return;
+      var t = e.touches[0];
+      st = { card: card, x: t.clientX, y: t.clientY, on: false, touch: true };
+      st.timer = setTimeout(function () { if (st && !st.on) begin(card, st.x, st.y); }, HOLD);
+    }, { passive: true });
+    board.addEventListener('touchmove', function (e) {
+      if (!st || !st.touch) return;
+      var t = e.touches[0];
+      if (!st.on) {
+        // Mexeu antes do tempo: é um deslize normal (deslocar o quadro ou a página).
+        if (Math.abs(t.clientX - st.x) + Math.abs(t.clientY - st.y) > SLOP) { clearTimeout(st.timer); st = null; }
+        return;
+      }
+      e.preventDefault();
+      track(t.clientX, t.clientY);
+    }, { passive: false });
+    board.addEventListener('touchend', function () { if (st && st.touch) end(false); });
+    board.addEventListener('touchcancel', function () { if (st && st.touch) end(true); });
+    board.addEventListener('contextmenu', function (e) { if (st && st.touch) e.preventDefault(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && st) end(true); });
+  };
+
   // ── Pipeline: arrastar sem recarregar, totais em tempo real (§11.13) ──
   var board = $('.pboard[data-live]');
   if (board) {
@@ -889,26 +993,8 @@
         toast(e.message, { err: true });
       });
     };
-    board.addEventListener('dragstart', function (e) {
-      var c = e.target.closest('.dcard[draggable="true"]'); if (!c) return;
-      dragged = c; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', c.getAttribute('data-id'));
-    });
-    board.addEventListener('dragend', function () {
-      if (dragged) dragged.classList.remove('dragging'); dragged = null;
-      $$('.col.over', board).forEach(function (c) { c.classList.remove('over'); });
-    });
-    board.addEventListener('dragover', function (e) {
-      var col = e.target.closest('.col'); if (!col || !dragged) return;
-      e.preventDefault();
-      $$('.col.over', board).forEach(function (c) { if (c !== col) c.classList.remove('over'); });
-      col.classList.add('over');
-    });
-    board.addEventListener('drop', function (e) {
-      var col = e.target.closest('.col'); if (!col || !dragged) return;
-      e.preventDefault(); col.classList.remove('over');
-      move(dragged, col);
-    });
+    $$('.dcard[draggable="true"]', board).forEach(function (c) { c.setAttribute('draggable', 'false'); c.setAttribute('data-drag', ''); });
+    window.topper.dragCards(board, { card: '.dcard[data-drag]', col: '.col', drop: function (card, col) { move(card, col); } });
     // Sem arrastar (toque, teclado): o «Mover para» de cada cartão faz o mesmo, também sem recarregar.
     board.addEventListener('change', function (e) {
       var s = e.target.closest('.dmove select'); if (!s) return;
@@ -917,4 +1003,17 @@
     });
     board.addEventListener('submit', function (e) { if (e.target.closest('.dmove')) e.preventDefault(); });
   }
+
+  // ── «Enviar a proposta» (§19.4): a pré-visualização segue o email e a mensagem que se escrevem ──
+  document.addEventListener('input', function (e) {
+    var t = e.target, card = t.closest && t.closest('.mdl-card.ps');
+    if (!card) return;
+    if (t.matches('[data-psend-msg]')) {
+      var n = $('[data-psend-note]', card);
+      if (n) { n.textContent = t.value.trim(); n.hidden = t.value.trim() === ''; }
+    } else if (t.matches('[data-psend-email]')) {
+      var to = $('[data-psend-to]', card);
+      if (to) to.textContent = t.value.trim() || '—';
+    }
+  });
 })();

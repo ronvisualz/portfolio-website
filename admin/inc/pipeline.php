@@ -74,11 +74,14 @@ function phase_for_kind(string $kind): string {
  * etapa: chegar a Kickoff leva-o para Negócios, a Concluído para os
  * Concluídos. Devolve a mensagem para o utilizador.
  */
-function deal_move(PDO $pdo, array $deal, int $stageId): string {
+function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): string {
+    require_once __DIR__ . '/pipeline_flow.php';
     $to = stage_get($pdo, $stageId);
     if (!$to || (int)$to['funnel_id'] !== (int)$deal['funnel_id']) throw new RuntimeException('Etapa inválida.');
     if (!in_array($deal['phase'], ['pipeline', 'production', 'done'], true)) throw new RuntimeException('Este negócio não está ativo.');
     if ((int)$deal['stage_id'] === $stageId) return 'Sem alterações.';
+    // Os gates (§19.1): para a frente só com os requisitos cumpridos; forçar só admins, com motivo.
+    $forced = flow_gate_check($pdo, $deal, $to, $force);
 
     $phase = phase_for_kind($to['kind']);
     $pdo->beginTransaction();
@@ -95,11 +98,14 @@ function deal_move(PDO $pdo, array $deal, int $stageId): string {
             'from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
             'to_funnel'   => $deal['funnel_id'], 'to_stage'   => $stageId,
         ]);
+        if ($forced !== '') deal_log($pdo, (int)$deal['id'], 'gate_force', ['from_stage' => $deal['stage_id'], 'to_stage' => $stageId, 'note' => $forced]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+    // As automações da etapa nova (§19.7): as tarefas ficam ligadas ao negócio e à etapa.
+    flow_on_enter($pdo, (int)$deal['id'], $stageId);
     return match ($phase) {
         'production' => $to['kind'] === 'kickoff' && $deal['phase'] === 'pipeline'
             ? 'Negócio fechado! ' . $deal['code'] . ' passou para a aba Negócios.' : 'Etapa atualizada.',
@@ -155,6 +161,10 @@ function deal_change_funnel(PDO $pdo, array $deal, int $funnelId, int $stageId =
         'from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
         'to_funnel'   => $funnelId,          'to_stage'   => $stageId,
     ]);
+    if ($phase !== 'lost') {
+        require_once __DIR__ . '/pipeline_flow.php';
+        flow_on_enter($pdo, (int)$deal['id'], $stageId);
+    }
 }
 
 /** Cria um funil com as etapas fixas e, opcionalmente, as variáveis dadas [[name, kind], …]. */
@@ -167,9 +177,16 @@ function funnel_create(PDO $pdo, string $name, array $variable = [], string $mad
     $s->execute([$id, 'X-Ray', 'xray', 10]);
     $s->execute([$id, 'Kickoff', 'kickoff', 50]);
     $s->execute([$id, 'Concluído', 'done', 90]);
-    $n = ['commercial' => 0, 'production' => 0];
+    // A fase comercial é igual em todos os funis (§19.1): Proposta e Aguardar feedback com papel fixo.
+    $r = db_has_column($pdo, 'funnel_stages', 'role') ? $pdo->prepare('INSERT INTO funnel_stages (funnel_id, name, kind, position, role) VALUES (?,?,?,?,?)') : null;
+    if ($r) {
+        $r->execute([$id, 'Proposta', 'commercial', 20, 'proposal']);
+        $r->execute([$id, 'Aguardar feedback', 'commercial', 21, 'feedback']);
+    }
+    $n = ['commercial' => $r ? 2 : 0, 'production' => 0];
     foreach ($variable as [$sname, $kind]) {
         if (!isset($n[$kind])) continue;
+        if ($r && $kind === 'commercial' && in_array(mb_strtolower(trim($sname)), ['proposta', 'aguardar feedback'], true)) continue;
         $s->execute([$id, $sname, $kind, ($kind === 'commercial' ? 20 : 60) + $n[$kind]++]);
     }
     return $id;

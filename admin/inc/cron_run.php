@@ -5,6 +5,8 @@
  *   php …/admin/inc/cron_run.php backup    cópia de segurança da base para o R2 (todas as noites) e,
  *                                          a seguir, os follow-ups de relação que chegaram à data
  *   php …/admin/inc/cron_run.php relations só os follow-ups de relação (§13.5)
+ *   php …/admin/inc/cron_run.php pipeline  só as automações de data e mensais do Pipeline (§19.7);
+ *                                          também correm todas as noites, com a cópia
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -18,6 +20,7 @@ require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/export.php';
 require __DIR__ . '/platform_import.php';
 require __DIR__ . '/contacts.php';
+require __DIR__ . '/pipeline_flow.php';
 
 $job = $argv[1] ?? '';
 $out = '';
@@ -26,6 +29,9 @@ try {
     if ($job === 'backup') {
         $out = 'Cópia guardada: ' . backup_to_r2($pdo) . "\n";
         $out .= 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
+        $out .= 'Tarefas automáticas (datas e avenças): ' . flow_tick($pdo) . "\n";
+    } elseif ($job === 'pipeline') {
+        $out = 'Tarefas automáticas (datas e avenças): ' . flow_tick($pdo) . "\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {
@@ -44,7 +50,7 @@ try {
             }
         }
     } else {
-        fwrite(STDERR, "Uso: php cron_run.php backup|relations|plan|migrate\n");
+        fwrite(STDERR, "Uso: php cron_run.php backup|relations|pipeline|plan|migrate\n");
         exit(2);
     }
 } catch (Throwable $e) {

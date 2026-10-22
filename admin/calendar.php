@@ -42,7 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = (string)($_POST['do'] ?? '');
     $back = (string)($_POST['back'] ?? '/admin/calendar.php');
-    if (!preg_match('~^/admin/calendar\.php(\?[^#\s]*)?$~', $back)) $back = '/admin/calendar.php';
+    // O formulário também se abre no negócio (Pipeline, ficha): volta para lá.
+    if (!preg_match('~^/admin/(calendar|pipeline|negocio)\.php(\?[^#\s]*)?(#[A-Za-z0-9_-]*)?$~', $back)) $back = '/admin/calendar.php';
     $back = preg_replace('~([?&])(edit|nova)=[^&]*&?~', '$1', $back);
     $back = rtrim($back, '?&');
     try {
@@ -53,6 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id && !$old) throw new RuntimeException('Essa tarefa já não existe.');
 
             if ($do === 'delete_task') {
+                // Uma tarefa obrigatória (gate, §19.1) só sai por um admin: senão abria a passagem da etapa.
+                if (!empty($old['is_gate']) && $old['status'] !== 'done' && !is_admin()) throw new RuntimeException('Esta tarefa é obrigatória para o negócio avançar: só um admin a pode eliminar.');
                 $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
                 if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
                 flash('Tarefa eliminada.');
@@ -79,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $oldMid = $old && $old['member_id'] !== null ? (int)$old['member_id'] : null;
             if (!$priv && $mid !== $oldMid && !task_can_assign($pdo, $mid, $members, $visible)) throw new RuntimeException('Não pode atribuir tarefas a essa pessoa.');
             $platform = $kind === 'meeting' && in_array($_POST['platform'] ?? '', ['meet', 'discord'], true) ? (string)$_POST['platform'] : '';
-            $location = $kind === 'meeting' && $platform === '' ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
+            $location = ($kind === 'meeting' && $platform === '') || in_array($kind, ['lunch', 'dinner', 'event'], true) ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
             $parts = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['participants'] ?? [])))));
             $ownerUid = $mid !== null && isset($members[$mid]) ? (int)$members[$mid]['user_id'] : (int)$me['id'];
             $parts = $priv ? [] : array_values(array_filter($parts, fn($u) => $u !== $ownerUid));
@@ -236,7 +239,23 @@ if ($tab === 'tarefas'):
   <?php endforeach; ?>
   <?php if (!$f['solto'] && array_filter($list, fn($t) => task_auto_group($t))): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação aparecem agrupados. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 1])) ?>">Ver uma a uma</a></p>
+  <?php elseif ($f['solto']): ?>
+    <p class="muted small">As chamadas de leads e os follow-ups de relação estão uma a uma. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 0])) ?>">Voltar a agrupar</a></p>
   <?php endif; ?>
+</div>
+<?php endif;
+    if ($canEdit): ?>
+<div class="snz" data-snz hidden role="dialog" aria-label="Adiar a tarefa">
+  <b class="snz-h"><?= icon('clock') ?> Adiar</b>
+  <button type="button" data-when="1d"><span>+1 dia</span><small data-to="1"></small></button>
+  <button type="button" data-when="3d"><span>+3 dias</span><small data-to="3"></small></button>
+  <button type="button" data-when="1w"><span>+1 semana</span><small data-to="7"></small></button>
+  <button type="button" data-when="custom" aria-expanded="false"><span>Personalizar…</span></button>
+  <form class="snz-c" data-snz-custom hidden>
+    <label><span>Data</span><input type="date" name="date" required></label>
+    <label><span>Hora</span><input type="time" name="time" step="900"></label>
+    <button class="btn sm" type="submit">Adiar</button>
+  </form>
 </div>
 <?php endif;
     if ($f['est'] !== 'todo'):

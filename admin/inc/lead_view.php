@@ -74,7 +74,7 @@ function lead_focus_html(array $tasks, bool $edit): string {
         $late = task_is_late($t);
         $h .= '<li data-task="' . (int)$t['id'] . '">'
             . ($edit ? '<button type="button" class="tick" data-done="' . (int)$t['id'] . '" data-kind="' . e((string)$t['kind']) . '" aria-label="Concluir «' . e($t['title']) . '»" data-tip>' . icon('check') . '</button>' : '')
-            . '<span class="k" data-tip="' . e($kindLabel) . '" aria-label="' . e($kindLabel) . '" role="img" tabindex="0">' . icon($kindIcon) . '</span>'
+            . '<span class="k ' . lead_kind_class((string)($t['kind'] ?? 'task')) . '" data-tip="' . e($kindLabel) . '" aria-label="' . e($kindLabel) . '" role="img" tabindex="0">' . icon($kindIcon) . '</span>'
             . '<span class="t">' . e($t['title']) . ($t['description'] ? '<small>' . e(shorten((string)$t['description'], 80)) . '</small>' : '') . '</span>'
             . '<small class="when' . ($late ? ' late' : '') . '">' . e(lead_task_when($t)) . ($t['repeat_rule'] ? ' ↻' : '') . '<br>' . e($t['who'] ? first_name_of($t['who']) : 'Por atribuir') . '</small></li>';
     }
@@ -93,7 +93,7 @@ function lead_new_action_html(PDO $pdo, array $l): string {
     $default = $l['owner_id'] !== null && isset($people[(int)$l['owner_id']]) ? (int)$l['owner_id'] : (int)$me['id'];
     $kinds = '';
     foreach (LEAD_TASK_KINDS as $k => [$label, $ico]) {
-        $kinds .= '<label class="kind" data-tip="' . e($label) . '"><input type="radio" name="kind" value="' . $k . '"' . ($k === 'call' ? ' checked' : '') . '>'
+        $kinds .= '<label class="kind ' . lead_kind_class($k) . '" data-tip="' . e($label) . '"><input type="radio" name="kind" value="' . $k . '"' . ($k === 'call' ? ' checked' : '') . '>'
                 . '<span aria-hidden="true">' . icon($ico) . '</span><span class="sr">' . e($label) . '</span></label>';
     }
     $next = (new DateTimeImmutable('now', new DateTimeZone('Europe/Lisbon')))->modify('+1 hour');
@@ -103,6 +103,12 @@ function lead_new_action_html(PDO $pdo, array $l): string {
          . '<div class="kinds" role="radiogroup" aria-label="Tipo de ação">' . $kinds . '</div>'
          . '<input type="text" name="title" maxlength="200" placeholder="Ligar a ' . e(lead_display_name($l)) . '" aria-label="O quê" data-who="' . e(lead_display_name($l)) . '">'
          . '<textarea name="notes" rows="2" maxlength="4000" placeholder="Notas (opcional)" aria-label="Notas"></textarea>'
+         // Reunião: Google Meet, Discord ou presencial (como na aba Tarefas); almoço, jantar e evento pedem o local.
+         . '<div class="lmeet" data-lk-meet hidden role="radiogroup" aria-label="Reunião via"><span class="lbl">Reunião via</span><div class="chips-check">'
+         . '<label class="rb"><input type="radio" name="platform" value="meet" checked><span>' . icon('video') . ' Google Meet</span></label>'
+         . '<label class="rb"><input type="radio" name="platform" value="discord"><span>' . icon('video') . ' Discord</span></label>'
+         . '<label class="rb"><input type="radio" name="platform" value=""><span>' . icon('pin') . ' Presencial</span></label></div></div>'
+         . '<input type="text" name="location" maxlength="200" placeholder="Local (estúdio, morada, restaurante…)" aria-label="Local" data-lk-local hidden>'
          . '<div class="quick" role="group" aria-label="Quando">'
          . '<button type="button" data-quick="1h">Em 1h</button><button type="button" data-quick="3h">Em 3h</button>'
          . '<button type="button" data-quick="tomorrow">Amanhã</button><button type="button" data-quick="week">Próxima semana</button></div>'

@@ -186,6 +186,35 @@ function my_alerts(PDO $pdo): array {
         usort($out['deal'], fn($a, $b) => strcmp($a['date'], $b['date']));
     }
 
+    // Pipeline (§19.4, §19.10): respostas do cliente por validar, gates de produção passados e
+    // rondas de revisão esgotadas — para o responsável comercial do negócio.
+    if (can('pipeline') && db_has_table($pdo, 'proposals')) {
+        $st = $pdo->prepare("SELECT p.id, p.decision, p.choice, p.has_b, p.reason, p.answered_at, p.signer_name, d.id AS deal_id, d.code, d.name, d.funnel_id
+                               FROM proposals p JOIN deals d ON d.id = p.deal_id
+                              WHERE p.status = 'answered' AND d.owner_id = ? AND d.phase = 'pipeline'");
+        $st->execute([$uid]);
+        foreach ($st->fetchAll() as $p) {
+            $what = $p['decision'] === 'accept' ? 'aceitou ' . ((int)$p['has_b'] ? 'a Opção ' . $p['choice'] : 'a proposta') : 'recusou';
+            $out['deal'][] = ['key' => 'prop:' . $p['id'] . ':' . $p['answered_at'], 'kind' => 'deal', 'icon' => 'user', 'sev' => 'warn', 'date' => substr((string)$p['answered_at'], 0, 10),
+                              'title' => 'Resposta do cliente: ' . $what . ' · ' . $p['code'], 'sub' => $p['name'] . ' · ' . $p['signer_name'] . ' · falta validar',
+                              'url' => '/admin/pipeline.php?' . http_build_query(['f' => $p['funnel_id'], 'deal' => $p['deal_id']]) . '#proposta'];
+        }
+        $since = (new DateTimeImmutable(today_lisbon()))->modify('-7 days')->format('Y-m-d 00:00:00');
+        $st = $pdo->prepare("SELECT h.id, h.event, h.note, h.created_at, d.id AS deal_id, d.code, d.name, fs.name AS from_name, ts.name AS to_name
+                               FROM deal_history h JOIN deals d ON d.id = h.deal_id
+                               LEFT JOIN funnel_stages fs ON fs.id = h.from_stage_id LEFT JOIN funnel_stages ts ON ts.id = h.to_stage_id
+                              WHERE d.owner_id = ? AND h.created_at >= ? AND (h.user_id IS NULL OR h.user_id <> ?)
+                                AND ((h.event = 'stage' AND fs.kind = 'production' AND h.note = '') OR h.event = 'rounds')");
+        $st->execute([$uid, $since, $uid]);
+        foreach ($st->fetchAll() as $h) {
+            $gate = $h['event'] === 'stage';
+            $out['deal'][] = ['key' => 'flow:' . $h['id'], 'kind' => 'deal', 'icon' => $gate ? 'stage' : 'alert', 'sev' => 'warn', 'date' => substr((string)$h['created_at'], 0, 10),
+                              'title' => ($gate ? 'Gate de produção passado · ' : 'Rondas incluídas esgotadas · ') . $h['code'],
+                              'sub' => $gate ? $h['from_name'] . ' → ' . $h['to_name'] . ' · ' . $h['name'] : $h['note'],
+                              'url' => can('negocios') ? '/admin/negocio.php?id=' . (int)$h['deal_id'] : '/admin/pipeline.php?deal=' . (int)$h['deal_id']];
+        }
+    }
+
     // Por receber em atraso (quem vê o Financeiro).
     foreach (receivables($pdo) as $r) {
         if ($r['age'] <= $lim['invoice']) continue;

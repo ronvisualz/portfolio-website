@@ -77,14 +77,18 @@ header(
 );
 
 // ── session ─────────────────────────────────────────────────
-if (session_status() === PHP_SESSION_NONE) {
+// Páginas públicas sem sessão (ex.: a proposta ao cliente, §19.4): não criam cookie nem tocam na sessão de quem esteja ligado.
+if (session_status() === PHP_SESSION_NONE && !defined('TOPPER_NO_SESSION')) {
     session_name('topper_sid');
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => '/admin',
         'secure'   => !IS_LOCAL,
         'httponly' => true,
-        'samesite' => 'Strict',
+        // Lax e não Strict: com Strict, o Safari não enviava o cookie ao voltar atrás de um PDF
+        // (ou ao abrir um link de um email) e a página de entrada criava uma sessão nova — logout.
+        // Os POST de outros sites continuam sem cookie, e todos os formulários levam token CSRF.
+        'samesite' => 'Lax',
     ]);
     session_start();
 }

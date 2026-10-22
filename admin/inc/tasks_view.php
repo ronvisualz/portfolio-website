@@ -69,10 +69,9 @@ function task_who_html(array $members, ?int $mid, bool $name = false): string {
     return '<span class="twho" style="--who:' . e(member_color($m)) . '" data-tip="' . e($m['name']) . '">' . e($ini) . '</span>' . ($name ? ' <span>' . e(first_name($m['name'])) . '</span>' : '');
 }
 
-/** Uma linha da lista (§18.3): ícone do tipo · origem · título · ligação · prazo · responsável. */
+/** Uma linha da lista (§18.3): ícone do tipo · origem · título · ligação · prazo · ações (adiar, editar, abrir) · responsável. */
 function task_row_html(array $t, array $members, string $editUrl): string {
     $done = $t['status'] === 'done';
-    $b = task_bucket($t);
     [$lt, $lu] = task_link($t);
     $ck = task_checklist($t);
     $ckDone = count(array_filter($ck, fn($i) => !empty($i[1])));
@@ -89,9 +88,21 @@ function task_row_html(array $t, array $members, string $editUrl): string {
          . task_type_badge($t) . task_origin_badge($t)
          . '<a class="tt" href="' . e($editUrl) . '">' . e($t['title']) . '</a><span class="tex">' . $extra . '</span>'
          . ($lt !== '' ? ($lu !== '' ? '<a class="tlink" href="' . e($lu) . '">' . e(shorten($lt, 40)) . '</a>' : '<span class="tlink">' . e(shorten($lt, 40)) . '</span>') : '<span class="tlink"></span>')
-         . '<span class="tdue' . (!$done && $b === 'late' ? ' late' : '') . '">' . e($done ? 'feita ' . date('d/m', strtotime((string)$t['done_at'])) : task_when($t)) . '</span>'
+         . task_due_html($t)
+         . '<span class="tacts">'
+         . (!$done ? '<button type="button" class="tact" data-snooze="' . (int)$t['id'] . '" data-due="' . e((string)$t['due_date']) . '" data-time="' . e(substr((string)($t['due_time'] ?? ''), 0, 5)) . '" aria-label="Adiar" data-tip aria-haspopup="menu">' . icon('clock') . '</button>' : '')
+         . '<a class="tact" href="' . e($editUrl) . '" aria-label="Editar" data-tip>' . icon('pencil') . '</a>'
+         . ($lu !== '' ? '<a class="tact" href="' . e($lu) . '" aria-label="Abrir ' . e($lt) . '" data-tip="Abrir ' . e(shorten($lt, 40)) . '">' . icon('external') . '</a>' : '')
+         . '</span>'
          . task_who_html($members, $t['member_id'] !== null ? (int)$t['member_id'] : null)
          . '</div>';
+}
+
+/** O prazo na linha: data e hora; por baixo a duração e quanto falta (ou há quanto venceu). */
+function task_due_html(array $t): string {
+    if (($t['status'] ?? '') === 'done') return '<span class="tdue"><b>feita ' . e(date('d/m/y', strtotime((string)$t['done_at']))) . '</b></span>';
+    [$abs, $sub, $late] = task_due_parts($t);
+    return '<span class="tdue' . ($late ? ' late' : '') . ($t['due_date'] ? '' : ' none') . '"><b>' . e($abs) . '</b>' . ($sub !== '' ? '<small>' . e($sub) . '</small>' : '') . '</span>';
 }
 
 /** A linha que junta as tarefas automáticas iguais (§18.3). */
@@ -104,7 +115,7 @@ function task_group_html(array $g, array $members, bool $showWho): string {
          . task_type_badge(['kind' => $type]) . task_origin_badge(['kind' => $origin === 'relation' ? 'relation' : 'call', 'deal_id' => $origin === 'lead' ? 1 : null, 'deal_phase' => 'lead'])
          . '<span class="tt"><b>' . e($label) . ' · ' . $n . '</b>' . ($g['late'] ? ' · <span class="late">' . $g['late'] . ' em atraso</span>' : '') . ' <small class="muted">agrupadas</small></span><span class="tex"></span>'
          . '<span class="tlink muted">' . ($showWho && $g['member'] && isset($members[$g['member']]) ? e(first_name($members[$g['member']]['name'])) : '') . '</span>'
-         . '<span class="tdue' . ($g['late'] ? ' late' : '') . '">' . e(task_when($first)) . '</span>'
+         . task_due_html($first)
          . '<a class="tgo" href="' . e($url) . '">Abrir fila →</a>'
          . '</div>';
 }
@@ -121,22 +132,45 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
     }
     $h .= '<div class="fg"><em>Urgência</em>' . $chip('urg', 'late', 'Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : ''), 'urg') . $chip('urg', 'today', 'Hoje') . $chip('urg', 'week', 'Esta semana') . '</div>';
     if ($tab === 'tarefas') {
-        $who = ($myMember !== null && isset($members[$myMember]) ? $chip('quem', 'me', 'Eu') : '') . $chip('quem', 'all', 'Todos') . $chip('quem', 'none', 'Por atribuir');
-        foreach ($members as $mid => $m) if ($mid !== $myMember) $who .= $chip('quem', (string)$mid, e(first_name($m['name'])));
-        $h .= '<div class="fg"><em>Quem</em>' . $who . '</div>';
+        // «Quem»: um botão que abre a lista de pessoas (em vez de um botão por pessoa).
+        $opts = ($myMember !== null && isset($members[$myMember]) ? ['me' => ['Eu', task_who_html($members, $myMember)]] : [])
+              + ['all' => ['Todos', '<span class="fpl-i">' . icon('equipa') . '</span>'], 'none' => ['Por atribuir', '<span class="fpl-i">' . icon('hand') . '</span>']];
+        foreach ($members as $mid => $m) if ($mid !== $myMember) $opts[(string)$mid] = [$m['name'], task_who_html($members, (int)$mid)];
+        $cur = (string)$f['quem'];
+        $items = ''; $sep = false;
+        foreach ($opts as $v => [$l, $av]) {
+            $on = $cur === (string)$v;
+            if (is_int($v) && !$sep) { $items .= '<hr>'; $sep = true; }   // as pessoas, depois de Eu · Todos · Por atribuir
+            $items .= '<a class="fpl' . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['quem' => (string)$v])) . '"' . ($on ? ' aria-current="true"' : '') . '>' . $av . '<span>' . e($l) . '</span>' . ($on ? '<span class="ok">' . icon('check') . '</span>' : '') . '</a>';
+        }
+        $label = $opts[$cur][0] ?? 'Todos';
+        $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($cur !== 'all' ? ' on' : '') . '">' . icon('user') . ' Quem: ' . e($cur === 'me' ? 'Eu' : (ctype_digit($cur) ? first_name($label) : $label)) . ' ' . icon('chev-down', 'chev') . '</summary>'
+            . '<div class="fpop-box" role="menu" aria-label="Quem"><div class="fpop-h"><b>Quem</b></div><div class="fpop-l">' . $items . '</div></div></details></div>';
     }
-    $ty = '';
-    foreach (TASK_TYPES as $k => [$l, $i]) if (!in_array($k, ['block'], true)) $ty .= $chip('tipo', $k, icon($i), 'ico ty-' . $k, $l);
-    $h .= '<div class="fg"><em>Tipo</em>' . $ty . '</div>';
-    $or = '';
-    foreach (TASK_ORIGINS as $k => [$l, $i]) $or .= $chip('origem', $k, icon($i), 'ico or-' . $k, 'Origem: ' . $l);
-    $h .= '<div class="fg"><em>Origem</em>' . $or . '</div>';
+    // Tipo e origem: um botão que abre uma caixa com os ícones (tipo: 5 × 3).
+    $pop = function (string $k, string $title, array $list, string $cls) use ($f, $tab) {
+        $cur = (string)$f[$k];
+        $items = '';
+        foreach ($list as $v => [$l, $i]) {
+            $on = $cur === $v;
+            $items .= '<a class="fpi ' . $cls . '-' . $v . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, [$k => $on ? '' : $v])) . '"' . ($on ? ' aria-current="true"' : '') . '><span>' . icon($i) . '</span><small>' . e($l) . '</small></a>';
+        }
+        $sum = $cur !== '' ? '<span class="fpi-c ' . $cls . '-' . $cur . '">' . icon($list[$cur][1]) . '</span>' . e($list[$cur][0]) : e($title);
+        return '<details class="fpop' . ($k === 'tipo' ? ' wide' : '') . '" data-fpop><summary class="fchip' . ($cur !== '' ? ' on' : '') . '">' . $sum . ' ' . icon('chev-down', 'chev') . '</summary>'
+             . '<div class="fpop-box" role="menu" aria-label="' . e($title) . '"><div class="fpop-h"><b>' . e($title) . '</b>' . ($cur !== '' ? '<a href="' . e(tasks_url($tab, $f, [$k => ''])) . '">Todos</a>' : '') . '</div><div class="fpop-g">' . $items . '</div></div></details>';
+    };
+    $h .= '<div class="fg">' . $pop('tipo', 'Tipo de tarefa', array_diff_key(TASK_TYPES, ['block' => 1]), 'ty') . $pop('origem', 'Origem', TASK_ORIGINS, 'or') . '</div>';
     $opts = '<option value="">Todos os negócios</option>';
     foreach ($dealOpts as $id => $l) $opts .= '<option value="' . $id . '"' . ($f['neg'] === $id ? ' selected' : '') . '>' . e($l) . '</option>';
     $hidden = '';
     foreach ($f as $k => $v) if ($k !== 'neg' && (string)$v !== '' && !($k === 'solto' && !$v)) $hidden .= '<input type="hidden" name="' . e($k) . '" value="' . e((string)$v) . '">';
     $h .= '<form class="fg" method="get" action="/admin/calendar.php">' . ($tab !== 'tarefas' ? '<input type="hidden" name="t" value="' . e($tab) . '">' : '') . $hidden
         . '<label class="sr" for="f-neg">Negócio</label><select id="f-neg" name="neg" onchange="this.form.submit()">' . $opts . '</select></form>';
+    // «Limpar filtros»: volta ao que a aba mostra ao abrir.
+    $def = ['est' => 'todo', 'urg' => '', 'quem' => $myMember !== null && isset($members[$myMember]) ? 'me' : 'all', 'tipo' => '', 'origem' => '', 'neg' => 0];
+    $dirty = false;
+    foreach ($def as $k => $v) if ((string)$f[$k] !== (string)$v && ($tab === 'tarefas' || !in_array($k, ['est', 'quem'], true))) $dirty = true;
+    if ($dirty) $h .= '<a class="fclear" href="' . e(tasks_url($tab, ['solto' => $f['solto']] + $def + $f)) . '">' . icon('x') . ' Limpar filtros</a>';
     $h .= '</div>';
     // Vistas guardadas.
     $v = '<div class="tviews"><em>Vistas</em>';

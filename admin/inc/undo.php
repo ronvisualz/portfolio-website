@@ -72,6 +72,9 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
                 ->execute([$d['stage_id'], $d['phase'], $d['done_at'], $d['year'], $d['month'], $d['last_touch'], $d['id']]);
             deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
                                                      'to_funnel' => $deal['funnel_id'], 'to_stage' => $d['stage_id'], 'note' => 'Anulado']);
+            // As tarefas automáticas que a entrada na etapa criou (§19.7) saem, se ainda ninguém lhes mexeu.
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
             return 'Etapa reposta.';
 
         case 'deal_lost':
@@ -159,6 +162,19 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // A repetição criada ao concluir sai também (se ainda ninguém lhe mexeu).
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
+
+        case 'task_due':
+            // «Adiar» na lista (§18.3): o prazo volta ao de antes, se ninguém lhe mexeu.
+            require_once __DIR__ . '/tasks.php';
+            require_perm('tarefas', PERM_EDIT);
+            $t = task_by_id($pdo, (int)$d['id']);
+            $members = team_members($pdo);
+            $mine = member_for_user($pdo, (int)current_user()['id']);
+            if ($t && (task_hidden_for($t, $mine) || (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, task_visible_members($pdo, $members)) && (int)$t['member_id'] !== (int)$mine))) throw new RuntimeException('Sem permissão.');
+            if (!$t || (string)$t['due_date'] !== (string)$d['to_date'] || (string)$t['due_time'] !== (string)$d['to_time']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE tasks SET due_date = ?, due_time = ?, duration_min = ?, updated_at = ? WHERE id = ?')->execute([$d['due_date'], $d['due_time'], $d['duration_min'] ?? null, task_now(), $d['id']]);
+            task_log($pdo, (int)$d['id'], 'snooze', 'Prazo reposto (anulado)');
+            return 'Prazo reposto.';
 
         case 'inline':
             inline_save($pdo, $d['entity'], (int)$d['id'], $d['field'], $d['prev'] === null ? '' : (string)$d['prev']);
@@ -251,6 +267,8 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             } else {
                 deal_log($pdo, (int)$d['id'], 'step', ['note' => 'Anulado']);
             }
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
             return 'Etapa reposta.';
 
         case 'deal_flags':
@@ -326,6 +344,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!$sheet || (int)$sheet['accepted_version_id'] !== (int)$d['version'] || $sheet['closed_at']) throw new RuntimeException($changed);
             $pdo->prepare('UPDATE budget_sheets SET accepted_version_id = ? WHERE id = ?')->execute([$d['prev'], $sheet['id']]);
             $pdo->prepare('UPDATE budget_versions SET accepted_at = NULL, accepted_by = NULL, occupancy = ? WHERE id = ?')->execute([$d['occupancy'], $d['version']]);
+            if (array_key_exists('opt', $d)) $pdo->prepare('UPDATE budget_versions SET accepted_opt = ? WHERE id = ?')->execute([$d['opt'], $d['version']]);
             $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$d['value'], $d['deal']]);
             budget_recalc($pdo, (int)$d['version']);
             budget_log($pdo, (int)$sheet['id'], 'b_accept', 'Aceitação anulada');
@@ -347,6 +366,15 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // Marketing (§16): triagem, etapas, revisão, agendar, publicar, textos — a peça volta ao que era.
             require_once __DIR__ . '/marketing.php';
             return mkt_undo_apply($pdo, $d);
+
+        case 'auto_rule':
+            // Uma automação eliminada em Definições › Funis e automações (§19.7): volta igual.
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            if (!(int)$pdo->query('SELECT COUNT(*) FROM funnel_stages WHERE id = ' . (int)$d['stage_id'])->fetchColumn()) throw new RuntimeException($changed);
+            if ((int)$pdo->query('SELECT COUNT(*) FROM stage_automations WHERE id = ' . (int)$d['id'])->fetchColumn()) throw new RuntimeException($changed);
+            $cols = array_keys($d);
+            $pdo->prepare('INSERT INTO stage_automations (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($d));
+            return 'Automação reposta.';
 
         case 'relation_drop':
             // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.

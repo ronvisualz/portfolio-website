@@ -144,7 +144,11 @@ function budget_pdf_name(array $deal, array $v): string {
  * fases, preço s/ IVA (o cálculo corre aqui, mas só o preço sai), IVA e condições.
  */
 function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
-    $calc = budget_calc($pdo, $v, budget_lines($pdo, (int)$v['id']));
+    $opts = budget_has_options($pdo);
+    $calc = budget_calc($pdo, $v + ($opts ? ['calc_opt' => 'A'] : []), budget_lines($pdo, (int)$v['id'], $opts ? 'A' : null));
+    // Opção B (§19.3): a proposta de valor, ao lado do pedido.
+    $linesB = $opts ? budget_lines($pdo, (int)$v['id'], 'B') : [];
+    $calcB = $linesB ? budget_calc($pdo, $v + ['calc_opt' => 'B'], $linesB) : null;
     $price = $calc['price'];
     $rate = $calc['vat_rate'];
     $vat = round($price * $rate / 100, 2);
@@ -189,9 +193,26 @@ function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
         $y += 6;
     };
 
-    // o trabalho
+    // o trabalho: com duas opções, lado a lado (cada uma com o seu âmbito)
     $desc = trim((string)$v['description']);
-    if ($desc !== '') { $section('O trabalho'); $para($desc); }
+    $descB = trim((string)($v['scope_b'] ?? ''));
+    if ($calcB) {
+        $section('As opções');
+        $half = ($max - 18) / 2;
+        $colA = BudgetPdf::wrap($desc !== '' ? $desc : 'O âmbito pedido.', 'F1', 10, $half - 20);
+        $colB = BudgetPdf::wrap($descB !== '' ? $descB : 'O âmbito pedido, com mais valor.', 'F1', 10, $half - 20);
+        $hBox = 58 + max(count($colA), count($colB)) * 14.5;
+        $need($hBox + 10);
+        foreach ([[$L, 'OPÇÃO A · PEDIDO', $colA, $calc['price'], '#F4F4F2', '#C9C9C4'], [$L + $half + 18, 'OPÇÃO B · PROPOSTA DE VALOR', $colB, $calcB['price'], '#FFF6D6', '#FFC718']] as [$x, $label, $col, $p, $bg, $bar]) {
+            $pdf->rect($x, $y - 12, $half, $hBox, $bg);
+            $pdf->rect($x, $y - 12, 3, $hBox, $bar);
+            $pdf->text($x + 14, $y + 4, $label, 8.5, true, '#5C5C5C');
+            $pdf->text($x + 14, $y + 26, budget_eur($p, 2) . ' s/ IVA', 15, true);
+            $yy = $y + 48;
+            foreach ($col as $ln) { if ($ln !== '') $pdf->text($x + 14, $yy, $ln, 10); $yy += 14.5; }
+        }
+        $y += $hBox + 8;
+    } elseif ($desc !== '') { $section('O trabalho'); $para($desc); }
 
     // fases e prazos
     $section('Fases e prazos');
@@ -216,22 +237,35 @@ function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
     }
     $para($dur . '.');
 
-    // investimento
+    // investimento (uma caixa por opção)
     $section('Investimento');
-    $need(84);
-    $pdf->rect($L, $y - 12, $max, 74, '#FFF6D6');
-    $pdf->rect($L, $y - 12, 3, 74, '#FFC718');
-    $pdf->text($L + 16, $y + 4, 'Preço s/ IVA', 10.5, false, '#5C5C5C');
-    $pdf->text($R - 14, $y + 6, budget_eur($price, 2), 16, true, '#111111', 'r');
-    $pdf->text($L + 16, $y + 25, 'IVA (' . budget_pct($rate) . ')', 10.5, false, '#5C5C5C');
-    $pdf->text($R - 14, $y + 25, budget_eur($vat, 2), 10.5, false, '#111111', 'r');
-    $pdf->text($L + 16, $y + 46, 'Total c/ IVA', 10.5, true);
-    $pdf->text($R - 14, $y + 46, budget_eur($price + $vat, 2), 12, true, '#111111', 'r');
-    $y += 82;
+    $boxes = [['Opção A · Pedido', $price]];
+    if ($calcB) $boxes[] = ['Opção B · Proposta de valor', $calcB['price']];
+    if (!$calcB) $boxes[0][0] = '';
+    foreach ($boxes as [$label, $p]) {
+        $pv = round($p * $rate / 100, 2);
+        $top = $label !== '' ? 16 : 0;
+        $need(84 + $top);
+        $pdf->rect($L, $y - 12, $max, 74 + $top, '#FFF6D6');
+        $pdf->rect($L, $y - 12, 3, 74 + $top, '#FFC718');
+        if ($label !== '') { $pdf->text($L + 16, $y + 2, mb_strtoupper($label), 8.5, true, '#5C5C5C'); $y += $top; }
+        $pdf->text($L + 16, $y + 4, 'Preço s/ IVA', 10.5, false, '#5C5C5C');
+        $pdf->text($R - 14, $y + 6, budget_eur($p, 2), 16, true, '#111111', 'r');
+        $pdf->text($L + 16, $y + 25, 'IVA (' . budget_pct($rate) . ')', 10.5, false, '#5C5C5C');
+        $pdf->text($R - 14, $y + 25, budget_eur($pv, 2), 10.5, false, '#111111', 'r');
+        $pdf->text($L + 16, $y + 46, 'Total c/ IVA', 10.5, true);
+        $pdf->text($R - 14, $y + 46, budget_eur($p + $pv, 2), 12, true, '#111111', 'r');
+        $y += 90;
+    }
 
-    // condições
+    // as condições da proposta (§19.1): prazo, pagamento, revisões, direitos, validade
+    foreach ([['Prazo', 'term_text'], ['Condições de pagamento', 'payment_terms'], ['Revisões incluídas', 'revisions_text'], ['Direitos de utilização', 'rights_text']] as [$t, $k]) {
+        $txt = trim((string)($v[$k] ?? ''));
+        if ($txt !== '') { $section($t); $para($txt, 10); }
+    }
     $cond = trim((string)$v['conditions']);
     if ($cond !== '') { $section('Condições'); $para($cond, 10); }
+    if (!empty($v['valid_until'])) { $section('Validade'); $para('Esta proposta é válida até ' . date('d/m/Y', strtotime((string)$v['valid_until'])) . '.', 10); }
 
     $footer($page);
     return $pdf->output('Proposta ' . $deal['code'] . ' · ' . $deal['name']);

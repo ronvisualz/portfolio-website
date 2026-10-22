@@ -40,31 +40,12 @@ function panel_lead(PDO $pdo, array $l): array {
             'script' => '/admin/assets/leads.js?v=' . (is_file($js) ? filemtime($js) : 0)];
 }
 
+/** O negócio no painel lateral (§19.8): igual ao da lead, mais completo — etapas e gates, proposta, faturação. */
 function panel_deal(PDO $pdo, array $d): array {
-    $id = (int)$d['id'];
-    $edit = record_reach($pdo, $d, PERM_EDIT);
-    $stage = $d['stage_id'] ? stage_get($pdo, (int)$d['stage_id']) : null;
-    $funnel = $d['funnel_id'] ? funnel_get($pdo, (int)$d['funnel_id']) : null;
-    $owner = $d['owner_id'] ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$d['owner_id'])->fetchColumn() : 'Por atribuir';
-    $phase = ['pipeline' => 'Fase comercial', 'production' => 'Em produção', 'done' => 'Concluído', 'lost' => 'Perdido'][$d['phase']] ?? $d['phase'];
-    $idle = $d['phase'] === 'pipeline' ? days_since(deal_last_move($d)) : 0;
-    $risk = $d['phase'] === 'pipeline' && $idle > alert_limits($pdo)['deal'];
-
-    require_once __DIR__ . '/lead_view.php';   // ligações a contactos (Cliente, Trazido por)
-    $kv = '<span>Funil · etapa</span><div>' . e(($funnel['name'] ?? '—') . ' · ' . ($stage['name'] ?? '—')) . '</div>'
-        . '<span>Responsável</span><div>' . e($owner) . '</div>'
-        . '<span>Cliente</span><div>' . deal_people_link($pdo, $d['contact_id']) . '</div>'
-        . '<span>Trazido por</span><div>' . deal_people_link($pdo, $d['brought_by_id']) . '</div>'
-        . panel_row('Valor estimado', 'deal', $id, 'value_estimate', $d, $edit)
-        . ($d['phase'] === 'pipeline' ? '<span>Último movimento</span><div>' . e(ago_days(deal_last_move($d))) . '</div>' : '');
-    $body = '<header><div class="id mono">' . e($d['code']) . '</div><h2>' . inline_field('deal', $id, 'name', e($d['name']), ['edit' => $edit, 'label' => 'Editar nome', 'value' => $d['name']]) . '</h2>'
-          . '<div style="margin-top:6px"><span class="chip">' . e($phase) . '</span>' . ($risk ? ' <span class="chip risk">Sem movimento há ' . $idle . ' dias</span>' : '') . '</div></header>'
-          . '<section class="sp-next"><h4>Próxima ação</h4><a class="btn" href="' . e(deal_url($d)) . '">' . icon('external') . ' Abrir a ficha completa</a>'
-          . (can('orcamentacao') && in_array($d['phase'], ['pipeline', 'production', 'done', 'lost'], true) ? ' <a class="btn ghost" href="/admin/orcamento.php?id=' . $id . '">' . icon('orcamentacao') . ' Orçamento</a>' : '') . '</section>'
-          . '<section><h4>Resumo</h4><div class="kv">' . $kv . '</div></section>'
-          . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
-          . '<section><h4>Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, deal_url($d), '') . '</section>';
-    return ['title' => 'Negócio', 'html' => $body, 'url' => deal_url($d)];
+    require_once __DIR__ . '/pipeline_view.php';
+    $js = __DIR__ . '/../assets/tasks.js';
+    return ['title' => 'Negócio', 'html' => flow_panel_html($pdo, $d, deal_url($d)), 'url' => deal_url($d), 'wide' => true,
+            'script' => '/admin/assets/tasks.js?v=' . (is_file($js) ? filemtime($js) : 0)];
 }
 
 /** O contacto no painel lateral: a vista larga em duas colunas (§13.7). */

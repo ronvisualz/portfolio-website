@@ -5,6 +5,7 @@ require_once __DIR__ . '/inc/reach.php';
 require_once __DIR__ . '/inc/alerts.php';        // deal_url
 require_once __DIR__ . '/inc/interactions.php';  // histórico
 require_once __DIR__ . '/inc/budget_view.php';
+require_once __DIR__ . '/inc/pipeline_view.php';  // enviar a proposta (§19.4)
 $user = require_login();
 require_page('orcamentacao');
 
@@ -29,22 +30,27 @@ $v ??= end($versions);
 $money = budget_money();
 $canEdit = can('orcamentacao', PERM_EDIT);
 $editable = budget_editable($sheet, $v, $versions);
+// Opção A (Pedido) e Opção B (Proposta de valor), §19.3: cada uma com as suas linhas e preço.
+$hasOpts = budget_has_options($pdo);
+$opt = $hasOpts && ($_GET['opt'] ?? '') === 'B' ? 'B' : 'A';
 if ($editable) {
-    $rc = budget_recalc($pdo, (int)$v['id']);
+    $rc = budget_recalc($pdo, (int)$v['id'], $opt);
     $v = $rc['version']; $lines = $rc['lines']; $calc = $rc['calc'];
 } else {
-    $lines = budget_lines($pdo, (int)$v['id']);
-    $calc = budget_calc($pdo, $v, $lines);
+    $lines = budget_lines($pdo, (int)$v['id'], $hasOpts ? $opt : null);
+    $calc = budget_calc($pdo, $v + ($hasOpts ? ['calc_opt' => $opt] : []), $lines);
 }
+$hasB = $hasOpts && ($opt === 'B' ? (bool)$lines : (bool)budget_lines($pdo, (int)$v['id'], 'B'));
 $accepted = (int)$sheet['accepted_version_id'] === (int)$v['id'];
 $last = end($versions);
 $tab = (string)($_GET['tab'] ?? 'orc');
 if (!in_array($tab, ['orc', 'res', 'hist', 'cmp'], true) || ($tab === 'res' && !$money)) $tab = 'orc';
-$self = fn(array $q = []) => '/admin/orcamento.php?' . http_build_query(array_merge(['id' => (int)$deal['id'], 'v' => (int)$v['num']], $q, nav_from() ? ['de' => nav_from()] : []));
+$self = fn(array $q = []) => '/admin/orcamento.php?' . http_build_query(array_filter(array_merge(['id' => (int)$deal['id'], 'v' => (int)$v['num'], 'opt' => $opt === 'B' ? 'B' : null], $q, nav_from() ? ['de' => nav_from()] : []), fn($x) => $x !== null));
 $back = nav_from();   // veio de outra página (ex.: a ficha do negócio): «Voltar» faz o caminho inverso
 $listTab = budget_tab_of((string)$deal['phase']);
 
 $title = $deal['code'] . ' · ' . $deal['name'];
+$flowDeal = record_get($pdo, (int)$deal['id']) ?? [];   // o negócio completo (etapa, contacto) para enviar a proposta
 render_header($title, 'orcamentacao', '', [$title]);
 render_flashes();
 
@@ -53,6 +59,7 @@ if (!$canEdit) $why = 'Só leitura: a sua conta vê a Orçamentação mas não a
 elseif ($sheet['closed_at']) $why = 'Negócio concluído: a folha e o Resultado ficaram fechados nesse dia.';
 elseif ($accepted) $why = 'v' . (int)$v['num'] . ' foi aceite: fica como foi proposta. Para mudar, crie uma nova versão.';
 elseif ((int)$v['id'] !== (int)$last['id']) $why = 'v' . (int)$v['num'] . ' é uma versão anterior: as mudanças fazem-se na v' . (int)$last['num'] . '.';
+elseif (budget_version_sent($v)) $why = 'v' . (int)$v['num'] . ' já foi enviada ao cliente: fica como foi enviada. Para mudar, crie uma nova versão e envie de novo.';
 $stageChip = match ($deal['phase']) {
     'lost' => '<span class="chip no">Perdido</span>',
     'done' => '<span class="chip ok">Concluído</span>',
@@ -68,7 +75,7 @@ $stageChip = match ($deal['phase']) {
   <?php if (record_reach($pdo, $deal) && !($back && str_starts_with($back, '/admin/negocio.php?id=' . (int)$deal['id']))): ?><a class="btn ghost sm" href="<?= e(nav_to(deal_url($deal))) ?>"><?= icon('negocios') ?> Abrir o negócio</a><?php endif; ?>
 </div>
 
-<div class="bs" data-sheet="<?= (int)$sheet['id'] ?>" data-version="<?= (int)$v['id'] ?>" data-editable="<?= $editable ? '1' : '0' ?>" data-money="<?= $money ? '1' : '0' ?>">
+<div class="bs" data-sheet="<?= (int)$sheet['id'] ?>" data-version="<?= (int)$v['id'] ?>" data-opt="<?= $opt ?>" data-editable="<?= $editable ? '1' : '0' ?>" data-money="<?= $money ? '1' : '0' ?>">
 <header class="bs-head">
   <div class="bs-who">
     <span class="id"><?= e($deal['code']) ?></span>
@@ -102,17 +109,22 @@ $stageChip = match ($deal['phase']) {
 
 <?php if ($tab === 'orc'): ?>
   <?php if ($why !== ''): ?><p class="bs-note"><?= icon('alert') ?> <?= e($why) ?></p><?php endif; ?>
+  <?= $hasOpts ? budget_options_nav($v, $opt, $self, $money, $editable, $hasB) : '' ?>
   <div class="bs-grid">
     <div class="bs-col">
       <?= budget_lines_block($pdo, $lines, $calc, $money, $editable) ?>
       <?= budget_time_block($pdo, $v, $calc, $money, $editable) ?>
-      <?= budget_proposal_block($v, $editable) ?>
+      <?= budget_proposal_block($v, $editable, $opt, $pdo, $deal) ?>
     </div>
     <div class="bs-col">
       <?= $money ? budget_calc_block($calc, $editable) : '' ?>
       <?= budget_price_block($calc, $money) ?>
       <div class="bs-acts">
-        <button type="button" class="btn" data-bpdf data-tip="Proposta para o cliente: descrição, fases e prazos, preço s/ e c/ IVA e condições. Fica na pasta do negócio no Drive."><?= icon('file') ?> Gerar proposta (PDF)</button>
+        <button type="button" class="btn" data-bpdf data-tip="Proposta para o cliente: as opções lado a lado, fases e prazos, preço s/ e c/ IVA e condições. Fica na pasta do negócio no Drive."><?= icon('file') ?> Gerar proposta (PDF)</button>
+        <?php if ($deal['phase'] === 'pipeline'): [$canSend, $whyNot] = flow_can_send($pdo, $flowDeal); ?>
+          <?php if ($canSend): ?><button type="button" class="btn ghost" data-new="#mdl-psend"><?= icon('send') ?> Enviar ao cliente</button>
+          <?php else: ?><span class="btn ghost off" aria-disabled="true"><?= icon('send') ?> Enviar ao cliente</span><small class="muted"><?= e($whyNot) ?></small><?php endif; ?>
+        <?php endif; ?>
         <?php if ($canEdit): ?>
           <button type="button" class="btn ghost" data-bmdl="#mdl-btpl-save"><?= icon('checklist') ?> Guardar como modelo</button>
           <?php if (!$sheet['closed_at']): ?><button type="button" class="btn ghost" data-bmdl="#mdl-btpl-apply"><?= icon('download') ?> A partir de um modelo</button><?php endif; ?>
@@ -139,5 +151,6 @@ $stageChip = match ($deal['phase']) {
 
 <?= $editable ? budget_line_modal_html($pdo, $v, $money) : '' ?>
 <?= budget_small_modals_html($pdo, $sheet, $v, $versions) ?>
+<?= $deal['phase'] === 'pipeline' ? flow_send_modal_html($pdo, $flowDeal, $self()) : '' ?>
 <script src="<?= asset_url('budget.js') ?>" defer></script>
 <?php render_footer();

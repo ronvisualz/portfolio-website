@@ -80,9 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$dealEdit) throw new RuntimeException('Sem permissão para mudar este negócio.');
                 if (!in_array($deal['phase'], ['production', 'done'], true)) throw new RuntimeException('As etapas de produção começam no Kickoff.');
                 $snap = undo_deal_snapshot($deal) + ['prod_step' => $deal['prod_step']];
-                $msg = deal_step_set($pdo, $file, (string)($_POST['step'] ?? ''));
+                require_once __DIR__ . '/inc/pipeline_flow.php';
+                flow_created(null, true);
+                $msg = deal_step_set($pdo, $file, (string)($_POST['step'] ?? ''), (string)($_POST['force'] ?? ''));
                 $now = deal_get($pdo, $id);
-                flash($msg, 'ok', undo_push('deal_step', $snap + ['to_stage' => (int)$now['stage_id'], 'to_step' => $now['prod_step']]));
+                flash($msg, 'ok', undo_push('deal_step', $snap + ['to_stage' => (int)$now['stage_id'], 'to_step' => $now['prod_step'], 'auto_tasks' => flow_created()]));
                 break;
 
             // ── concluir, com a checklist de fecho (§15.5) ──
@@ -94,7 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $snap = undo_deal_snapshot($deal);
                 $flags = deal_flags_snapshot($deal);
                 // deal_move tem a sua própria transação; as ações opcionais vêm depois, com o negócio já concluído.
-                deal_move($pdo, $deal, $doneStage);
+                require_once __DIR__ . '/inc/pipeline_flow.php';
+                flow_created(null, true);
+                deal_move($pdo, $deal, $doneStage, (string)($_POST['force'] ?? ''));
+                $snap['auto_tasks'] = flow_created();
                 if (!empty($_POST['delivered']) && !$deal['delivered_at']) deal_mark_delivered($pdo, $deal, true);
                 if (!empty($_POST['portfolio']) && !$deal['portfolio_at']) { [$t, $i] = deal_send_portfolio($pdo, $file, (int)$me['id']); $flags['tasks'][] = $t; if ($i) $flags['ideas'][] = $i; }
                 if (!empty($_POST['testimonial']) && !$deal['testimonial_at']) $flags['tasks'][] = deal_ask_testimonial($pdo, $file, (int)$me['id']);
@@ -296,7 +301,14 @@ render_flashes();
     </div>
     <p class="df-sub">Cliente <b><?= e((string)($file['client_name'] ?: '—')) ?></b> · trazido por <?= e((string)($file['brought_name'] ?: '—')) ?>
       · responsável <?= e((string)($owner ?: 'por atribuir')) ?> · funil <?= e((string)($funnel['name'] ?? '—')) ?> · <?= e($vatTxt) ?></p>
-    <?php if ($steps): ?>
+    <?php if ($deal['funnel_id'] && $deal['stage_id'] && (!$steps || $steps['mode'] === 'stage')):
+        // As etapas do funil numa linha (§19.8), como no painel do Pipeline.
+        require_once __DIR__ . '/inc/pipeline_view.php'; ?>
+      <form method="post" class="df-flow" aria-label="Etapas do funil">
+        <?= csrf_field() ?><input type="hidden" name="do" value="step"><input type="hidden" name="id" value="<?= $id ?>">
+        <?= flow_stepper_html($pdo, $deal, ['steps' => $dealEdit && $prodPhase, 'close' => $dealEdit && $deal['phase'] === 'production']) ?>
+      </form>
+    <?php elseif ($steps): ?>
       <form method="post" class="df-steps" aria-label="Etapas de produção">
         <?= csrf_field() ?><input type="hidden" name="do" value="step"><input type="hidden" name="id" value="<?= $id ?>">
         <?php foreach ($steps['items'] as $i => $s):
@@ -314,9 +326,7 @@ render_flashes();
             <?php endif; ?>
         <?php endforeach; ?>
       </form>
-      <?php if ($steps['mode'] === 'step'): ?><p class="df-hint">Etapas de produção da casa; quando o funil tiver etapas de produção próprias, a barra passa a usá-las.</p><?php endif; ?>
-    <?php elseif ($deal['phase'] === 'pipeline'): ?>
-      <p class="df-hint">Na fase comercial (<?= e($stage['name'] ?? '—') ?>). As etapas de produção começam no Kickoff.</p>
+      <p class="df-hint">Etapas de produção da casa; quando o funil tiver etapas de produção próprias, a barra passa a usá-las.</p>
     <?php endif; ?>
   </div>
   <div class="df-acts">
@@ -380,6 +390,20 @@ render_flashes();
   <?php foreach ($attention as [$t, $cls, $tip]): ?><span class="att <?= $cls ?>" role="listitem" data-tip="<?= e($tip) ?>" tabindex="0"><?= $cls === 'g' ? icon('check') : ($cls === 'r' ? icon('alert') : '') ?><?= e($t) ?></span><?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<?php // ── etapas e gates, responsáveis, faturação, rondas, proposta (§19.8) ──
+require_once __DIR__ . '/inc/pipeline_view.php';
+[$flKv, $flForm] = flow_people_html($pdo, $deal, $self);
+$flSide = flow_billing_html($pdo, $deal, $self) . flow_rounds_html($pdo, $deal, $self) . flow_proposal_html($pdo, $deal, $self);
+?>
+<div class="fl-ficha">
+  <?= flow_stages_html($pdo, $deal, $self) ?>
+  <div class="fl-ficha-side">
+    <section class="lv-blk fl-people"><h4>Responsáveis e datas <span class="h-sub">comercial fica até ao fim · execução na produção</span></h4><div class="kv"><?= $flKv ?></div><?= $flForm ?>
+      <p class="small"><a class="lnk" href="<?= e(nav_to('/admin/xray.php?id=' . $id)) ?>"><?= icon('checklist') ?> X-Ray<?= !empty($deal['xray_validated_at']) ? ' (validado)' : '' ?></a></p></section>
+    <?= $flSide ?>
+  </div>
+</div>
 
 <div class="dcards">
 <?php
@@ -724,7 +748,7 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
     <p class="muted">Fica ligada ao negócio e aparece também em Tarefas.</p>
     <div class="kinds" role="radiogroup" aria-label="Tipo de tarefa">
       <?php foreach (LEAD_TASK_KINDS as $k => [$label, $ico]): ?>
-        <label class="kind" data-tip="<?= e($label) ?>"><input type="radio" name="kind" value="<?= $k ?>"<?= $k === 'task' ? ' checked' : '' ?>><span aria-hidden="true"><?= icon($ico) ?></span><span class="sr"><?= e($label) ?></span></label>
+        <label class="kind <?= lead_kind_class($k) ?>" data-tip="<?= e($label) ?>"><input type="radio" name="kind" value="<?= $k ?>"<?= $k === 'task' ? ' checked' : '' ?>><span aria-hidden="true"><?= icon($ico) ?></span><span class="sr"><?= e($label) ?></span></label>
       <?php endforeach; ?>
     </div>
     <input type="text" name="title" maxlength="200" placeholder="O quê? (ex.: Enviar a v2 ao cliente)" aria-label="O quê">
@@ -755,5 +779,6 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
 </div>
 <?php endif; ?>
 
+<?= flow_send_modal_html($pdo, $deal, $self) ?>
 <script src="<?= asset_url('deal.js') ?>" defer></script>
 <?php render_footer();

@@ -95,6 +95,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'budget') 
     redirect('/admin/conta.php#orcamentacao');
 }
 
+// Pipeline (§19.3): as condições de pagamento por defeito das propostas. Só admins.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'pay_terms') {
+    csrf_check();
+    if (!$isAdmin) { http_response_code(403); exit('Sem permissão.'); }
+    $set = $pdo->prepare(db_is_sqlite($pdo)
+        ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+        : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)');
+    foreach (['pay_terms_default', 'pay_terms_large', 'pay_terms_buddy'] as $k) $set->execute([$k, mb_substr(trim((string)($_POST[$k] ?? '')), 0, 500)]);
+    $lim = money_in($_POST['pay_terms_threshold'] ?? '');
+    if ($lim > 0) $set->execute(['pay_terms_threshold', (string)$lim]);
+    flash('Condições de pagamento guardadas. Valem para as propostas novas.');
+    redirect('/admin/conta.php#funis');
+}
+
 // Marketing (§16): cadência alvo por semana e os pilares de conteúdo. Só admins.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mkt_targets', 'mkt_pillars'], true)) {
     csrf_check();
@@ -379,6 +393,27 @@ render_flashes();
       <textarea id="b-cond" name="budget_conditions" rows="3" maxlength="4000"><?= e((string)lead_setting($pdo, 'budget_conditions', '')) ?></textarea></div>
   </div>
   <div class="actions"><button class="btn" type="submit">Guardar Orçamentação</button></div>
+</form>
+<?php endif; ?>
+
+<?php if ($isAdmin && db_has_table($pdo, 'proposals')): $ps = fn(string $k) => e((string)setting($pdo, $k, '')); ?>
+<h2 id="funis">Funis e automações</h2>
+<div class="panel" style="max-width:720px">
+  <p class="muted" style="margin-top:0">Os funis, as etapas, as perguntas do X-Ray, as rondas de revisão incluídas e as tarefas automáticas de cada etapa (com os gates).
+    Só superadmin e admins mudam as automações.</p>
+  <p><a class="btn" href="/admin/funis.php"><?= icon('pipeline') ?> Abrir Funis e automações</a></p>
+</div>
+<form method="post" class="panel" style="max-width:720px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="pay_terms">
+  <h3 style="margin-top:0">Condições de pagamento por defeito (propostas)</h3>
+  <div class="grid">
+    <div class="field wide"><label for="pt-d">Até ao limite</label><input type="text" id="pt-d" name="pay_terms_default" maxlength="500" value="<?= $ps('pay_terms_default') ?>"></div>
+    <div class="field"><label for="pt-t">Limite (€ s/ IVA)</label><input type="text" id="pt-t" name="pay_terms_threshold" inputmode="decimal" maxlength="12" value="<?= $ps('pay_terms_threshold') ?>"></div>
+    <div class="field wide"><label for="pt-l">Acima do limite</label><input type="text" id="pt-l" name="pay_terms_large" maxlength="500" value="<?= $ps('pay_terms_large') ?>"></div>
+    <div class="field wide"><label for="pt-b">Marketing Buddy (avença)</label><input type="text" id="pt-b" name="pay_terms_buddy" maxlength="500" value="<?= $ps('pay_terms_buddy') ?>"></div>
+  </div>
+  <p class="muted small">Sugeridas na folha de orçamento, em «Proposta». Por defeito: 50% adjudicação / 50% entrega; acima de 10 000 €: 40% / 40% / 20%; Marketing Buddy mensal adiantado, mínimo 3 meses.</p>
+  <div class="actions"><button class="btn" type="submit">Guardar condições</button></div>
 </form>
 <?php endif; ?>
 

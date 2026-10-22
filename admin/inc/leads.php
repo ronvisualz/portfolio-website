@@ -39,12 +39,17 @@ const LEAD_TASK_KINDS = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],
     'task'     => ['Tarefa', 'checklist'],
-    'document' => ['Documento', 'note'],
+    'document' => ['Documento', 'file'],
     'email'    => ['Email', 'mail'],
     'lunch'    => ['Almoço', 'utensils'],
     'dinner'   => ['Jantar', 'wine'],
     'event'    => ['Evento', 'calendar'],
 ];
+
+/** A cor do tipo, a mesma da aba Tarefas. */
+function lead_kind_class(string $k): string {
+    return 'ty-' . (isset(LEAD_TASK_KINDS[$k]) ? $k : 'task');
+}
 
 const TASK_REPEAT = ['' => 'Não repetir', 'daily' => 'Todos os dias', 'weekly' => 'Todas as semanas', 'monthly' => 'Todos os meses'];
 
@@ -448,7 +453,7 @@ function member_for_user(PDO $pdo, ?int $userId): ?int {
 
 /** Cria uma tarefa ligada à lead (aparece também na aba Tarefas). $due «aaaa-mm-dd hh:mm» (Lisboa) ou null. */
 function lead_task_create(PDO $pdo, array $l, string $kind, string $title, string $notes, ?string $due, ?int $duration,
-                          ?int $assigneeUserId, string $repeat = '', ?int $by = null): int {
+                          ?int $assigneeUserId, string $repeat = '', ?int $by = null, string $platform = '', string $location = ''): int {
     require_once __DIR__ . '/tasks.php';
     $kind = isset(LEAD_TASK_KINDS[$kind]) ? $kind : 'task';
     $member = member_for_user($pdo, $assigneeUserId);
@@ -462,6 +467,12 @@ function lead_task_create(PDO $pdo, array $l, string $kind, string $title, strin
     )->execute([mb_substr($title, 0, 200), $notes, $member, (int)$l['id'], $date, $time, $duration, $kind,
                 isset(TASK_REPEAT[$repeat]) ? $repeat : '', task_next_position($pdo, $member), $now, $now, $by]);
     $tid = (int)$pdo->lastInsertId();
+    // Reunião: Meet, Discord ou presencial (com local); almoço, jantar e evento: o local.
+    $platform = $kind === 'meeting' && in_array($platform, ['meet', 'discord'], true) ? $platform : '';
+    $location = ($kind === 'meeting' && $platform === '') || in_array($kind, ['lunch', 'dinner', 'event'], true) ? trim(mb_substr($location, 0, 200)) : '';
+    if (($platform !== '' || $location !== '') && db_has_column($pdo, 'tasks', 'platform')) {
+        $pdo->prepare('UPDATE tasks SET platform = ?, location = ? WHERE id = ?')->execute([$platform, $location, $tid]);
+    }
     deal_log($pdo, (int)$l['id'], 'task_new', ['note' => LEAD_TASK_KINDS[$kind][0] . ' · ' . $title, 'user_id' => $by]);
     return $tid;
 }
@@ -593,6 +604,9 @@ function lead_convert(PDO $pdo, array $lead, int $funnelId, int $contactId): str
         if ($lead['person_id'] && (int)$lead['person_id'] !== $contactId) $pdo->prepare($ins)->execute([$lead['id'], (int)$lead['person_id'], 'Contacto']);
         deal_log($pdo, (int)$lead['id'], 'convert', ['to_funnel' => $funnelId, 'to_stage' => $xray]);
         $pdo->commit();
+        // As tarefas automáticas do X-Ray (§19.6 A).
+        require_once __DIR__ . '/pipeline_flow.php';
+        flow_on_enter($pdo, (int)$lead['id'], $xray);
         return $code;
     } catch (Throwable $e) {
         $pdo->rollBack();

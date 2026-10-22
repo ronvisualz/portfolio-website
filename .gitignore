@@ -17,3 +17,4 @@ admin/inc/ai_config.php
 admin/inc/meet_config.php
 # Fotos de perfil (Equipa): ficam só no servidor.
 admin/inc/avatars/
+admin/inc/billing/

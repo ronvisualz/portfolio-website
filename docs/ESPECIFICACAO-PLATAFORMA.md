@@ -1140,6 +1140,158 @@ Ficheiros novos: `inc/migrate_tasks.php`, `inc/tasks_view.php`. Reescritos: `cal
 
 ---
 
+### 10.11 Pipeline, funis e automações — §19 (22 out 2026)
+
+A §19 está aplicada (a estrutura e os valores iniciais da §19.5–19.6, todos editáveis). Base de dados
+**versão 21** (`inc/migrate_pipeline.php`): funis com perguntas do X-Ray; etapas com papel fixo
+(Proposta, Aguardar feedback), requisito da etapa ligado/desligado e rondas de revisão incluídas;
+`stage_automations` com gatilho, tipo, responsável, prazo, obrigatória, documento pedido, repetição e
+checklist; nos negócios `exec_owner_id`, `delivery_date`, `shoot_date`, `xray` (+ validação),
+`stage_entered_at`; nas tarefas `auto_rule_id`, `stage_id`, `is_gate`, `doc_kind`; nos orçamentos as
+linhas `opt` (A/B) e na versão o âmbito e a margem da B, prazo, pagamento, revisões, direitos, validade
+e a opção aceite; tabelas `proposals`, `deal_billing` e `deal_rounds`. Motor em `inc/pipeline_flow.php`,
+ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
+
+- **Funis (19.5):** 6 funis — VFX & Pós-produção, CGI / 3D, **Adverts** (novo), Campanhas, Ads,
+  Marketing Buddy — com as etapas de produção da §19.5 (os funis base não tinham nenhuma; não se
+  tocou em etapas que já existissem). **Proposta** e **Aguardar feedback** entram em todos os funis,
+  também nos combinados. Um funil novo (ou combinado, §9.1) nasce com as etapas fixas, junta as
+  perguntas do X-Ray dos funis de origem e copia as automações das etapas iguais.
+- **Gates (19.1):** verificados no servidor em **todos** os movimentos (arrastar no quadro, «Avançar»,
+  barra de etapas da ficha, Concluir). Para a frente só uma etapa de cada vez e com os requisitos
+  cumpridos: os da etapa (X-Ray preenchido e validado · Opção A com linhas, prazo, pagamento,
+  revisões, direitos, validade e PDF · resposta do cliente validada) e as **tarefas obrigatórias**
+  criadas nela. Para trás passa sempre. **Forçar:** só admins, com motivo obrigatório, fica no
+  histórico («Passagem forçada …: motivo · faltava: …»); com «Anular». Uma tarefa obrigatória só um
+  admin a elimina. No quadro, cada cartão mostra «n/m» requisitos (dica com o que falta).
+- **Automações (19.6, 19.7):** as tarefas da §19.6 (A comercial, B fecho, C por funil) são os valores
+  iniciais: 45 regras no VFX, por exemplo. Gatilhos: entra na etapa · data do negócio (entrega,
+  rodagem, validade) · todos os meses (avenças, no dia escolhido) · ao validar a aceitação · ao
+  validar um pagamento. Responsável: comercial · execução · comercial com a execução a participar ·
+  chefe de departamento · pessoa · por atribuir — **nunca o superadmin** (sem responsável válido vai
+  para «Por atribuir»). Prazo em dias úteis desde a entrada ou relativo à entrega/rodagem (−5 = antes);
+  títulos com {cliente} {negócio} {ID} {etapa}. Cada regra cria a tarefa uma vez por negócio (as
+  mensais uma por mês); mudar as datas do negócio move os prazos das tarefas que dependem delas;
+  mudar o responsável passa-lhe as tarefas automáticas abertas. «Anular» um movimento retira as
+  tarefas que ele criou (se ninguém lhes mexeu). As de data e mensais correm todas as noites com a
+  cópia de segurança (`cron_run.php backup`; também `cron_run.php pipeline`).
+- **Definições › Funis e automações** (`funis.php`, ligação em Definições e no ⌘K): separador por
+  funil; nome, perguntas do X-Ray, etapas (renomear, ordenar, eliminar as variáveis, rondas incluídas,
+  requisito da etapa); por etapa as regras em frase legível («Quando o negócio entra em Kickoff → criar
+  Documento «…» para responsável comercial com prazo +2 dias úteis · OBRIGATÓRIA») com Editar,
+  Duplicar, Ativar/Desativar, ↑ ↓, Eliminar (com «Anular»), **Aplicar a todos os funis** e
+  **Pré-visualizar** («ao entrar em Kickoff vão ser criadas estas 6 tarefas»). Só superadmin e admins
+  mudam as automações (os outros com acesso de gestão ao Pipeline veem-nas). Mudar uma regra não mexe
+  nas tarefas já criadas. Em Definições também as **condições de pagamento por defeito** (50/50;
+  acima de 10 000 €: 40/40/20; Marketing Buddy mensal adiantado, mínimo 3 meses).
+- **X-Ray (19.2):** `xray.php` — campos comuns (decisor e aprovadores, objetivo, entregáveis,
+  formatos, referências, prazo, **faixa de orçamento**, ativos, como nos encontrou, concorrência,
+  uso/território/duração), pontuação 1–3 (orçamento, autoridade, necessidade, prazo; n/12 no painel),
+  perguntas do funil e as secções «Pedido do cliente» e «Proposta de valor». Validar é do
+  comercial ou de um admin e só com os obrigatórios; validar conclui a tarefa «Preencher e validar o
+  X-Ray»; mudar um X-Ray validado tira a validação.
+- **Orçamento com duas opções (19.3, altera §14):** separadores **Opção A · Pedido** / **Opção B ·
+  Proposta de valor** na folha, cada uma com as suas linhas, preço, margem (a B pode ter a sua) e
+  lucro/mês; «Começar a partir da Opção A» copia as linhas. Bloco «Proposta» com o âmbito de cada
+  opção, prazo, validade, condições de pagamento (sugere as de Definições pelo valor/funil), revisões
+  incluídas e preço da ronda extra, direitos de utilização e outras condições. O **PDF** mostra as
+  duas opções lado a lado, o investimento de cada uma e estas condições. Resultado, valor do negócio e
+  Financeiro seguem a opção aceite. Uma versão enviada ao cliente fica bloqueada (mudar = nova versão).
+- **Resposta do cliente (19.4):** «Enviar» (no painel, com os requisitos ✓/✗) cria um link com
+  token (só o hash fica na base), válido até à validade, e envia um email com **um único botão** «Ver
+  e responder à proposta»; o negócio passa a Aguardar feedback; enviar outra vez invalida o link
+  anterior. `proposta.php` é pública e **sem sessão** (não toca na sessão de quem esteja ligado):
+  **GET só mostra** (opções, preços c/ e s/ IVA, condições, validade) e não escreve nada; aceitar é
+  **POST** com a opção, «Li e aceito as condições» e o **nome escrito**; recusar pede o nome e um motivo
+  opcional; formulário assinado pelo servidor (HMAC, 24 h) e mesma origem. Regista data/hora, IP,
+  navegador, nome, opção, versão e hash do conteúdo (se a proposta mudar, o link deixa de aceitar);
+  confirmação por email ao cliente e ao comercial; o cliente pode mudar a resposta até à validação.
+  **Nada passa sozinho:** chega «Resposta do cliente: aceitou a Opção B» (notificação ao comercial) e
+  o comercial (ou um admin) carrega em **Validar** (aceite → versão aceite com a opção, Kickoff e as
+  regras «ao validar a aceitação»; recusa → Perdido com o motivo) ou **Contactar cliente** (cria a
+  chamada; a resposta fica por validar).
+- **Faturação (19.6 E, 19.9):** a plataforma **não emite faturas**. «Emitir fatura …» só fica feita
+  quando o documento é submetido no negócio (número, data, s/ IVA, IVA, total que tem de bater certo,
+  PDF verificado); «Validar pagamento» pede a data de receção (valor e comprovativo opcionais) e dispara
+  as regras «ao validar um pagamento»; o pagamento final (em Concluído) marca o negócio como pago.
+  Estas tarefas não se concluem à mão (Tarefas, Leads, Contactos, ficha). O PDF vai para a pasta do
+  negócio no Drive (`Faturas/`) quando o Drive está ligado, senão para uma pasta privada do servidor;
+  descarrega-se pelo negócio (comercial, Financeiro ou admins). A integração com o Financeiro fica
+  para o desenho dessa aba.
+- **Rondas (19.6 D):** nas etapas com rondas incluídas, «Registar ronda» conta-as; acima do incluído
+  fica no histórico como pedido de alteração orçamentado e o comercial é notificado.
+- **Comercial e Execução (19.10):** dois responsáveis por negócio, atribuídos por um admin no painel;
+  o comercial fica até ao fim; notificações ao comercial quando outra pessoa passa um gate de produção
+  ou quando as rondas se esgotam; ao entrar em Concluído o cliente passa às **Relações** com o
+  comercial como dono.
+- **Painel do negócio (19.8):** no Pipeline o cartão abre o painel ao lado (igual ao da lead): resumo,
+  comercial/execução/datas, atalhos (X-Ray · Orçamento · Proposta · Ficha do negócio a partir do
+  Kickoff · Drive), barra de etapas com os requisitos ✓/✗ (as tarefas obrigatórias concluem-se ali),
+  Avançar / Forçar, proposta e resposta, faturação, rondas, Nova ação, Foco e Notas & Histórico; as
+  ações voltam com o painel aberto. A ficha da aba Negócios tem os mesmos blocos.
+- **Ajustes de 22 out (aprovados na demonstração):** o topo azul do painel ocupa a largura toda e
+  mostra as etapas do funil **numa linha** (feitas ✓, a atual em amarelo com «Etapa atual», as
+  seguintes apagadas; desliza na horizontal no telemóvel); a mesma linha, conforme o funil do
+  negócio, substitui a barra de etapas da ficha na aba Negócios (as de produção carregam-se para
+  mudar de etapa, com os gates e «Anular»; «Concluído» abre a checklist de fecho). «Nova ação» deu
+  lugar a **Nova tarefa**, logo a seguir a «Para avançar»: o botão e os atalhos por tipo abrem o
+  formulário da aba Tarefas (§18.7) com o negócio escolhido; gravar volta ao negócio com o painel
+  aberto. **Arrastar cartões** (Quadro da equipa e quadro do Pipeline): o arrastar nativo do browser
+  foi trocado por um próprio que funciona com rato, trackpad e dedo (pressão longa de ~0,3 s e
+  arrastar; um toque rápido ou um deslize continuam a abrir/deslocar); junto às margens o quadro
+  desliza. Os cartões agrupados («Chamadas de leads · n») não se arrastam: abrem a fila.
+- **Ajustes de 22 out (segunda ronda):**
+  - **Enviar a proposta** abre uma **pré-visualização** (folha de orçamento, painel do Pipeline e
+    ficha): requisitos ✓/✗, email do cliente, mensagem opcional (entra no email, a seguir à
+    introdução), o email tal como o cliente o recebe (assunto, texto, botão «Ver e responder à
+    proposta», validade), as opções com preço s/ e c/ IVA e «Ver o PDF». O texto do email é o
+    mesmo no envio e na pré-visualização (`proposal_email`). Fora da etapa Proposta / Aguardar
+    feedback o botão aparece desligado com o motivo (`flow_can_send`).
+  - **PDF da proposta** abre num **separador novo**, para ver no browser (inline). O cookie da
+    sessão passou de `SameSite=Strict` a `Lax`: com Strict, o Safari não o enviava ao voltar atrás
+    de um PDF (nem ao abrir um link de um email) e a página de entrada criava uma sessão nova —
+    parecia um logout. Os POST de outros sites continuam sem cookie e levam token CSRF.
+  - **Tarefas › Tarefas:** o filtro de tipo passou a um botão **«Tipo de tarefa»** que abre uma
+    caixa com os 15 tipos (5 × 3, ícone e nome); a Origem segue o mesmo modelo (3 × 2). Aparece
+    **«Limpar filtros»** quando algum filtro difere do que a aba mostra ao abrir. Depois de «Ver uma
+    a uma» há **«Voltar a agrupar»**. Cada linha mostra o **prazo** (data · hora; por baixo a duração
+    e «vencido há 3d 19h», «daqui a 2h», «amanhã», «em 5 dias») e as **ações rápidas** subtis:
+    **Adiar** (+1 dia, +3 dias, +1 semana — a partir do prazo, ou de hoje se já passou — ou
+    Personalizar com data e hora; fica no histórico da tarefa e tem «Anular»), Editar e Abrir o
+    negócio/lead. No telemóvel o prazo passa para baixo do título.
+  - **Ficha da lead e Nova tarefa do negócio:** os ícones dos tipos são os da aba Tarefas, com as
+    mesmas cores (Documento passou ao ícone de ficheiro; Almoço, Jantar e Evento na cor de Reunião).
+  - **Terceira ronda:** o filtro **«Quem»** passou a um só botão («Quem: Eu») que abre a lista
+    (Eu, Todos, Por atribuir e cada pessoa, com as iniciais na cor dela). **Almoço, Jantar e Evento**
+    passam a tipos da aba Tarefas (19 tipos; o filtro mostra 18, em 6 × 3), cada um com a sua cor
+    (Reunião violeta, Almoço âmbar, Jantar bordeaux, Evento verde-oliva); levam o campo **Local**.
+    Na Nova ação da lead, **Reunião** mostra Google Meet · Discord · Presencial (com Local), como na
+    aba Tarefas. No Pipeline, a coluna Kickoff aponta para Negócios: o quadro mostra só as etapas
+    comerciais; as de produção seguem em Negócios › Em produção.
+  - **Correções:** a bolinha amarela da etapa atual já não fica cortada em cima; no formulário de
+    tarefa, Data, Hora e Duração já não se sobrepõem no iPad (as caixas de data/hora do Safari têm
+    largura própria — agora encolhem à coluna).
+- **Testado na bancada** (MariaDB, Playwright): migração idempotente; X-Ray → Proposta → envio →
+  página do cliente (GET sem escrita nem cookie, POST sem a caixa ou com assinatura errada recusado) →
+  validação → Kickoff (Opção B, valor do negócio) → fatura e pagamento → produção, forçar e anular,
+  não-admin a forçar recusado, Colab sem acesso ao negócio nem ao editor; recusa → Perdido; conversão
+  de lead cria as tarefas do X-Ray; superadmin como dono → tarefas por atribuir; mensais uma vez por
+  mês; funil combinado com etapas, perguntas e 58 regras; claro/escuro e telemóvel sem deslocamento.
+- **Não feito / a decidir:** os negócios que já estavam numa etapa antes da versão 21 não recebem
+  tarefas retroativas (só ao entrarem na etapa seguinte); faturação ligada ao Financeiro e software
+  certificado (§19.9); a fase do Marketing Buddy não leva as tarefas de entrega do fecho (B) por ser
+  uma avença.
+
+Ficheiros novos: `inc/migrate_pipeline.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`,
+`deal_flow.php`, `xray.php`, `proposta.php`. Reescrito: `funis.php`. Alterados: `inc/pipeline.php`
+(gates e automações em `deal_move`), `inc/budget.php`, `inc/budget_view.php`, `inc/budget_pdf.php`,
+`orcamento.php`, `assets/budget.js`, `ui_api.php`, `pipeline.php`, `negocio.php`, `inc/panel.php`,
+`inc/deal_file.php`, `inc/leads.php`, `inc/tasks.php`, `tasks_api.php`, `calendar.php`, `inc/undo.php`,
+`inc/alerts.php`, `inc/interactions.php`, `inc/cron_run.php`, `inc/bootstrap.php` (página sem sessão),
+`conta.php`, `assets/app.js`, `assets/app.css`.
+
+---
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

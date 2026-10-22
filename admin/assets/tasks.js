@@ -1,7 +1,8 @@
 /**
  * topper. admin — aba Tarefas (§18)
- *   · lista: grupos recolhíveis (lembra-se do que fechou), concluir / reabrir com «Anular»
- *   · quadro: «Pegar», «Pedir ajuda», arrastar um cartão para outra coluna
+ *   · lista: grupos recolhíveis (lembra-se do que fechou), concluir / reabrir e «Adiar» com «Anular»
+ *   · filtros «Tipo de tarefa» e «Origem» em caixa
+ *   · quadro: «Pegar», «Pedir ajuda», arrastar um cartão para outra coluna (rato ou dedo)
  *   · «+ Nova tarefa»: tipo só com ícones, atalhos de tempo, reunião Meet/Discord/presencial
  *   · agenda: abre na hora atual, linha de «agora», arrastar na grelha para criar
  */
@@ -57,33 +58,95 @@
     }).catch(function (er) { b.disabled = false; T().toast(er.message, { err: true }); });
   });
 
-  // ── quadro: arrastar um cartão para outra coluna ──────────
-  var board = $('[data-board]'), drag = null;
-  if (board) {
-    board.addEventListener('dragstart', function (e) {
-      var c = e.target.closest('.bcard[draggable="true"]'); if (!c) return;
-      drag = c; c.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.getAttribute('data-task'));
+  // ── filtros «Tipo de tarefa» e «Origem»: uma caixa aberta de cada vez; fecha ao clicar fora ou Esc ──
+  var pops = $$('[data-fpop]');
+  pops.forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (!d.open) return;
+      pops.forEach(function (o) { if (o !== d) o.open = false; });
+      // Junto à margem direita, a caixa abre para a esquerda.
+      var box = $('.fpop-box', d); box.classList.remove('to-left');
+      if (box.getBoundingClientRect().right > document.documentElement.clientWidth - 8) box.classList.add('to-left');
     });
-    board.addEventListener('dragend', function () {
-      if (drag) drag.classList.remove('dragging'); drag = null;
-      $$('.bcol.over', board).forEach(function (c) { c.classList.remove('over'); });
+  });
+  document.addEventListener('click', function (e) { pops.forEach(function (d) { if (d.open && !d.contains(e.target)) d.open = false; }); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    pops.forEach(function (d) { if (d.open) { d.open = false; $('summary', d).focus(); } });
+  });
+
+  // ── «Adiar»: +1 dia · +3 dias · +1 semana · Personalizar (data e hora) ──
+  var snz = $('[data-snz]'), snzBtn = null;
+  var WD = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  function snzClose() { if (!snz || snz.hidden) return; snz.hidden = true; if (snzBtn) { snzBtn.setAttribute('aria-expanded', 'false'); snzBtn.focus(); } snzBtn = null; }
+  function snzSend(data) {
+    var row = snzBtn && snzBtn.closest('.trow');
+    data.do = 'snooze'; data.id = snzBtn.getAttribute('data-snooze');
+    $$('button', snz).forEach(function (b) { b.disabled = true; });
+    api(data).then(function (j) {
+      snz.hidden = true; snzBtn = null;
+      if (row) row.classList.add('gone');
+      setTimeout(function () { later(j); }, 200);
+    }).catch(function (er) { T().toast(er.message, { err: true }); })
+      .then(function () { $$('button', snz).forEach(function (b) { b.disabled = false; }); });
+  }
+  if (snz) {
+    document.body.appendChild(snz);   // posição na página (acompanha o scroll)
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-snooze]');
+      if (b) {
+        e.preventDefault();
+        if (snzBtn === b) { snzClose(); return; }
+        snzBtn = b; b.setAttribute('aria-expanded', 'true');
+        // A data de cada opção conta a partir do prazo (ou de hoje, se já passou).
+        var today = ymd(new Date()), due = b.getAttribute('data-due') || '', base = due > today ? due : today;
+        $$('[data-to]', snz).forEach(function (s) {
+          var d = new Date(base + 'T12:00:00'); d.setDate(d.getDate() + (+s.getAttribute('data-to')));
+          s.textContent = WD[d.getDay()] + ' ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1);
+        });
+        var c = $('[data-snz-custom]', snz);
+        c.hidden = true; $('[data-when="custom"]', snz).setAttribute('aria-expanded', 'false');
+        c.date.value = base; c.time.value = b.getAttribute('data-time') || '';
+        snz.hidden = false;
+        var r = b.getBoundingClientRect(), w = snz.offsetWidth;
+        snz.style.left = (window.scrollX + Math.max(8, Math.min(document.documentElement.clientWidth - w - 8, r.right - w))) + 'px';
+        snz.style.top = (window.scrollY + (r.bottom + 6 + snz.offsetHeight > window.innerHeight ? Math.max(8, r.top - snz.offsetHeight - 6) : r.bottom + 6)) + 'px';
+        $('button', snz).focus();
+        return;
+      }
+      if (!snz.hidden && !snz.contains(e.target)) snzClose();
     });
-    board.addEventListener('dragover', function (e) {
-      var col = e.target.closest('.bcol'); if (!col || !drag || drag.closest('.bcol') === col) return;
+    snz.addEventListener('click', function (e) {
+      var o = e.target.closest('[data-when]'); if (!o) return;
+      var w = o.getAttribute('data-when');
+      if (w === 'custom') {
+        var c = $('[data-snz-custom]', snz); c.hidden = !c.hidden; o.setAttribute('aria-expanded', c.hidden ? 'false' : 'true');
+        if (!c.hidden) c.date.focus();
+        return;
+      }
+      snzSend({ when: w });
+    });
+    $('[data-snz-custom]', snz).addEventListener('submit', function (e) {
       e.preventDefault();
-      $$('.bcol.over', board).forEach(function (c) { if (c !== col) c.classList.remove('over'); });
-      col.classList.add('over');
+      snzSend({ when: 'custom', date: this.date.value, time: this.time.value });
     });
-    board.addEventListener('drop', function (e) {
-      var col = e.target.closest('.bcol'); if (!col || !drag || drag.closest('.bcol') === col) return;
-      e.preventDefault(); col.classList.remove('over');
-      var card = drag;
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') snzClose(); });
+  }
+
+  // ── quadro: arrastar um cartão para outra coluna ──────────
+  var board = $('[data-board]');
+  // Rato, trackpad e toque (pressão longa): o arrastar partilhado do app.js (que pode carregar
+  // depois deste ficheiro: espera por ele).
+  function bindBoard() {
+    if (!board || !T() || !T().dragCards) return;
+    $$('.bcard[draggable="true"]', board).forEach(function (c) { c.setAttribute('draggable', 'false'); c.setAttribute('data-drag', ''); });
+    T().dragCards(board, { card: '.bcard[data-drag]', col: '.bcol', drop: function (card, col) {
       $('.bcards', col).insertBefore(card, $('.bcards', col).firstChild);
       api({ do: 'move', id: card.getAttribute('data-task'), to: col.getAttribute('data-col') }).then(later)
         .catch(function (er) { T().toast(er.message, { err: true }); setTimeout(function () { location.reload(); }, 1200); });
-    });
+    } });
   }
+  if (T() && T().dragCards) bindBoard(); else document.addEventListener('DOMContentLoaded', bindBoard, { once: true });
 
   // ── «+ Nova tarefa» ───────────────────────────────────────
   var form = $('[data-task-form]');
@@ -95,7 +158,8 @@
     var plat = (form.querySelector('input[name=platform]:checked') || {}).value || '';
     form.setAttribute('data-kind', k);
     $$('[data-only="meeting"]', form).forEach(function (n) { n.hidden = k !== 'meeting'; });
-    $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !(k === 'meeting' && plat === ''); });
+    // Local: reunião presencial, almoço, jantar e evento.
+    $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0); });
     $$('[data-not="block"]', form).forEach(function (n) { n.hidden = k === 'block' || k === 'personal'; });
     var who = $('#tk-who', form); if (who) who.closest('.field').hidden = k === 'block' || k === 'personal';
     var busy = form.querySelector('input[name=busy][value="1"]');
@@ -103,6 +167,13 @@
     var title = $('#tk-title', form);
     if (title && k === 'block' && title.value === '') title.value = 'Bloqueio';
   }
+  // «Nova tarefa» de um tipo (painel do negócio): o formulário abre com esse tipo escolhido.
+  document.addEventListener('click', function (e) {
+    var k = e.target.closest && e.target.closest('[data-new][data-kind]');
+    if (!k || !form) return;
+    var r = form.querySelector('input[name=kind][value="' + k.getAttribute('data-kind') + '"]');
+    if (r) { r.checked = true; sync(); }
+  }, true);
   if (form) {
     form.addEventListener('change', function (e) { if (e.target.name === 'kind' || e.target.name === 'platform') sync(); });
     sync();

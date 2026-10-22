@@ -270,6 +270,12 @@ function task_update(PDO $pdo, array $old, array $v): void {
  */
 function task_done(PDO $pdo, int $id): ?int {
     $t = task_by_id($pdo, $id);
+    // Faturas, pagamentos e X-Ray (§19.6 E) só ficam feitos pelo documento/validação no negócio.
+    if ($t && $t['status'] !== 'done' && ($t['doc_kind'] ?? '') !== '') {
+        require_once __DIR__ . '/pipeline_flow.php';
+        $why = flow_task_needs_doc($t);
+        if ($why !== '') throw new RuntimeException($why);
+    }
     $now = task_now();
     $st = $pdo->prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ? AND status <> 'done'");
     $st->execute([$now, $now, $id]);
@@ -325,7 +331,7 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
         $old = $pdo->prepare('SELECT member_id, status FROM tasks WHERE id = ?');
         $old->execute([$id]);
         $row = $old->fetch();
-        if (!$row) throw new RuntimeException('not found');
+        if (!$row) throw new RuntimeException('Essa tarefa já não existe. Recarregue a página.');
         $oldMember = $row['member_id'] !== null ? (int)$row['member_id'] : null;
 
         // Tirada da coluna «Feito» para uma pilha: volta a «A fazer», no fim.
@@ -393,10 +399,13 @@ function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visib
 // Aba Tarefas (§18): tipos, origens, urgência, grupos automáticos, privacidade
 // ════════════════════════════════════════════════════════════
 
-/** Os 16 tipos (§18.6): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
+/** Os 19 tipos (§18.6; Almoço, Jantar e Evento vêm da ficha da lead): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
 const TASK_TYPES = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],
+    'lunch'    => ['Almoço', 'utensils'],
+    'dinner'   => ['Jantar', 'wine'],
+    'event'    => ['Evento', 'calendar'],
     'email'    => ['Email', 'mail'],
     'message'  => ['Mensagem / WhatsApp', 'bubble'],
     'followup' => ['Follow-up', 'refresh'],
@@ -432,7 +441,7 @@ const TASK_BOARD_MAX = 6;
 function task_type(array $t): string {
     $k = (string)($t['kind'] ?? 'task');
     if (isset(TASK_TYPES[$k])) return $k;
-    return ['relation' => 'followup', 'lunch' => 'meeting', 'dinner' => 'meeting', 'event' => 'meeting'][$k] ?? 'task';
+    return ['relation' => 'followup'][$k] ?? 'task';
 }
 
 /** A origem: pessoal, relação, Marketing, lead, negócio ou manual (feita aqui). */
@@ -473,6 +482,33 @@ function task_bucket(array $t, ?string $today = null): string {
 /** Instante unix de «aaaa-mm-dd hh:mm» em Lisboa (sem depender da aba Equipa). */
 function team_ts_local(string $local): int {
     return (new DateTimeImmutable($local, new DateTimeZone('Europe/Lisbon')))->getTimestamp();
+}
+
+/**
+ * O prazo de uma linha (§18.3): [«20/09/26 · 12:00», «30 min · vencido há 32d 5h», em atraso?].
+ * Sem hora, o prazo é o fim desse dia.
+ */
+function task_due_parts(array $t, ?int $now = null): array {
+    $d = (string)($t['due_date'] ?? '');
+    if ($d === '') return ['Sem prazo', '', false];
+    $now ??= time();
+    $time = $t['due_time'] ? substr((string)$t['due_time'], 0, 5) : '';
+    $abs = date('d/m/y', strtotime($d)) . ($time !== '' ? ' · ' . $time : '');
+    $at = $time !== '' ? team_ts_local($d . ' ' . $time) : team_ts_local($d . ' 00:00') + 86400;
+    $late = task_bucket($t) === 'late';
+    $span = function (int $s): string {
+        $m = intdiv($s, 60);
+        if ($m < 60) return max(1, $m) . ' min';
+        if ($m < 1440) return intdiv($m, 60) . 'h' . ($m % 60 ? ' ' . ($m % 60) . 'min' : '');
+        return intdiv($m, 1440) . 'd' . (intdiv($m % 1440, 60) ? ' ' . intdiv($m % 1440, 60) . 'h' : '');
+    };
+    $today = today_lisbon();
+    if ($late) $rel = 'vencido há ' . $span(max(60, $now - $at));
+    elseif ($d === $today) $rel = $time !== '' && $at > $now ? 'daqui a ' . $span($at - $now) : 'hoje';
+    elseif ($d === (new DateTimeImmutable($today))->modify('+1 day')->format('Y-m-d')) $rel = 'amanhã';
+    else $rel = 'em ' . (int)(new DateTimeImmutable($today))->diff(new DateTimeImmutable($d))->format('%a') . ' dias';
+    $dur = $time !== '' && (int)($t['duration_min'] ?? 0) ? (TASK_DURATIONS[(int)$t['duration_min']] ?? $t['duration_min'] . ' min') : '';
+    return [$abs, trim($dur . ($dur !== '' ? ' · ' : '') . $rel), $late];
 }
 
 /** «hoje 15:00», «ontem», «sex 30/10», «12/11». */
