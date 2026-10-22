@@ -5,6 +5,7 @@ require_once __DIR__ . '/inc/reach.php';
 require_once __DIR__ . '/inc/alerts.php';        // deal_url
 require_once __DIR__ . '/inc/interactions.php';  // histórico
 require_once __DIR__ . '/inc/budget_view.php';
+require_once __DIR__ . '/inc/pipeline_view.php';  // enviar a proposta (§19.4)
 $user = require_login();
 require_page('orcamentacao');
 
@@ -49,6 +50,7 @@ $back = nav_from();   // veio de outra página (ex.: a ficha do negócio): «Vol
 $listTab = budget_tab_of((string)$deal['phase']);
 
 $title = $deal['code'] . ' · ' . $deal['name'];
+$flowDeal = record_get($pdo, (int)$deal['id']) ?? [];   // o negócio completo (etapa, contacto) para enviar a proposta
 render_header($title, 'orcamentacao', '', [$title]);
 render_flashes();
 
@@ -119,7 +121,10 @@ $stageChip = match ($deal['phase']) {
       <?= budget_price_block($calc, $money) ?>
       <div class="bs-acts">
         <button type="button" class="btn" data-bpdf data-tip="Proposta para o cliente: as opções lado a lado, fases e prazos, preço s/ e c/ IVA e condições. Fica na pasta do negócio no Drive."><?= icon('file') ?> Gerar proposta (PDF)</button>
-        <?php if (in_array($deal['phase'], ['pipeline'], true)): ?><a class="btn ghost" href="/admin/pipeline.php?<?= e(http_build_query(['f' => $deal['funnel_id'], 'deal' => $deal['id']])) ?>#proposta"><?= icon('send') ?> Enviar ao cliente</a><?php endif; ?>
+        <?php if ($deal['phase'] === 'pipeline'): [$canSend, $whyNot] = flow_can_send($pdo, $flowDeal); ?>
+          <?php if ($canSend): ?><button type="button" class="btn ghost" data-new="#mdl-psend"><?= icon('send') ?> Enviar ao cliente</button>
+          <?php else: ?><span class="btn ghost off" aria-disabled="true"><?= icon('send') ?> Enviar ao cliente</span><small class="muted"><?= e($whyNot) ?></small><?php endif; ?>
+        <?php endif; ?>
         <?php if ($canEdit): ?>
           <button type="button" class="btn ghost" data-bmdl="#mdl-btpl-save"><?= icon('checklist') ?> Guardar como modelo</button>
           <?php if (!$sheet['closed_at']): ?><button type="button" class="btn ghost" data-bmdl="#mdl-btpl-apply"><?= icon('download') ?> A partir de um modelo</button><?php endif; ?>
@@ -146,5 +151,6 @@ $stageChip = match ($deal['phase']) {
 
 <?= $editable ? budget_line_modal_html($pdo, $v, $money) : '' ?>
 <?= budget_small_modals_html($pdo, $sheet, $v, $versions) ?>
+<?= $deal['phase'] === 'pipeline' ? flow_send_modal_html($pdo, $flowDeal, $self()) : '' ?>
 <script src="<?= asset_url('budget.js') ?>" defer></script>
 <?php render_footer();

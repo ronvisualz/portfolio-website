@@ -748,7 +748,7 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
     <p class="muted">Fica ligada ao negócio e aparece também em Tarefas.</p>
     <div class="kinds" role="radiogroup" aria-label="Tipo de tarefa">
       <?php foreach (LEAD_TASK_KINDS as $k => [$label, $ico]): ?>
-        <label class="kind" data-tip="<?= e($label) ?>"><input type="radio" name="kind" value="<?= $k ?>"<?= $k === 'task' ? ' checked' : '' ?>><span aria-hidden="true"><?= icon($ico) ?></span><span class="sr"><?= e($label) ?></span></label>
+        <label class="kind <?= lead_kind_class($k) ?>" data-tip="<?= e($label) ?>"><input type="radio" name="kind" value="<?= $k ?>"<?= $k === 'task' ? ' checked' : '' ?>><span aria-hidden="true"><?= icon($ico) ?></span><span class="sr"><?= e($label) ?></span></label>
       <?php endforeach; ?>
     </div>
     <input type="text" name="title" maxlength="200" placeholder="O quê? (ex.: Enviar a v2 ao cliente)" aria-label="O quê">
@@ -779,5 +779,6 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
 </div>
 <?php endif; ?>
 
+<?= flow_send_modal_html($pdo, $deal, $self) ?>
 <script src="<?= asset_url('deal.js') ?>" defer></script>
 <?php render_footer();

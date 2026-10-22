@@ -481,6 +481,33 @@ function team_ts_local(string $local): int {
     return (new DateTimeImmutable($local, new DateTimeZone('Europe/Lisbon')))->getTimestamp();
 }
 
+/**
+ * O prazo de uma linha (§18.3): [«20/09/26 · 12:00», «30 min · vencido há 32d 5h», em atraso?].
+ * Sem hora, o prazo é o fim desse dia.
+ */
+function task_due_parts(array $t, ?int $now = null): array {
+    $d = (string)($t['due_date'] ?? '');
+    if ($d === '') return ['Sem prazo', '', false];
+    $now ??= time();
+    $time = $t['due_time'] ? substr((string)$t['due_time'], 0, 5) : '';
+    $abs = date('d/m/y', strtotime($d)) . ($time !== '' ? ' · ' . $time : '');
+    $at = $time !== '' ? team_ts_local($d . ' ' . $time) : team_ts_local($d . ' 00:00') + 86400;
+    $late = task_bucket($t) === 'late';
+    $span = function (int $s): string {
+        $m = intdiv($s, 60);
+        if ($m < 60) return max(1, $m) . ' min';
+        if ($m < 1440) return intdiv($m, 60) . 'h' . ($m % 60 ? ' ' . ($m % 60) . 'min' : '');
+        return intdiv($m, 1440) . 'd' . (intdiv($m % 1440, 60) ? ' ' . intdiv($m % 1440, 60) . 'h' : '');
+    };
+    $today = today_lisbon();
+    if ($late) $rel = 'vencido há ' . $span(max(60, $now - $at));
+    elseif ($d === $today) $rel = $time !== '' && $at > $now ? 'daqui a ' . $span($at - $now) : 'hoje';
+    elseif ($d === (new DateTimeImmutable($today))->modify('+1 day')->format('Y-m-d')) $rel = 'amanhã';
+    else $rel = 'em ' . (int)(new DateTimeImmutable($today))->diff(new DateTimeImmutable($d))->format('%a') . ' dias';
+    $dur = $time !== '' && (int)($t['duration_min'] ?? 0) ? (TASK_DURATIONS[(int)$t['duration_min']] ?? $t['duration_min'] . ' min') : '';
+    return [$abs, trim($dur . ($dur !== '' ? ' · ' : '') . $rel), $late];
+}
+
 /** «hoje 15:00», «ontem», «sex 30/10», «12/11». */
 function task_when(array $t, ?string $today = null): string {
     $today ??= today_lisbon();

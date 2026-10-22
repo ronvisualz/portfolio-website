@@ -303,10 +303,19 @@
       var pdf = t.closest('[data-bpdf]');
       if (pdf) {
         pdf.disabled = true;
+        // O PDF abre num separador novo (aberto já, no clique, para o browser não o bloquear):
+        // voltar atrás no mesmo separador fazia perder a sessão no Safari.
+        var win = window.open('', '_blank');
+        if (win) win.opener = null;
+        if (win) { try { win.document.title = 'A gerar a proposta…'; win.document.body.textContent = 'A gerar a proposta…'; } catch (x) { /* outro domínio */ } }
         api('budget_pdf', { version: VERSION }).then(function (j) {
           T.toast(j.msg);
-          var a = document.createElement('a'); a.href = j.url; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
-        }).catch(fail).then(function () { pdf.disabled = false; });
+          var url = j.url + (j.url.indexOf('?') < 0 ? '?' : '&') + 'ver=1';
+          if (win && !win.closed) win.location.href = url;
+          else { var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+          // O requisito «PDF gerado» do envio passa a ✓: a folha atualiza-se.
+          if (document.getElementById('mdl-psend') || document.querySelector('.bs-acts .btn.off')) setTimeout(function () { location.reload(); }, 800);
+        }).catch(function (er) { if (win) win.close(); fail(er); }).then(function () { pdf.disabled = false; });
       }
     });
     var ts = $('form[data-btpl-save]');

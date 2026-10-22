@@ -9,7 +9,7 @@
  *   move          stage_id [force]       avançar (ou forçar) para uma etapa
  *   lost          reason [reason_other]  perdido (fase comercial)
  *   people        owner_id exec_owner_id delivery_date shoot_date
- *   prop_send     email                  enviar a proposta (move para Aguardar feedback)
+ *   prop_send     email [note]           enviar a proposta, com uma mensagem opcional (move para Aguardar feedback)
  *   prop_validate / prop_contact         a resposta do cliente
  *   invoice       task number doc_date net vat total file
  *   payment       task doc_date [total] [file] [note]
@@ -122,7 +122,7 @@ try {
 
         case 'prop_send':
             $must(flow_can_edit($pdo, $deal));
-            [$msg, $link] = proposal_send($pdo, $deal, (string)($_POST['email'] ?? ''), $me);
+            [$msg, $link] = proposal_send($pdo, $deal, (string)($_POST['email'] ?? ''), $me, (string)($_POST['note'] ?? ''));
             flash($msg . ' Link (só aparece agora): ' . $link);
             break;
 

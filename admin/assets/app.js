@@ -1003,4 +1003,17 @@
     });
     board.addEventListener('submit', function (e) { if (e.target.closest('.dmove')) e.preventDefault(); });
   }
+
+  // ── «Enviar a proposta» (§19.4): a pré-visualização segue o email e a mensagem que se escrevem ──
+  document.addEventListener('input', function (e) {
+    var t = e.target, card = t.closest && t.closest('.mdl-card.ps');
+    if (!card) return;
+    if (t.matches('[data-psend-msg]')) {
+      var n = $('[data-psend-note]', card);
+      if (n) { n.textContent = t.value.trim(); n.hidden = t.value.trim() === ''; }
+    } else if (t.matches('[data-psend-email]')) {
+      var to = $('[data-psend-to]', card);
+      if (to) to.textContent = t.value.trim() || '—';
+    }
+  });
 })();

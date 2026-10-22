@@ -163,6 +163,19 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
 
+        case 'task_due':
+            // «Adiar» na lista (§18.3): o prazo volta ao de antes, se ninguém lhe mexeu.
+            require_once __DIR__ . '/tasks.php';
+            require_perm('tarefas', PERM_EDIT);
+            $t = task_by_id($pdo, (int)$d['id']);
+            $members = team_members($pdo);
+            $mine = member_for_user($pdo, (int)current_user()['id']);
+            if ($t && (task_hidden_for($t, $mine) || (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, task_visible_members($pdo, $members)) && (int)$t['member_id'] !== (int)$mine))) throw new RuntimeException('Sem permissão.');
+            if (!$t || (string)$t['due_date'] !== (string)$d['to_date'] || (string)$t['due_time'] !== (string)$d['to_time']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE tasks SET due_date = ?, due_time = ?, duration_min = ?, updated_at = ? WHERE id = ?')->execute([$d['due_date'], $d['due_time'], $d['duration_min'] ?? null, task_now(), $d['id']]);
+            task_log($pdo, (int)$d['id'], 'snooze', 'Prazo reposto (anulado)');
+            return 'Prazo reposto.';
+
         case 'inline':
             inline_save($pdo, $d['entity'], (int)$d['id'], $d['field'], $d['prev'] === null ? '' : (string)$d['prev']);
             return 'Valor reposto.';

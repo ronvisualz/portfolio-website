@@ -10,6 +10,7 @@
  *   do=take    id            «Pegar»: passa para mim (entreajuda, §18.4)
  *   do=help    id            «Pedir ajuda»: vai para «Por atribuir» com 🙋 e avisa a equipa
  *   do=move    id, to        arrastar no quadro para uma coluna (0 = Por atribuir)
+ *   do=snooze  id, when      «Adiar»: 1d · 3d · 1w (a partir do prazo ou de hoje) ou custom (date, time)
  *
  * As privadas dos outros (pessoal, bloqueio) não existem para quem pede. O superadmin
  * não é operador: nunca fica responsável (§18.2).
@@ -71,6 +72,29 @@ try {
         task_log($pdo, $id, $do === 'take' ? 'take' : 'assign', $note);
         if (!empty($task['deal_id'])) deal_log($pdo, (int)$task['deal_id'], 'assign', ['note' => 'Tarefa «' . $task['title'] . '» → ' . $name($to)]);
         api_out(200, ['ok' => true, 'msg' => $do === 'take' ? 'É sua agora.' : 'Passou para ' . $name($to) . '.', 'undo' => undo_push('task', $snap)]);
+
+    case 'snooze':
+        if ($task['status'] === 'done') api_out(400, ['ok' => false, 'error' => 'Uma tarefa concluída não se adia.']);
+        $when = (string)($_POST['when'] ?? '');
+        $time = $task['due_time'] !== null ? substr((string)$task['due_time'], 0, 5) : '';
+        if ($when === 'custom') {
+            $date = (string)($_POST['date'] ?? '');
+            $time = (string)($_POST['time'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4))) api_out(400, ['ok' => false, 'error' => 'Indique uma data válida.']);
+            if ($time !== '' && !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) api_out(400, ['ok' => false, 'error' => 'Indique uma hora válida.']);
+        } else {
+            $days = ['1d' => 1, '3d' => 3, '1w' => 7][$when] ?? 0;
+            if (!$days) api_out(400, ['ok' => false, 'error' => 'Pedido inválido.']);
+            // Conta a partir do prazo, ou de hoje se o prazo já passou (ou não havia).
+            $base = max((string)($task['due_date'] ?? ''), today_lisbon());
+            $date = (new DateTimeImmutable($base))->modify('+' . $days . ' days')->format('Y-m-d');
+        }
+        $newTime = $time !== '' ? $time . ':00' : null;
+        $pdo->prepare('UPDATE tasks SET due_date = ?, due_time = ?, duration_min = ?, updated_at = ? WHERE id = ?')
+            ->execute([$date, $newTime, $newTime !== null ? $task['duration_min'] : null, task_now(), $id]);
+        $label = date('d/m/Y', strtotime($date)) . ($time !== '' ? ' ' . $time : '');
+        task_log($pdo, $id, 'snooze', 'Adiada para ' . $label);
+        api_out(200, ['ok' => true, 'msg' => 'Adiada para ' . $label . '.', 'undo' => undo_push('task_due', ['id' => $id, 'due_date' => $task['due_date'], 'due_time' => $task['due_time'], 'duration_min' => $task['duration_min'], 'to_date' => $date, 'to_time' => $newTime])]);
 
     case 'help':
         if ($from === null || $from !== $myMember) api_out(403, ['ok' => false, 'error' => 'Só pede ajuda quem tem a tarefa.']);

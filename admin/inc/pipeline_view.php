@@ -142,7 +142,7 @@ function flow_proposal_html(PDO $pdo, array $deal, string $back): string {
     if ($p) {
         $sent = '<p class="small">Enviada a <b>' . e($p['sent_to']) . '</b> em ' . e(date('d/m/Y H:i', strtotime((string)$p['sent_at'])))
               . ' · válida até ' . e(date('d/m/Y', strtotime((string)$p['expires_on'])))
-              . ' <a class="lnk" href="/admin/orcamento_pdf.php?v=' . (int)$p['version_id'] . '">PDF</a></p>';
+              . ' <a class="lnk" href="/admin/orcamento_pdf.php?v=' . (int)$p['version_id'] . '&amp;ver=1" target="_blank" rel="noopener">PDF ' . icon('external') . '</a></p>';
         $h .= $sent;
         if (in_array($p['status'], ['answered', 'contact'], true) && $p['decision'] !== '') {
             $h .= '<div class="fl-answer ' . ($p['decision'] === 'accept' ? 'acc' : 'ref') . '"><b>Resposta do cliente: ' . e(proposal_answer_label($p)) . '</b>'
@@ -167,19 +167,76 @@ function flow_proposal_html(PDO $pdo, array $deal, string $back): string {
     // Enviar (ou reenviar com uma versão nova)
     if ($edit && $inCommercial && (!$p || $p['status'] !== 'validated')) {
         $reqs = proposal_requirements($pdo, $deal);
-        $ready = !array_filter($reqs, fn($r) => !$r['ok']);
-        $email = trim((string)$deal['email']);
-        if ($email === '' && $deal['contact_id']) $email = (string)$pdo->query('SELECT email FROM contacts WHERE id = ' . (int)$deal['contact_id'])->fetchColumn();
-        $h .= '<details class="fl-send"' . (!$p ? ' open' : '') . '><summary>' . ($p ? 'Reenviar a proposta' : 'Enviar a proposta ao cliente') . ($v ? ' · v' . (int)$v['num'] : '') . '</summary>'
-            . '<ul class="fl-req">' . implode('', array_map('flow_req_html', $reqs)) . '</ul>'
-            . ($sheet && can('orcamentacao') ? '<p class="small"><a class="lnk" href="/admin/orcamento.php?id=' . (int)$deal['id'] . '#proposta">' . icon('orcamentacao') . ' Abrir a folha de orçamento</a></p>' : '')
-            . flow_form('prop_send', $deal, $back, '<label class="sr-only" for="pe-' . (int)$deal['id'] . '">Email do cliente</label>'
-                . '<input type="email" id="pe-' . (int)$deal['id'] . '" name="email" required maxlength="190" value="' . e($email) . '" placeholder="email do cliente">'
-                . '<button class="btn sm" type="submit"' . ($ready ? '' : ' disabled aria-disabled="true"') . '>' . icon('send') . ' Enviar</button>'
-                . '<small class="muted">O email leva um único botão «Ver e responder à proposta». ' . ($p ? 'O link anterior deixa de funcionar.' : '') . '</small>', ['class' => 'fl-inline'])
-            . '</details>';
+        $missing = count(array_filter($reqs, fn($r) => !$r['ok']));
+        $h .= '<div class="fl-send"><ul class="fl-req">' . implode('', array_map('flow_req_html', $reqs)) . '</ul>'
+            . '<div class="actions"><button type="button" class="btn sm" data-new="#mdl-psend">' . icon('send') . ' ' . ($p ? 'Reenviar a proposta' : 'Pré-visualizar e enviar') . ($v ? ' · v' . (int)$v['num'] : '') . '</button>'
+            . ($sheet && can('orcamentacao') ? '<a class="lnk small" href="/admin/orcamento.php?id=' . (int)$deal['id'] . '#proposta">' . icon('orcamentacao') . ' Folha de orçamento</a>' : '') . '</div>'
+            . ($missing ? '<p class="muted small">Falta' . ($missing > 1 ? 'm' : '') . ' ' . $missing . ' requisito' . ($missing > 1 ? 's' : '') . ' para poder enviar.</p>' : '')
+            . '</div>';
     }
     return $h . '</section>';
+}
+
+/** Pode enviar a proposta daqui? [sim?, porque não]. A mesma regra no painel, na ficha e na folha de orçamento. */
+function flow_can_send(PDO $pdo, array $deal): array {
+    if (!db_has_table($pdo, 'proposals') || !$deal['stage_id'] || $deal['phase'] !== 'pipeline') return [false, 'Só um negócio no Pipeline envia propostas.'];
+    if (!flow_can_edit($pdo, $deal)) return [false, 'Sem permissão para mudar este negócio.'];
+    $stage = stage_get($pdo, (int)$deal['stage_id']);
+    if (!$stage || !in_array($stage['role'], ['proposal', 'feedback'], true)) return [false, 'O negócio está em «' . ($stage['name'] ?? '—') . '»: a proposta envia-se a partir da etapa Proposta.'];
+    $p = proposal_latest($pdo, (int)$deal['id']);
+    if ($p && $p['status'] === 'validated') return [false, 'A resposta do cliente já foi validada.'];
+    return [true, ''];
+}
+
+/**
+ * «Enviar a proposta ao cliente» (§19.4): pré-visualização antes de enviar — requisitos,
+ * para quem, mensagem opcional, o email tal como o cliente o recebe, as opções e o PDF.
+ */
+function flow_send_modal_html(PDO $pdo, array $deal, string $back): string {
+    [$ok] = flow_can_send($pdo, $deal);
+    if (!$ok) return '';
+    require_once __DIR__ . '/budget.php';
+    [$sheet, $v] = proposal_version($pdo, $deal);
+    $reqs = proposal_requirements($pdo, $deal);
+    $ready = $v && !array_filter($reqs, fn($r) => !$r['ok']);
+    $p = proposal_latest($pdo, (int)$deal['id']);
+    $email = trim((string)$deal['email']);
+    if ($email === '' && $deal['contact_id']) $email = (string)$pdo->query('SELECT email FROM contacts WHERE id = ' . (int)$deal['contact_id'])->fetchColumn();
+    $id = (int)$deal['id'];
+    $prev = '';
+    if ($v) {
+        $content = proposal_public_content($pdo, $deal, $v);
+        $m = proposal_email($pdo, $deal, $v, $content, (int)current_user()['id']);
+        $opts = '';
+        foreach ($content['options'] as $o) {
+            $opts .= '<li><b>' . e($o['label']) . '</b><span class="mono">' . e(eur((float)$o['price'])) . ' <small>s/ IVA</small></span><span class="mono muted">' . e(eur((float)$o['total'])) . ' c/ IVA</span></li>';
+        }
+        $prev = '<div class="ps-mail" aria-label="Pré-visualização do email">'
+              . '<div class="ps-hd"><span>Para</span><b data-psend-to>' . e($email !== '' ? $email : '—') . '</b><span>Assunto</span><b>' . e($m['subject']) . '</b></div>'
+              . '<div class="ps-body"><p>' . e($m['hello']) . '</p><p>' . e($m['intro']) . '</p><p class="ps-note" data-psend-note hidden></p>'
+              . '<p class="ps-cta"><span class="ps-btn">Ver e responder à proposta</span></p><p class="ps-small">' . e($m['valid']) . '</p><p class="ps-sign">' . nl2br(e($m['sign'])) . '</p></div></div>'
+              . '<div class="ps-opts"><h5>No link, o cliente vê</h5><ul>' . $opts . '</ul>'
+              . '<p class="small"><a class="lnk" href="/admin/orcamento_pdf.php?v=' . (int)$v['id'] . '&amp;ver=1" target="_blank" rel="noopener">' . icon('file') . ' Ver o PDF da proposta ' . icon('external') . '</a></p></div>';
+    }
+    return '<div class="mdl" id="mdl-psend" role="dialog" aria-modal="true" aria-labelledby="mdl-psend-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form class="mdl-card wide ps" method="post" action="/admin/deal_flow.php" autocomplete="off">
+    ' . csrf_field() . '<input type="hidden" name="do" value="prop_send"><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="back" value="' . e($back) . '" data-back-here>
+    <h3 id="mdl-psend-t">' . icon('send') . ' ' . ($p ? 'Reenviar' : 'Enviar') . ' a proposta · ' . e((string)$deal['code']) . ($v ? ' · v' . (int)$v['num'] : '') . '</h3>
+    <div class="ps-cols">
+      <div class="ps-l">
+        <ul class="fl-req">' . implode('', array_map('flow_req_html', $reqs)) . '</ul>
+        <div class="field"><label for="ps-to-' . $id . '">Email do cliente</label><input type="email" id="ps-to-' . $id . '" name="email" required maxlength="190" value="' . e($email) . '" placeholder="cliente@empresa.pt" data-psend-email></div>
+        <div class="field"><label for="ps-msg-' . $id . '">Mensagem <span class="muted">(opcional: entra no email)</span></label><textarea id="ps-msg-' . $id . '" name="note" rows="4" maxlength="2000" placeholder="Ex.: Como falámos na reunião, juntámos uma segunda opção com…" data-psend-msg></textarea></div>
+        <p class="muted small">O cliente responde numa página segura; abrir o link não altera nada.' . ($p ? ' <b>O link enviado antes deixa de funcionar.</b>' : '') . ' Enviar passa o negócio para «Aguardar feedback».</p>
+      </div>
+      <div class="ps-r">' . ($prev !== '' ? $prev : '<p class="muted">Ainda não há versão do orçamento.</p>') . '</div>
+    </div>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span>'
+      . ($ready ? '' : '<span class="muted small">Cumpra os requisitos para enviar.</span>')
+      . '<button class="btn" type="submit"' . ($ready ? '' : ' disabled aria-disabled="true"') . '>' . icon('send') . ' Enviar proposta</button></div>
+  </form>
+</div>';
 }
 
 /** Faturação (§19.6 E): as tarefas que pedem documento e os documentos submetidos. */
@@ -357,7 +414,7 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     $acts = '<div class="lv-acts fl-short">'
           . '<a class="btn ghost sm" href="/admin/xray.php?id=' . $id . '">' . icon('checklist') . ' X-Ray' . (!empty($d['xray_validated_at']) ? ' ✓' : '') . '</a>'
           . (can('orcamentacao') ? '<a class="btn ghost sm" href="/admin/orcamento.php?id=' . $id . '">' . icon('orcamentacao') . ' Orçamento</a>' : '')
-          . ($pdfV ? '<a class="btn ghost sm" href="/admin/orcamento_pdf.php?v=' . (int)$pdfV['id'] . '">' . icon('file') . ' Proposta</a>' : '<span class="btn ghost sm off" aria-disabled="true" data-tip="Gere o PDF na folha de orçamento">' . icon('file') . ' Proposta</span>')
+          . ($pdfV ? '<a class="btn ghost sm" href="/admin/orcamento_pdf.php?v=' . (int)$pdfV['id'] . '&amp;ver=1" target="_blank" rel="noopener" data-tip="Abre o PDF num separador novo">' . icon('file') . ' Proposta</a>' : '<span class="btn ghost sm off" aria-disabled="true" data-tip="Gere o PDF na folha de orçamento">' . icon('file') . ' Proposta</span>')
           . ($prodOk ? '<a class="btn ghost sm" href="/admin/negocio.php?id=' . $id . '">' . icon('negocios') . ' Ficha do negócio</a>' : '<span class="btn ghost sm off" aria-disabled="true" data-tip="A partir do Kickoff">' . icon('negocios') . ' Ficha do negócio</span>')
           . (can('drive') ? '<a class="btn ghost sm" href="/admin/drive.php' . ($folder !== '' ? '?p=' . rawurlencode($folder) : '?p=' . rawurlencode('Projetos/')) . '">' . icon('drive') . ' Drive</a>' : '')
           . '</div>';
@@ -387,5 +444,5 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     $right = '<div class="lv-r">' . flow_stages_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back)
            . flow_billing_html($pdo, $d, $back) . flow_rounds_html($pdo, $d, $back) . flow_focus_html($pdo, $d, $back)
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, $back, '', ['note']) . '</section></div>';
-    return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back);
+    return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back) . flow_send_modal_html($pdo, $d, $back);
 }

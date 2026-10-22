@@ -608,11 +608,28 @@ function proposal_url(string $token): string {
 }
 
 /**
+ * O email da proposta, por partes: o mesmo texto no envio e na pré-visualização (§19.4).
+ * A mensagem opcional de quem envia entra a seguir à introdução.
+ */
+function proposal_email(PDO $pdo, array $deal, array $v, array $content, int $by, string $note = ''): array {
+    $client = flow_client_name($pdo, $deal);
+    $who = flow_user_name($pdo, $deal['owner_id'] ?: $by);
+    return [
+        'subject' => 'Proposta ' . $deal['code'] . ' · ' . $deal['name'],
+        'hello'   => 'Olá' . ($client !== '' ? ' ' . $client : '') . ',',
+        'intro'   => 'Segue a nossa proposta para «' . $deal['name'] . '»' . (count($content['options']) > 1 ? ', com duas opções' : '') . '.',
+        'note'    => trim(mb_substr(str_replace("\r", '', $note), 0, 2000)),
+        'valid'   => 'O link é válido até ' . date('d/m/Y', strtotime((string)$v['valid_until'])) . '. Abrir a página não altera nada: a resposta só conta quando a confirmar.',
+        'sign'    => ($who !== '' ? $who . "\n" : '') . 'topper.',
+    ];
+}
+
+/**
  * Envia a proposta: um link com token (só o hash fica na base), válido até à validade da
  * proposta. O email tem UM botão «Ver e responder à proposta». Move para «Aguardar feedback».
  * Devolve [mensagem, link].
  */
-function proposal_send(PDO $pdo, array $deal, string $email, int $by): array {
+function proposal_send(PDO $pdo, array $deal, string $email, int $by, string $note = ''): array {
     require_once __DIR__ . '/budget.php';
     require_once __DIR__ . '/team.php';
     $email = trim($email);
@@ -632,13 +649,9 @@ function proposal_send(PDO $pdo, array $deal, string $email, int $by): array {
         ->execute([$deal['id'], $v['id'], hash('sha256', $token), proposal_hash($content), count($content['options']) > 1 ? 1 : 0,
                    mb_substr($email, 0, 190), date('Y-m-d H:i:s'), $by, $v['valid_until']]);
     $link = proposal_url($token);
-    $client = flow_client_name($pdo, $deal);
-    $who = flow_user_name($pdo, $deal['owner_id'] ?: $by);
-    $sent = team_mail($email, 'Proposta ' . $deal['code'] . ' · ' . $deal['name'],
-        'Olá' . ($client !== '' ? ' ' . $client : '') . ",\n\nSegue a nossa proposta para «" . $deal['name'] . '»'
-        . (count($content['options']) > 1 ? ', com duas opções' : '') . ".\n\nVer e responder à proposta:\n" . $link
-        . "\n\nO link é válido até " . date('d/m/Y', strtotime((string)$v['valid_until'])) . ". Abrir a página não altera nada: a resposta só conta quando a confirmar.\n\n"
-        . ($who !== '' ? $who . "\n" : '') . 'topper.');
+    $mail = proposal_email($pdo, $deal, $v, $content, $by, $note);
+    $sent = team_mail($email, $mail['subject'], $mail['hello'] . "\n\n" . $mail['intro'] . ($mail['note'] !== '' ? "\n\n" . $mail['note'] : '')
+        . "\n\nVer e responder à proposta:\n" . $link . "\n\n" . $mail['valid'] . "\n\n" . $mail['sign']);
     budget_log($pdo, (int)$sheet['id'], 'b_send', 'v' . $v['num'] . ' enviada a ' . $email, $by);
     deal_log($pdo, (int)$deal['id'], 'proposal', ['note' => 'Proposta v' . $v['num'] . ' enviada a ' . $email . ($sent ? '' : ' (o email não saiu: envie o link)'), 'user_id' => $by]);
     // Enviar move para «Aguardar feedback» (o requisito ficou cumprido).

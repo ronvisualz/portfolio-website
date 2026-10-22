@@ -1240,6 +1240,30 @@ ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
   foi trocado por um próprio que funciona com rato, trackpad e dedo (pressão longa de ~0,3 s e
   arrastar; um toque rápido ou um deslize continuam a abrir/deslocar); junto às margens o quadro
   desliza. Os cartões agrupados («Chamadas de leads · n») não se arrastam: abrem a fila.
+- **Ajustes de 22 out (segunda ronda):**
+  - **Enviar a proposta** abre uma **pré-visualização** (folha de orçamento, painel do Pipeline e
+    ficha): requisitos ✓/✗, email do cliente, mensagem opcional (entra no email, a seguir à
+    introdução), o email tal como o cliente o recebe (assunto, texto, botão «Ver e responder à
+    proposta», validade), as opções com preço s/ e c/ IVA e «Ver o PDF». O texto do email é o
+    mesmo no envio e na pré-visualização (`proposal_email`). Fora da etapa Proposta / Aguardar
+    feedback o botão aparece desligado com o motivo (`flow_can_send`).
+  - **PDF da proposta** abre num **separador novo**, para ver no browser (inline). O cookie da
+    sessão passou de `SameSite=Strict` a `Lax`: com Strict, o Safari não o enviava ao voltar atrás
+    de um PDF (nem ao abrir um link de um email) e a página de entrada criava uma sessão nova —
+    parecia um logout. Os POST de outros sites continuam sem cookie e levam token CSRF.
+  - **Tarefas › Tarefas:** o filtro de tipo passou a um botão **«Tipo de tarefa»** que abre uma
+    caixa com os 15 tipos (5 × 3, ícone e nome); a Origem segue o mesmo modelo (3 × 2). Aparece
+    **«Limpar filtros»** quando algum filtro difere do que a aba mostra ao abrir. Depois de «Ver uma
+    a uma» há **«Voltar a agrupar»**. Cada linha mostra o **prazo** (data · hora; por baixo a duração
+    e «vencido há 3d 19h», «daqui a 2h», «amanhã», «em 5 dias») e as **ações rápidas** subtis:
+    **Adiar** (+1 dia, +3 dias, +1 semana — a partir do prazo, ou de hoje se já passou — ou
+    Personalizar com data e hora; fica no histórico da tarefa e tem «Anular»), Editar e Abrir o
+    negócio/lead. No telemóvel o prazo passa para baixo do título.
+  - **Ficha da lead e Nova tarefa do negócio:** os ícones dos tipos são os da aba Tarefas, com as
+    mesmas cores (Documento passou ao ícone de ficheiro; Almoço, Jantar e Evento na cor de Reunião).
+  - **Correções:** a bolinha amarela da etapa atual já não fica cortada em cima; no formulário de
+    tarefa, Data, Hora e Duração já não se sobrepõem no iPad (as caixas de data/hora do Safari têm
+    largura própria — agora encolhem à coluna).
 - **Testado na bancada** (MariaDB, Playwright): migração idempotente; X-Ray → Proposta → envio →
   página do cliente (GET sem escrita nem cookie, POST sem a caixa ou com assinatura errada recusado) →
   validação → Kickoff (Opção B, valor do negócio) → fatura e pagamento → produção, forçar e anular,

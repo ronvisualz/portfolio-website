@@ -239,7 +239,23 @@ if ($tab === 'tarefas'):
   <?php endforeach; ?>
   <?php if (!$f['solto'] && array_filter($list, fn($t) => task_auto_group($t))): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação aparecem agrupados. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 1])) ?>">Ver uma a uma</a></p>
+  <?php elseif ($f['solto']): ?>
+    <p class="muted small">As chamadas de leads e os follow-ups de relação estão uma a uma. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 0])) ?>">Voltar a agrupar</a></p>
   <?php endif; ?>
+</div>
+<?php endif;
+    if ($canEdit): ?>
+<div class="snz" data-snz hidden role="dialog" aria-label="Adiar a tarefa">
+  <b class="snz-h"><?= icon('clock') ?> Adiar</b>
+  <button type="button" data-when="1d"><span>+1 dia</span><small data-to="1"></small></button>
+  <button type="button" data-when="3d"><span>+3 dias</span><small data-to="3"></small></button>
+  <button type="button" data-when="1w"><span>+1 semana</span><small data-to="7"></small></button>
+  <button type="button" data-when="custom" aria-expanded="false"><span>Personalizar…</span></button>
+  <form class="snz-c" data-snz-custom hidden>
+    <label><span>Data</span><input type="date" name="date" required></label>
+    <label><span>Hora</span><input type="time" name="time" step="900"></label>
+    <button class="btn sm" type="submit">Adiar</button>
+  </form>
 </div>
 <?php endif;
     if ($f['est'] !== 'todo'):

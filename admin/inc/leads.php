@@ -39,12 +39,17 @@ const LEAD_TASK_KINDS = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],
     'task'     => ['Tarefa', 'checklist'],
-    'document' => ['Documento', 'note'],
+    'document' => ['Documento', 'file'],
     'email'    => ['Email', 'mail'],
     'lunch'    => ['Almoço', 'utensils'],
     'dinner'   => ['Jantar', 'wine'],
     'event'    => ['Evento', 'calendar'],
 ];
+
+/** A cor do tipo, a mesma da aba Tarefas (almoço, jantar e evento contam como reunião). */
+function lead_kind_class(string $k): string {
+    return 'ty-' . (['lunch' => 'meeting', 'dinner' => 'meeting', 'event' => 'meeting'][$k] ?? (isset(LEAD_TASK_KINDS[$k]) ? $k : 'task'));
+}
 
 const TASK_REPEAT = ['' => 'Não repetir', 'daily' => 'Todos os dias', 'weekly' => 'Todas as semanas', 'monthly' => 'Todos os meses'];
 

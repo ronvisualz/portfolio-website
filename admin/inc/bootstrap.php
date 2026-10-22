@@ -85,7 +85,10 @@ if (session_status() === PHP_SESSION_NONE && !defined('TOPPER_NO_SESSION')) {
         'path'     => '/admin',
         'secure'   => !IS_LOCAL,
         'httponly' => true,
-        'samesite' => 'Strict',
+        // Lax e não Strict: com Strict, o Safari não enviava o cookie ao voltar atrás de um PDF
+        // (ou ao abrir um link de um email) e a página de entrada criava uma sessão nova — logout.
+        // Os POST de outros sites continuam sem cookie, e todos os formulários levam token CSRF.
+        'samesite' => 'Lax',
     ]);
     session_start();
 }
