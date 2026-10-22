@@ -1596,7 +1596,7 @@ um como chefe do seu departamento. O superadmin continua a ser só `info@topperd
 | Santiago Apolónio | santiagoapolonio@topperdigital.xyz | Comercial | COO · Business Developer |
 | Guilherme Albano | guilhermealbano@topperdigital.xyz | Pós-Produção e VFX | Post Production Lead |
 | Valdir Furtado | valdirfurtado@topperdigital.xyz | Campanhas e Adverts | CMO |
-| Diogo Vasconcelos | diogovasconcelos@topperdigital.xyz | Produto e Otimização de Processos | CTO |
+| Diogo Vasconcelos | diogovasconcelos@topperhub.xyz | Produto e Otimização de Processos | CTO |
 Se alguma destas contas já existir, atualizar em vez de duplicar.
 
 ### 17.10 Gerir sem microgestão
