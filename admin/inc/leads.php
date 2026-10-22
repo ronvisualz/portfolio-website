@@ -19,7 +19,9 @@ const LEAD_TYPES_LIST  = ['Produtora', 'Agência de Marketing', 'Empresa Particu
 const LEAD_SERVICES_LIST = ['VFX / 3D', 'Marketing Buddy', 'Ambos'];
 const LEAD_PRIORITY    = ['alta' => 'Alta', 'media' => 'Média', 'baixa' => 'Baixa'];
 const LEAD_STATE       = ['novo' => 'Novo', 'sem_resposta' => 'Sem resposta', 'follow_up' => 'Follow-Up'];
-const LEAD_ORIGIN      = ['manual' => 'Manual', 'site' => 'Site', 'anuncio' => 'Anúncio'];
+// «rede»: veio de uma publicação (link com rastreio, Marketing §16.8) — a campanha diz «<rede> · <peça>».
+// «talento»: candidatura ou contacto de talento (employer branding; a página de carreiras do site está por fazer).
+const LEAD_ORIGIN      = ['manual' => 'Manual', 'site' => 'Site', 'anuncio' => 'Anúncio', 'rede' => 'Redes sociais', 'talento' => 'Talento'];
 const ARCHIVE_REASONS  = [
     'sem_interesse' => 'Sem interesse',
     'sem_resposta'  => 'Sem resposta',

@@ -520,7 +520,19 @@ function deal_step_set(PDO $pdo, array $deal, string $to): string {
 
 /** O que a checklist e as ações de fecho mudam, para o «Anular». */
 function deal_flags_snapshot(array $deal): array {
-    return ['id' => (int)$deal['id'], 'delivered_at' => $deal['delivered_at'], 'portfolio_at' => $deal['portfolio_at'], 'testimonial_at' => $deal['testimonial_at'], 'tasks' => []];
+    return ['id' => (int)$deal['id'], 'delivered_at' => $deal['delivered_at'], 'portfolio_at' => $deal['portfolio_at'], 'testimonial_at' => $deal['testimonial_at'], 'tasks' => [], 'ideas' => []];
+}
+
+/** «Pode ser divulgado?» do negócio, em texto (Marketing, §16.3). */
+function deal_disclose_label(array $deal): string {
+    $d = $deal['disclose'] ?? null;
+    $f = $deal['disclose_from'] ?? null;
+    return match ($d) {
+        'yes'  => 'Pode ser divulgado',
+        'no'   => 'Não pode ser divulgado',
+        'from' => 'Pode ser divulgado a partir de ' . ($f ? date('d/m/Y', strtotime($f)) : '—'),
+        default => 'Divulgação por decidir',
+    };
 }
 
 function deal_mark_delivered(PDO $pdo, array $deal, bool $on): void {
@@ -529,15 +541,25 @@ function deal_mark_delivered(PDO $pdo, array $deal, bool $on): void {
 }
 
 /** «Enviar para o portfólio» (Marketing): fica registado e cria a tarefa de preparar o material. Devolve o id da tarefa. */
-function deal_send_portfolio(PDO $pdo, array $deal, int $by): int {
+/**
+ * «Enviar para o portfólio»: a tarefa de preparar o material e (§16.3) a ideia «Breakdown: <negócio>»
+ * em Marketing › Ideias, ligada ao negócio. Devolve [id da tarefa, id da ideia ou null].
+ */
+function deal_send_portfolio(PDO $pdo, array $deal, int $by): array {
     if ($deal['portfolio_at']) throw new RuntimeException('Este negócio já foi enviado para o portfólio.');
     $pdo->prepare('UPDATE deals SET portfolio_at = ? WHERE id = ?')->execute([now_php(), $deal['id']]);
     $due = (new DateTimeImmutable(today_lisbon()))->modify('+3 days')->format('Y-m-d');
     $tid = lead_task_create($pdo, $deal, 'task', 'Portfólio: ' . $deal['code'] . ' · ' . $deal['name'],
-                            'Enviar para o portfólio (Marketing): escolher as imagens e os vídeos finais na pasta do negócio no Drive e escrever o texto do projeto.',
+                            'Enviar para o portfólio (Marketing): escolher as imagens e os vídeos finais na pasta do negócio no Drive e escrever o texto do projeto.'
+                            . ' A ideia «Breakdown: ' . $deal['name'] . '» fica em Marketing › Ideias.',
                             $due, null, $by, '', $by);
-    deal_log($pdo, (int)$deal['id'], 'portfolio', ['note' => 'Tarefa de portfólio criada']);
-    return $tid;
+    $idea = null;
+    if (db_has_table($pdo, 'mkt_pieces')) {
+        require_once __DIR__ . '/marketing.php';
+        $idea = mkt_idea_from_deal($pdo, $deal, $by);
+    }
+    deal_log($pdo, (int)$deal['id'], 'portfolio', ['note' => 'Tarefa de portfólio criada' . ($idea ? ' · ideia de breakdown em Marketing' : '')]);
+    return [$tid, $idea];
 }
 
 /** «Pedir testemunho» ao cliente: um email para o responsável do negócio (ou quem pede). Devolve o id da tarefa. */

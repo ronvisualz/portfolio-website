@@ -895,6 +895,90 @@ concluídos ficam com as entregas feitas na data da conclusão. A lógica está 
 Ficheiros novos: `inc/deal_file.php`, `inc/migrate_deal_file.php`, `assets/deal.js`; `negocio.php` e
 `negocios.php` reescritos.
 
+### 10.8 Aba Marketing — §16 (22 out 2026)
+
+A §16 está aplicada (fase 1 de publicação; a fase 2 fica preparada). Base de dados **versão 18**
+(`inc/migrate_marketing.php`): pilares (`mkt_pillars`), peças (`mkt_pieces` — uma ideia que avança
+para Produção), votos, versões por rede (`mkt_versions`), publicações por rede com o link com
+rastreio e as métricas (`mkt_posts`), cliques nesse link (`mkt_clicks`), dias de gravação
+(`mkt_shoots`), histórico (`mkt_log`), registo de uso da IA (`mkt_ai_log`) e resumos mensais
+(`mkt_summaries`). Em `deals`: `disclose` / `disclose_from` («Pode ser divulgado?») e `mkt_post_id`
+(a publicação de onde a lead veio); a origem das leads ganha «Redes sociais» e «Talento». Em `tasks`:
+`mkt_piece_id`. Lógica em `inc/marketing.php`, ecrãs em `inc/marketing_view.php`, `marketing.php`
+(separadores), `marketing_peca.php` (a peça), pedidos em `mkt_api.php`, comportamento em
+`assets/marketing.js`.
+
+- **16.1 Separadores:** Ideias · Estúdio · Produção · Calendário · Desempenho (Comercial › Marketing).
+- **16.2 Pilares:** os 6 de partida (Portfólio e breakdowns · Bastidores · Educação · Casos de
+  cliente · Serviços · **Employer branding**), editáveis em Definições › Marketing (nome, nome curto,
+  cor, ordem, ativo, «Talento»). A descrição de cada pilar vai para a IA.
+- **16.3 Ideias:** «+ Ideia» na barra de topo e **tecla I em qualquer ecrã** (só o texto é
+  obrigatório; em Marketing também N), captura rápida na lista, pilar · formato · redes · modelo ·
+  autor · **votos**. Triagem Novas → **Avançar** (Produção, Ideia aprovada, com a checklist do modelo,
+  uma publicação e um link com rastreio por rede e a pasta no Drive) · Guardar · Descartar, tudo
+  com «Anular». **Automáticas:** «Enviar para o portfólio» na ficha do negócio cria «Breakdown:
+  <negócio>» ligada ao negócio e aos ficheiros dele no Drive (o «Anular» tira-a se ninguém mexeu);
+  peças com ≥ 1,5× a média de interações da rede sugerem «Criar parte 2». **Centro Criativo:**
+  enquanto não existir, o breakdown liga só ao negócio e ao Drive. **Carreiras:** a origem «Talento»
+  está preparada (o formulário de carreiras do site, quando existir, envia `form=careers`) —
+  **PENDENTE** a página de carreiras. **«Pode ser divulgado?»** na ficha do negócio (Dados e
+  contactos): por decidir · sim · não · a partir de <data>, com «Anular» e histórico; a nota está
+  também no cartão «Fecho do negócio».
+- **16.4 Estúdio (IA):** escolhe-se a ideia ou peça; a ideia base, o modelo, o pilar e o formato
+  gravam sozinhos; versão por rede (gancho, texto, CTA, hashtags) com contagem de caracteres (X: 280
+  por post; uma thread separa os posts com «---»). Botões: **Adaptar às redes · 5 ganchos · Guião
+  cena a cena · Encurtar · Alongar · Mudar o tom · Sugerir CTA · Criar thread · Hashtags**. A IA
+  **propõe**: as propostas aparecem ao lado e só gravam com «Usar» (com «Anular»). Modelos: Breakdown
+  VFX · Bastidores · Dica técnica · Caso de cliente · Antes e depois 3D · Apresentação de serviço ·
+  Pessoas da topper. · Um dia na topper. (cada um com checklist, material de gravação e pista para a
+  IA). **Voz da topper.** em Conhecimento › Voz da topper. (editável por quem edita o Conhecimento),
+  enviada em todos os pedidos. Motor: **Claude, API da Anthropic**, pelo mesmo cliente do assistente
+  do Drive (`inc/ai.php`): **chave só no servidor** em `admin/inc/ai_config.php` (fora do Git), nunca
+  no browser; o gasto conta em `ai_usage` (finalidade «mkt») com o mesmo limite mensal, e cada pedido
+  fica em `mkt_ai_log` (quem, peça, ação, tokens, custo, o que propôs). **Registo de uso** em
+  Definições › Marketing › IA do Estúdio. Sem chave, os botões ficam desativados com o aviso.
+- **16.5 Produção:** kanban Ideia aprovada → Guião → Gravação → Edição → Revisão → Agendado →
+  Publicado (arrastar, ou o seletor no cartão, com «Anular»); cartão com pilar, redes, responsável,
+  prazo, checklist n/m, negócio e autorização, dia de gravação. **Revisão:** aprovam **só superadmin
+  e admins** (papel lido na base em cada pedido); Aprovar · Pedir alterações (com comentário: volta a
+  Edição e o responsável recebe uma tarefa, que fecha com a aprovação). Depois de aprovada, os textos
+  fecham; voltar atrás tira a aprovação. **Agendado e Publicado** pedem a peça aprovada e, se ligada
+  a um negócio, autorização de divulgação nessa data — **bloqueio no servidor** (`mkt_block_reason`),
+  com a tentativa no histórico. **Dias de gravação:** juntar peças num dia gera a lista de planos (dos
+  guiões) e o material (dos modelos), para imprimir. **Pasta no Drive** `Marketing/AAAA-MM/<peça>/`
+  criada ao avançar (ou pelo botão na peça). Página da peça: dados (Editar/Gravar), checklist, etapas,
+  Revisão, publicação por rede, textos, guião e histórico com ícones.
+- **16.6 Calendário:** semana e mês, uma linha por rede; cores = pilares; coluna **Alvo** por semana
+  (Definições: **Instagram 2–3 · LinkedIn 5 · X 10**) e semanas abaixo do alvo destacadas;
+  **arrastar uma peça aprovada (da lista «Prontas a agendar») para um dia = agendar** (10:00, ou a
+  hora que já tinha); arrastar uma agendada para outro dia muda a data; **equilíbrio de pilares** do
+  mês (barra e pilares sem publicações).
+- **16.7 Publicação — fase 1 (assistida):** ao agendar, quem publica recebe a tarefa no dia e à hora
+  (Tarefas); na peça, «Copiar legenda» junta gancho, texto, CTA, link com rastreio e hashtags; o
+  ficheiro final está na pasta no Drive; «Marcar como publicada» pede o link de cada rede, fecha o
+  lembrete e cria o das **métricas 7 dias depois**. **Fase 2 (preparada, por fazer):** `mkt_accounts`
+  (rede, conta, estado da API), `mkt_posts.external_id` / `sync_source` / `synced_at`, e Definições ›
+  Marketing › Ligações às redes («por ligar»).
+- **16.8 Desempenho:** por mês: alcance, cliques (link com rastreio + cliques na rede), **leads**,
+  **negócios e €** (o valor só com Financeiro), **talento**, melhor pilar / rede / dia e hora;
+  métricas por publicação (à mão, com aviso quando faltam depois de 7 dias); médias por pilar,
+  formato, rede e dia/hora; **resumo do mês escrito pela IA** (guardado). **Link com rastreio por
+  publicação:** `https://topperdigital.xyz/go.php?c=<código>` conta o clique (sem guardar o IP,
+  sem contar robôs nem a mesma pessoa duas vezes em 30 min), lembra o código 30 dias e leva ao site
+  (destino escolhido na peça); a lead do formulário do site entra com origem **«<rede> · <peça>»**
+  (Origem «Redes sociais», Campanha «LinkedIn · Breakdown: …») e fica ligada à publicação.
+- **Também:** peças na pesquisa ⌘K e no painel lateral (`type=mkt`); atalhos I e N em Conhecimento ›
+  Navegação; ícones novos (ideia, IA, copiar, câmara, voto, X).
+- **§11:** modo claro e escuro com os tokens, degradês nos cartões, animação dos formulários (saem do
+  botão), «Anular» em triagem, etapas, revisão, agendar, publicar, métricas e textos, dicas em
+  ícones e chips, histórico com ícones e cores, e tudo cabe num telemóvel (o kanban e o calendário
+  deslizam).
+
+Ficheiros novos: `inc/migrate_marketing.php`, `inc/marketing.php`, `inc/marketing_view.php`,
+`marketing.php`, `marketing_peca.php`, `mkt_api.php`, `assets/marketing.js` e, na raiz do site,
+`go.php`. Alterados: `contacto.php` e `index.html` (origem «rede · peça»), Negócios (divulgação,
+portfólio → ideia), Conhecimento (Voz da topper.), Definições, menu, ⌘K.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -1352,3 +1436,80 @@ com itens em falta, mas o negócio fica assinalado e conta como «Em risco» at�
 ### 15.6 Negócios anteriores à plataforma
 Negócios migrados sem orçamento mostram «Sem orçamento na plataforma» e usam o valor e
 os custos existentes para o Resultado.
+
+---
+
+## 16. Aba Marketing — conteúdo para redes sociais (decidido 22 out 2026)
+
+Motor de criação e gestão de conteúdo da topper. para **Instagram, LinkedIn e X**. Não
+confundir com o Centro Criativo (criatividade dos serviços a clientes). Aplica a §11.
+
+### 16.1 Separadores
+**Ideias · Estúdio · Produção · Calendário · Desempenho** — ciclo: ideias → criar → produzir
+→ agendar → medir → novas ideias.
+
+### 16.2 Pilares de conteúdo (editáveis em Definições)
+1. Portfólio e breakdowns · 2. Bastidores · 3. Educação (dicas VFX/3D/pós) · 4. Casos de
+cliente · 5. Serviços (Marketing Buddy, VFX, CGI) · 6. **Employer branding** — mostrar que é
+excelente e exclusivo trabalhar na topper.: pessoas da equipa, projetos de topo em que
+trabalham, ferramentas e condições, crescimento, cultura, «um dia na topper.».
+Objetivo deste pilar: quem vê deve querer trabalhar aqui. Métrica própria: candidaturas
+espontâneas e contactos de talento gerados (via link com rastreio para uma página/
+formulário de carreiras — a criar no site), seguidores e interação por publicação.
+
+### 16.3 Ideias
+- Captura rápida «+ Ideia» e atalho `I` em qualquer ecrã (só o texto é obrigatório).
+- Campos: pilar · formato (reel, carrossel, post, thread, vídeo longo) · plataformas · autor
+  · votos da equipa.
+- Triagem: fila de ideias novas → Avançar (vai para Produção) · Guardar · Descartar.
+- **Automáticas:** «Enviar para o portfólio» na ficha do negócio (§15.5) cria «Breakdown:
+  <negócio>» ligada ao negócio e aos ficheiros; conteúdos com bom desempenho sugerem
+  repetição/parte 2.
+- **Ligação ao Centro Criativo:** quando existir, a ideia de breakdown dá acesso também às
+  versões e referências do projeto no Centro Criativo (ex.: mostrar como foi feito o
+  processo criativo de um serviço). Até lá, liga só ao negócio e aos ficheiros do Drive.
+- **Carreiras:** a métrica de talento do pilar Employer branding precisa de uma página ou
+  formulário de carreiras no site — **PENDENTE**, a decidir com a aba Equipa/site; deixar a
+  origem «talento» preparada.
+- **Autorização de divulgação** na ficha do negócio: sim · não · a partir de <data>. Sem
+  autorização, não pode ser publicado (bloqueio no servidor).
+
+### 16.4 Estúdio (IA)
+- Editor: escreve-se a ideia base uma vez; a IA gera versões por rede (IG: gancho, legenda
+  curta, hashtags, roteiro do reel · LinkedIn: tom profissional, história e aprendizagem ·
+  X: post curto ou thread, dentro do limite de caracteres).
+- Ações em botões: Gerar 5 ganchos · Escrever guião (cenas e duração) · Encurtar/alongar ·
+  Mudar o tom · Sugerir CTA · Criar thread · Hashtags.
+- **Voz da topper.** guardada no Centro de Conhecimento e usada sempre pela IA.
+- Modelos de formato: Breakdown VFX (antes/depois) · Bastidores · Dica técnica · Caso de
+  cliente · Antes e depois 3D · Apresentação de serviço · **Pessoas da topper.** (employer
+  branding) · **Um dia na topper.**
+- Motor de IA: **Claude (API da Anthropic)**, chave só no servidor; registo de uso/custo
+  em Definições. A IA nunca publica: propõe, uma pessoa aprova.
+
+### 16.5 Produção (kanban)
+Etapas: **Ideia aprovada → Guião → Gravação → Edição → Revisão → Agendado → Publicado**.
+- Cartão = peça: responsável, prazo, checklist do formato, pasta automática no Drive
+  `Marketing/AAAA-MM/<peça>/`, versões por rede.
+- **Dias de gravação:** agrupar várias peças num dia; gera lista de planos e material.
+- **Revisão:** aprovam **superadmin ou admins** (por agora); ver peça final + legendas de
+  cada rede; Aprovar · Pedir alterações (com comentário).
+- Arrastar entre etapas, «Anular», histórico com ícones.
+
+### 16.6 Calendário editorial
+Mês/semana com linha por rede; arrastar peça aprovada para um dia = agendar.
+**Cadência alvo por semana** (Definições): **Instagram 2–3 · LinkedIn 5 · X 10**; semanas
+abaixo do alvo destacadas. Indicador de equilíbrio de pilares no mês.
+
+### 16.7 Publicação
+- **Fase 1 (agora): publicação assistida** — lembrete a quem publica no dia, copiar legenda
+  por rede num clique, ficheiro final pronto; depois colar o link da publicação; métricas
+  introduzidas à mão (lembrete 7 dias depois).
+- **Fase 2 (depois):** publicação e métricas automáticas via APIs (Meta/Instagram, LinkedIn
+  página, X — paga). Preparar a estrutura, não implementar já.
+
+### 16.8 Desempenho
+Métricas por publicação (alcance, interações, guardados, partilhas, cliques); médias por
+pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
+site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
+Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.

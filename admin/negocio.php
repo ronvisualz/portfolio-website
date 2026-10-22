@@ -60,6 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('Negócio guardado.');
                 break;
 
+            // ── «Pode ser divulgado?» (§16.3): sem autorização, as peças de Marketing ligadas não passam a Agendado/Publicado ──
+            case 'disclose':
+                if (!$dealEdit) throw new RuntimeException('Sem permissão para mudar este negócio.');
+                $val = (string)($_POST['disclose'] ?? '');
+                $from = (string)($_POST['disclose_from'] ?? '');
+                if (!in_array($val, ['', 'yes', 'no', 'from'], true)) throw new RuntimeException('Escolha uma opção.');
+                if ($val === 'from' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) throw new RuntimeException('Indique a partir de que dia pode ser divulgado.');
+                $was = ['id' => $id, 'disclose' => $deal['disclose'], 'disclose_from' => $deal['disclose_from']];
+                $pdo->prepare('UPDATE deals SET disclose = ?, disclose_from = ? WHERE id = ?')->execute([$val !== '' ? $val : null, $val === 'from' ? $from : null, $id]);
+                require_once __DIR__ . '/inc/marketing.php';
+                $label = mkt_disclose_state($val ?: null, $val === 'from' ? $from : null)['label'];
+                deal_log($pdo, $id, 'disclose', ['note' => $label]);
+                flash($label . '.', 'ok', undo_push('deal_disclose', $was));
+                break;
+
             // ── barra de etapas de produção (§15.3) ──
             case 'step':
                 if (!$dealEdit) throw new RuntimeException('Sem permissão para mudar este negócio.');
@@ -81,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // deal_move tem a sua própria transação; as ações opcionais vêm depois, com o negócio já concluído.
                 deal_move($pdo, $deal, $doneStage);
                 if (!empty($_POST['delivered']) && !$deal['delivered_at']) deal_mark_delivered($pdo, $deal, true);
-                if (!empty($_POST['portfolio']) && !$deal['portfolio_at']) $flags['tasks'][] = deal_send_portfolio($pdo, $file, (int)$me['id']);
+                if (!empty($_POST['portfolio']) && !$deal['portfolio_at']) { [$t, $i] = deal_send_portfolio($pdo, $file, (int)$me['id']); $flags['tasks'][] = $t; if ($i) $flags['ideas'][] = $i; }
                 if (!empty($_POST['testimonial']) && !$deal['testimonial_at']) $flags['tasks'][] = deal_ask_testimonial($pdo, $file, (int)$me['id']);
                 $check = deal_checklist($pdo, deal_get($pdo, $id));
                 flash($deal['code'] . ' concluído.' . ($check['complete'] ? ' Fecho completo.' : ' Fica assinalado (conta como «Em risco») até fechar: ' . implode(', ', array_map(fn($i) => mb_strtolower($i['label']), $check['missing'])) . '.'),
@@ -97,8 +112,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     deal_mark_delivered($pdo, $deal, !$deal['delivered_at']);
                     $msg = $deal['delivered_at'] ? 'Entregas por confirmar.' : 'Entregas marcadas como feitas.';
                 } elseif ($do === 'portfolio') {
-                    $flags['tasks'][] = deal_send_portfolio($pdo, $file, (int)$me['id']);
-                    $msg = 'Enviado para o portfólio: tarefa criada em Tarefas.';
+                    [$t, $i] = deal_send_portfolio($pdo, $file, (int)$me['id']);
+                    $flags['tasks'][] = $t;
+                    if ($i) $flags['ideas'][] = $i;
+                    $msg = 'Enviado para o portfólio: tarefa criada em Tarefas' . ($i ? ' e a ideia «Breakdown» em Marketing › Ideias.' : '.');
                 } else {
                     $flags['tasks'][] = deal_ask_testimonial($pdo, $file, (int)$me['id']);
                     $msg = 'Testemunho pedido: tarefa de email criada.';
@@ -225,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Cada ação volta à vista de onde veio: contas e custos, dados e contactos, ou a ficha.
     $anchor = (string)($_POST['anchor'] ?? '');
     $back = in_array($do, $finance, true) || in_array($anchor, ['custos', 'custo', 'financeiro'], true) ? '&vista=contas'
-          : (in_array($do, ['link_contact', 'unlink_contact', 'brought_by', 'save_info'], true) ? '&vista=dados' : '');
+          : (in_array($do, ['link_contact', 'unlink_contact', 'brought_by', 'save_info', 'disclose'], true) ? '&vista=dados' : '');
     redirect($self . $back . (!empty($rateAsk) ? '&avaliar=' . $rateAsk : '') . (preg_match('/^[a-z-]+$/', $anchor) ? '#' . $anchor : ''));
 }
 
@@ -495,7 +512,8 @@ if ($dealEdit && $deal['phase'] === 'production') {
 }
 echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html($check)
      . ($closeActs !== '' ? '<div class="dc-acts">' . $closeActs . '</div>' : '')
-     . ($deal['phase'] !== 'done' && $deal['phase'] !== 'production' ? '<p class="dc-note">A checklist aparece ao passar a Concluído.</p>' : ''),
+     . ($deal['phase'] !== 'done' && $deal['phase'] !== 'production' ? '<p class="dc-note">A checklist aparece ao passar a Concluído.</p>' : '')
+     . '<p class="dc-note">' . icon('marketing') . ' ' . e(deal_disclose_label($deal)) . ' · <a href="' . e($tab('dados')) . '#info">mudar</a></p>',
      ['count' => count(array_filter($check['items'], fn($i) => $i['ok'])) . '/' . count($check['items']), 'panel' => 'dclose:' . $id, 'href' => $self . '#c-close', 'more' => 'Ver checklist']);
 ?>
 </div>
@@ -604,6 +622,21 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
           <button class="btn ghost sm" type="submit">Guardar</button></form>
       <?php else: ?><?= deal_people_link($pdo, $deal['brought_by_id']) ?><?php endif; ?>
       <span class="muted small">· quem originou o negócio</span></div>
+    <span>Pode ser divulgado?</span><div>
+      <?php require_once __DIR__ . '/inc/marketing.php'; $dsc = mkt_disclose_state($deal['disclose'] ?? null, $deal['disclose_from'] ?? null); ?>
+      <?php if ($dealEdit): ?>
+        <form method="post" class="bb-form disc-form"><?= csrf_field() ?><input type="hidden" name="do" value="disclose"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="anchor" value="info">
+          <label class="sr" for="disc">Pode ser divulgado?</label>
+          <select id="disc" name="disclose">
+            <option value="" <?= $dsc['key'] === 'unset' ? 'selected' : '' ?>>Por decidir</option>
+            <option value="yes" <?= $dsc['key'] === 'yes' ? 'selected' : '' ?>>Sim</option>
+            <option value="no" <?= $dsc['key'] === 'no' ? 'selected' : '' ?>>Não</option>
+            <option value="from" <?= $dsc['key'] === 'from' ? 'selected' : '' ?>>A partir de…</option>
+          </select>
+          <label class="sr" for="disc-d">A partir de</label><input type="date" id="disc-d" name="disclose_from" value="<?= e((string)($deal['disclose_from'] ?? '')) ?>">
+          <button class="btn ghost sm" type="submit">Guardar</button></form>
+      <?php else: ?><?= e($dsc['label']) ?><?php endif; ?>
+      <span class="muted small">· sem autorização, as peças de Marketing deste negócio não podem ser agendadas nem publicadas</span></div>
     <span>Criado por</span><div><?= $creator !== '' ? e($creator) : '<span class="muted">—</span>' ?> <span class="muted small mono"><?= e(lisbon_fmt(strtotime((string)$deal['created_at']), 'd/m/Y')) ?></span></div>
   </div>
 </div>
@@ -672,7 +705,7 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
     <?= deal_checklist_html($check) ?>
     <?php if (!$deal['delivered_at']): ?><label class="check dck"><input type="checkbox" name="delivered" value="1"> As entregas ao cliente estão feitas</label><?php endif; ?>
     <h4 class="dck-h">Depois do fecho <span class="muted">(opcional)</span></h4>
-    <label class="check dck"><input type="checkbox" name="portfolio" value="1"<?= $deal['portfolio_at'] ? ' disabled checked' : '' ?>> Enviar para o portfólio <small class="muted">· Marketing: cria a tarefa de preparar o material</small></label>
+    <label class="check dck"><input type="checkbox" name="portfolio" value="1"<?= $deal['portfolio_at'] ? ' disabled checked' : '' ?>> Enviar para o portfólio <small class="muted">· Marketing: cria a tarefa de preparar o material e a ideia «Breakdown»</small></label>
     <label class="check dck"><input type="checkbox" name="testimonial" value="1"<?= $deal['testimonial_at'] ? ' disabled checked' : '' ?>> Pedir testemunho ao cliente <small class="muted">· cria o email para o responsável</small></label>
     <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><button class="btn" type="submit"><?= icon('check') ?> Concluir</button></div>
   </form>

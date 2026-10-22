@@ -237,6 +237,17 @@ try {
                 }
             }
 
+            // Marketing (§16): ideias e peças, pelo título ou pelo texto da ideia.
+            if (can('marketing') && db_has_table($pdo, 'mkt_pieces')) {
+                require_once __DIR__ . '/inc/marketing.php';
+                $st = $pdo->prepare("SELECT id, title, status, stage FROM mkt_pieces WHERE status <> 'descartada' AND (title LIKE ? ESCAPE '!' OR idea LIKE ? ESCAPE '!') ORDER BY id DESC LIMIT 5");
+                $st->execute([$l, $l]);
+                foreach ($st->fetchAll() as $m) {
+                    $add('Marketing', ['title' => $m['title'], 'sub' => $m['status'] === 'producao' ? 'Produção · ' . (MKT_STAGES[$m['stage']] ?? '') : 'Ideia · ' . (MKT_IDEA_STATUS[$m['status']] ?? ''),
+                                       'url' => '/admin/marketing_peca.php?id=' . (int)$m['id'], 'panel' => 'mkt:' . (int)$m['id'], 'icon' => icon('marketing')]);
+                }
+            }
+
             if (can('leads')) {
                 [$rs, $ra] = reach_sql($pdo, 'leads');
                 $st = $pdo->prepare("SELECT d.id, d.name, d.company, d.person, d.phase, d.email, d.lead_state FROM deals d
@@ -397,6 +408,13 @@ try {
             $d = record_get($pdo, $id);
             if (!$d || $d['code'] === null || !record_reach($pdo, $d)) out(404, ['ok' => false, 'error' => 'Negócio não encontrado.']);
             out(200, ['ok' => true] + deal_panel($pdo, $type, deal_file_row($pdo, $id)));
+        }
+        if ($type === 'mkt') {
+            require_perm('marketing', PERM_VIEW);
+            require_once __DIR__ . '/inc/marketing.php';
+            $p = mkt_piece($pdo, $id);
+            if (!$p) out(404, ['ok' => false, 'error' => 'Peça não encontrada.']);
+            out(200, ['ok' => true] + mkt_panel($pdo, $p));
         }
         if ($type === 'contact') {
             require_perm('contactos', PERM_VIEW);

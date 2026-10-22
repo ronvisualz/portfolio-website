@@ -95,6 +95,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'budget') 
     redirect('/admin/conta.php#orcamentacao');
 }
 
+// Marketing (§16): cadência alvo por semana e os pilares de conteúdo. Só admins.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mkt_targets', 'mkt_pillars'], true)) {
+    csrf_check();
+    if (!$isAdmin) { http_response_code(403); exit('Sem permissão.'); }
+    require_once __DIR__ . '/inc/marketing.php';
+    if ($_POST['do'] === 'mkt_targets') {
+        $bad = false;
+        foreach (['mkt_target_ig_min', 'mkt_target_ig_max', 'mkt_target_li', 'mkt_target_x'] as $k) {
+            $raw = trim((string)($_POST[$k] ?? ''));
+            if (!ctype_digit($raw) || (int)$raw > 99) { $bad = true; continue; }
+            mkt_setting_set($pdo, $k, (string)(int)$raw);
+        }
+        if ((int)mkt_setting($pdo, 'mkt_target_ig_max', '3') < (int)mkt_setting($pdo, 'mkt_target_ig_min', '2')) {
+            mkt_setting_set($pdo, 'mkt_target_ig_max', mkt_setting($pdo, 'mkt_target_ig_min', '2'));
+        }
+        flash($bad ? 'Cada alvo é um número de 0 a 99; os outros foram guardados.' : 'Cadência alvo guardada.', $bad ? 'err' : 'ok');
+        redirect('/admin/conta.php#marketing');
+    }
+    // Pilares: nome, nome curto, cor, ordem, ativo, employer branding; acrescentar. Não se apagam (as peças apontam para eles).
+    $err = '';
+    foreach ($pdo->query('SELECT * FROM mkt_pillars')->fetchAll() as $r) {
+        $in = $_POST['pl'][$r['id']] ?? null;
+        if (!is_array($in)) continue;
+        $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 80);
+        if ($name === '') { $err = 'Cada pilar precisa de um nome.'; continue; }
+        $color = isset(MKT_PILLAR_COLORS[$in['color'] ?? '']) ? (string)$in['color'] : 'neutral';
+        $pdo->prepare('UPDATE mkt_pillars SET name = ?, short_name = ?, color = ?, kind = ?, description = ?, position = ?, is_active = ? WHERE id = ?')
+            ->execute([$name, mb_substr(trim((string)($in['short'] ?? '')), 0, 24), $color, !empty($in['employer']) ? 'employer' : '',
+                       mb_substr(trim((string)($in['desc'] ?? '')), 0, 500), max(0, min(999, (int)($in['pos'] ?? 0))), !empty($in['on']) ? 1 : 0, (int)$r['id']]);
+    }
+    $new = mb_substr(trim((string)($_POST['new_pillar'] ?? '')), 0, 80);
+    if ($new !== '') {
+        $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) FROM mkt_pillars')->fetchColumn() + 1;
+        $pdo->prepare("INSERT INTO mkt_pillars (name, short_name, color, position) VALUES (?, ?, 'neutral', ?)")->execute([$new, mb_substr($new, 0, 24), $pos]);
+    }
+    flash($err !== '' ? $err . ' Os outros foram guardados.' : 'Pilares guardados.', $err !== '' ? 'err' : 'ok');
+    redirect('/admin/conta.php#marketing');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -237,6 +276,93 @@ render_flashes();
   </div>
   <div class="actions"><button class="btn" type="submit">Guardar Orçamentação</button></div>
 </form>
+<?php endif; ?>
+
+<?php if ($isAdmin && db_has_table($pdo, 'mkt_pillars')):
+    require_once __DIR__ . '/inc/marketing.php';
+    require_once __DIR__ . '/inc/ai.php';
+    $tg = mkt_targets($pdo);
+    [$ma, $mb, $mLabel] = ai_month_bounds();
+    $spent = ai_month_spend_usd($pdo);
+    $st = $pdo->prepare("SELECT COALESCE(SUM(cost_usd), 0), COUNT(*) FROM ai_usage WHERE purpose = 'mkt' AND created_at >= ? AND created_at < ?");
+    $st->execute([$ma, $mb]);
+    [$mktSpent, $mktCalls] = $st->fetch(PDO::FETCH_NUM);
+    $log = $pdo->query('SELECT l.*, u.name AS who, p.title FROM mkt_ai_log l LEFT JOIN users u ON u.id = l.user_id LEFT JOIN mkt_pieces p ON p.id = l.piece_id ORDER BY l.id DESC LIMIT 25')->fetchAll();
+    $byUser = $pdo->prepare('SELECT u.name, COUNT(*) AS n, SUM(l.cost_usd) AS c FROM mkt_ai_log l LEFT JOIN users u ON u.id = l.user_id WHERE l.created_at >= ? AND l.created_at < ? GROUP BY l.user_id, u.name ORDER BY c DESC');
+    $byUser->execute([$ma, $mb]);
+    $byUser = $byUser->fetchAll();
+    $accounts = $pdo->query('SELECT * FROM mkt_accounts')->fetchAll(PDO::FETCH_UNIQUE);
+    $usd = fn($v) => number_format((float)$v, 4, ',', ' ') . ' US$'; ?>
+<h2 id="marketing">Marketing</h2>
+<form method="post" class="panel" style="max-width:720px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="mkt_targets">
+  <h3 style="margin-top:0">Cadência alvo por semana</h3>
+  <p class="muted" style="margin-top:0">Publicações por semana em cada rede. No Calendário, as semanas abaixo do alvo ficam destacadas. Por defeito: Instagram 2–3 · LinkedIn 5 · X 10.</p>
+  <div class="grid">
+    <div class="field"><label for="tg-igmin">Instagram (mínimo)</label><input type="number" id="tg-igmin" name="mkt_target_ig_min" min="0" max="99" required value="<?= $tg['ig'][0] ?>" inputmode="numeric"></div>
+    <div class="field"><label for="tg-igmax">Instagram (máximo)</label><input type="number" id="tg-igmax" name="mkt_target_ig_max" min="0" max="99" required value="<?= $tg['ig'][1] ?>" inputmode="numeric"></div>
+    <div class="field"><label for="tg-li">LinkedIn</label><input type="number" id="tg-li" name="mkt_target_li" min="0" max="99" required value="<?= $tg['li'][0] ?>" inputmode="numeric"></div>
+    <div class="field"><label for="tg-x">X</label><input type="number" id="tg-x" name="mkt_target_x" min="0" max="99" required value="<?= $tg['x'][0] ?>" inputmode="numeric"></div>
+  </div>
+  <div class="actions"><button class="btn" type="submit">Guardar cadência</button></div>
+</form>
+
+<form method="post" class="panel" style="max-width:920px">
+  <?= csrf_field() ?><input type="hidden" name="do" value="mkt_pillars">
+  <h3 style="margin-top:0">Pilares de conteúdo</h3>
+  <p class="muted" style="margin-top:0">Os temas das publicações (cor no Calendário e equilíbrio do mês). Um pilar inativo deixa de aparecer para escolher; as peças que já o usam ficam.
+    «Employer branding» mede também o talento gerado (candidaturas e contactos de talento).</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Pilar</th><th class="hide-sm">Nome curto</th><th>Cor</th><th class="num">Ordem</th><th>Ativo</th><th class="hide-sm">Employer</th></tr></thead>
+    <tbody>
+    <?php foreach (mkt_pillars($pdo, false) as $pl): $pid = (int)$pl['id']; ?>
+      <tr><td><input type="text" name="pl[<?= $pid ?>][name]" maxlength="80" required value="<?= e($pl['name']) ?>" aria-label="Nome do pilar">
+            <input type="text" name="pl[<?= $pid ?>][desc]" maxlength="500" value="<?= e($pl['description']) ?>" placeholder="Descrição (a IA usa-a)" aria-label="Descrição de <?= e($pl['name']) ?>" style="margin-top:4px;font-size:12.5px"></td>
+        <td class="hide-sm"><input type="text" name="pl[<?= $pid ?>][short]" maxlength="24" value="<?= e($pl['short_name']) ?>" style="width:9em" aria-label="Nome curto de <?= e($pl['name']) ?>"></td>
+        <td><span class="mpil p-<?= e($pl['color']) ?>" aria-hidden="true">Aa</span>
+          <select name="pl[<?= $pid ?>][color]" aria-label="Cor de <?= e($pl['name']) ?>"><?php foreach (MKT_PILLAR_COLORS as $ck => $cl): ?><option value="<?= $ck ?>" <?= $pl['color'] === $ck ? 'selected' : '' ?>><?= e($cl) ?></option><?php endforeach; ?></select></td>
+        <td class="num"><input type="number" name="pl[<?= $pid ?>][pos]" min="0" max="999" value="<?= (int)$pl['position'] ?>" style="width:5em" aria-label="Ordem de <?= e($pl['name']) ?>"></td>
+        <td><label class="check"><input type="checkbox" name="pl[<?= $pid ?>][on]" value="1" <?= (int)$pl['is_active'] ? 'checked' : '' ?>> Ativo</label></td>
+        <td class="hide-sm"><label class="check"><input type="checkbox" name="pl[<?= $pid ?>][employer]" value="1" <?= $pl['kind'] === 'employer' ? 'checked' : '' ?>> Talento</label></td></tr>
+    <?php endforeach; ?>
+      <tr><td colspan="6"><input type="text" name="new_pillar" maxlength="80" placeholder="+ Novo pilar" aria-label="Novo pilar"></td></tr>
+    </tbody>
+  </table></div>
+  <div class="actions"><button class="btn" type="submit">Guardar pilares</button></div>
+</form>
+
+<section class="panel" style="max-width:920px" id="ia">
+  <h3 style="margin-top:0">IA do Estúdio: registo de uso</h3>
+  <p class="muted" style="margin-top:0">Claude, da Anthropic. A chave fica só no servidor (<span class="mono">admin/inc/ai_config.php</span>, fora do Git) e nunca vai para o browser.
+    O limite mensal é o mesmo do assistente do Drive. A IA só propõe: nunca publica nem grava sozinha.
+    <?= ai_config() ? '' : '<br><b>Ainda sem chave neste servidor:</b> os botões da IA ficam desativados até ela existir.' ?></p>
+  <div class="stats">
+    <div class="stat"><div class="k">Marketing em <?= e($mLabel) ?></div><div class="v"><?= e($usd($mktSpent)) ?></div><div class="n"><?= (int)$mktCalls ?> pedidos</div></div>
+    <div class="stat"><div class="k">Total da IA (mês)</div><div class="v"><?= e($usd($spent)) ?></div><div class="n">limite <?= e(ai_eur(ai_cap_usd())) ?> (contado como US$)</div></div>
+  </div>
+  <?php if ($byUser): ?><p class="small"><?php foreach ($byUser as $b): ?><span class="chip"><?= e($b['name'] ?? '—') ?> · <?= (int)$b['n'] ?> · <?= e($usd($b['c'])) ?></span> <?php endforeach; ?></p><?php endif; ?>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Quando</th><th>Quem</th><th>Peça</th><th>Ação</th><th class="num">Tokens</th><th class="num">Custo</th></tr></thead>
+    <tbody>
+    <?php if (!$log): ?><tr><td colspan="6" class="empty">Ainda sem pedidos à IA.</td></tr><?php endif; ?>
+    <?php foreach ($log as $l): ?>
+      <tr><td class="mono"><?= e(lisbon_fmt(strtotime((string)$l['created_at']), 'd/m H:i')) ?></td><td><?= e($l['who'] ?? '—') ?></td>
+        <td><?= $l['piece_id'] ? '<a href="/admin/marketing_peca.php?id=' . (int)$l['piece_id'] . '">' . e(shorten((string)$l['title'], 40)) . '</a>' : '<span class="muted">resumo do mês</span>' ?></td>
+        <td><?= e(MKT_AI_ACTIONS[$l['action']][0] ?? ($l['action'] === 'summary' ? 'Resumo do mês' : $l['action'])) ?><?= $l['network'] ? ' · ' . e(MKT_NETWORKS[$l['network']][0] ?? '') : '' ?><?= (int)$l['ok'] ? '' : ' <span class="chip no">falhou</span>' ?></td>
+        <td class="num mono"><?= (int)$l['input_tokens'] + (int)$l['output_tokens'] ?></td><td class="num mono"><?= e($usd($l['cost_usd'])) ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel" style="max-width:720px">
+  <h3 style="margin-top:0">Ligações às redes (fase 2)</h3>
+  <p class="muted" style="margin-top:0">Por agora a publicação é assistida: lembrete a quem publica, legenda copiada num clique, link colado à mão e métricas registadas à mão.
+    A fase 2 (publicar e ler métricas pelas APIs do Instagram/Meta, da página do LinkedIn e do X — este pago) fica preparada e liga-se aqui.</p>
+  <ul class="mpubs"><?php foreach (MKT_NETWORKS as $n => [$label]): $acc = $accounts[$n] ?? null; ?>
+    <li><?= mkt_net_chip($n) ?> <?= e($label) ?> · <span class="muted"><?= $acc && $acc['api_status'] === 'on' ? 'ligada' . ($acc['handle'] ? ' (' . e($acc['handle']) . ')' : '') : 'por ligar (fase 2)' ?></span></li>
+  <?php endforeach; ?></ul>
+</section>
 <?php endif; ?>
 
 <h2>Mudar palavra-passe</h2>

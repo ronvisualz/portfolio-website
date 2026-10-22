@@ -58,6 +58,7 @@ const TAB_PAGES = [
     'drive'     => '/admin/drive.php',
     'financeiro'=> '/admin/financeiro.php',
     'relatorios'=> '/admin/relatorios.php',
+    'marketing' => '/admin/marketing.php',
     'equipa'    => '/admin/equipa.php',
     'conhecimento' => '/admin/conhecimento.php',
     'tools'     => '/admin/tools.php',
