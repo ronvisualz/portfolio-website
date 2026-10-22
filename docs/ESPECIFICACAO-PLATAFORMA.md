@@ -1381,6 +1381,12 @@ formulário de carreiras — a criar no site), seguidores e interação por publ
 - **Automáticas:** «Enviar para o portfólio» na ficha do negócio (§15.5) cria «Breakdown:
   <negócio>» ligada ao negócio e aos ficheiros; conteúdos com bom desempenho sugerem
   repetição/parte 2.
+- **Ligação ao Centro Criativo:** quando existir, a ideia de breakdown dá acesso também às
+  versões e referências do projeto no Centro Criativo (ex.: mostrar como foi feito o
+  processo criativo de um serviço). Até lá, liga só ao negócio e aos ficheiros do Drive.
+- **Carreiras:** a métrica de talento do pilar Employer branding precisa de uma página ou
+  formulário de carreiras no site — **PENDENTE**, a decidir com a aba Equipa/site; deixar a
+  origem «talento» preparada.
 - **Autorização de divulgação** na ficha do negócio: sim · não · a partir de <data>. Sem
   autorização, não pode ser publicado (bloqueio no servidor).
 
