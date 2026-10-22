@@ -1352,3 +1352,74 @@ com itens em falta, mas o negócio fica assinalado e conta como «Em risco» at�
 ### 15.6 Negócios anteriores à plataforma
 Negócios migrados sem orçamento mostram «Sem orçamento na plataforma» e usam o valor e
 os custos existentes para o Resultado.
+
+---
+
+## 16. Aba Marketing — conteúdo para redes sociais (decidido 22 out 2026)
+
+Motor de criação e gestão de conteúdo da topper. para **Instagram, LinkedIn e X**. Não
+confundir com o Centro Criativo (criatividade dos serviços a clientes). Aplica a §11.
+
+### 16.1 Separadores
+**Ideias · Estúdio · Produção · Calendário · Desempenho** — ciclo: ideias → criar → produzir
+→ agendar → medir → novas ideias.
+
+### 16.2 Pilares de conteúdo (editáveis em Definições)
+1. Portfólio e breakdowns · 2. Bastidores · 3. Educação (dicas VFX/3D/pós) · 4. Casos de
+cliente · 5. Serviços (Marketing Buddy, VFX, CGI) · 6. **Employer branding** — mostrar que é
+excelente e exclusivo trabalhar na topper.: pessoas da equipa, projetos de topo em que
+trabalham, ferramentas e condições, crescimento, cultura, «um dia na topper.».
+Objetivo deste pilar: quem vê deve querer trabalhar aqui. Métrica própria: candidaturas
+espontâneas e contactos de talento gerados (via link com rastreio para uma página/
+formulário de carreiras — a criar no site), seguidores e interação por publicação.
+
+### 16.3 Ideias
+- Captura rápida «+ Ideia» e atalho `I` em qualquer ecrã (só o texto é obrigatório).
+- Campos: pilar · formato (reel, carrossel, post, thread, vídeo longo) · plataformas · autor
+  · votos da equipa.
+- Triagem: fila de ideias novas → Avançar (vai para Produção) · Guardar · Descartar.
+- **Automáticas:** «Enviar para o portfólio» na ficha do negócio (§15.5) cria «Breakdown:
+  <negócio>» ligada ao negócio e aos ficheiros; conteúdos com bom desempenho sugerem
+  repetição/parte 2.
+- **Autorização de divulgação** na ficha do negócio: sim · não · a partir de <data>. Sem
+  autorização, não pode ser publicado (bloqueio no servidor).
+
+### 16.4 Estúdio (IA)
+- Editor: escreve-se a ideia base uma vez; a IA gera versões por rede (IG: gancho, legenda
+  curta, hashtags, roteiro do reel · LinkedIn: tom profissional, história e aprendizagem ·
+  X: post curto ou thread, dentro do limite de caracteres).
+- Ações em botões: Gerar 5 ganchos · Escrever guião (cenas e duração) · Encurtar/alongar ·
+  Mudar o tom · Sugerir CTA · Criar thread · Hashtags.
+- **Voz da topper.** guardada no Centro de Conhecimento e usada sempre pela IA.
+- Modelos de formato: Breakdown VFX (antes/depois) · Bastidores · Dica técnica · Caso de
+  cliente · Antes e depois 3D · Apresentação de serviço · **Pessoas da topper.** (employer
+  branding) · **Um dia na topper.**
+- Motor de IA: **Claude (API da Anthropic)**, chave só no servidor; registo de uso/custo
+  em Definições. A IA nunca publica: propõe, uma pessoa aprova.
+
+### 16.5 Produção (kanban)
+Etapas: **Ideia aprovada → Guião → Gravação → Edição → Revisão → Agendado → Publicado**.
+- Cartão = peça: responsável, prazo, checklist do formato, pasta automática no Drive
+  `Marketing/AAAA-MM/<peça>/`, versões por rede.
+- **Dias de gravação:** agrupar várias peças num dia; gera lista de planos e material.
+- **Revisão:** aprovam **superadmin ou admins** (por agora); ver peça final + legendas de
+  cada rede; Aprovar · Pedir alterações (com comentário).
+- Arrastar entre etapas, «Anular», histórico com ícones.
+
+### 16.6 Calendário editorial
+Mês/semana com linha por rede; arrastar peça aprovada para um dia = agendar.
+**Cadência alvo por semana** (Definições): **Instagram 2–3 · LinkedIn 5 · X 10**; semanas
+abaixo do alvo destacadas. Indicador de equilíbrio de pilares no mês.
+
+### 16.7 Publicação
+- **Fase 1 (agora): publicação assistida** — lembrete a quem publica no dia, copiar legenda
+  por rede num clique, ficheiro final pronto; depois colar o link da publicação; métricas
+  introduzidas à mão (lembrete 7 dias depois).
+- **Fase 2 (depois):** publicação e métricas automáticas via APIs (Meta/Instagram, LinkedIn
+  página, X — paga). Preparar a estrutura, não implementar já.
+
+### 16.8 Desempenho
+Métricas por publicação (alcance, interações, guardados, partilhas, cliques); médias por
+pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
+site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
+Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.
