@@ -270,6 +270,12 @@ function task_update(PDO $pdo, array $old, array $v): void {
  */
 function task_done(PDO $pdo, int $id): ?int {
     $t = task_by_id($pdo, $id);
+    // Faturas, pagamentos e X-Ray (§19.6 E) só ficam feitos pelo documento/validação no negócio.
+    if ($t && $t['status'] !== 'done' && ($t['doc_kind'] ?? '') !== '') {
+        require_once __DIR__ . '/pipeline_flow.php';
+        $why = flow_task_needs_doc($t);
+        if ($why !== '') throw new RuntimeException($why);
+    }
     $now = task_now();
     $st = $pdo->prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ? AND status <> 'done'");
     $st->execute([$now, $now, $id]);
@@ -325,7 +331,7 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
         $old = $pdo->prepare('SELECT member_id, status FROM tasks WHERE id = ?');
         $old->execute([$id]);
         $row = $old->fetch();
-        if (!$row) throw new RuntimeException('not found');
+        if (!$row) throw new RuntimeException('Essa tarefa já não existe. Recarregue a página.');
         $oldMember = $row['member_id'] !== null ? (int)$row['member_id'] : null;
 
         // Tirada da coluna «Feito» para uma pilha: volta a «A fazer», no fim.

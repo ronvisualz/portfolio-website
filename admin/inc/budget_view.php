@@ -282,13 +282,45 @@ function budget_price_block(array $calc, bool $money): string {
 
 // ── proposta (texto do PDF) ─────────────────────────────────
 
-function budget_proposal_block(array $v, bool $editable): string {
+function budget_proposal_block(array $v, bool $editable, string $opt = 'A', ?PDO $pdo = null, ?array $deal = null): string {
     $dis = $editable ? '' : ' disabled';
-    return '<section class="lv-blk bq-blk" id="b-prop"><h4>Proposta <span class="h-sub">o que o cliente vê no PDF</span></h4>'
-         . '<label class="bq-l">Descrição do trabalho<textarea rows="4" maxlength="6000" data-f="description" placeholder="Ex.: Spot 3D de 30 segundos para televisão e redes sociais, com duas versões de 15 s."' . $dis . '>' . e((string)$v['description']) . '</textarea></label>'
-         . '<label class="bq-l">Condições<textarea rows="3" maxlength="4000" data-f="conditions"' . $dis . '>' . e((string)$v['conditions']) . '</textarea></label>'
-         . '<p class="muted small" style="margin:0">A proposta leva a descrição, as fases e prazos, o preço s/ e c/ IVA e as condições. Nunca custos nem margens.</p>'
-         . '</section>';
+    $txt = fn(string $f, string $label, int $rows, int $max, string $ph = '') => '<label class="bq-l">' . $label
+        . '<textarea rows="' . $rows . '" maxlength="' . $max . '" data-f="' . $f . '"' . ($ph !== '' ? ' placeholder="' . e($ph) . '"' : '') . $dis . '>' . e((string)($v[$f] ?? '')) . '</textarea></label>';
+    $scope = $opt === 'B'
+        ? $txt('scope_b', 'Âmbito da Opção B · Proposta de valor', 4, 6000, 'O pedido + o que acrescenta valor: cutdowns e formatos sociais, reels da mesma rodagem, ronda de revisão extra, uso alargado…')
+        : $txt('description', 'Âmbito da Opção A · Pedido', 4, 6000, 'Ex.: Spot 3D de 30 segundos para televisão e redes sociais, com duas versões de 15 s.');
+    $payDefault = $pdo && $deal ? flow_payment_default_view($pdo, $v, $deal) : '';
+    $h = '<section class="lv-blk bq-blk" id="proposta"><h4>Proposta <span class="h-sub">o que o cliente vê no PDF e na página de resposta</span></h4>'
+       . $scope
+       . '<div class="bq-grid">'
+       . '<label class="bq-l">Prazo<input type="text" maxlength="255" data-f="term_text" value="' . e((string)($v['term_text'] ?? '')) . '" placeholder="Ex.: 4 semanas a partir da adjudicação"' . $dis . '></label>'
+       . '<label class="bq-l">Validade da proposta<input type="date" data-f="valid_until" value="' . e((string)($v['valid_until'] ?? '')) . '" min="' . e(today_lisbon()) . '"' . $dis . '></label>'
+       . '</div>'
+       . '<label class="bq-l">Condições de pagamento'
+       . '<textarea rows="2" maxlength="2000" data-f="payment_terms"' . ($payDefault !== '' ? ' placeholder="' . e($payDefault) . '"' : '') . $dis . '>' . e((string)($v['payment_terms'] ?? '')) . '</textarea></label>'
+       . ($editable && $payDefault !== '' && trim((string)($v['payment_terms'] ?? '')) === '' ? '<p class="small"><button type="button" class="lnk" data-bfill="payment_terms" data-value="' . e($payDefault) . '">' . icon('refresh') . ' Usar as condições por defeito: ' . e($payDefault) . '</button></p>' : '')
+       . $txt('revisions_text', 'Revisões incluídas e preço de cada ronda extra', 2, 2000, 'Ex.: 2 rondas de revisão incluídas; cada ronda extra 350 € + IVA.')
+       . $txt('rights_text', 'Direitos de utilização', 2, 2000, 'Meios, território, duração, orgânico/pago.')
+       . $txt('conditions', 'Outras condições', 3, 4000)
+       . '<p class="muted small" style="margin:0">O PDF e a página do cliente mostram as duas opções lado a lado (se houver Opção B), o preço s/ e c/ IVA e estas condições. Nunca custos nem margens.</p>'
+       . '</section>';
+    return $h;
+}
+
+/** As condições de pagamento por defeito para esta versão (Definições: 50/50; 40/40/20 acima do limite; Marketing Buddy mensal). */
+function flow_payment_default_view(PDO $pdo, array $v, array $deal): string {
+    require_once __DIR__ . '/pipeline_flow.php';
+    return flow_payment_default($pdo, max((float)$v['price'], (float)($v['price_b'] ?? 0)), $deal['funnel_id'] ? (int)$deal['funnel_id'] : null);
+}
+
+/** Os separadores Opção A / Opção B, com o preço de cada uma. */
+function budget_options_nav(array $v, string $opt, callable $url, bool $money, bool $editable, bool $hasB): string {
+    $chip = fn(string $o, string $label, float $price, bool $empty) => '<a class="bo-opt' . ($opt === $o ? ' on' : '') . '" href="' . e($url(['opt' => $o === 'A' ? null : 'B'])) . '"' . ($opt === $o ? ' aria-current="true"' : '') . '>'
+        . '<small>' . ($o === 'A' ? 'OPÇÃO A · PEDIDO' : 'OPÇÃO B · PROPOSTA DE VALOR') . '</small><b>' . ($empty ? '—' : e(budget_eur($price))) . '</b>'
+        . (($v['accepted_opt'] ?? '') === $o ? '<span class="chip ok">aceite</span>' : '') . '</a>';
+    return '<nav class="bo-nav" aria-label="Opções da proposta">' . $chip('A', 'Pedido', (float)$v['price'], false) . $chip('B', 'Proposta de valor', (float)($v['price_b'] ?? 0), !$hasB)
+         . ($opt === 'B' && !$hasB && $editable ? '<button type="button" class="btn sm" data-bcopy-a>' . icon('copy') . ' Começar a partir da Opção A</button>' : '')
+         . '</nav>';
 }
 
 // ── Resultado: orçado vs real (§14.5) ──────────────────────

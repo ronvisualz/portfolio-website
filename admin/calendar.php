@@ -53,6 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id && !$old) throw new RuntimeException('Essa tarefa já não existe.');
 
             if ($do === 'delete_task') {
+                // Uma tarefa obrigatória (gate, §19.1) só sai por um admin: senão abria a passagem da etapa.
+                if (!empty($old['is_gate']) && $old['status'] !== 'done' && !is_admin()) throw new RuntimeException('Esta tarefa é obrigatória para o negócio avançar: só um admin a pode eliminar.');
                 $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
                 if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
                 flash('Tarefa eliminada.');

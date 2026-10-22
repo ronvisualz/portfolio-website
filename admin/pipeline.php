@@ -3,6 +3,7 @@ require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/pipeline.php';
+require_once __DIR__ . '/inc/pipeline_flow.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/alerts.php';
 require_once __DIR__ . '/inc/interactions.php';
@@ -43,8 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'move':
                 $snap = undo_deal_snapshot($deal);
                 $to = (int)($_POST['stage_id'] ?? 0);
-                $msg = deal_move($pdo, $deal, $to);
-                flash($msg, 'ok', (int)$deal['stage_id'] !== $to ? undo_push('deal_stage', $snap + ['to_stage' => $to]) : '');
+                flow_created(null, true);
+                $msg = deal_move($pdo, $deal, $to, (string)($_POST['force'] ?? ''));
+                flash($msg, 'ok', (int)$deal['stage_id'] !== $to ? undo_push('deal_stage', $snap + ['to_stage' => $to, 'auto_tasks' => flow_created()]) : '');
                 break;
             case 'lost':
                 $r = (string)($_POST['reason'] ?? '');
@@ -186,16 +188,18 @@ render_flashes();
       <header>
         <b><span><?= e($s['name']) ?></span><?php if ($s['kind'] !== 'kickoff'): ?><span data-cnt data-n="<?= count($cards) ?>"><?= count($cards) ?></span><?php endif; ?></b>
         <?php if ($s['kind'] === 'kickoff'): ?>
-          <span class="muted">largue aqui para fechar o negócio</span>
+          <span class="muted">entra ao validar a aceitação do cliente</span>
         <?php else: ?>
           <span class="sum" data-sum data-n="<?= $total ?>"><?= eur0($total) ?></span>
         <?php endif; ?>
       </header>
       <div class="cards">
-      <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $idle > $staleLimit; ?>
+      <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $idle > $staleLimit;
+            $gate = $s['kind'] !== 'kickoff' ? deal_gate($pdo, $d, $s) : [];
+            $gOk = count(array_filter($gate, fn($g) => $g['ok'])); ?>
         <article class="dcard<?= $risk ? ' risk' : '' ?>" draggable="<?= $canEdit ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>" data-value="<?= (float)$d['value_estimate'] ?>">
-          <div class="id"><span><?= e($d['code']) ?></span><?php if ($risk): ?><span class="chip risk" data-tip="Sem movimento há <?= $idle ?> dias" aria-label="Sem movimento há <?= $idle ?> dias"><?= $idle ?>d</span><?php endif; ?></div>
-          <a class="dname" href="<?= e(can('negocios') ? '/admin/negocio.php?id=' . (int)$d['id'] : pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio') ?>"><?= e($d['name']) ?></a>
+          <div class="id"><span><?= e($d['code']) ?></span><?php if ($gate): ?><span class="chip<?= $gOk === count($gate) ? ' ok' : '' ?>" data-tip="<?= e($gOk === count($gate) ? 'Requisitos cumpridos: pode avançar' : 'Falta: ' . implode(' · ', array_map(fn($g) => $g['label'], array_filter($gate, fn($g) => !$g['ok'])))) ?>" tabindex="0" aria-label="Requisitos <?= $gOk ?> de <?= count($gate) ?>"><?= $gOk ?>/<?= count($gate) ?></span><?php endif; ?><?php if ($risk): ?><span class="chip risk" data-tip="Sem movimento há <?= $idle ?> dias" aria-label="Sem movimento há <?= $idle ?> dias"><?= $idle ?>d</span><?php endif; ?></div>
+          <a class="dname" data-panel="deal:<?= (int)$d['id'] ?>" href="<?= e(pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio') ?>"><?= e($d['name']) ?></a>
           <?php if ($d['contact_name'] && $d['contact_name'] !== $d['name']): ?><div class="muted"><?= e($d['contact_name']) ?></div><?php endif; ?>
           <div class="drow">
             <span class="mono"><?= $d['value_estimate'] !== null ? eur0((float)$d['value_estimate']) : '<span class="muted">sem valor</span>' ?></span>
@@ -256,60 +260,22 @@ render_flashes();
 </div>
 <?php endif; ?>
 
-<?php // ── painel do negócio ──
+<?php // ── o negócio (§19.8): o mesmo painel do lado, em página ──
 if ($open):
-    $assignees = assignable_users($pdo, $me);
-    $curStage = stage_get($pdo, (int)$open['stage_id']);
+    require_once __DIR__ . '/inc/pipeline_view.php';
+    $openBack = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' => $view === 'funil' ? $fid : null, 'deal' => $open['id']])) . '#negocio';
 ?>
-<h2 id="negocio"><span class="keep"><?= e($open['code']) ?> · <?= e($open['name']) ?></span></h2>
-<div class="sub"><?= e(funnel_get($pdo, (int)$open['funnel_id'])['name'] ?? '—') ?> · <?= e($curStage['name'] ?? '—') ?>
-  <?= $open['phase'] === 'lost' ? ' · <span class="chip no">Perdido</span>' : '' ?>
-  <?= $open['phase'] === 'done' ? ' · <span class="chip ok">Concluído</span>' : '' ?>
-  <?= can('negocios') ? ' · <a class="lnk" href="/admin/negocio.php?id=' . (int)$open['id'] . '">Abrir a ficha completa</a>' : '' ?>
-  <?= can('orcamentacao') ? ' · <a class="btn ghost sm" href="/admin/orcamento.php?id=' . (int)$open['id'] . '" data-tip="A folha de orçamento deste negócio">' . icon('orcamentacao') . ' Orçamento</a>' : '' ?></div>
-
-<?php if ($canEdit): ?>
-<form method="post">
-  <?= csrf_field() ?><input type="hidden" name="do" value="save"><input type="hidden" name="id" value="<?= (int)$open['id'] ?>">
-  <input type="hidden" name="back" value="<?= e($self . '&deal=' . $open['id'] . '#negocio') ?>">
-  <div class="grid">
-    <div class="field"><label for="dn">Nome</label><input type="text" id="dn" name="name" maxlength="160" value="<?= e($open['name']) ?>"></div>
-    <div class="field"><label for="dv">Valor estimado (€)</label>
-      <input type="text" id="dv" name="value_estimate" inputmode="decimal" value="<?= $open['value_estimate'] !== null ? e(number_format((float)$open['value_estimate'], 2, ',', '')) : '' ?>" placeholder="até haver orçamento"></div>
-    <div class="field"><label for="do">Responsável</label>
-      <select id="do" name="owner_id">
-        <?php if ($open['owner_id'] !== null && !in_array((int)$open['owner_id'], array_map(fn($u) => (int)$u['id'], $assignees), true)): ?>
-          <option value="<?= (int)$open['owner_id'] ?>" selected><?= e($pdo->query('SELECT name FROM users WHERE id = ' . (int)$open['owner_id'])->fetchColumn()) ?></option>
-        <?php endif; ?>
-        <?php if ($open['owner_id'] === null): ?><option value="" selected>— Por atribuir —</option><?php endif; ?>
-        <?php foreach ($assignees as $u): ?><option value="<?= (int)$u['id'] ?>" <?= (string)$open['owner_id'] === (string)$u['id'] ? 'selected' : '' ?>><?= e($u['name']) ?></option><?php endforeach; ?>
-      </select></div>
-    <div class="field wide"><label for="dno">Notas</label><textarea id="dno" name="notes"><?= e((string)$open['notes']) ?></textarea></div>
-  </div>
-  <div class="actions"><button class="btn" type="submit">Guardar</button>
-    <a class="btn ghost" href="<?= e($self) ?>">Fechar</a></div>
-</form>
-
-<?php if ($open['phase'] === 'pipeline'): ?>
-<h2>Perdido</h2>
-<form method="post" class="bar">
-  <?= csrf_field() ?><input type="hidden" name="do" value="lost"><input type="hidden" name="id" value="<?= (int)$open['id'] ?>">
-  <input type="hidden" name="back" value="<?= e($self) ?>">
-  <select name="reason" required aria-label="Motivo"><option value="">Motivo…</option>
-    <?php foreach (LOST_REASONS as $r): ?><option><?= e($r) ?></option><?php endforeach; ?></select>
-  <input type="text" name="reason_other" maxlength="200" placeholder="Detalhe (opcional)">
-  <button class="btn danger sm" type="submit">Marcar como perdido</button>
-</form>
-<?php endif; ?>
-
-<?php if (in_array($open['phase'], ['pipeline', 'lost'], true)):
+<h2 id="negocio" class="sr-only"><?= e($open['code']) ?> · <?= e($open['name']) ?></h2>
+<div class="fl-pagewrap"><?= str_replace('lv lv-panel fl', 'lv lv-page fl', flow_panel_html($pdo, $open, $openBack)) ?></div>
+<?php if (in_array($open['phase'], ['pipeline', 'lost'], true) && $canEdit):
+    $curStage = stage_get($pdo, (int)$open['stage_id']);
     $otherFunnels = array_filter($funnels, fn($f) => (int)$f['id'] !== (int)$open['funnel_id']);
     $variable = $curStage && in_array($curStage['kind'], ['commercial', 'production'], true);
 ?>
 <h2>Mudar de funil</h2>
 <form method="post" class="bar">
   <?= csrf_field() ?><input type="hidden" name="do" value="funnel"><input type="hidden" name="id" value="<?= (int)$open['id'] ?>">
-  <input type="hidden" name="back" value="<?= e($self . '&deal=' . $open['id'] . '#negocio') ?>">
+  <input type="hidden" name="back" value="<?= e($openBack) ?>">
   <?php if ($variable): ?>
     <select name="stage_id" required aria-label="Etapa de destino"><option value="">Funil e etapa de destino…</option>
       <?php foreach ($otherFunnels as $f): ?>
@@ -337,10 +303,5 @@ if ($open):
 </form>
 <?php endif; ?>
 <?php endif; ?>
-
-<?= history_block($pdo, 'deal', (int)$open['id'], $canEdit, $self . '&deal=' . $open['id'] . '#historico') ?>
-<?php endif; ?>
-
-
 
 <?php render_footer();

@@ -593,6 +593,9 @@ function lead_convert(PDO $pdo, array $lead, int $funnelId, int $contactId): str
         if ($lead['person_id'] && (int)$lead['person_id'] !== $contactId) $pdo->prepare($ins)->execute([$lead['id'], (int)$lead['person_id'], 'Contacto']);
         deal_log($pdo, (int)$lead['id'], 'convert', ['to_funnel' => $funnelId, 'to_stage' => $xray]);
         $pdo->commit();
+        // As tarefas automáticas do X-Ray (§19.6 A).
+        require_once __DIR__ . '/pipeline_flow.php';
+        flow_on_enter($pdo, (int)$lead['id'], $xray);
         return $code;
     } catch (Throwable $e) {
         $pdo->rollBack();

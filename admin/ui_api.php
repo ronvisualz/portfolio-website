@@ -149,7 +149,8 @@ function budget_version_for_edit(PDO $pdo, int $versionId): array {
 
 /** Depois de mudar a folha: o cálculo (filtrado pelas permissões) e o custo de cada linha; com $rows, as linhas desenhadas. */
 function budget_parts(PDO $pdo, int $versionId, bool $rows = false): array {
-    $rc = budget_recalc($pdo, $versionId);
+    // A opção que a folha está a mostrar (§19.3): Opção A (Pedido) ou B (Proposta de valor).
+    $rc = budget_recalc($pdo, $versionId, ($_POST['opt'] ?? 'A') === 'B' ? 'B' : 'A');
     $money = budget_money();
     $costs = [];
     foreach ($rc['lines'] as $l) if ($money || $l['kind'] === 'other') $costs[(int)$l['id']] = budget_eur((float)$l['cost']);
@@ -189,6 +190,7 @@ try {
         }
         $nav[] = ['A minha conta', '/admin/conta.php', 'user'];
         $nav[] = ['Definições (como quer ser tratado, modo)', '/admin/conta.php#definicoes', 'user'];
+        if (can('pipeline', PERM_MANAGE)) $nav[] = ['Funis e automações (Definições)', '/admin/funis.php', 'pipeline'];
         if (is_admin()) $nav[] = ['Migração', '/admin/migracao.php', 'migracao'];
         foreach ($nav as [$label, $href, $ico]) {
             if ($fq !== '' && !str_contains(fold($label), $fq) && !str_contains('ir para ' . fold($label), $fq)) continue;
@@ -924,6 +926,13 @@ try {
                 if (!$money) throw new RuntimeException('Só quem vê o Financeiro muda a margem.');
                 $m = budget_num($raw, 95);
                 if ($raw === '') throw new RuntimeException('Indique a margem.');
+                if (($_POST['opt'] ?? 'A') === 'B') {
+                    // A Opção B pode ter a sua margem (§19.3); por defeito usa a da A.
+                    $was = $v['margin_b'] !== null ? (float)$v['margin_b'] : (float)$v['margin'];
+                    if (abs($m - $was) > 0.001) budget_log($pdo, (int)$sheet['id'], 'b_margin', 'v' . $v['num'] . ' · Opção B · margem ' . budget_pct($was) . ' → ' . budget_pct($m));
+                    $set['margin_b'] = $m;
+                    break;
+                }
                 if (abs($m - (float)$v['margin']) > 0.001) budget_log_margin($pdo, (int)$sheet['id'], (int)$v['num'], (float)$v['margin'], $m);
                 $set['margin'] = $m;
                 break;
@@ -934,12 +943,39 @@ try {
                 break;
             case 'description': $set['description'] = mb_substr(trim($raw), 0, 6000); break;
             case 'conditions':  $set['conditions'] = mb_substr(trim($raw), 0, 4000); break;
+            // Os campos da proposta (§19.1, §19.3): âmbito da Opção B, prazo, pagamento, revisões, direitos, validade.
+            case 'scope_b':        $set['scope_b'] = mb_substr(trim($raw), 0, 6000); break;
+            case 'term_text':      $set['term_text'] = mb_substr(trim($raw), 0, 255); break;
+            case 'payment_terms':  $set['payment_terms'] = mb_substr(trim($raw), 0, 2000); break;
+            case 'revisions_text': $set['revisions_text'] = mb_substr(trim($raw), 0, 2000); break;
+            case 'rights_text':    $set['rights_text'] = mb_substr(trim($raw), 0, 2000); break;
+            case 'valid_until':
+                $set['valid_until'] = $date($raw);
+                if ($set['valid_until'] && $set['valid_until'] < today_lisbon()) throw new RuntimeException('A validade tem de ser hoje ou depois.');
+                break;
             default: throw new RuntimeException('Campo inválido.');
         }
         $pdo->prepare('UPDATE budget_versions SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ' WHERE id = ?')
             ->execute([...array_values($set), $v['id']]);
         $v2 = budget_version_get($pdo, (int)$v['id']);
         out(200, ['ok' => true] + budget_parts($pdo, (int)$v['id']) + (in_array($field, ['phases', 'start_date', 'dur_mode'], true) ? ['phases' => budget_phases_rows($v2, true)] : []));
+
+    // Opção B a partir da A (§19.3): copia as linhas (a B fica com as suas, para mexer à vontade).
+    case 'budget_copy_a':
+        if (!$post) break;
+        [$sheet, $v] = budget_version_for_edit($pdo, (int)($_POST['version'] ?? 0));
+        if (budget_lines($pdo, (int)$v['id'], 'B')) throw new RuntimeException('A Opção B já tem linhas.');
+        $a = budget_lines($pdo, (int)$v['id'], 'A');
+        if (!$a) throw new RuntimeException('A Opção A ainda não tem linhas.');
+        foreach ($a as $l) {
+            budget_line_save($pdo, $v, null, ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
+                'label' => $l['label'], 'price_unit' => $l['price_unit'], 'unit_price' => (float)$l['unit_price'], 'qty' => (float)$l['qty'], 'qty_unit' => $l['qty_unit'],
+                'note' => $l['note'], 'opt' => 'B']);
+        }
+        if (trim((string)$v['scope_b']) === '' && trim((string)$v['description']) !== '') $pdo->prepare('UPDATE budget_versions SET scope_b = ? WHERE id = ?')->execute([$v['description'], $v['id']]);
+        budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · Opção B criada a partir da A (' . count($a) . ' linhas)');
+        $_POST['opt'] = 'B';
+        out(200, ['ok' => true, 'msg' => 'Opção B criada com as linhas da A: acrescente o que a torna «proposta de valor».', 'reload' => true] + budget_parts($pdo, (int)$v['id'], true));
 
     case 'budget_fixed_avg':
         if (!$post) break;
@@ -979,6 +1015,7 @@ try {
             $d = budget_line_input($pdo, $v, $src);
             if ($keep && $kind === 'team') $d['unit_price'] = (float)$old['unit_price'];
         }
+        if (!$lineId) $d['opt'] = ($_POST['opt'] ?? 'A') === 'B' ? 'B' : 'A';
         $lid = budget_line_save($pdo, $v, $lineId ?: null, $d);
         $who = $kind === 'supplier' ? (string)$pdo->query('SELECT name FROM contacts WHERE id = ' . (int)$d['contact_id'])->fetchColumn()
              : ($kind === 'team' ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$d['user_id'])->fetchColumn() : 'interno');
@@ -1046,9 +1083,13 @@ try {
         $deal = record_get($pdo, (int)$sheet['deal_id']);
         $snap = ['sheet' => (int)$sheet['id'], 'version' => (int)$v['id'], 'prev' => $sheet['accepted_version_id'] !== null ? (int)$sheet['accepted_version_id'] : null,
                  'occupancy' => $v['occupancy'], 'value' => $deal['value_estimate'], 'deal' => (int)$deal['id']];
-        budget_accept($pdo, $sheet, $v, (int)current_user()['id']);
+        // Aceite a partir da Opção B (§19.3): conta a B (preço, Resultado).
+        $optB = ($_POST['opt'] ?? 'A') === 'B' && budget_has_options($pdo) && budget_lines($pdo, (int)$v['id'], 'B');
+        $snap['opt'] = (string)($v['accepted_opt'] ?? '');
+        if (budget_has_options($pdo)) $pdo->prepare('UPDATE budget_versions SET accepted_opt = ? WHERE id = ?')->execute([$optB ? 'B' : 'A', $v['id']]);
+        budget_accept($pdo, $sheet, budget_version_get($pdo, (int)$v['id']), (int)current_user()['id']);
         $v = budget_version_get($pdo, (int)$v['id']);
-        out(200, ['ok' => true, 'msg' => 'v' . $v['num'] . ' aceite' . (budget_money() ? ': ' . budget_eur((float)$v['price']) . ' passa a ser o valor do negócio.' : '.'),
+        out(200, ['ok' => true, 'msg' => 'v' . $v['num'] . ' aceite' . ($optB ? ' (Opção B)' : '') . (budget_money() ? ': ' . budget_eur(budget_version_price($v)) . ' passa a ser o valor do negócio.' : '.'),
                   'undo' => undo_push('budget_accept', $snap)]);
 
     case 'budget_tpl_save':
@@ -1105,9 +1146,16 @@ try {
         $to = stage_get($pdo, (int)($_POST['stage_id'] ?? 0));
         if (!$to || !in_array($to['kind'], ['xray', 'commercial', 'kickoff'], true)) throw new RuntimeException('Etapa inválida.');
         $snap = undo_deal_snapshot($deal);
-        $msg = deal_move($pdo, $deal, (int)$to['id']);
+        require_once __DIR__ . '/inc/pipeline_flow.php';
+        flow_created(null, true);
+        try {
+            $msg = deal_move($pdo, $deal, (int)$to['id'], (string)($_POST['force'] ?? ''));
+        } catch (GateBlocked $e) {
+            // Os requisitos (§19.1): a lista volta para o quadro; um admin pode forçar com motivo.
+            out(409, ['ok' => false, 'error' => $e->getMessage(), 'gate' => $e->missing, 'can_force' => is_admin()]);
+        }
         $now = record_get($pdo, (int)$deal['id']);
-        $token = (int)$deal['stage_id'] !== (int)$to['id'] ? undo_push('deal_stage', $snap + ['to_stage' => (int)$to['id']]) : '';
+        $token = (int)$deal['stage_id'] !== (int)$to['id'] ? undo_push('deal_stage', $snap + ['to_stage' => (int)$to['id'], 'auto_tasks' => flow_created()]) : '';
         out(200, ['ok' => true, 'msg' => $msg, 'phase' => $now['phase'], 'undo' => $token, 'won' => $now['phase'] === 'production']);
     }
 } catch (RuntimeException $e) {

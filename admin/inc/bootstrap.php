@@ -77,7 +77,8 @@ header(
 );
 
 // ── session ─────────────────────────────────────────────────
-if (session_status() === PHP_SESSION_NONE) {
+// Páginas públicas sem sessão (ex.: a proposta ao cliente, §19.4): não criam cookie nem tocam na sessão de quem esteja ligado.
+if (session_status() === PHP_SESSION_NONE && !defined('TOPPER_NO_SESSION')) {
     session_name('topper_sid');
     session_set_cookie_params([
         'lifetime' => 0,

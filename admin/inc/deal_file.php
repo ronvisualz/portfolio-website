@@ -501,11 +501,11 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
  * sem elas, muda deals.prod_step. Num concluído, voltar a uma etapa reabre-o (Kickoff).
  * Concluir faz-se pela checklist de fecho (deal_close).
  */
-function deal_step_set(PDO $pdo, array $deal, string $to): string {
+function deal_step_set(PDO $pdo, array $deal, string $to, string $force = ''): string {
     $steps = deal_steps($pdo, $deal);
     if ($to === 'done') throw new RuntimeException('Para concluir, use a checklist de fecho.');
     if (!in_array($to, array_column($steps['items'], 'key'), true)) throw new RuntimeException('Etapa inválida.');
-    if ($steps['mode'] === 'stage') return deal_move($pdo, $deal, (int)substr($to, 1));
+    if ($steps['mode'] === 'stage') return deal_move($pdo, $deal, (int)substr($to, 1), $force);
     $wasDone = $deal['phase'] === 'done';
     if ($wasDone) {
         $k = funnel_fixed_stage($pdo, (int)$deal['funnel_id'], 'kickoff');

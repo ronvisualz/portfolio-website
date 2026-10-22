@@ -80,9 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$dealEdit) throw new RuntimeException('Sem permissão para mudar este negócio.');
                 if (!in_array($deal['phase'], ['production', 'done'], true)) throw new RuntimeException('As etapas de produção começam no Kickoff.');
                 $snap = undo_deal_snapshot($deal) + ['prod_step' => $deal['prod_step']];
-                $msg = deal_step_set($pdo, $file, (string)($_POST['step'] ?? ''));
+                require_once __DIR__ . '/inc/pipeline_flow.php';
+                flow_created(null, true);
+                $msg = deal_step_set($pdo, $file, (string)($_POST['step'] ?? ''), (string)($_POST['force'] ?? ''));
                 $now = deal_get($pdo, $id);
-                flash($msg, 'ok', undo_push('deal_step', $snap + ['to_stage' => (int)$now['stage_id'], 'to_step' => $now['prod_step']]));
+                flash($msg, 'ok', undo_push('deal_step', $snap + ['to_stage' => (int)$now['stage_id'], 'to_step' => $now['prod_step'], 'auto_tasks' => flow_created()]));
                 break;
 
             // ── concluir, com a checklist de fecho (§15.5) ──
@@ -94,7 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $snap = undo_deal_snapshot($deal);
                 $flags = deal_flags_snapshot($deal);
                 // deal_move tem a sua própria transação; as ações opcionais vêm depois, com o negócio já concluído.
-                deal_move($pdo, $deal, $doneStage);
+                require_once __DIR__ . '/inc/pipeline_flow.php';
+                flow_created(null, true);
+                deal_move($pdo, $deal, $doneStage, (string)($_POST['force'] ?? ''));
+                $snap['auto_tasks'] = flow_created();
                 if (!empty($_POST['delivered']) && !$deal['delivered_at']) deal_mark_delivered($pdo, $deal, true);
                 if (!empty($_POST['portfolio']) && !$deal['portfolio_at']) { [$t, $i] = deal_send_portfolio($pdo, $file, (int)$me['id']); $flags['tasks'][] = $t; if ($i) $flags['ideas'][] = $i; }
                 if (!empty($_POST['testimonial']) && !$deal['testimonial_at']) $flags['tasks'][] = deal_ask_testimonial($pdo, $file, (int)$me['id']);
@@ -380,6 +385,20 @@ render_flashes();
   <?php foreach ($attention as [$t, $cls, $tip]): ?><span class="att <?= $cls ?>" role="listitem" data-tip="<?= e($tip) ?>" tabindex="0"><?= $cls === 'g' ? icon('check') : ($cls === 'r' ? icon('alert') : '') ?><?= e($t) ?></span><?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<?php // ── etapas e gates, responsáveis, faturação, rondas, proposta (§19.8) ──
+require_once __DIR__ . '/inc/pipeline_view.php';
+[$flKv, $flForm] = flow_people_html($pdo, $deal, $self);
+$flSide = flow_billing_html($pdo, $deal, $self) . flow_rounds_html($pdo, $deal, $self) . flow_proposal_html($pdo, $deal, $self);
+?>
+<div class="fl-ficha">
+  <?= flow_stages_html($pdo, $deal, $self) ?>
+  <div class="fl-ficha-side">
+    <section class="lv-blk fl-people"><h4>Responsáveis e datas <span class="h-sub">comercial fica até ao fim · execução na produção</span></h4><div class="kv"><?= $flKv ?></div><?= $flForm ?>
+      <p class="small"><a class="lnk" href="<?= e(nav_to('/admin/xray.php?id=' . $id)) ?>"><?= icon('checklist') ?> X-Ray<?= !empty($deal['xray_validated_at']) ? ' (validado)' : '' ?></a></p></section>
+    <?= $flSide ?>
+  </div>
+</div>
 
 <div class="dcards">
 <?php

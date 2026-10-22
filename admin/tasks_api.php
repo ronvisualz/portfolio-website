@@ -80,6 +80,8 @@ try {
         task_log($pdo, $id, 'help', '🙋 Pediu ajuda: foi para «Por atribuir»');
         api_out(200, ['ok' => true, 'msg' => 'Pedido de ajuda enviado: a tarefa está em «Por atribuir» e a equipa foi avisada.', 'undo' => undo_push('task', $snap)]);
     }
+} catch (RuntimeException $e) {
+    api_out(400, ['ok' => false, 'error' => $e->getMessage()]);
 } catch (Throwable $e) {
     error_log('tasks_api ' . $do . ': ' . $e->getMessage());
     api_out(500, ['ok' => false, 'error' => 'Não foi possível guardar. Tente outra vez.']);

@@ -81,6 +81,18 @@ const HISTORY_TYPES = [
     'b_pdf'      => ['Proposta gerada', 'file', 'blue'],
     'b_close'    => ['Resultado fechado', 'won', 'green'],
     'b_reopen'   => ['Folha reaberta', 'refresh', 'sky'],
+    'b_send'     => ['Proposta enviada', 'send', 'blue'],
+    // Pipeline, funis e automações (§19)
+    'auto'       => ['Tarefas automáticas', 'cog', 'neutral'],
+    'gate_force' => ['Passagem forçada', 'alert', 'red'],
+    'xray'       => ['X-Ray', 'checklist', 'sky'],
+    'proposal'   => ['Proposta enviada', 'send', 'blue'],
+    'client'     => ['Resposta do cliente', 'user', 'yellow'],
+    'billing'    => ['Faturação', 'euro', 'green'],
+    'roles'      => ['Responsáveis', 'user-arrow', 'sky'],
+    'dates'      => ['Datas do negócio', 'calendar', 'neutral'],
+    'round'      => ['Ronda de revisão', 'refresh', 'sky'],
+    'rounds'     => ['Rondas esgotadas', 'alert', 'orange'],
     // Marketing (§16)
     'm_create'   => ['Ideia criada', 'bulb', 'neutral'],
     'm_edit'     => ['Dados alterados', 'pencil', 'neutral'],

@@ -196,13 +196,38 @@ function budget_current_version(PDO $pdo, array $sheet): ?array {
     return $id ? budget_version_get($pdo, (int)$id) : null;
 }
 
-function budget_lines(PDO $pdo, int $versionId): array {
+/**
+ * As linhas de uma versão. Cada versão tem Opção A (Pedido) e Opção B (Proposta de valor, §19.3):
+ * $opt 'A' ou 'B' escolhe; null = a que conta (a aceite pelo cliente, senão a A); '*' = todas.
+ */
+function budget_lines(PDO $pdo, int $versionId, ?string $opt = null): array {
+    $hasOpt = budget_has_options($pdo);
+    if ($hasOpt && $opt === null) {
+        $opt = (string)$pdo->query('SELECT accepted_opt FROM budget_versions WHERE id = ' . $versionId)->fetchColumn() ?: 'A';
+    }
+    $byOpt = $hasOpt && in_array($opt, ['A', 'B'], true);
     $st = $pdo->prepare('SELECT l.*, s.name AS service_name, c.name AS contact_name, c.is_active AS contact_active, u.name AS user_name
                            FROM budget_lines l LEFT JOIN services s ON s.id = l.service_id LEFT JOIN contacts c ON c.id = l.contact_id
                            LEFT JOIN users u ON u.id = l.user_id
-                          WHERE l.version_id = ? ORDER BY l.position, l.id');
-    $st->execute([$versionId]);
+                          WHERE l.version_id = ?' . ($byOpt ? ' AND l.opt = ?' : '') . ' ORDER BY l.position, l.id');
+    $st->execute($byOpt ? [$versionId, $opt] : [$versionId]);
     return $st->fetchAll();
+}
+
+/** A base já tem a Opção A/B (passo 21)? */
+function budget_has_options(PDO $pdo): bool {
+    static $has = null;
+    return $has ??= db_has_column($pdo, 'budget_lines', 'opt');
+}
+
+/** A opção que conta numa versão: a aceite pelo cliente, senão a A. */
+function budget_counting_opt(array $v): string {
+    return ($v['accepted_opt'] ?? '') === 'B' ? 'B' : 'A';
+}
+
+/** O preço da versão na opção que conta. */
+function budget_version_price(array $v): float {
+    return budget_counting_opt($v) === 'B' ? (float)($v['price_b'] ?? 0) : (float)$v['price'];
 }
 
 function budget_line_key(): string {
@@ -213,7 +238,16 @@ function budget_line_key(): string {
 function budget_editable(array $sheet, array $version, array $versions): bool {
     $last = end($versions);
     return can('orcamentacao', PERM_EDIT) && $last && (int)$last['id'] === (int)$version['id']
-        && (int)$sheet['accepted_version_id'] !== (int)$version['id'] && !$sheet['closed_at'];
+        && (int)$sheet['accepted_version_id'] !== (int)$version['id'] && !$sheet['closed_at'] && !budget_version_sent($version);
+}
+
+/** A versão já foi enviada ao cliente (§19.4)? Fica como foi enviada: mudar = nova versão. */
+function budget_version_sent(array $version): bool {
+    global $pdo;
+    if (!$pdo instanceof PDO || !db_has_table($pdo, 'proposals')) return false;
+    $st = $pdo->prepare("SELECT COUNT(*) FROM proposals WHERE version_id = ? AND status <> 'void'");
+    $st->execute([(int)$version['id']]);
+    return (int)$st->fetchColumn() > 0;
 }
 
 // ── custo de cada linha ─────────────────────────────────────
@@ -271,7 +305,9 @@ function budget_calc(PDO $pdo, array $v, array $lines, ?array $capacity = null):
     $occ = $v['occupancy'] !== null ? (float)$v['occupancy'] : ($suggest ?? 0.0);
     $structure = round((float)$v['fixed_monthly'] * $months * $occ / 100, 2);
     $base = round($direct + $mso + $structure, 2);
-    $margin = min(max((float)$v['margin'], 0), 95);
+    // Opção B (§19.3): a sua margem, se tiver uma própria.
+    $opt = $v['calc_opt'] ?? budget_counting_opt($v);
+    $margin = min(max((float)($opt === 'B' && isset($v['margin_b']) && $v['margin_b'] !== null ? $v['margin_b'] : $v['margin']), 0), 95);
     $price = round($base / (1 - $margin / 100), 2);
     $vat = vat_rate($pdo);
     $gp = round($price - $base, 2);
@@ -294,20 +330,30 @@ function budget_calc(PDO $pdo, array $v, array $lines, ?array $capacity = null):
 }
 
 /** Recalcula as linhas e a versão e guarda o resumo (preço, base, lucro por mês) para as listas. */
-function budget_recalc(PDO $pdo, int $versionId): array {
+function budget_recalc(PDO $pdo, int $versionId, string $opt = 'A'): array {
     $v = budget_version_get($pdo, $versionId);
     $dh = (float)$v['day_hours'];
-    $lines = budget_lines($pdo, $versionId);
+    $all = budget_lines($pdo, $versionId, '*');
     $upd = $pdo->prepare('UPDATE budget_lines SET cost = ? WHERE id = ?');
-    foreach ($lines as &$l) {
+    foreach ($all as &$l) {
         $c = budget_line_cost($l, $dh);
         if ((float)$l['cost'] !== $c) { $upd->execute([$c, $l['id']]); $l['cost'] = $c; }
     }
     unset($l);
-    $calc = budget_calc($pdo, $v, $lines);
+    $has = budget_has_options($pdo);
+    $linesA = $has ? array_values(array_filter($all, fn($l) => ($l['opt'] ?? 'A') !== 'B')) : $all;
+    $linesB = $has ? array_values(array_filter($all, fn($l) => ($l['opt'] ?? 'A') === 'B')) : [];
+    $calc = budget_calc($pdo, $v + ['calc_opt' => 'A'], $linesA);
     $pdo->prepare('UPDATE budget_versions SET price = ?, base = ?, profit_month = ?, work_days = ? WHERE id = ?')
         ->execute([$calc['price'], $calc['base'], $calc['profit_month'], $calc['days'], $versionId]);
-    return ['version' => budget_version_get($pdo, $versionId), 'lines' => $lines, 'calc' => $calc];
+    $calcB = null;
+    if ($has) {
+        $calcB = budget_calc($pdo, $v + ['calc_opt' => 'B'], $linesB);
+        $pdo->prepare('UPDATE budget_versions SET price_b = ?, base_b = ?, profit_month_b = ? WHERE id = ?')
+            ->execute($linesB ? [$calcB['price'], $calcB['base'], $calcB['profit_month'], $versionId] : [0, 0, 0, $versionId]);
+    }
+    $useB = $opt === 'B' && $has;
+    return ['version' => budget_version_get($pdo, $versionId), 'lines' => $useB ? $linesB : $linesA, 'calc' => $useB ? $calcB : $calc, 'opt' => $useB ? 'B' : 'A'];
 }
 
 /** O que quem não vê o Financeiro pode receber do cálculo (§14.6). */
@@ -376,12 +422,15 @@ function budget_version_new(PDO $pdo, array $sheet, array $from, ?int $by = null
     $num = (int)$pdo->query('SELECT COALESCE(MAX(num), 0) + 1 FROM budget_versions WHERE sheet_id = ' . (int)$sheet['id'])->fetchColumn();
     $cols = ['description', 'conditions', 'dur_mode', 'start_date', 'end_date', 'weeks', 'days', 'phases', 'fixed_monthly', 'fixed_manual',
              'occupancy', 'margin', 'mso_pct', 'day_hours', 'price', 'base', 'profit_month', 'work_days'];
+    // Opção B e os campos da proposta (§19.3); a validade não passa (cada envio tem a sua).
+    if (budget_has_options($pdo)) $cols = array_merge($cols, ['scope_b', 'margin_b', 'price_b', 'base_b', 'profit_month_b', 'term_text', 'payment_terms', 'revisions_text', 'rights_text']);
     $pdo->prepare('INSERT INTO budget_versions (sheet_id, num, ' . implode(',', $cols) . ', created_by) VALUES (?, ?, ' . implode(',', array_fill(0, count($cols), '?')) . ', ?)')
         ->execute([$sheet['id'], $num, ...array_map(fn($c) => $from[$c], $cols), $by]);
     $vid = (int)$pdo->lastInsertId();
     $lc = ['line_key', 'position', 'kind', 'service_id', 'contact_id', 'user_id', 'label', 'price_unit', 'unit_price', 'qty', 'qty_unit', 'cost', 'note'];
+    if (budget_has_options($pdo)) $lc[] = 'opt';
     $ins = $pdo->prepare('INSERT INTO budget_lines (version_id, ' . implode(',', $lc) . ') VALUES (?, ' . implode(',', array_fill(0, count($lc), '?')) . ')');
-    foreach (budget_lines($pdo, (int)$from['id']) as $l) $ins->execute([$vid, ...array_map(fn($c) => $l[$c], $lc)]);
+    foreach (budget_lines($pdo, (int)$from['id'], '*') as $l) $ins->execute([$vid, ...array_map(fn($c) => $l[$c], $lc)]);
     budget_log($pdo, (int)$sheet['id'], 'b_version', 'v' . $num . ' criada a partir da v' . $from['num'] . ($why !== '' ? ' · ' . $why : ''), $by);
     return $vid;
 }
@@ -392,8 +441,9 @@ function budget_accept(PDO $pdo, array $sheet, array $version, ?int $by = null):
     $version = budget_version_get($pdo, (int)$version['id']);
     $pdo->prepare('UPDATE budget_sheets SET accepted_version_id = ? WHERE id = ?')->execute([$version['id'], $sheet['id']]);
     $pdo->prepare('UPDATE budget_versions SET accepted_at = ?, accepted_by = ? WHERE id = ?')->execute([now_php(), $by, $version['id']]);
-    $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$version['price'], $sheet['deal_id']]);
-    budget_log($pdo, (int)$sheet['id'], 'b_accept', 'v' . $version['num'] . ' aceite · ' . number_format((float)$version['price'], 0, ',', ' ') . ' € s/ IVA', $by);
+    $price = budget_version_price($version);
+    $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$price, $sheet['deal_id']]);
+    budget_log($pdo, (int)$sheet['id'], 'b_accept', 'v' . $version['num'] . ' aceite' . (budget_counting_opt($version) === 'B' ? ' (Opção B)' : '') . ' · ' . number_format($price, 0, ',', ' ') . ' € s/ IVA', $by);
     deal_log($pdo, (int)$sheet['deal_id'], 'state', ['note' => 'Orçamento v' . $version['num'] . ' aceite', 'user_id' => $by]);
 }
 
@@ -464,6 +514,7 @@ function budget_line_save(PDO $pdo, array $v, ?int $lineId, array $d): int {
         return $lineId;
     }
     $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) + 1 FROM budget_lines WHERE version_id = ' . (int)$v['id'])->fetchColumn();
+    if (budget_has_options($pdo)) { $cols[] = 'opt'; $d['opt'] = ($d['opt'] ?? 'A') === 'B' ? 'B' : 'A'; }
     $pdo->prepare('INSERT INTO budget_lines (version_id, line_key, position, ' . implode(',', $cols) . ') VALUES (?, ?, ?, ' . implode(',', array_fill(0, count($cols), '?')) . ')')
         ->execute([$v['id'], budget_line_key(), $pos, ...array_map(fn($c) => $d[$c], $cols)]);
     return (int)$pdo->lastInsertId();

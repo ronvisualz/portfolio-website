@@ -383,6 +383,9 @@
         s.src = j.script; s.defer = true; s.setAttribute('data-panel-js', base);
         document.body.appendChild(s);
       }
+      // Os formulários do painel voltam a esta página com o painel aberto (?sp=…).
+      var self = location.pathname + location.search.replace(/([?&])sp=[^&]*&?/, '$1').replace(/[?&]$/, '');
+      $$('input[data-back-here]', bodyEl).forEach(function (i) { i.value = self + (self.indexOf('?') < 0 ? '?' : '&') + 'sp=' + encodeURIComponent(key); });
       document.dispatchEvent(new CustomEvent('topper:panel', { detail: { key: key, el: bodyEl } }));
     }).catch(function (e) { bodyEl.innerHTML = '<div class="sp-loading">' + esc(e.message) + '</div>'; });
   }
@@ -427,6 +430,10 @@
   document.addEventListener('auxclick', function (e) { var href = e.button === 1 && rowHref(e); if (href) window.open(href, '_blank', 'noopener'); });
   var auto = $('[data-open-panel]');
   if (auto) openPanel(auto.getAttribute('data-open-panel'));
+  else {
+    var spq = (location.search.match(/[?&]sp=([a-z]+(?:%3A|:)\d+)/) || [])[1];
+    if (spq) openPanel(decodeURIComponent(spq));
+  }
 
   // ── edição no próprio campo (§11.8) ──────────────────────
   function ieStart(ie) {

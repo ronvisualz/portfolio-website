@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -262,6 +262,15 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // pedido de ajuda, histórico e vistas guardadas.
     require_once __DIR__ . '/migrate_tasks.php';
     migrate_tasks_tab($pdo);
+
+    // ── 21 · Pipeline, funis e automações (§19) ─────────────
+    //
+    // 6 funis (Adverts separa-se de Campanhas), Proposta e Aguardar feedback em todos,
+    // etapas de produção por funil, gates, motor de automações com as tarefas da §19.6
+    // como valores iniciais, X-Ray, Opção A/B no orçamento, propostas com resposta do
+    // cliente e documentos de faturação submetidos.
+    require_once __DIR__ . '/migrate_pipeline.php';
+    migrate_pipeline_flow($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

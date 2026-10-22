@@ -1140,6 +1140,116 @@ Ficheiros novos: `inc/migrate_tasks.php`, `inc/tasks_view.php`. Reescritos: `cal
 
 ---
 
+### 10.11 Pipeline, funis e automações — §19 (22 out 2026)
+
+A §19 está aplicada (a estrutura e os valores iniciais da §19.5–19.6, todos editáveis). Base de dados
+**versão 21** (`inc/migrate_pipeline.php`): funis com perguntas do X-Ray; etapas com papel fixo
+(Proposta, Aguardar feedback), requisito da etapa ligado/desligado e rondas de revisão incluídas;
+`stage_automations` com gatilho, tipo, responsável, prazo, obrigatória, documento pedido, repetição e
+checklist; nos negócios `exec_owner_id`, `delivery_date`, `shoot_date`, `xray` (+ validação),
+`stage_entered_at`; nas tarefas `auto_rule_id`, `stage_id`, `is_gate`, `doc_kind`; nos orçamentos as
+linhas `opt` (A/B) e na versão o âmbito e a margem da B, prazo, pagamento, revisões, direitos, validade
+e a opção aceite; tabelas `proposals`, `deal_billing` e `deal_rounds`. Motor em `inc/pipeline_flow.php`,
+ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
+
+- **Funis (19.5):** 6 funis — VFX & Pós-produção, CGI / 3D, **Adverts** (novo), Campanhas, Ads,
+  Marketing Buddy — com as etapas de produção da §19.5 (os funis base não tinham nenhuma; não se
+  tocou em etapas que já existissem). **Proposta** e **Aguardar feedback** entram em todos os funis,
+  também nos combinados. Um funil novo (ou combinado, §9.1) nasce com as etapas fixas, junta as
+  perguntas do X-Ray dos funis de origem e copia as automações das etapas iguais.
+- **Gates (19.1):** verificados no servidor em **todos** os movimentos (arrastar no quadro, «Avançar»,
+  barra de etapas da ficha, Concluir). Para a frente só uma etapa de cada vez e com os requisitos
+  cumpridos: os da etapa (X-Ray preenchido e validado · Opção A com linhas, prazo, pagamento,
+  revisões, direitos, validade e PDF · resposta do cliente validada) e as **tarefas obrigatórias**
+  criadas nela. Para trás passa sempre. **Forçar:** só admins, com motivo obrigatório, fica no
+  histórico («Passagem forçada …: motivo · faltava: …»); com «Anular». Uma tarefa obrigatória só um
+  admin a elimina. No quadro, cada cartão mostra «n/m» requisitos (dica com o que falta).
+- **Automações (19.6, 19.7):** as tarefas da §19.6 (A comercial, B fecho, C por funil) são os valores
+  iniciais: 45 regras no VFX, por exemplo. Gatilhos: entra na etapa · data do negócio (entrega,
+  rodagem, validade) · todos os meses (avenças, no dia escolhido) · ao validar a aceitação · ao
+  validar um pagamento. Responsável: comercial · execução · comercial com a execução a participar ·
+  chefe de departamento · pessoa · por atribuir — **nunca o superadmin** (sem responsável válido vai
+  para «Por atribuir»). Prazo em dias úteis desde a entrada ou relativo à entrega/rodagem (−5 = antes);
+  títulos com {cliente} {negócio} {ID} {etapa}. Cada regra cria a tarefa uma vez por negócio (as
+  mensais uma por mês); mudar as datas do negócio move os prazos das tarefas que dependem delas;
+  mudar o responsável passa-lhe as tarefas automáticas abertas. «Anular» um movimento retira as
+  tarefas que ele criou (se ninguém lhes mexeu). As de data e mensais correm todas as noites com a
+  cópia de segurança (`cron_run.php backup`; também `cron_run.php pipeline`).
+- **Definições › Funis e automações** (`funis.php`, ligação em Definições e no ⌘K): separador por
+  funil; nome, perguntas do X-Ray, etapas (renomear, ordenar, eliminar as variáveis, rondas incluídas,
+  requisito da etapa); por etapa as regras em frase legível («Quando o negócio entra em Kickoff → criar
+  Documento «…» para responsável comercial com prazo +2 dias úteis · OBRIGATÓRIA») com Editar,
+  Duplicar, Ativar/Desativar, ↑ ↓, Eliminar (com «Anular»), **Aplicar a todos os funis** e
+  **Pré-visualizar** («ao entrar em Kickoff vão ser criadas estas 6 tarefas»). Só superadmin e admins
+  mudam as automações (os outros com acesso de gestão ao Pipeline veem-nas). Mudar uma regra não mexe
+  nas tarefas já criadas. Em Definições também as **condições de pagamento por defeito** (50/50;
+  acima de 10 000 €: 40/40/20; Marketing Buddy mensal adiantado, mínimo 3 meses).
+- **X-Ray (19.2):** `xray.php` — campos comuns (decisor e aprovadores, objetivo, entregáveis,
+  formatos, referências, prazo, **faixa de orçamento**, ativos, como nos encontrou, concorrência,
+  uso/território/duração), pontuação 1–3 (orçamento, autoridade, necessidade, prazo; n/12 no painel),
+  perguntas do funil e as secções «Pedido do cliente» e «Proposta de valor». Validar é do
+  comercial ou de um admin e só com os obrigatórios; validar conclui a tarefa «Preencher e validar o
+  X-Ray»; mudar um X-Ray validado tira a validação.
+- **Orçamento com duas opções (19.3, altera §14):** separadores **Opção A · Pedido** / **Opção B ·
+  Proposta de valor** na folha, cada uma com as suas linhas, preço, margem (a B pode ter a sua) e
+  lucro/mês; «Começar a partir da Opção A» copia as linhas. Bloco «Proposta» com o âmbito de cada
+  opção, prazo, validade, condições de pagamento (sugere as de Definições pelo valor/funil), revisões
+  incluídas e preço da ronda extra, direitos de utilização e outras condições. O **PDF** mostra as
+  duas opções lado a lado, o investimento de cada uma e estas condições. Resultado, valor do negócio e
+  Financeiro seguem a opção aceite. Uma versão enviada ao cliente fica bloqueada (mudar = nova versão).
+- **Resposta do cliente (19.4):** «Enviar» (no painel, com os requisitos ✓/✗) cria um link com
+  token (só o hash fica na base), válido até à validade, e envia um email com **um único botão** «Ver
+  e responder à proposta»; o negócio passa a Aguardar feedback; enviar outra vez invalida o link
+  anterior. `proposta.php` é pública e **sem sessão** (não toca na sessão de quem esteja ligado):
+  **GET só mostra** (opções, preços c/ e s/ IVA, condições, validade) e não escreve nada; aceitar é
+  **POST** com a opção, «Li e aceito as condições» e o **nome escrito**; recusar pede o nome e um motivo
+  opcional; formulário assinado pelo servidor (HMAC, 24 h) e mesma origem. Regista data/hora, IP,
+  navegador, nome, opção, versão e hash do conteúdo (se a proposta mudar, o link deixa de aceitar);
+  confirmação por email ao cliente e ao comercial; o cliente pode mudar a resposta até à validação.
+  **Nada passa sozinho:** chega «Resposta do cliente: aceitou a Opção B» (notificação ao comercial) e
+  o comercial (ou um admin) carrega em **Validar** (aceite → versão aceite com a opção, Kickoff e as
+  regras «ao validar a aceitação»; recusa → Perdido com o motivo) ou **Contactar cliente** (cria a
+  chamada; a resposta fica por validar).
+- **Faturação (19.6 E, 19.9):** a plataforma **não emite faturas**. «Emitir fatura …» só fica feita
+  quando o documento é submetido no negócio (número, data, s/ IVA, IVA, total que tem de bater certo,
+  PDF verificado); «Validar pagamento» pede a data de receção (valor e comprovativo opcionais) e dispara
+  as regras «ao validar um pagamento»; o pagamento final (em Concluído) marca o negócio como pago.
+  Estas tarefas não se concluem à mão (Tarefas, Leads, Contactos, ficha). O PDF vai para a pasta do
+  negócio no Drive (`Faturas/`) quando o Drive está ligado, senão para uma pasta privada do servidor;
+  descarrega-se pelo negócio (comercial, Financeiro ou admins). A integração com o Financeiro fica
+  para o desenho dessa aba.
+- **Rondas (19.6 D):** nas etapas com rondas incluídas, «Registar ronda» conta-as; acima do incluído
+  fica no histórico como pedido de alteração orçamentado e o comercial é notificado.
+- **Comercial e Execução (19.10):** dois responsáveis por negócio, atribuídos por um admin no painel;
+  o comercial fica até ao fim; notificações ao comercial quando outra pessoa passa um gate de produção
+  ou quando as rondas se esgotam; ao entrar em Concluído o cliente passa às **Relações** com o
+  comercial como dono.
+- **Painel do negócio (19.8):** no Pipeline o cartão abre o painel ao lado (igual ao da lead): resumo,
+  comercial/execução/datas, atalhos (X-Ray · Orçamento · Proposta · Ficha do negócio a partir do
+  Kickoff · Drive), barra de etapas com os requisitos ✓/✗ (as tarefas obrigatórias concluem-se ali),
+  Avançar / Forçar, proposta e resposta, faturação, rondas, Nova ação, Foco e Notas & Histórico; as
+  ações voltam com o painel aberto. A ficha da aba Negócios tem os mesmos blocos.
+- **Testado na bancada** (MariaDB, Playwright): migração idempotente; X-Ray → Proposta → envio →
+  página do cliente (GET sem escrita nem cookie, POST sem a caixa ou com assinatura errada recusado) →
+  validação → Kickoff (Opção B, valor do negócio) → fatura e pagamento → produção, forçar e anular,
+  não-admin a forçar recusado, Colab sem acesso ao negócio nem ao editor; recusa → Perdido; conversão
+  de lead cria as tarefas do X-Ray; superadmin como dono → tarefas por atribuir; mensais uma vez por
+  mês; funil combinado com etapas, perguntas e 58 regras; claro/escuro e telemóvel sem deslocamento.
+- **Não feito / a decidir:** os negócios que já estavam numa etapa antes da versão 21 não recebem
+  tarefas retroativas (só ao entrarem na etapa seguinte); faturação ligada ao Financeiro e software
+  certificado (§19.9); a fase do Marketing Buddy não leva as tarefas de entrega do fecho (B) por ser
+  uma avença.
+
+Ficheiros novos: `inc/migrate_pipeline.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`,
+`deal_flow.php`, `xray.php`, `proposta.php`. Reescrito: `funis.php`. Alterados: `inc/pipeline.php`
+(gates e automações em `deal_move`), `inc/budget.php`, `inc/budget_view.php`, `inc/budget_pdf.php`,
+`orcamento.php`, `assets/budget.js`, `ui_api.php`, `pipeline.php`, `negocio.php`, `inc/panel.php`,
+`inc/deal_file.php`, `inc/leads.php`, `inc/tasks.php`, `tasks_api.php`, `calendar.php`, `inc/undo.php`,
+`inc/alerts.php`, `inc/interactions.php`, `inc/cron_run.php`, `inc/bootstrap.php` (página sem sessão),
+`conta.php`, `assets/app.js`, `assets/app.css`.
+
+---
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
@@ -1848,3 +1958,296 @@ aparece o campo **Local**.
 - **Tarefa pessoal:** sempre ocupada e **privada** — **todos, incluindo admins, veem só
   «Ocupado»** (exceção à §17.7).
 - Mostra tarefas com hora, reuniões, ausências e prazos de tarefas sem hora.
+
+---
+
+## 19. Pipeline, funis e automações — PROPOSTA v1 (22 out 2026, a validar com a equipa)
+
+> Estado (23 out 2026): **6 funis e etapas aprovados**; tarefas automáticas da §19.6 definidas
+> após pesquisa, a confirmar com a equipa no domingo. Implementar a **estrutura** (etapas configuráveis, gates,
+> X-Ray, propostas com duas opções, resposta do cliente, motor de automações) e carregar as
+> etapas/tarefas abaixo como **valores iniciais editáveis** em Definições.
+
+### 19.1 Fase comercial (igual em todos os funis)
+**X-Ray → Proposta → Aguardar feedback → Kickoff**, cada passagem com **gate** (requisitos):
+| Etapa | Para avançar é obrigatório |
+|---|---|
+| X-Ray | Formulário X-Ray preenchido e **validado** pelo responsável |
+| Proposta | Folha de orçamento com **opção «Pedido»** (e opcional «Proposta de valor») · prazo · condições de pagamento · revisões incluídas · direitos de uso · validade · PDF gerado → **enviar** move para Aguardar feedback |
+| Aguardar feedback | Resposta do cliente **validada internamente** (aceite → Kickoff; recusa → Perdido com motivo) |
+| Kickoff | Contrato assinado + pagamento de adjudicação **validado** → entra na produção |
+- Gates verificados no servidor. Admins podem forçar a passagem com motivo obrigatório (histórico).
+- «Perdido» continua a ser botão em qualquer etapa comercial (§3.2).
+
+### 19.2 X-Ray (qualificação e briefing)
+Formulário no painel do negócio; campos **comuns** + campos **por funil**.
+- Comuns: decisor e aprovadores · objetivo/problema · entregáveis e quantidades · formatos e
+  canais · referências · prazo e datas fixas · **faixa de orçamento** (lista) · ativos
+  disponíveis · como nos encontrou · outros fornecedores em concurso · uso/território/duração ·
+  pontuação de qualificação (orçamento, autoridade, necessidade, prazo — 1 a 3 cada).
+- Por funil (iniciais):
+  - VFX & Pós: corte/EDL ou guião · nº e duração de shots · tipos de trabalho (cleanup, roto,
+    comp, CG, grade, som) · câmara/resolução/pipeline de cor · handles · datas de turnover.
+  - CGI/3D: CAD/fotos/amostras do produto · estilo · duração e formatos · personagem/líquidos/
+    simulação · reutilização dos assets.
+  - Adverts: objetivo e KPI · público · mensagem-chave · canais · guidelines · talento,
+    locais, música.
+  - Campanhas: pilares · nº de peças por rede · calendário · quem publica · rodagem existente
+    reutilizável · tempo de resposta.
+  - Ads: oferta · público · plataformas · anúncios atuais e resultados · KPI (CPA, ROAS, hook
+    rate) · conceitos × variações · specs · quem gere o media.
+  - Marketing Buddy: objetivos a 12 meses · equipa e ferramentas atuais · canais · capacidade
+    mensal · fluxo de aprovação · relatórios.
+- Duas secções finais: **«Pedido do cliente»** (âmbito tal como pedido) e **«Proposta de
+  valor»** (melhorias/upsell: ex. cutdowns e formatos sociais, reels da mesma rodagem,
+  consultoria de acompanhamento, ronda de revisão extra, licença de assets, uso alargado,
+  urgência).
+
+### 19.3 Proposta com duas opções (altera §14)
+Cada versão da folha de orçamento pode ter **Opção A — Pedido** e **Opção B — Proposta de
+valor**, cada uma com as suas linhas, preço, margem e lucro/mês. O PDF mostra as duas lado a
+lado (cada uma com âmbito claramente delimitado). Condições de pagamento por defeito
+(Definições): **50% adjudicação / 50% entrega**; acima de 10 000 €: **40% / 40% / 20%**
+(adjudicação / início da pós ou rodagem / entrega). Marketing Buddy: mensal adiantado,
+mínimo 3 meses.
+
+### 19.4 Resposta do cliente por email (segura)
+- O email tem **um único botão «Ver e responder à proposta»** — nunca botões que aceitam ou
+  recusam diretamente. Abrir o link (GET) **nunca altera nada** (os filtros de segurança de
+  email abrem links automaticamente).
+- A página mostra as opções, preço, condições e validade; o cliente escolhe **Opção A ou B**,
+  marca «Li e aceito as condições», **escreve o nome** e confirma (POST com proteção CSRF).
+  Recusar pede motivo opcional.
+- Regista: data/hora, IP, navegador, nome escrito, opção, versão e hash da proposta; envia
+  confirmação ao cliente e ao responsável. Link com validade (= validade da proposta),
+  pode ser aberto várias vezes; a proposta fica bloqueada após resposta (alterações = nova versão).
+- **Nada passa automaticamente:** a resposta chega como «Resposta do cliente: aceitou a Opção
+  B» e o responsável carrega em **Validar** (aceite → Kickoff) ou **Contactar cliente**
+  (clique por engano). Até à validação, o cliente pode mudar a resposta na mesma página.
+
+### 19.5 Fase de produção por funil (iniciais; Concluído é fixo e tem o fecho da §15.5)
+| Funil | Etapas de produção |
+|---|---|
+| **VFX & Pós-produção** | Turnover e breakdown → Look dev / shot de referência → Produção de shots → Revisões do cliente → Finais e QC → Entrega |
+| **CGI / 3D** | Styleframes → Storyboard e animatic → Modelação e lookdev → Animação → Render e composição → Revisões → Entrega |
+| **Adverts** | Conceito e tratamento → Pré-produção (PPM) → Rodagem → Montagem offline → Picture lock → Pós (cor, VFX, som, música) → Versões e entrega |
+| **Campanhas** | Estratégia e calendário → Guiões do lote → Gravação do lote → Edição do lote → Revisão → Entrega e agendamento → Relatório (repete por lote) |
+| **Ads** | Ângulos e ganchos → Guiões → Produção → Edição e variações → Revisão → Exportação por plataforma → Lançamento e leitura |
+| **Marketing Buddy** | Onboarding → Configuração do agente → Ativo (ciclo mensal: otimizar → reportar, repete) → Revisão trimestral e renovação — *serviço de agente de IA, ver 19.11* |
+- Funis: os 5 atuais passam a **6**, separando **Adverts** de **Campanhas** (aprovado). Funis combinados (§9.1) juntam as etapas.
+- Rondas de revisão incluídas por defeito (Definições, por funil): VFX 2 por shot · CGI 2 no
+  styleframe, 2 no animatic, 1 no render · Adverts 2 offline + 1 online · Campanhas/Ads 1 por lote.
+  Alterações fora disso = pedido de alteração orçamentado.
+- Gates de produção (iniciais): VFX turnover verificado; CGI animatic aprovado antes de
+  modelação final; Adverts PPM aprovado antes da rodagem e picture lock por escrito antes da
+  pós; todos: aprovação final do cliente por escrito antes de Entrega.
+
+### 19.6 Tarefas automáticas por etapa (v2, após pesquisa — 23 out 2026)
+Legenda: tipo (§18.6) · **C** = responsável comercial do negócio · **E** = responsável de
+execução do negócio · prazo relativo à entrada na etapa (d.u. = dias úteis) ou à data de
+entrega/rodagem · **[gate]** = tem de estar concluída para sair da etapa (só quando saltá-la
+cria risco legal, financeiro ou de qualidade). Todas editáveis no motor de automações (§19.7).
+
+**Responsáveis:** cada negócio tem **responsável comercial** (fase comercial) e **responsável
+de execução** (produção), atribuídos por um admin (por agora qualquer operador). As
+automações usam estes dois papéis; se não houver responsável atribuído, a tarefa vai para
+«Por atribuir».
+
+#### A. Fase comercial (todos os funis)
+- **X-Ray:** Chamada de descoberta (objetivo, público, orçamento, prazo, decisor) · Chamada ·
+  C · +1 [gate] — Recolher brief, referências e materiais da marca · Email · C · +2 —
+  Confirmar decisor, orçamento e data-alvo · Tarefa · C · +2 — Validar viabilidade técnica e
+  capacidade com a execução · Reunião · E · +3 — Preencher e validar X-Ray · Documento · C ·
+  +3 [gate].
+- **Proposta:** Orçamento Opção A (linhas, IVA, extras, deslocações) · Orçamento · C · +3
+  [gate] — Proposta de valor (Opção B) · Orçamento · C · +3 — Âmbito escrito: entregáveis,
+  formatos, nº de rondas de revisão incluídas e preço de ronda extra · Documento · C · +3
+  [gate] — Direitos de utilização propostos (meios, território, duração, orgânico/pago) ·
+  Documento · C · +3 [gate] — Cronograma com marcos de aprovação · Documento · E · +3 —
+  Enviar e apresentar a proposta numa chamada · Reunião · C · +4.
+- **Aguardar feedback:** Follow-up 1 · Follow-up · C · +3 — Follow-up 2 (lembrar validade) ·
+  Follow-up · C · +7 — Sem resposta: decidir perder ou manter · Tarefa · C · +15 (sugere
+  «Perdido» com motivo «Sem resposta»).
+- **Kickoff:** Contrato assinado (âmbito, rondas, alterações, direitos, pagamentos) ·
+  Documento · C · +2 [gate] — Emitir fatura de adjudicação · Orçamento · C · +1 [gate] —
+  Validar receção do pagamento de adjudicação · Tarefa · C · +5 [gate] — Reunião de passagem
+  Comercial → Execução (brief, contrato, contactos, riscos) · Reunião · C+E · +3 [gate] —
+  Reunião de arranque com o cliente (aprovadores e canal único de feedback) · Reunião · E · +5
+  — Criar pasta no Drive, canal e cronograma detalhado · Tarefa · E · +3.
+
+#### B. Fecho (Entrega → Concluído, todos os funis; junta-se à §15.5)
+Aprovação final por escrito · Email · E · +2 [gate] — Enviar entregáveis finais com
+comprovativo de download · Entrega · E · +1 [gate] — Documento de direitos e licenças
+(música, stock, talento: âmbito e validade) · Documento · C · +2 [gate] — Emitir fatura final
+· Orçamento · C · +1 [gate] — Validar pagamento final · Tarefa · C · +30 [gate para fechar o
+Resultado] — Arquivar projeto (masters, projetos, autorizações) · Tarefa · E · +10 — Avaliar
+fornecedores · Tarefa · E · +5 — Pedir testemunho e autorização de portfólio · Email · C · +5
+— Case study (após autorização) · Documento · C · +20 — Follow-up de upsell · Follow-up · C ·
++45 (cria tarefa de Relação).
+
+#### C. Produção por funil
+**1. VFX & Pós-produção**
+- Turnover e breakdown: Receber turnover (EDL/XML, plates EXR, handles, corte de referência,
+  LUT, specs) · Tarefa · E · +1 [gate] — Verificar lineup (frames, handles, timecode,
+  formato) · Revisão · E · +2 [gate] — Breakdown e orçamento por shot · Documento · E · +3 —
+  Teste de pipeline com um shot · Render · E · +3.
+- Look dev / shot de referência: Produzir shot de referência · Edição · E · +5 — Aprovação do
+  look por escrito · Revisão · E · +7 [gate].
+- Produção de shots: Tracker de shots (estado e versões) · Tarefa · E · contínuo — Dailies
+  internos e QC por versão · Revisão · E · diário (recorrente) — Status semanal ao cliente ·
+  Email · E · semanal (recorrente).
+- Revisões do cliente: Enviar versões com contador de rondas · Revisão · E · por ronda —
+  Consolidar feedback numa lista única · Documento · E · +1 — Fora do âmbito ou acima das
+  rondas → pedido de alteração aprovado por escrito · Orçamento · C · antes de executar [gate].
+- Finais e QC: Render dos finais nas specs · Render · E · −5 dias da entrega — QC técnico
+  (frames, artefactos, espaço de cor, nomes) · Revisão · E · −3 [gate].
+- Entrega: Entregar EXR/ProRes e documento de entrega · Entrega · E · data de entrega.
+
+**2. CGI / 3D**
+- Styleframes: Moodboard e referências · Documento · E · +2 — 2 a 3 styleframes · Edição · E ·
+  +5 — Aprovação do estilo por escrito · Revisão · E · +7 [gate].
+- Storyboard e animatic: Storyboard · Documento · E · +3 — Animatic com timing e áudio guia ·
+  Edição · E · +5 — Aprovação do animatic (fecha câmara e duração) · Revisão · E · +7 [gate].
+- Modelação e lookdev: Receber CAD/ficheiros do produto · Email · E · +1 — Modelos e
+  materiais · Tarefa · E · conforme plano — Turntables para aprovação · Revisão · E · fim da
+  etapa [gate].
+- Animação: Blocking · Edição · E — Revisão do blocking com o cliente · Revisão · E — Polish ·
+  Edição · E.
+- Render e composição: Teste de render e estimativa de tempo de farm · Render · E · +1 —
+  Render final · Render · E · −5 da entrega — Composição e cor · Edição · E · −3.
+- Revisões: como VFX (pedido de alteração [gate]).
+- Entrega: QC técnico · Revisão · E · −1 [gate] — Entregar masters e versões · Entrega · E.
+
+**3. Adverts**
+- Conceito e tratamento: Tratamento (conceito, look, referências) · Documento · E · +5 —
+  Guião · Documento · E · +5 — Aprovação do tratamento e guião · Revisão · E · +7 [gate].
+- Pré-produção (PPM): Casting com contratos e **autorização de imagem por escrito** (RGPD e
+  art. 79.º do Código Civil; âmbito e duração) · Documento · E · −5 dias da rodagem [gate] —
+  **Licença de filmagem municipal** (Lisboa Film Commission/CML; estradas e linhas de comboio
+  ≥ 15 d.u. antes) · Documento · E · −15 d.u. da rodagem [gate] — Seguros (RC, equipamento,
+  acidentes de trabalho) · Documento · E · −5 [gate] — Autorizações dos locais · Documento · E
+  · −5 [gate] — Visita técnica ao local · Visita · E · −5 — Reunião de PPM com o cliente
+  (lista de planos, guarda-roupa, cronograma) · Reunião · E · −3 [gate] — Folha de serviço
+  (call sheet) · Documento · E · −1.
+- Rodagem: Rodagem · Gravação · E · dia D — Recolher autorizações assinadas no set (incl.
+  figurantes) · Documento · E · dia D [gate] — Cópia de segurança dupla do material ·
+  Tarefa · E · dia D [gate].
+- Montagem offline: Sincronizar e importar · Edição · E · +1 — Primeiro corte · Edição · E · +5
+  — Revisão do cliente · Revisão · E.
+- Picture lock: Aprovação do lock por escrito (depois disto, mudanças = pedido de alteração) ·
+  Revisão · E [gate] — Turnover para a pós · Tarefa · E · +1.
+- Pós (cor, VFX, som, música): **Licença de música** (library com licença para meios pagos,
+  ou sync + master) · Documento · C · antes da mistura [gate] — Cor · Edição · E — Mistura de
+  som com loudness por plataforma · Edição · E — VFX e grafismo · Edição · E.
+- Versões e entrega: Cutdowns e formatos · Render · E · −3 da entrega — QC final (legendas,
+  ortografia, loudness, safe areas) · Revisão · E · −2 [gate] — Entregar · Entrega · E.
+
+**4. Campanhas** (repete por lote)
+- Estratégia e calendário: Workshop de pilares e formatos · Reunião · E · +3 — Calendário
+  editorial aprovado · Documento · E · +5 [gate só no 1.º lote].
+- Guiões do lote: Guiões e ganchos · Documento · E · +3 — Aprovação dos guiões · Revisão · E ·
+  −3 da gravação [gate].
+- Gravação do lote: Confirmar local, talento e autorizações de imagem válidas · Documento · E ·
+  −2 [gate] — Gravação · Gravação · E — Cópia de segurança · Tarefa · E · dia D.
+- Edição do lote: Edição com legendas e música licenciada · Edição · E · +5 — QC interno ·
+  Revisão · E · +6.
+- Revisão: Enviar com contador de rondas · Revisão · E — Aprovação final do lote · Email · E [gate].
+- Entrega e agendamento: Exportar e entregar · Entrega · E — Agendar publicação (se no âmbito) · Tarefa · E.
+- Relatório: Métricas e aprendizagens do lote · Documento · E · +7 após publicação — Faturar o
+  lote (se o contrato for por lote) · Orçamento · C [gate].
+
+**5. Ads**
+- Ângulos e ganchos: Pesquisa (anúncios da concorrência, reviews, dores do público) · Tarefa
+  · E · +2 — Matriz ângulos × ganchos aprovada · Documento · E · +3 [gate].
+- Guiões: Guiões por ângulo com **afirmações confirmadas pelo cliente** (publicidade) ·
+  Documento · E · +3 [gate].
+- Produção: Gravação/UGC com **autorizações que cobrem meios pagos** · Gravação · E [gate].
+- Edição e variações: Master por ângulo · Edição · E — Variações de gancho, CTA e duração com
+  convenção de nomes para testes · Edição · E.
+- Revisão: Rondas de revisão · Revisão · E — Aprovação · Email · E [gate].
+- Exportação por plataforma: Formatos 9:16, 4:5, 1:1, 16:9, safe zones, legendas · Render · E ·
+  −1 — QC · Revisão · E [gate].
+- Lançamento e leitura: Confirmar upload/lançamento com quem gere o media · Mensagem · E · dia
+  D — Leitura de resultados (CTR, hook rate, CPA) e recomendações · Documento · E · +7 a +14.
+
+**6. Marketing Buddy** (agente de IA para otimizar campanhas; avença — ver 19.11)
+- Onboarding: Acessos às contas de anúncios, redes e analytics do cliente · Email · E · +2
+  [gate] — Reunião de objetivos e KPI (CPA, ROAS, orçamento de media) · Reunião · E · +3 —
+  Faturação mensal recorrente configurada · Orçamento · C · +2 [gate] — Acordo de tratamento
+  de dados (RGPD) para acesso às contas · Documento · C · +2 [gate].
+- Configuração do agente: Ligar fontes de dados e definir regras/limites do agente · Tarefa ·
+  E · +5 — Validar configuração com o cliente · Revisão · E · +7 [gate].
+- Ativo (recorrente mensal): Rever recomendações/otimizações do agente · Revisão · E ·
+  semanal — Relatório mensal ao cliente · Documento · E · dia 5 — Fatura mensal (submeter
+  documento) e validar pagamento · Orçamento · C · dia 1 [gate] — Oportunidades de
+  cross-selling (ex.: Campanhas) · Tarefa · C · mensal.
+- Revisão trimestral e renovação: Reunião de resultados · Reunião · C+E · fim do trimestre —
+  Proposta de renovação/upsell · Orçamento · C · −15 dias do fim — Contrato renovado ou
+  terminado · Documento · C [gate].
+
+#### D. Rondas de revisão e pedidos de alteração
+- **Ronda de revisão** = um conjunto **único e consolidado** de comentários do cliente sobre
+  uma versão. Cada proposta diz quantas estão incluídas por fase (valores por defeito em
+  Definições, por funil: VFX 2 por shot · CGI 2 no styleframe, 2 no animatic, 1 no render ·
+  Adverts 2 offline + 1 online · Campanhas/Ads 1 por lote) e o preço de cada ronda extra.
+- Comentários que contradizem ou reabrem algo já aprovado contam como nova ronda.
+- **Pedido de alteração:** tudo o que sai do âmbito (novos entregáveis, versões, locais) ou
+  mexe depois de um gate de aprovação (look, animatic, picture lock) é orçamentado à parte,
+  aprovado por escrito **antes** de se fazer e faturado separadamente. A plataforma conta as
+  rondas por fase e avisa quando se ultrapassa o incluído.
+
+#### E. Faturação (atualiza §19.9)
+A topper. **ainda não tem software de faturação certificado**. Até existir, as faturas são
+emitidas **fora da plataforma**, e a tarefa «Emitir fatura …» **só fica concluída quando o
+documento da fatura (PDF) é submetido na plataforma**, com número, data, valor s/ IVA, IVA e
+total. O documento fica na pasta do negócio no Drive (`<ID>_<NOME>/Faturas/`) e no Financeiro.
+«Validar pagamento» pede a data de recebimento e, opcionalmente, o comprovativo. Sem
+documento submetido, o gate não passa. Recomendação: escolher software certificado pela AT com API (ATCUD/QR,
+SAF-T) para integrar mais tarde.
+
+### 19.7 Motor de automações (Definições › Funis e automações)
+- Por funil → por etapa → lista de regras em frase legível:
+  «Quando o negócio **entra em** [etapa] → criar tarefa [tipo] «[título]» para [responsável]
+  com prazo [+N dias úteis / data relativa] · [obrigatória sim/não] · [checklist]».
+- **Gatilhos v1:** entra na etapa · N dias antes/depois de uma data do negócio (entrega,
+  validade da proposta) · recorrente mensal (retainers) · ao validar aceitação · ao validar pagamento.
+- **Responsável:** responsável comercial · responsável de execução · responsável do
+  departamento · pessoa concreta · por atribuir. Nunca o superadmin (§18.2).
+- **Títulos com variáveis:** {cliente} {negócio} {ID} {etapa}.
+- Ações: criar, editar, duplicar, ativar/desativar, eliminar (com «Anular»), reordenar;
+  **«Aplicar a todos os funis»** para regras comuns; pré-visualização («ao entrar em Kickoff
+  vão ser criadas estas 8 tarefas»). Alterações não mexem em tarefas já criadas.
+- Só superadmin e admins editam.
+
+### 19.8 Ficha do negócio no Pipeline
+Igual ao painel da lead (§12.5), mais completo: barra de etapas com os requisitos de cada
+gate (✓/✗); **atalhos**: Formulário X-Ray · Folha de orçamento · Proposta (PDF e estado da
+resposta) · Ficha na aba Negócios (a partir do Kickoff) · Pasta no Drive. Foco, Nova ação e
+Notas & Histórico como nas Leads.
+
+### 19.9 Faturação
+A plataforma cria as tarefas «Emitir fatura» e regista o valor e o estado, mas **não emite
+faturas legais** (em Portugal exigem software certificado pela AT). Integração com o software
+de faturação a decidir no desenho do Financeiro.
+
+### 19.10 Papel do Comercial e da Execução
+- **O Comercial é o principal elo entre o exterior e a empresa.** O responsável comercial
+  conduz a lead desde o primeiro contacto, faz o X-Ray e leva o negócio até ao Kickoff; depois
+  **mantém-se no negócio até ao fim**: orçamentos, prazos, faturação, alterações de âmbito
+  (pedidos de alteração) e acompanhamento do cliente.
+- **A Execução** trata do alinhamento do produto com o cliente durante a produção (versões,
+  revisões, aprovações técnicas e criativas).
+- Consequências na plataforma:
+  - o responsável comercial **não sai** do negócio no Kickoff; os dois responsáveis coexistem;
+  - tarefas de pedidos de alteração, faturação, prazos e renovações → **C**; tarefas de
+    produto, revisões e entregas técnicas → **E**;
+  - o responsável comercial recebe notificação quando o negócio passa um gate de produção,
+    quando há pedido de alteração ou quando as rondas incluídas se esgotam;
+  - **depois da entrega**, o contacto do cliente entra automaticamente nas **Relações**
+    (§13.5) com o responsável comercial como dono, para gerar trabalho futuro.
+
+### 19.11 Marketing Buddy
+Serviço **independente** dos outros: é o **agente de IA** da topper. para otimizar campanhas
+dos clientes (avença mensal). Pode ser vendido em **cross-selling** com Campanhas (funil
+combinado §9.1). As etapas e tarefas do funil Marketing Buddy refletem um serviço de agente
+(acessos, configuração, otimização contínua, relatórios), não de produção de vídeo.

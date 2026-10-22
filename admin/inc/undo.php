@@ -72,6 +72,9 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
                 ->execute([$d['stage_id'], $d['phase'], $d['done_at'], $d['year'], $d['month'], $d['last_touch'], $d['id']]);
             deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
                                                      'to_funnel' => $deal['funnel_id'], 'to_stage' => $d['stage_id'], 'note' => 'Anulado']);
+            // As tarefas automáticas que a entrada na etapa criou (§19.7) saem, se ainda ninguém lhes mexeu.
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
             return 'Etapa reposta.';
 
         case 'deal_lost':
@@ -251,6 +254,8 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             } else {
                 deal_log($pdo, (int)$d['id'], 'step', ['note' => 'Anulado']);
             }
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
             return 'Etapa reposta.';
 
         case 'deal_flags':
@@ -326,6 +331,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!$sheet || (int)$sheet['accepted_version_id'] !== (int)$d['version'] || $sheet['closed_at']) throw new RuntimeException($changed);
             $pdo->prepare('UPDATE budget_sheets SET accepted_version_id = ? WHERE id = ?')->execute([$d['prev'], $sheet['id']]);
             $pdo->prepare('UPDATE budget_versions SET accepted_at = NULL, accepted_by = NULL, occupancy = ? WHERE id = ?')->execute([$d['occupancy'], $d['version']]);
+            if (array_key_exists('opt', $d)) $pdo->prepare('UPDATE budget_versions SET accepted_opt = ? WHERE id = ?')->execute([$d['opt'], $d['version']]);
             $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$d['value'], $d['deal']]);
             budget_recalc($pdo, (int)$d['version']);
             budget_log($pdo, (int)$sheet['id'], 'b_accept', 'Aceitação anulada');
@@ -347,6 +353,15 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // Marketing (§16): triagem, etapas, revisão, agendar, publicar, textos — a peça volta ao que era.
             require_once __DIR__ . '/marketing.php';
             return mkt_undo_apply($pdo, $d);
+
+        case 'auto_rule':
+            // Uma automação eliminada em Definições › Funis e automações (§19.7): volta igual.
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            if (!(int)$pdo->query('SELECT COUNT(*) FROM funnel_stages WHERE id = ' . (int)$d['stage_id'])->fetchColumn()) throw new RuntimeException($changed);
+            if ((int)$pdo->query('SELECT COUNT(*) FROM stage_automations WHERE id = ' . (int)$d['id'])->fetchColumn()) throw new RuntimeException($changed);
+            $cols = array_keys($d);
+            $pdo->prepare('INSERT INTO stage_automations (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($d));
+            return 'Automação reposta.';
 
         case 'relation_drop':
             // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.

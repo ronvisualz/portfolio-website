@@ -20,6 +20,13 @@
 
   var T = window.topper;
   var VERSION = bs.getAttribute('data-version');
+  // Opção A (Pedido) ou B (Proposta de valor), §19.3: cada pedido diz qual a folha está a mostrar.
+  var OPT = bs.getAttribute('data-opt') || 'A';
+  function api(a, d, m) {
+    if (typeof FormData !== 'undefined' && d instanceof FormData) { if (!d.has('opt')) d.append('opt', OPT); }
+    else if (d && m !== 'GET') d.opt = OPT;
+    return T.api(a, d, m);
+  }
   var EDIT = bs.getAttribute('data-editable') === '1';
 
   function $(s, el) { return (el || document).querySelector(s); }
@@ -85,7 +92,7 @@
   function send(field, value) {
     if (last[field] === value) return;
     last[field] = value;
-    T.api('budget_set', { version: VERSION, field: field, value: value }).then(apply).catch(function (e) { delete last[field]; fail(e); });
+    api('budget_set', { version: VERSION, field: field, value: value }).then(apply).catch(function (e) { delete last[field]; fail(e); });
   }
   $$('[data-f]', bs).forEach(function (el) {
     var f = el.getAttribute('data-f');
@@ -95,7 +102,7 @@
     var el = e.target, f = el.getAttribute && el.getAttribute('data-f');
     if (!f || el.type === 'radio' || el.type === 'date') return;
     clearTimeout(timers[f]);
-    timers[f] = setTimeout(function () { send(f, el.value.trim()); }, /^(description|conditions)$/.test(f) ? 900 : 550);
+    timers[f] = setTimeout(function () { send(f, el.value.trim()); }, /^(description|conditions|scope_b|payment_terms|revisions_text|rights_text|term_text)$/.test(f) ? 900 : 550);
   });
   bs.addEventListener('change', function (e) {
     var el = e.target, f = el.getAttribute && el.getAttribute('data-f');
@@ -112,11 +119,18 @@
 
   // % de ocupação: voltar à sugestão automática.
   bs.addEventListener('click', function (e) {
+    var fill = e.target.closest('[data-bfill]');
+    if (fill) {
+      var f = fill.getAttribute('data-bfill'), fe = $('[data-f="' + f + '"]', bs);
+      if (fe) { fe.value = fill.getAttribute('data-value'); send(f, fe.value); }
+      fill.closest('p').hidden = true;
+      return;
+    }
     var b = e.target.closest('[data-occ-auto]');
     if (b) { last.occupancy = null; send('occupancy', ''); var i = $('[data-f="occupancy"]', bs); if (i) i.blur(); return; }
     var a = e.target.closest('[data-fixed-avg]');
     if (a) {
-      T.api('budget_fixed_avg', { version: VERSION }).then(function (j) {
+      api('budget_fixed_avg', { version: VERSION }).then(function (j) {
         var i = $('[data-f="fixed_monthly"]', bs); if (i) { i.value = j.fixed; last.fixed_monthly = j.fixed; }
         apply(j); T.toast(j.msg);
       }).catch(fail);
@@ -155,7 +169,7 @@
       var el = q || u, data = { line: el.getAttribute('data-line') };
       if (q) data.qty = q.value.trim(); else data.qty_unit = u.value;
       el.disabled = true;
-      T.api('budget_line_qty', data).then(apply).catch(function (er) { fail(er); if (q && lines[data.line]) q.value = lines[data.line].qty; })
+      api('budget_line_qty', data).then(apply).catch(function (er) { fail(er); if (q && lines[data.line]) q.value = lines[data.line].qty; })
         .then(function () { el.disabled = false; });
     });
     tbody.addEventListener('keydown', function (e) {
@@ -165,7 +179,7 @@
       var del = e.target.closest('[data-bl-del]');
       if (del) {
         del.disabled = true;
-        T.api('budget_line_remove', { line: del.getAttribute('data-bl-del') }).then(function (j) {
+        api('budget_line_remove', { line: del.getAttribute('data-bl-del') }).then(function (j) {
           apply(j); T.toast(j.msg, { undo: j.undo });
         }).catch(function (er) { del.disabled = false; fail(er); });
         return;
@@ -195,7 +209,7 @@
     var sid = $('[name=service_id]', form).value, my = ++supSeq;
     if (!sid) { supBox.innerHTML = '<p class="muted small" style="margin:0">Escolha o serviço para ver os fornecedores ativos que o prestam.</p>'; return Promise.resolve(); }
     supBox.innerHTML = '<p class="muted small" style="margin:0">A carregar…</p>';
-    return T.api('budget_suppliers', { service: sid }, 'GET').then(function (j) {
+    return api('budget_suppliers', { service: sid }, 'GET').then(function (j) {
       if (my !== supSeq) return;
       if (!j.items.length) { supBox.innerHTML = '<p class="muted small" style="margin:0">Nenhum fornecedor ativo presta este serviço. Em Contactos, junte o serviço e o preço a um fornecedor ativo.</p>'; return; }
       supBox.innerHTML = j.items.map(function (o) {
@@ -244,7 +258,7 @@
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var btn = $('button[type=submit]', form); btn.disabled = true;
-      T.api('budget_line_save', new FormData(form)).then(function (j) {
+      api('budget_line_save', new FormData(form)).then(function (j) {
         apply(j); T.closeMdl(mdl); T.toast(j.msg);
         var row = $('tr[data-line="' + j.line + '"]', bs);
         if (row) { row.classList.add('bl-new'); setTimeout(function () { row.classList.remove('bl-new'); }, 1600); }
@@ -270,19 +284,26 @@
       var nv = t.closest('[data-bver-new]');
       if (nv) {
         nv.disabled = true;
-        T.api('budget_version_new', { version: VERSION }).then(function (j) { go(j); }).catch(function (er) { nv.disabled = false; fail(er); });
+        api('budget_version_new', { version: VERSION }).then(function (j) { go(j); }).catch(function (er) { nv.disabled = false; fail(er); });
         return;
       }
       var ac = t.closest('[data-baccept]');
       if (ac) {
         ac.disabled = true;
-        T.api('budget_accept', { version: VERSION }).then(function (j) { go(j, location.href); }).catch(function (er) { ac.disabled = false; fail(er); });
+        api('budget_accept', { version: VERSION }).then(function (j) { go(j, location.href); }).catch(function (er) { ac.disabled = false; fail(er); });
+        return;
+      }
+      var cp = t.closest('[data-bcopy-a]');
+      if (cp) {
+        cp.disabled = true;
+        api('budget_copy_a', { version: VERSION }).then(function (j) { T.toast(j.msg); setTimeout(function () { location.reload(); }, 500); })
+          .catch(function (er) { cp.disabled = false; fail(er); });
         return;
       }
       var pdf = t.closest('[data-bpdf]');
       if (pdf) {
         pdf.disabled = true;
-        T.api('budget_pdf', { version: VERSION }).then(function (j) {
+        api('budget_pdf', { version: VERSION }).then(function (j) {
           T.toast(j.msg);
           var a = document.createElement('a'); a.href = j.url; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
         }).catch(fail).then(function () { pdf.disabled = false; });
@@ -291,12 +312,12 @@
     var ts = $('form[data-btpl-save]');
     if (ts) ts.addEventListener('submit', function (e) {
       e.preventDefault();
-      T.api('budget_tpl_save', new FormData(ts)).then(function (j) { T.closeMdl(ts.closest('.mdl')); T.toast(j.msg); ts.reset(); }).catch(fail);
+      api('budget_tpl_save', new FormData(ts)).then(function (j) { T.closeMdl(ts.closest('.mdl')); T.toast(j.msg); ts.reset(); }).catch(fail);
     });
     var ta = $('form[data-btpl-apply]');
     if (ta) ta.addEventListener('submit', function (e) {
       e.preventDefault();
-      T.api('budget_tpl_apply', new FormData(ta)).then(function (j) { go(j); }).catch(fail);
+      api('budget_tpl_apply', new FormData(ta)).then(function (j) { go(j); }).catch(fail);
     });
   }
 
