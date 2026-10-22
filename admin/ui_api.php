@@ -1140,11 +1140,15 @@ try {
         if (!$post) break;
         require_perm('pipeline', PERM_EDIT);
         $deal = record_get($pdo, (int)($_POST['id'] ?? 0));
-        if (!$deal || $deal['phase'] !== 'pipeline' || !record_reach($pdo, $deal, PERM_EDIT)) {
+        if (!$deal || !in_array($deal['phase'], ['pipeline', 'production'], true) || !record_reach($pdo, $deal, PERM_EDIT)) {
             out(404, ['ok' => false, 'error' => 'Negócio não encontrado. Recarregue a página.']);
         }
+        // O quadro mostra também a produção (§19.8): em produção, o negócio só anda entre o Kickoff
+        // e as etapas de produção (record_reach pede então a aba Negócios); concluir faz-se na checklist de fecho.
         $to = stage_get($pdo, (int)($_POST['stage_id'] ?? 0));
-        if (!$to || !in_array($to['kind'], ['xray', 'commercial', 'kickoff'], true)) throw new RuntimeException('Etapa inválida.');
+        if (!$to) throw new RuntimeException('Etapa inválida.');
+        if ($to['kind'] === 'done') throw new RuntimeException('Para concluir, use a checklist de fecho na ficha do negócio (aba Negócios).');
+        if ($deal['phase'] === 'production' && in_array($to['kind'], ['xray', 'commercial'], true)) throw new RuntimeException('Um negócio em produção não volta à fase comercial.');
         $snap = undo_deal_snapshot($deal);
         require_once __DIR__ . '/inc/pipeline_flow.php';
         flow_created(null, true);
@@ -1156,7 +1160,7 @@ try {
         }
         $now = record_get($pdo, (int)$deal['id']);
         $token = (int)$deal['stage_id'] !== (int)$to['id'] ? undo_push('deal_stage', $snap + ['to_stage' => (int)$to['id'], 'auto_tasks' => flow_created()]) : '';
-        out(200, ['ok' => true, 'msg' => $msg, 'phase' => $now['phase'], 'undo' => $token, 'won' => $now['phase'] === 'production']);
+        out(200, ['ok' => true, 'msg' => $msg, 'phase' => $now['phase'], 'undo' => $token, 'won' => $deal['phase'] === 'pipeline' && $now['phase'] === 'production']);
     }
 } catch (RuntimeException $e) {
     if (!$json && $a === 'interaction') {

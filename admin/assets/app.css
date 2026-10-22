@@ -466,8 +466,16 @@ html.js .bar[data-auto] .apply { display: none; }
 .pboard .col header b { font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); display: flex; justify-content: space-between; }
 .pboard .col header .sum { font: 700 16px var(--head); color: var(--fg); }
 .pboard .col header .muted { font-size: 11.5px; }
-.pboard .col-win { border: 1.5px dashed var(--line-2); background: none; }
-.pboard .col-win header b::after { content: ' →'; }
+.pboard .col-win { box-shadow: inset 0 3px 0 var(--hi); }
+.pboard .col.z-prod, .pboard .col.z-done { background: color-mix(in srgb, var(--sky) 7%, transparent); }
+.pboard .col.z-done .dcard.is-done { opacity: .78; }
+/* separador «Produção» entre a fase comercial e o Kickoff */
+.pboard .col-sep { flex: 0 0 18px; align-self: stretch; display: grid; place-items: center; border-left: 1.5px dashed var(--line-2); margin-left: 6px; }
+.pboard .col-sep span { writing-mode: vertical-rl; transform: rotate(180deg); font: 500 9.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+/* «Perdidos» à direita: não é um funil */
+.tabs-row.pipe-tabs .tabs-lost { margin-left: auto; }
+.pipe-tabs .tabs-lost a { display: inline-flex; align-items: center; gap: 6px; }
+.pipe-tabs .tabs-lost .ico { width: 13px; height: 13px; }
 .pboard .cards { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
 .dcard {
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; cursor: grab;
@@ -2557,3 +2565,8 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .fpl hr, .fpop-l hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 .newact .lmeet .rb span { display: inline-flex; gap: 6px; align-items: center; }
 .newact .lmeet .rb .ico { width: 15px; height: 15px; }
+/* folha de orçamento: atalho para a ficha do negócio (Pipeline ou Negócios) */
+.bs-head .id { display: inline-flex; align-items: center; gap: 6px; }
+.bs-go { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--mute); opacity: .7; transition: opacity var(--t), background var(--t), color var(--t); }
+.bs-go .ico { width: 13px; height: 13px; }
+.bs-go:hover, .bs-go:focus-visible { opacity: 1; background: var(--chip); color: var(--fg); }

@@ -78,7 +78,13 @@ $stageChip = match ($deal['phase']) {
 <div class="bs" data-sheet="<?= (int)$sheet['id'] ?>" data-version="<?= (int)$v['id'] ?>" data-opt="<?= $opt ?>" data-editable="<?= $editable ? '1' : '0' ?>" data-money="<?= $money ? '1' : '0' ?>">
 <header class="bs-head">
   <div class="bs-who">
-    <span class="id"><?= e($deal['code']) ?></span>
+    <span class="id"><?= e($deal['code']) ?><?php
+      // Atalho para a ficha do negócio: no Pipeline (fase comercial, painel aberto) ou em Negócios (a partir do Kickoff).
+      $toDeal = null;
+      if (in_array($deal['phase'], ['production', 'done'], true) && can('negocios')) $toDeal = ['/admin/negocio.php?id=' . (int)$deal['id'], 'Abrir a ficha em Negócios'];
+      elseif ($deal['phase'] === 'lost' && can('pipeline')) $toDeal = ['/admin/pipeline.php?' . http_build_query(['v' => 'perdidos', 'deal' => (int)$deal['id']]) . '#negocio', 'Abrir a ficha no Pipeline (Perdidos)'];
+      elseif (can('pipeline')) $toDeal = ['/admin/pipeline.php?' . http_build_query(['f' => (int)$deal['funnel_id'], 'sp' => 'deal:' . (int)$deal['id']]), 'Abrir a ficha no Pipeline'];
+      if ($toDeal): ?><a class="bs-go" href="<?= e($toDeal[0]) ?>" aria-label="<?= e($toDeal[1]) ?>" data-tip="<?= e($toDeal[1]) ?>"><?= icon('external') ?></a><?php endif; ?></span>
     <h1 class="keep"><?= e($deal['name']) ?></h1>
     <p class="bs-sub"><?= e((string)($deal['client_name'] ?: 'Sem cliente')) ?><?= $deal['brought_name'] ? ' · trazido por ' . e($deal['brought_name']) : '' ?> · <?= $stageChip ?><?= $deal['funnel_name'] ? ' <span class="muted small">' . e($deal['funnel_name']) . '</span>' : '' ?></p>
   </div>
