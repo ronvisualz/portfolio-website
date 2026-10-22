@@ -14,788 +14,166 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#0c0c10">
 <link rel="preload" href="assets/fonts/FuturaNowHeadline-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/FuturaNowHeadline-Light.woff2" as="font" type="font/woff2" crossorigin>
-<script>document.documentElement.classList.add('js');</script>
-<style>
-@font-face { font-family: 'Futura Now Headline'; src: url('assets/fonts/FuturaNowHeadline-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
-@font-face { font-family: 'Futura Now Headline'; src: url('assets/fonts/FuturaNowHeadline-Light.woff2') format('woff2'); font-weight: 300; font-display: swap; }
-
-:root {
-  --ink: #000; --paper: #fff; --line: rgba(0,0,0,.14); --soft: #f3f3f1; --mute: #5c5c5c;
-  /* brand accents: tiny markers only */
-  --pink: #FBAE9C; --light-blue: #81CFE3; --blue: #2F77B1;
-  --g: clamp(20px, 4vw, 64px);          /* the one gutter used everywhere */
-  --nav-h: 76px;
-  --r: clamp(12px, 1.4vw, 22px);
-  --font: 'Futura Now Headline', Futura, 'Century Gothic', sans-serif;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-io: cubic-bezier(0.76, 0, 0.24, 1);
-  --mega: clamp(56px, 12vw, 220px);
-  --xl: clamp(46px, 9vw, 170px);
-  --l: clamp(34px, 5.6vw, 100px);
-  --body: clamp(17px, 1.35vw, 21px);
-}
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body { background: var(--paper); color: var(--ink); font-family: var(--font); font-weight: 300; font-size: var(--body); line-height: 1.5; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
-html, body { overflow-x: clip; }
-img, video, svg { display: block; max-width: 100%; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-h1, h2, h3 { font-weight: 700; line-height: .9; letter-spacing: -0.035em; }
-:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--paper); padding: 8px 12px; z-index: 200; }
-.skip:focus { left: 8px; }
-.wrap { padding-left: var(--g); padding-right: var(--g); }
-.eyebrow { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); flex: none; }
-.lt { font-weight: 300; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-/* ── Intro (logo reveal, ~1.1s, CSS only) ── */
-.intro { position: fixed; inset: 0; z-index: 150; background: var(--paper); display: grid; place-items: center; pointer-events: none;
-  animation: introOut .6s var(--ease-io) .55s forwards; }
-.intro .mask { overflow: hidden; }
-.intro img { width: clamp(160px, 22vw, 320px); height: auto; transform: translateY(105%); animation: up .5s var(--ease) .05s forwards; }
-@keyframes up { to { transform: none; } }
-@keyframes introOut { to { clip-path: inset(0 0 100% 0); visibility: hidden; } }
-html:not(.js) .intro { display: none; }
-
-/* ── Header (blend: black over white, white over film) ── */
-.hdr { position: fixed; inset: 0 0 auto 0; height: var(--nav-h); z-index: 60; display: flex; align-items: center; justify-content: space-between;
-  padding: env(safe-area-inset-top) var(--g) 0; color: #fff; mix-blend-mode: difference; transition: transform .5s var(--ease); }
-.hdr .logo img { height: 26px; width: auto; }
-.hdr.hide { transform: translateY(-110%); }
-.nav { display: flex; gap: clamp(20px, 2.6vw, 40px); font-weight: 700; font-size: 15px; letter-spacing: .02em; }
-.nav a { position: relative; padding: 4px 0; }
-.nav a::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1.5px; background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform .45s var(--ease); }
-.nav a:hover::after { transform: scaleX(1); transform-origin: left; }
-.menu-btn { display: none; font-weight: 700; font-size: 15px; }
-.mnav { position: fixed; inset: 0; z-index: 55; background: var(--paper); color: var(--ink); display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 0 var(--g) calc(var(--g) + env(safe-area-inset-bottom)); clip-path: inset(0 0 100% 0); visibility: hidden; transition: clip-path .7s var(--ease-io), visibility 0s .7s; }
-.mnav a { font-size: clamp(48px, 15vw, 96px); font-weight: 700; letter-spacing: -.04em; line-height: 1; padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; }
-.mnav a small { font-size: 13px; font-weight: 700; letter-spacing: .1em; }
-.mnav p { margin-top: 28px; font-size: 15px; }
-body.menu-open .mnav { clip-path: inset(0); visibility: visible; transition: clip-path .7s var(--ease-io); }
-@media (max-width: 760px) {
-  :root { --nav-h: 64px; }
-  .hdr .logo img { height: 22px; }
-  .nav { display: none; }
-  .menu-btn { display: block; }
-}
-
-/* ── Hero: full-bleed film that insets into a rounded frame on scroll ── */
-.hero { position: relative; height: 175svh; background: var(--paper); --p: 0; }
-.hero-pin { position: sticky; top: 0; height: 100svh; overflow: hidden; }
-.hero-frame { position: absolute; inset: 0; background: #000; overflow: hidden;
-  clip-path: inset(calc(var(--p) * var(--iy)) calc(var(--p) * var(--g)) calc(var(--p) * var(--iy)) calc(var(--p) * var(--g)) round calc(var(--p) * var(--r) * 1.4));
-  --iy: clamp(80px, 13svh, 140px); will-change: clip-path; }
-.hero-frame video, .hero-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scale(calc(1.12 - var(--p) * .12)); will-change: transform; }
-.hero-frame::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.6), rgba(0,0,0,0) 50%), linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,0) 22%); pointer-events: none; opacity: calc(1 - var(--p)); }
-.hero-copy { position: absolute; left: var(--g); right: var(--g); bottom: calc(clamp(18px, 3vw, 44px) + env(safe-area-inset-bottom)); z-index: 2; color: #fff;
-  opacity: calc(1 - var(--p) * 2.2); transform: translateY(calc(var(--p) * -60px)); will-change: transform, opacity; }
-.hero-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: clamp(14px, 2vw, 28px); }
-.hero-line { font-size: clamp(18px, 1.9vw, 30px); font-weight: 700; line-height: 1.1; letter-spacing: -.01em; max-width: 24ch; }
-.hero-line .lt { display: block; }
-.hero-mark { width: 100%; height: auto; }
-.hero-mark-mask { overflow: hidden; }
-html.js .hero-mark { transform: translateY(102%); animation: up 1.1s var(--ease) .75s forwards; }
-html.js .hero-row > * { opacity: 0; animation: fade .9s var(--ease) 1.05s forwards; }
-@keyframes fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-.cue { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; white-space: nowrap; }
-.cue i { position: relative; width: 1px; height: 44px; background: rgba(255,255,255,.35); overflow: hidden; }
-.cue i::after { content: ''; position: absolute; left: 0; top: 0; width: 1px; height: 100%; background: #fff; animation: cue 1.8s var(--ease-io) infinite; }
-@keyframes cue { 0% { transform: translateY(-100%); } 60%, 100% { transform: translateY(100%); } }
-.reel-toggle { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; border: 1px solid rgba(255,255,255,.55); border-radius: 999px; padding: 9px 16px; }
-.reel-toggle:hover { background: #fff; color: #000; }
-.hero-tags { position: absolute; top: calc(var(--nav-h) + 8px); left: var(--g); right: var(--g); display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #fff; z-index: 2; opacity: calc(1 - var(--p) * 3); }
-.hero-caption { position: absolute; left: var(--g); right: var(--g); bottom: calc(var(--iy, 13svh) / 2); display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink);
-  opacity: clamp(0, calc(var(--p) * 3 - 2), 1); transform: translateY(50%); }
-@media (max-width: 760px) {
-  .hero { height: 150svh; }
-  .hero-frame { --iy: 92px; }
-  .hero-tags span:nth-child(2) { display: none; }
-  .hero-row { flex-direction: column; align-items: flex-start; gap: 16px; }
-  .cue { display: none; }
-}
-
-/* ── Statement ── */
-.statement { padding: clamp(56px, 9vw, 140px) var(--g) clamp(48px, 7vw, 110px); }
-.statement h2 { font-size: var(--mega); line-height: .88; letter-spacing: -.05em; }
-.statement h2 .w { display: inline-block; opacity: var(--o, 1); transition: opacity .25s linear; }
-html.js .statement h2 .w { --o: .14; }
-.statement-foot { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px var(--g); margin-top: clamp(40px, 6vw, 96px); }
-.statement-foot .eyebrow { grid-column: 1 / span 4; align-self: start; }
-.statement-foot .sf-body { grid-column: 6 / span 6; }
-.statement-foot p { max-width: 34ch; font-size: clamp(19px, 1.7vw, 27px); line-height: 1.35; }
-.link-arrow { display: inline-flex; align-items: center; gap: 12px; margin-top: 28px; font-weight: 700; font-size: 16px; border-bottom: 1.5px solid currentColor; padding-bottom: 4px; }
-.link-arrow span { transition: transform .5s var(--ease); }
-.link-arrow:hover span { transform: translateX(6px); }
-@media (max-width: 760px) {
-  .statement-foot { grid-template-columns: minmax(0, 1fr); }
-  .statement-foot .eyebrow, .statement-foot .sf-body { grid-column: 1; }
-}
-
-/* ── Marquee ── */
-.marquee { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); overflow: hidden; padding: clamp(14px, 1.8vw, 26px) 0; }
-.marquee + .marquee { border-top: 0; }
-.mq-track { display: flex; width: max-content; animation: mq 38s linear infinite; }
-.marquee.rev .mq-track { animation-direction: reverse; animation-duration: 46s; }
-.mq-track span { font-size: clamp(30px, 4.6vw, 80px); font-weight: 700; letter-spacing: -.03em; line-height: 1; white-space: nowrap; padding-right: .5em; display: flex; align-items: center; gap: .5em; }
-.mq-track span::after { content: ''; width: .22em; height: .22em; border-radius: 50%; background: var(--ink); }
-.marquee.rev span { font-weight: 300; }
-@keyframes mq { to { transform: translateX(-50%); } }
-
-/* ── Section heads ── */
-.sec { padding-top: clamp(80px, 11vw, 180px); }
-.sec-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: clamp(32px, 5vw, 72px); }
-.sec-head h2 { font-size: var(--xl); letter-spacing: -.05em; }
-.sec-head .eyebrow { margin-bottom: clamp(16px, 2vw, 28px); }
-.count { font-size: clamp(16px, 1.6vw, 24px); font-weight: 300; white-space: nowrap; padding-bottom: .6em; }
-
-/* ── Services: huge rows + floating preview ── */
-.svcs { list-style: none; border-top: 1px solid var(--ink); }
-.svc { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(0, 360px) 48px; gap: var(--g); align-items: center; padding: clamp(22px, 3vw, 44px) 0; border-bottom: 1px solid var(--ink); position: relative; }
-.svc .n { font-size: 14px; font-weight: 700; align-self: start; padding-top: .9em; }
-.svc h3 { font-size: clamp(38px, 7.2vw, 132px); letter-spacing: -.05em; line-height: .92; transition: transform .7s var(--ease); }
-.svc p { font-size: clamp(16px, 1.2vw, 19px); line-height: 1.45; color: var(--ink); }
-.svc .arr { width: 48px; height: 48px; border: 1px solid var(--ink); border-radius: 50%; display: grid; place-items: center; transition: background .4s, color .4s, transform .6s var(--ease); }
-.svc .thumb { display: none; }
-@media (hover: hover) and (pointer: fine) {
-  .svcs:hover .svc h3 { opacity: .22; }
-  .svcs .svc h3 { transition: transform .7s var(--ease), opacity .45s var(--ease); }
-  .svcs .svc:hover h3 { opacity: 1; transform: translateX(clamp(12px, 2vw, 32px)); }
-  .svc:hover .arr { background: var(--ink); color: #fff; transform: rotate(-45deg); }
-}
-.float { position: fixed; left: 0; top: 0; z-index: 40; width: clamp(240px, 22vw, 380px); aspect-ratio: 4 / 5; border-radius: var(--r); overflow: hidden; pointer-events: none; background: #000;
-  transform: translate3d(-50%, -50%, 0) scale(0); opacity: 0; transition: opacity .3s; will-change: transform; }
-.float.on { opacity: 1; }
-.float video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .35s; }
-.float video.cur { opacity: 1; }
-@media (max-width: 900px) {
-  .svc { grid-template-columns: minmax(0, 1fr) 72px; gap: 14px 18px; align-items: end; }
-  .svc .n { grid-column: 1 / -1; padding: 0; }
-  .svc h3 { grid-column: 1; font-size: clamp(32px, 8.4vw, 64px); }
-  .svc p { grid-column: 1 / -1; max-width: 46ch; }
-  .svc .arr { display: none; }
-  .svc .thumb { display: block; grid-column: 2; grid-row: 2; width: 72px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #000; position: relative; }
-  .svc .thumb img, .svc .thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-}
-
-/* ── Work: asymmetric editorial grid ── */
-.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: clamp(16px, 2vw, 32px); row-gap: clamp(28px, 4vw, 64px); align-items: start; }
-.tile { display: block; position: relative; }
-.tile .media { position: relative; overflow: hidden; border-radius: var(--r); background: #0b0b0b; transform: translateZ(0); }
-.tile .media img, .tile .media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 1.4s var(--ease), opacity .6s; }
-.tile .media video { opacity: 0; }
-.tile.playing .media video { opacity: 1; }
-.tile:hover .media img, .tile:hover .media video { transform: scale(1.05); }
-.tile .ov { position: absolute; left: 0; right: 0; bottom: 0; padding: clamp(16px, 2vw, 30px); display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; color: #fff; z-index: 2;
-  background: linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)); padding-top: 25%; }
-.tile .ov h3 { font-size: clamp(26px, 3vw, 52px); letter-spacing: -.04em; }
-.tile .ov .cat { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; border: 1px solid rgba(255,255,255,.6); border-radius: 999px; padding: 7px 12px; }
-.tile .idx { position: absolute; top: clamp(14px, 1.6vw, 24px); left: clamp(16px, 2vw, 30px); z-index: 2; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .14em; }
-.t0 { grid-column: 1 / span 8; } .t0 .media { aspect-ratio: 16 / 10.5; }
-.t1 { grid-column: 9 / span 4; margin-top: clamp(80px, 14vw, 240px); } .t1 .media { aspect-ratio: 4 / 5; }
-.t2 { grid-column: 1 / span 5; } .t2 .media { aspect-ratio: 4 / 5; }
-.t3 { grid-column: 6 / span 7; margin-top: clamp(60px, 10vw, 180px); } .t3 .media { aspect-ratio: 16 / 11; }
-.t4 { grid-column: 3 / span 10; } .t4 .media { aspect-ratio: 21 / 9; }
-.t5 { grid-column: 1 / span 6; } .t5 .media { aspect-ratio: 4 / 3; }
-@media (max-width: 760px) {
-  .grid { grid-template-columns: minmax(0, 1fr); row-gap: 28px; }
-  .grid .tile { grid-column: 1; margin-top: 0; }
-  .grid .tile .media { aspect-ratio: 4 / 5; }
-  .grid .tile:nth-child(3n+2) { width: 82%; margin-left: auto; }
-  .grid .tile:nth-child(3n+2) .media { aspect-ratio: 3 / 4; }
-  .grid .tile:nth-child(3n) .media { aspect-ratio: 1; }
-  .tile .ov { flex-direction: column; align-items: flex-start; gap: 10px; }
-}
-
-/* ── Numbers ── */
-.nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--ink); margin-top: clamp(80px, 11vw, 180px); }
-.nums div { padding: clamp(20px, 2.4vw, 36px) clamp(0px, 1.4vw, 24px) 0 0; border-right: 1px solid var(--line); }
-.nums div + div { padding-left: clamp(14px, 1.6vw, 28px); }
-.nums div:last-child { border-right: 0; }
-.nums b { display: block; font-size: clamp(60px, 9vw, 168px); font-weight: 700; letter-spacing: -.06em; line-height: .9; }
-.nums span { display: block; margin-top: 14px; font-size: 14px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-@media (max-width: 760px) {
-  .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .nums div { padding: 20px 12px 24px 0; border-right: 0; border-bottom: 1px solid var(--line); }
-  .nums div:nth-child(odd) { border-right: 1px solid var(--line); }
-  .nums div:nth-child(even) { padding-left: 16px; }
-}
-
-/* ── Studio ── */
-.studio { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--g); align-items: end; }
-.studio .img { grid-column: 1 / span 5; border-radius: var(--r); overflow: hidden; aspect-ratio: 4 / 5; }
-.studio .img img { width: 100%; height: 115%; object-fit: cover; transform: translateY(calc(var(--py, 0) * 1px)); will-change: transform; }
-.studio .txt { grid-column: 7 / span 6; }
-.studio h2 { font-size: var(--l); letter-spacing: -.045em; margin: 22px 0 clamp(24px, 3vw, 40px); }
-.studio p { font-size: clamp(19px, 1.6vw, 26px); line-height: 1.38; max-width: 30ch; }
-.studio p + p { margin-top: 1em; font-size: var(--body); max-width: 40ch; }
-@media (max-width: 760px) {
-  .studio { grid-template-columns: minmax(0, 1fr); }
-  .studio .img, .studio .txt { grid-column: 1; }
-  .studio .img { aspect-ratio: 4 / 4.4; }
-}
-
-/* ── Contact + footer ── */
-.contact { padding-top: clamp(96px, 13vw, 220px); }
-.contact h2 { font-size: var(--mega); letter-spacing: -.055em; line-height: .86; }
-.mail { display: inline-flex; align-items: center; gap: .4em; margin-top: clamp(28px, 4vw, 56px); font-size: clamp(24px, 4vw, 64px); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; position: relative; word-break: break-word; }
-.mail::after { content: ''; position: absolute; left: 0; right: 0; bottom: -6px; height: 3px; background: var(--ink); transform-origin: left; transition: transform .6s var(--ease); }
-.mail:hover::after { transform: scaleX(.0); transform-origin: right; }
-.mail .circ { width: 1.3em; height: 1.3em; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: .6em; flex: none; transition: transform .6s var(--ease); }
-.mail:hover .circ { transform: rotate(-45deg); }
-/* contact form */
-.cform { margin-top: clamp(48px, 7vw, 110px); max-width: 980px; }
-.cform-lead { font-size: var(--body); color: var(--mute); margin-bottom: clamp(18px, 2.4vw, 32px); }
-.cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(14px, 1.6vw, 22px) clamp(16px, 2vw, 28px); }
-.cgrid label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
-.cgrid label i { font-style: normal; text-transform: none; letter-spacing: 0; }
-.cgrid .wide { grid-column: 1 / -1; }
-.cgrid input, .cgrid select, .cgrid textarea { font: inherit; font-size: var(--body); letter-spacing: 0; text-transform: none; color: var(--ink);
-  background: transparent; border: 0; border-bottom: 2px solid var(--line); border-radius: 0; padding: 10px 0; outline: none; transition: border-color .3s; width: 100%; }
-.cgrid textarea { resize: vertical; min-height: 120px; }
-.cgrid input:focus, .cgrid select:focus, .cgrid textarea:focus { border-bottom-color: var(--ink); }
-.cgrid .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-.csend { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: clamp(22px, 3vw, 40px); }
-.cbtn { display: inline-flex; align-items: center; gap: .6em; font: inherit; font-weight: 700; font-size: clamp(18px, 1.8vw, 26px); letter-spacing: -.02em;
-  background: var(--ink); color: #fff; border: 0; border-radius: 999px; padding: .7em 1.2em .7em 1.4em; cursor: pointer; }
-.cbtn .circ { width: 1.4em; height: 1.4em; border-radius: 50%; background: #fff; color: var(--ink); display: grid; place-items: center; font-size: .7em; transition: transform .6s var(--ease); }
-.cbtn:hover .circ { transform: rotate(-45deg); }
-.cbtn[disabled] { opacity: .5; cursor: wait; }
-.cstatus { font-size: var(--body); }
-.cstatus.err { color: #b3261e; }
-.cfine { font-size: 13px; color: var(--mute); margin-top: 16px; }
-@media (max-width: 640px) { .cgrid { grid-template-columns: 1fr; } }
-footer { padding-top: clamp(64px, 9vw, 140px); padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
-.foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px var(--g); border-top: 1px solid var(--ink); padding-top: 28px; font-size: 16px; line-height: 1.6; }
-.foot h4 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
-.foot a { display: inline-block; }
-.foot a:hover { text-decoration: underline; text-underline-offset: 4px; }
-.foot-mark { margin-top: clamp(48px, 7vw, 110px); width: 100%; height: auto; }
-.legal { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 20px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-@media (max-width: 760px) { .foot { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-
-/* ── Project view ── */
-#project[hidden], #home[hidden] { display: none; }
-.p-head { padding-top: calc(var(--nav-h) + clamp(40px, 7vw, 110px)); }
-.p-head .eyebrow { margin-bottom: clamp(16px, 2vw, 28px); }
-.p-head h1 { font-size: var(--mega); letter-spacing: -.055em; line-height: .86; overflow-wrap: anywhere; }
-.p-media { margin-top: clamp(32px, 5vw, 72px); border-radius: var(--r); overflow: hidden; background: #000; aspect-ratio: 16 / 9; position: relative; }
-.p-media video, .p-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.p-body { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 40px var(--g); padding: clamp(48px, 7vw, 120px) 0; }
-.p-body .story { grid-column: 1 / span 7; }
-.p-body .story p { font-size: clamp(20px, 2vw, 32px); line-height: 1.32; margin-bottom: 1em; }
-.p-body .side { grid-column: 9 / span 4; }
-.credits { list-style: none; font-size: 16px; border-top: 1px solid var(--ink); }
-.credits li { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.credits li span:first-child { font-weight: 700; }
-.back { display: inline-flex; gap: 10px; font-weight: 700; margin-top: 32px; border-bottom: 1.5px solid currentColor; padding-bottom: 3px; }
-.next { display: block; border-top: 1px solid var(--ink); padding: clamp(40px, 6vw, 96px) 0 0; }
-.next h2 { font-size: var(--xl); letter-spacing: -.05em; margin-top: 18px; transition: transform .8s var(--ease); }
-.next:hover h2 { transform: translateX(clamp(12px, 2vw, 32px)); }
-@media (max-width: 760px) { .p-body .story, .p-body .side { grid-column: 1 / -1; } .p-media { aspect-ratio: 4 / 5; } }
-
-/* ── Page wipe ── */
-.wipe { position: fixed; inset: 0; z-index: 120; background: var(--ink); color: #fff; display: grid; place-items: center; pointer-events: none; clip-path: inset(100% 0 0 0); }
-.wipe span { font-size: var(--xl); font-weight: 700; letter-spacing: -.05em; padding: 0 var(--g); text-align: center; line-height: .9; }
-
-/* ── Cursor (desktop only) ── */
-.cursor { position: fixed; left: 0; top: 0; z-index: 130; pointer-events: none; width: 92px; height: 92px; margin: -46px 0 0 -46px; border-radius: 50%; background: #fff; color: #000;
-  display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; transform: translate3d(-200px, -200px, 0); will-change: transform; }
-.cursor b { display: block; transform: scale(0); transition: transform .45s var(--ease); width: 92px; height: 92px; border-radius: 50%; background: #fff; display: grid; place-items: center; }
-.cursor { background: transparent; }
-.cursor.on b { transform: scale(1); }
-.cursor { display: none !important; }   /* custom cursor removed — normal system cursor */
-@media not all and (hover: hover) and (pointer: fine) { .float { display: none; } }
-
-/* ── Reveals (transform/opacity only; always end at opacity 1) ── */
-html.js .rv { opacity: 0; transform: translateY(40px); transition: opacity 1.1s var(--ease), transform 1.1s var(--ease); }
-html.js .rv.in { opacity: 1; transform: none; }
-html.js .rvm { overflow: hidden; }
-html.js .rvm > * { display: block; transform: translateY(105%); transition: transform 1.1s var(--ease); }
-html.js .rvm.in > * { transform: none; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .intro { display: none; }
-  html.js .rv, html.js .rvm > *, html.js .hero-mark, html.js .hero-row > * { opacity: 1; transform: none; }
-  html.js .statement h2 .w { --o: 1; }
-  .hero { height: 100svh; }
-  .hero-frame { clip-path: none; }
-  .mq-track { flex-wrap: wrap; width: auto; }
-  .marquee span[aria-hidden] { display: none; }
-}
-</style>
+<link rel="stylesheet" href="site.css?v=0fed272e1e">
+<link rel="modulepreload" href="vendor/three/three.module.min.js">
 </head>
 <body>
-<a class="skip" href="#main">Skip to content</a>
-<div class="intro" aria-hidden="true"><div class="mask"><img src="assets/brand/topper-wordmark-black.svg" alt=""></div></div>
+<canvas id="stage" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div>
 
 <header class="hdr" id="hdr">
-  <a class="logo" href="#/" aria-label="topper. home"><img src="assets/brand/topper-wordmark-white.svg" alt="topper."></a>
-  <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="mnav">Menu</button>
+  <a class="logo" href="#top" aria-label="topper. — back to the top"><img src="assets/brand/topper-wordmark-white.svg" alt="topper." width="114" height="32"></a>
   <nav class="nav" aria-label="Main">
     <a href="#work">Work</a><a href="#services">Services</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
   </nav>
+  <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="mnav">Menu</button>
 </header>
 <nav class="mnav" id="mnav" aria-label="Mobile">
-  <a href="#work">Work <small>01</small></a><a href="#services">Services <small>02</small></a><a href="#studio">Studio <small>03</small></a><a href="#contact">Contact <small>04</small></a>
-  <p>info@topperdigital.xyz &middot; Lisbon</p>
+  <a href="#work">Work</a><a href="#services">Services</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
+  <p>info@topperdigital.xyz · Lisbon</p>
 </nav>
 
-<main id="main">
-<div id="home">
-  <section class="hero" id="hero" aria-label="Showreel">
-    <div class="hero-pin">
-      <div class="hero-frame" data-cursor="Reel">
-        <img class="poster" id="reelPoster" alt="" fetchpriority="high">
-        <video id="reel" muted loop playsinline preload="metadata" aria-hidden="true"></video>
-      </div>
-      <div class="hero-tags"><span>Showreel &rsquo;26</span><span>VFX &middot; 3D &middot; Post</span><span>Lisbon, PT</span></div>
-      <div class="hero-copy">
-        <div class="hero-row">
-          <p class="hero-line">VFX, 3D and post-production <span class="lt">for brands that want to be seen.</span></p>
-          <div style="display:flex;gap:28px;align-items:flex-end">
-            <span class="cue"><i></i>Scroll</span>
-            <button class="reel-toggle" id="reelToggle" hidden>Pause</button>
-          </div>
-        </div>
-        <div class="hero-mark-mask"><img class="hero-mark" src="assets/brand/topper-wordmark-white.svg" alt="topper."></div>
-      </div>
-      <div class="hero-caption" aria-hidden="true"><span>Showreel 2026</span><span>Topper Digital</span></div>
+<main id="top">
+  <!-- 1 · hero: the hat is the hero -->
+  <section class="hero" data-scene="hero" aria-label="Topper Digital">
+    <div class="hero-tags wrap">
+      <span>VFX · 3D · Post-production</span>
+      <span class="hide-s">Lisbon — working worldwide</span>
+      <span>Boutique studio</span>
     </div>
-  </section>
-
-  <section class="statement" aria-label="Intro">
-    <h2 id="statement"><span class="w">We</span> <span class="w">make</span> <span class="w lt">images</span> <span class="w">that</span> <span class="w">move</span> <span class="w lt">people.</span></h2>
-    <div class="statement-foot">
-      <p class="eyebrow rv"><span class="dot"></span>Topper Digital &mdash; Lisbon</p>
-      <div class="sf-body rv">
-        <p>A boutique VFX, 3D and post-production studio. Small senior team, close to every frame &mdash; from first idea to final master, for film, broadcast and digital.</p>
-        <a class="link-arrow" href="#work">See the work <span>&rarr;</span></a>
+    <p class="hat-hint" id="hatHint" aria-hidden="true"><i></i>Click the hat</p>
+    <img class="hero-still" src="assets/brand/topper-icon-black.svg" alt="" aria-hidden="true">
+    <div class="hero-copy wrap">
+      <h1 class="headline"><span class="b">We make images</span> <span class="l">that move people.</span></h1>
+      <div class="hero-row">
+        <p class="hero-sub">VFX, 3D and post-production for brands that want to be seen.</p>
+        <a class="cue" href="#services"><i></i>Scroll</a>
       </div>
     </div>
   </section>
 
-  <div class="marquee" aria-label="What we do: 3D, VFX, Post-production, Adverts, Campaigns">
-    <div class="mq-track" id="mq1"></div>
-  </div>
-  <div class="marquee rev" aria-label="Selected clients">
-    <div class="mq-track" id="mq2"></div>
-  </div>
-
-  <section id="services" class="sec wrap">
-    <div class="sec-head">
-      <div><p class="eyebrow rv"><span class="dot" style="background:var(--light-blue)"></span>Services</p><h2 class="rvm"><span>What we do</span></h2></div>
-      <span class="count rv">(03)</span>
-    </div>
-    <ul class="svcs" id="svcs"></ul>
+  <!-- 2 · services: the hat turns over, things come out -->
+  <section class="services wrap" id="services" data-scene="services">
+    <p class="eyebrow"><span class="dot"></span>Services</p>
+    <h2 class="sec-title">Pulled out<br><span class="l">of the hat.</span></h2>
+    <ol class="svcs">
+      <li><span class="n">01</span><div><h3>3D, VFX &amp; post-production</h3><p>Animation, visual effects, compositing, grade and finishing for film, broadcast and digital.</p></div></li>
+      <li><span class="n">02</span><div><h3>Adverts</h3><p>From idea to final master: production and post for commercials that hold attention.</p></div></li>
+      <li><span class="n">03</span><div><h3>Campaigns</h3><p>Hero films, cutdowns and social assets built as one system across every format.</p></div></li>
+    </ol>
   </section>
 
-  <section id="work" class="sec wrap">
-    <div class="sec-head">
-      <div><p class="eyebrow rv"><span class="dot"></span>Selected work</p><h2 class="rvm"><span>Work</span></h2></div>
-      <span class="count rv" id="workCount"></span>
-    </div>
-    <div class="grid" id="grid"></div>
-
-    <!-- TODO(owner): replace the numbers below with real figures -->
-    <div class="nums" id="nums">
-      <div class="rv"><b data-to="10" data-suf="+">10+</b><span>Years of craft</span></div>
-      <div class="rv"><b data-to="150" data-suf="+">150+</b><span>Projects delivered</span></div>
-      <div class="rv"><b data-to="12">12</b><span>Countries</span></div>
-      <div class="rv"><b data-to="3">3</b><span>Disciplines, one team</span></div>
-    </div>
-  </section>
-
-  <section id="studio" class="sec wrap">
-    <div class="studio">
-      <div class="img rv"><img id="studioImg" src="assets/brand/magician.jpg" alt="" loading="lazy"></div>
-      <div class="txt">
-        <p class="eyebrow rv"><span class="dot" style="background:var(--blue)"></span>Studio</p>
-        <h2 class="rvm"><span>The trick is the craft.</span></h2>
-        <p class="rv">Boutique VFX and motion design studio in Lisbon, working worldwide.</p>
-        <p class="rv">A small senior team that stays close to every frame &mdash; 3D, compositing, grade and finishing under one roof, so ideas survive all the way to the master.</p>
+  <!-- 3 · work -->
+  <section class="work" id="work" data-scene="work">
+    <div class="work-head wrap">
+      <div>
+        <p class="eyebrow"><span class="dot b"></span>Selected work</p>
+        <h2 class="sec-title">Work</h2>
       </div>
+      <div class="tabs" role="tablist" aria-label="Filter projects" id="tabs"></div>
+    </div>
+    <ul class="projects wrap" id="projects"></ul>
+  </section>
+
+  <!-- 4 · clients -->
+  <section class="clients" id="clients" data-scene="clients" aria-labelledby="clientsTitle">
+    <div class="wrap clients-head">
+      <p class="eyebrow"><span class="dot"></span>Trusted by</p>
+      <h2 class="sec-title sm" id="clientsTitle">Brands we've made<br><span class="l">things move for.</span></h2>
+    </div>
+    <div class="marquee" aria-label="Clients: Riot Games, Galp, Sporting CP, NOS, Federação Portuguesa de Futebol, Casino Solverde, Delta Y, Wuant, Richie Campbell">
+      <div class="mq-track" id="logos"></div>
+    </div>
+    <div class="nums wrap">
+      <div><b data-to="10" data-suf="+">10+</b><span>Years of craft</span></div>
+      <div><b data-to="150" data-suf="+">150+</b><span>Projects delivered</span></div>
+      <div><b data-to="12">12</b><span>Countries</span></div>
+      <div><b data-to="3">3</b><span>Disciplines, one team</span></div>
     </div>
   </section>
 
-  <section id="contact" class="contact wrap">
-    <p class="eyebrow rv" style="margin-bottom:clamp(16px,2vw,28px)"><span class="dot"></span>Contact</p>
-    <h2 class="rvm"><span>Let&rsquo;s make</span></h2>
-    <h2 class="rvm"><span class="lt">something move.</span></h2>
-    <a class="mail rv" href="mailto:info@topperdigital.xyz?subject=New%20project"><span>info@topperdigital.xyz</span><span class="circ" aria-hidden="true">&rarr;</span></a>
+  <!-- 5 · studio -->
+  <section class="studio wrap" id="studio" data-scene="studio">
+    <figure class="studio-img"><img src="assets/brand/magician.jpg" alt="A stage magician in a tuxedo presenting a vase of flowers." loading="lazy" width="560" height="700"></figure>
+    <div class="studio-txt">
+      <p class="eyebrow"><span class="dot b"></span>Studio</p>
+      <h2 class="sec-title sm">The trick<br><span class="l">is the craft.</span></h2>
+      <p>Boutique VFX and motion design studio in Lisbon, working worldwide.</p>
+      <p class="mute">A small senior team that stays close to every frame — 3D, compositing, grade and finishing under one roof, so ideas survive all the way to the master.</p>
+    </div>
+  </section>
 
-    <form class="cform rv" id="cform" action="/contacto.php" method="post" novalidate>
-      <p class="cform-lead">Or tell us about your project and we&rsquo;ll get back to you.</p>
+  <!-- 6 · contact -->
+  <section class="contact wrap" id="contact" data-scene="contact">
+    <p class="eyebrow"><span class="dot"></span>Contact</p>
+    <h2 class="sec-title xl">Let's make<br><span class="l">something move.</span></h2>
+    <p class="mail"><a href="mailto:info@topperdigital.xyz?subject=New%20project">info@topperdigital.xyz</a></p>
+    <form class="cform" id="cform" action="/contacto.php" method="post" novalidate>
+      <p class="cform-lead">Or tell us about your project and we'll get back to you.</p>
       <div class="cgrid">
-        <label><span>Name</span><input name="name" autocomplete="name" required maxlength="160"></label>
-        <label><span>Email</span><input name="email" type="email" autocomplete="email" required maxlength="190"></label>
-        <label><span>Company <i>(optional)</i></span><input name="company" autocomplete="organization" maxlength="160"></label>
-        <label><span>Phone <i>(optional)</i></span><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
-        <label class="wide"><span>What do you need?</span>
-          <select name="service">
+        <label for="f-name"><span>Name</span><input id="f-name" name="name" autocomplete="name" required maxlength="160"></label>
+        <label for="f-email"><span>Email</span><input id="f-email" name="email" type="email" autocomplete="email" required maxlength="190"></label>
+        <label for="f-company"><span>Company <i>(optional)</i></span><input id="f-company" name="company" autocomplete="organization" maxlength="160"></label>
+        <label for="f-service"><span>What do you need?</span>
+          <select id="f-service" name="service">
             <option value="vfx">3D / VFX / Post-production</option>
             <option value="marketing">Marketing &amp; campaigns</option>
             <option value="both">Both</option>
           </select></label>
-        <label class="wide"><span>Message</span><textarea name="message" rows="5" required maxlength="4000"></textarea></label>
+        <label class="wide" for="f-msg"><span>Message</span><textarea id="f-msg" name="message" rows="4" required maxlength="4000"></textarea></label>
         <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
         <input type="hidden" name="ts" value="">
         <input type="hidden" name="src" value="">
       </div>
       <div class="csend">
-        <button type="submit" class="cbtn">Send message <span class="circ" aria-hidden="true">&rarr;</span></button>
-        <p class="cstatus" role="status" aria-live="polite"></p>
+        <button type="submit" class="cbtn">Send message <span aria-hidden="true">→</span></button>
+        <p class="cstatus" id="cstatus" role="status" aria-live="polite"></p>
       </div>
-      <p class="cfine">We only use these details to reply to you.</p>
     </form>
   </section>
-</div>
 
-<article id="project" hidden aria-live="polite"></article>
+  <!-- 7 · outro: the hat lands in the logo -->
+  <footer class="outro" data-scene="outro">
+    <div class="foot wrap">
+      <div><h4>Studio</h4><p>Lisbon, Portugal.<br>Working worldwide.</p></div>
+      <div><h4>New business</h4><p><a href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a></p></div>
+      <div><h4>Follow</h4><p><a href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram ↗</a></p></div>
+      <div><h4>Menu</h4><p><a href="#work">Work</a><br><a href="#services">Services</a><br><a href="#studio">Studio</a><br><a href="#contact">Contact</a></p></div>
+    </div>
+    <div class="mark wrap">
+      <div class="mark-box">
+        <svg class="mark-svg" viewBox="0 0 341.695 96.238" role="img" aria-label="topper.">
+          <path d="M51.086 43.488C51.086 47.902 52.293 51.41 54.711 54.008C57.125 56.605 60.363 57.906 64.414 57.906C68.469 57.906 71.703 56.605 74.121 54.008C76.535 51.41 77.746 47.938 77.746 43.598C77.746 39.324 76.535 35.871 74.121 33.238C71.703 30.605 68.469 29.285 64.414 29.285C60.363 29.285 57.125 30.605 54.711 33.238C52.293 35.871 51.086 39.289 51.086 43.488M35.621 43.273C35.621 39.359 36.328 35.746 37.754 32.438C39.176 29.125 41.168 26.262 43.727 23.84C46.285 21.422 49.324 19.516 52.844 18.129C56.363 16.738 60.219 16.047 64.414 16.047C68.609 16.047 72.469 16.723 75.988 18.074C79.504 19.426 82.543 21.316 85.105 23.734C87.664 26.156 89.652 29.059 91.078 32.438C92.5 35.82 93.211 39.539 93.211 43.598C93.211 47.652 92.5 51.375 91.078 54.754C89.652 58.137 87.664 61.039 85.105 63.457C82.543 65.879 79.488 67.766 75.934 69.117C72.379 70.469 68.469 71.145 64.203 71.145C60.078 71.145 56.258 70.469 52.738 69.117C49.219 67.766 46.195 65.879 43.672 63.457C41.148 61.039 39.176 58.102 37.754 54.648C36.328 51.195 35.621 47.406 35.621 43.273"/>
+          <path d="M115.816 43.488C115.816 45.484 116.137 47.352 116.777 49.094C117.418 50.84 118.34 52.352 119.551 53.633C120.758 54.914 122.199 55.93 123.871 56.676C125.539 57.426 127.371 57.797 129.363 57.797C131.422 57.797 133.273 57.441 134.906 56.73C136.543 56.02 137.93 55.023 139.066 53.742C140.203 52.461 141.094 50.945 141.734 49.203C142.375 47.457 142.691 45.59 142.691 43.598C142.691 39.324 141.535 35.836 139.227 33.129C136.918 30.426 133.664 29.074 129.469 29.074C125.344 29.074 122.039 30.426 119.551 33.129C117.063 35.836 115.816 39.289 115.816 43.488M116.566 17.434L116.457 23.52L116.566 23.52C118.98 21.031 121.539 19.145 124.242 17.859C126.945 16.578 129.93 15.938 133.203 15.938C136.969 15.938 140.402 16.668 143.492 18.129C146.586 19.59 149.234 21.562 151.438 24.055C153.641 26.547 155.332 29.465 156.504 32.812C157.676 36.156 158.266 39.75 158.266 43.598C158.266 47.371 157.66 50.91 156.449 54.223C155.242 57.531 153.535 60.434 151.332 62.922C149.129 65.418 146.496 67.375 143.441 68.797C140.383 70.219 137.004 70.934 133.309 70.934C129.965 70.934 126.926 70.328 124.191 69.117C121.453 67.906 118.91 66.02 116.566 63.457L116.457 63.457C116.598 65.098 116.672 66.59 116.672 67.941L116.672 96.238L101.207 96.238L101.207 17.434ZM116.566 17.434"/>
+          <path d="M180.766 43.488C180.766 45.484 181.086 47.352 181.723 49.094C182.363 50.84 183.289 52.352 184.5 53.633C185.707 54.914 187.145 55.93 188.816 56.676C190.488 57.426 192.316 57.797 194.309 57.797C196.371 57.797 198.219 57.441 199.855 56.73C201.488 56.02 202.875 55.023 204.016 53.742C205.152 52.461 206.039 50.945 206.68 49.203C207.32 47.457 207.641 45.59 207.641 43.598C207.641 39.324 206.484 35.836 204.176 33.129C201.863 30.426 198.609 29.074 194.414 29.074C190.293 29.074 186.984 30.426 184.5 33.129C182.008 35.836 180.766 39.289 180.766 43.488M181.512 17.434L181.406 23.52L181.512 23.52C183.93 21.031 186.488 19.145 189.191 17.859C191.891 16.578 194.879 15.938 198.148 15.938C201.914 15.938 205.348 16.668 208.441 18.129C211.531 19.59 214.18 21.562 216.387 24.055C218.59 26.547 220.277 29.465 221.449 32.812C222.625 36.156 223.211 39.75 223.211 43.598C223.211 47.371 222.605 50.91 221.398 54.223C220.188 57.531 218.48 60.434 216.277 62.922C214.074 65.418 211.441 67.375 208.387 68.797C205.328 70.219 201.949 70.934 198.254 70.934C194.914 70.934 191.875 70.328 189.137 69.117C186.398 67.906 183.859 66.02 181.512 63.457L181.406 63.457C181.547 65.098 181.617 66.59 181.617 67.941L181.617 96.238L166.156 96.238L166.156 17.434ZM181.512 17.434"/>
+          <path d="M244.219 36.656L265.23 36.656C264.871 33.809 263.77 31.602 261.922 30.035C260.074 28.469 257.691 27.684 254.777 27.684C251.934 27.684 249.605 28.504 247.793 30.141C245.98 31.781 244.789 33.949 244.219 36.656M254.563 16.047C258.617 16.047 262.258 16.688 265.496 17.969C268.73 19.25 271.484 21.102 273.762 23.52C276.035 25.941 277.797 28.879 279.039 32.332C280.281 35.785 280.906 39.68 280.906 44.023L280.906 46.801L243.578 46.801C243.863 50.645 244.98 53.723 246.938 56.035C248.895 58.352 251.684 59.508 255.313 59.508C257.797 59.508 259.949 58.902 261.762 57.691C263.574 56.48 265.191 54.594 266.613 52.031L280.16 56.516C277.812 61.43 274.434 65.098 270.027 67.516C265.621 69.934 260.645 71.145 255.098 71.145C251.047 71.145 247.367 70.504 244.059 69.223C240.754 67.941 237.891 66.109 235.473 63.727C233.055 61.34 231.191 58.457 229.875 55.074C228.559 51.695 227.902 47.902 227.902 43.703C227.902 39.504 228.559 35.695 229.875 32.277C231.191 28.859 233.02 25.961 235.367 23.574C237.715 21.191 240.523 19.34 243.793 18.023C247.063 16.707 250.652 16.047 254.563 16.047"/>
+          <path d="M288.902 17.434L304.367 17.434L304.152 22.773L304.473 22.773C306.461 20.352 308.402 18.625 310.285 17.594C312.168 16.562 314.57 16.047 317.484 16.047C319.758 16.047 322.355 16.828 325.27 18.395L321.109 33.238C319.973 32.457 318.836 31.832 317.699 31.367C316.559 30.906 315.316 30.676 313.965 30.676C307.566 30.676 304.367 35.23 304.367 44.344L304.367 69.652L288.902 69.652ZM288.902 17.434"/>
+          <path d="M323.137 62.391C323.137 59.828 324.062 57.727 325.91 56.09C327.758 54.453 329.926 53.633 332.414 53.633C334.902 53.633 337.07 54.453 338.922 56.09C340.77 57.727 341.695 59.828 341.695 62.391C341.695 64.953 340.77 67.055 338.922 68.691C337.07 70.328 334.902 71.145 332.414 71.145C329.926 71.145 327.758 70.328 325.91 68.691C324.062 67.055 323.137 64.953 323.137 62.391"/>
+          <path d="M8.293 69.652L23.758 69.652L23.758 38.465L8.293 38.465ZM8.293 69.652"/>
+        </svg>
+        <span class="hat-slot" id="hatSlot" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="legal wrap"><span>© <span id="yr">2026</span> Topper Digital</span><span>3D · VFX · Post · Adverts · Campaigns</span></div>
+  </footer>
+
+  <!-- 8 · loop: the start again; scrolling here jumps back to the top -->
+  <section class="hero loop" data-scene="loop" aria-hidden="true">
+    <div class="hero-copy wrap">
+      <p class="headline"><span class="b">We make images</span> <span class="l">that move people.</span></p>
+    </div>
+  </section>
 </main>
 
-<footer class="wrap">
-  <div class="foot">
-    <div><h4>Studio</h4><p>Lisbon, Portugal.<br>Working worldwide.</p></div>
-    <div><h4>New business</h4><a href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a></div>
-    <div><h4>Follow</h4><a href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram &nearr;</a></div>
-    <div><h4>Menu</h4><a href="#work">Work</a><br><a href="#services">Services</a><br><a href="#studio">Studio</a><br><a href="#contact">Contact</a></div>
-  </div>
-  <img class="foot-mark" src="assets/brand/topper-wordmark-black.svg" alt="" loading="lazy">
-  <div class="legal"><span>&copy; <span id="yr">2026</span> Topper Digital</span><span>3D &middot; VFX &middot; Post &middot; Adverts &middot; Campaigns</span></div>
-</footer>
-
-<div class="float" id="float" aria-hidden="true"></div>
-<div class="cursor" id="cursor" aria-hidden="true"><b></b></div>
-<div class="wipe" id="wipe" aria-hidden="true"><span></span></div>
-
-<script>
-/* Contact form: posts to /contacto.php, which creates a lead in the admin. Works without JavaScript too. */
-(function () {
-  var f = document.getElementById('cform'); if (!f) return;
-  var status = f.querySelector('.cstatus'), btn = f.querySelector('.cbtn');
-  f.ts.value = String(Date.now());
-  var q = location.search;
-  // Veio de uma publicação nas redes (link com rastreio): o código vai com a mensagem (30 dias).
-  var src = (q.match(/[?&]src=([a-z0-9]{6,12})(?:&|$)/) || [])[1] || '';
-  try {
-    if (src) localStorage.setItem('tp_src', JSON.stringify({ c: src, t: Date.now() }));
-    else { var o = JSON.parse(localStorage.getItem('tp_src') || 'null'); if (o && Date.now() - o.t < 2592e6) src = o.c; }
-  } catch (e) { /* sem armazenamento: fica só o cookie */ }
-  f.src.value = src;
-  if (/[?&]sent=1/.test(q)) status.textContent = 'Thank you — we will get back to you shortly.';
-  if (/[?&]error=1/.test(q)) { status.textContent = 'Something went wrong. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; }
-  f.addEventListener('submit', function (e) {
-    e.preventDefault();
-    if (!f.checkValidity()) { status.textContent = 'Please fill in your name, a valid email and a message.'; status.className = 'cstatus err'; f.reportValidity(); return; }
-    btn.disabled = true; status.className = 'cstatus'; status.textContent = 'Sending…';
-    fetch(f.action, { method: 'POST', body: new FormData(f), headers: { 'Accept': 'application/json' } })
-      .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
-      .then(function (d) {
-        status.textContent = d.message || (d.ok ? 'Thank you — we will get back to you shortly.' : 'Something went wrong. Please email info@topperdigital.xyz.');
-        status.className = 'cstatus' + (d.ok ? '' : ' err');
-        if (d.ok) { f.reset(); f.ts.value = String(Date.now()); f.src.value = src; }
-      })
-      .catch(function () { status.textContent = 'Network error. Please email info@topperdigital.xyz.'; status.className = 'cstatus err'; })
-      .then(function () { btn.disabled = false; });
-  });
-})();
-</script>
-<script>
-/* ================================================================
-   SHOWREEL — replace with the owner's new showreel files.
-   ================================================================ */
-// Full 1080p on larger screens, a lighter 720p file on phones.
-var SHOWREEL_SRC    = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1) > 1400 && screen.width > 820
-                      ? 'assets/portfolio/work-01.mp4' : 'assets/portfolio/work-01-720.mp4';   // TODO: new showreel video
-var SHOWREEL_POSTER = 'assets/portfolio/work-01.jpg';   // TODO: showreel poster frame
-
-/* ================================================================
-   SERVICES — `clip`/`poster` drive the hover preview.
-   ================================================================ */
-var SERVICES = [
-  { title: '3D / VFX / Post&#8209;production', text: 'Animation, visual effects, compositing, grade and finishing for film, broadcast and digital.', clip: 'assets/portfolio/clips/c60.mp4', poster: 'assets/portfolio/clips/c60.jpg' },
-  { title: 'Adverts', text: 'From idea to final master: production and post for commercials that hold attention.', clip: 'assets/portfolio/clips/c4.mp4', poster: 'assets/portfolio/clips/c4.jpg' },
-  { title: 'Campaigns', text: 'Hero films, cutdowns and social assets built as one system across every format.', clip: 'assets/portfolio/clips/c20.mp4', poster: 'assets/portfolio/clips/c20.jpg' }
-];
-var MARQUEE_SERVICES = ['3D', 'VFX', 'Post-production', 'Adverts', 'Campaigns', 'Compositing', 'Grade'];
-var MARQUEE_CLIENTS  = ['Delta Y', 'Wuant', 'Casino Solverde', 'LING', 'Richie Campbell']; // TODO: add more client names
-
-/* ================================================================
-   PROJECTS — order = grid order. `video`/`poster` currently point to
-   short cuts of the showreel (assets/portfolio/clips) so each tile
-   differs. TODO: replace with each project's own media + copy.
-   ================================================================ */
-var PROJECTS = [
-  { slug: 'delta-y', title: 'Delta Y', category: 'Production + post',
-    video: 'assets/portfolio/clips/c28.mp4', poster: 'assets/portfolio/clips/c28.jpg', // TODO media
-    story: ['TODO: one or two sentences on the brief.', 'TODO: what topper. did and the result.'],
-    credits: [['Client', 'TODO'], ['Agency', 'TODO'], ['Director', 'TODO'], ['Production + post', 'Topper Digital']] },
-  { slug: 'wuant-the-one', title: 'Wuant — The One', category: '3D animation',
-    video: 'assets/portfolio/clips/c64.mp4', poster: 'assets/portfolio/clips/c64.jpg', // TODO media
-    story: ['TODO: the brief.', 'TODO: the 3D approach and result.'],
-    credits: [['Artist', 'Wuant'], ['Director', 'TODO'], ['3D animation', 'Topper Digital']] },
-  { slug: 'casino-solverde', title: 'Casino Solverde', category: 'VFX',
-    video: 'assets/portfolio/clips/c52.mp4', poster: 'assets/portfolio/clips/c52.jpg', // TODO media
-    story: ['TODO: the brief.', 'TODO: the VFX work and result.'],
-    credits: [['Client', 'Casino Solverde'], ['Agency', 'TODO'], ['VFX', 'Topper Digital']] },
-  { slug: 'ling', title: 'LING', category: 'Campaign', // TODO: confirm category
-    video: 'assets/portfolio/clips/c36.mp4', poster: 'assets/portfolio/clips/c36.jpg', // TODO media
-    story: ['TODO: the brief.', 'TODO: what we did and the result.'],
-    credits: [['Client', 'TODO'], ['Studio', 'Topper Digital']] },
-  { slug: 'richie-campbell', title: 'Richie Campbell', category: 'Editing',
-    video: 'assets/portfolio/clips/c44.mp4', poster: 'assets/portfolio/clips/c44.jpg', // TODO media
-    story: ['TODO: the brief.', 'TODO: the edit and result.'],
-    credits: [['Artist', 'Richie Campbell'], ['Director', 'TODO'], ['Editing', 'Topper Digital']] }
-];
-
-(function () {
-  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var fine = matchMedia('(hover: hover) and (pointer: fine)').matches;
-  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
-  var $ = function (s, r) { return (r || document).querySelector(s); };
-  var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
-  var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
-  $('#yr').textContent = new Date().getFullYear();
-
-  /* ── Content ── */
-  function mq(el, items) {
-    var row = items.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('');
-    el.innerHTML = row + row.replace(/<span>/g, '<span aria-hidden="true">') + row.replace(/<span>/g, '<span aria-hidden="true">') + row.replace(/<span>/g, '<span aria-hidden="true">');
-  }
-  mq($('#mq1'), MARQUEE_SERVICES); mq($('#mq2'), MARQUEE_CLIENTS);
-
-  $('#svcs').innerHTML = SERVICES.map(function (s, i) {
-    return '<li class="svc rv" data-i="' + i + '"><span class="n">0' + (i + 1) + '</span><h3>' + s.title + '</h3><p>' + esc(s.text) + '</p>' +
-      '<span class="arr" aria-hidden="true">&rarr;</span>' +
-      '<span class="thumb" aria-hidden="true"><img src="' + esc(s.poster) + '" alt="" loading="lazy"><video muted loop playsinline preload="none" data-src="' + esc(s.clip) + '" data-auto="1"></video></span></li>';
-  }).join('');
-
-  var grid = $('#grid');
-  $('#workCount').textContent = '(' + ('0' + PROJECTS.length).slice(-2) + ')';
-  grid.innerHTML = PROJECTS.map(function (p, i) {
-    return '<a class="tile rv t' + (i % 6) + '" href="#/work/' + esc(p.slug) + '" data-cursor="View" data-title="' + esc(p.title) + '">' +
-      '<div class="media"><img src="' + esc(p.poster) + '" alt="" loading="lazy">' +
-      '<video muted loop playsinline preload="none" data-src="' + esc(p.video) + '" data-auto="1" aria-hidden="true"></video>' +
-      '<span class="idx">' + ('0' + (i + 1)).slice(-2) + '</span>' +
-      '<div class="ov"><h3>' + esc(p.title) + '</h3><span class="cat">' + esc(p.category) + '</span></div></div></a>';
-  }).join('');
-
-  /* ── Showreel ── */
-  var reel = $('#reel'), poster = $('#reelPoster'), toggle = $('#reelToggle');
-  poster.src = SHOWREEL_POSTER; reel.poster = SHOWREEL_POSTER;
-  var reelWanted = !reduce;
-  if (!reduce) { reel.src = SHOWREEL_SRC; reel.autoplay = true; toggle.hidden = false; } else { reel.remove(); }
-  toggle.addEventListener('click', function () {
-    reelWanted = reel.paused;
-    if (reel.paused) { reel.play().catch(function () {}); toggle.textContent = 'Pause'; } else { reel.pause(); toggle.textContent = 'Play'; }
-  });
-
-  /* ── Lazy video: load + play only while in view ── */
-  var vio = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) {
-    es.forEach(function (e) {
-      var v = e.target;
-      if (v === reel) { if (e.isIntersecting && reelWanted) v.play().catch(function () {}); else v.pause(); return; }
-      if (!e.isIntersecting) { v.pause(); return; }
-      if (!v.getAttribute('src')) v.src = v.dataset.src;
-      v.play().catch(function () {});
-    });
-  }, { rootMargin: '10% 0px', threshold: 0.05 }) : null;
-  function watchVideos(root) {
-    if (reduce || !vio) return;
-    $$('video[data-auto]', root).forEach(function (v) {
-      var t = v.closest('.tile');
-      if (t) { v.addEventListener('playing', function () { t.classList.add('playing'); }); }
-      vio.observe(v);
-    });
-  }
-  if (vio && !reduce) vio.observe(reel);
-  watchVideos(document);
-
-  /* ── Reveals: IO + scroll failsafe, always end fully opaque ── */
-  var rio = 'IntersectionObserver' in window && !reduce ? new IntersectionObserver(function (es) {
-    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); rio.unobserve(e.target); } });
-  }, { rootMargin: '0px 0px -6% 0px' }) : null;
-  function reveal(root) { $$('.rv:not(.in), .rvm:not(.in)', root).forEach(function (el) { rio ? rio.observe(el) : el.classList.add('in'); }); }
-  function revealFailsafe() {
-    var h = innerHeight;
-    $$('.rv:not(.in), .rvm:not(.in)').forEach(function (el) { if (el.getBoundingClientRect().top < h * 0.98) el.classList.add('in'); });
-  }
-
-  /* ── Count-up numbers ── */
-  var counted = false;
-  function countUp() {
-    if (counted || reduce) return; counted = true;
-    $$('#nums b').forEach(function (b) {
-      var to = +b.dataset.to, suf = b.dataset.suf || '', t0 = performance.now();
-      (function f(t) { var k = clamp((t - t0) / 1400, 0, 1); k = 1 - Math.pow(1 - k, 4); b.textContent = Math.round(to * k) + suf; if (k < 1) requestAnimationFrame(f); })(t0);
-    });
-  }
-
-  /* ── Scroll-linked: hero inset, statement words, studio parallax ── */
-  var hero = $('#hero'), words = $$('#statement .w'), stmt = $('#statement'), studioImg = $('#studioImg'), numsEl = $('#nums');
-  var hdr = $('#hdr'), lastY = 0;
-  function frame() {
-    var y = scrollY, vh = innerHeight;
-    if (!$('#home').hidden) {
-      if (!reduce) {
-        var span = hero.offsetHeight - vh;
-        hero.style.setProperty('--p', clamp(y / (span * 0.9), 0, 1).toFixed(4));
-        var r = stmt.getBoundingClientRect();
-        var prog = clamp((vh * 0.88 - r.top) / (vh * 0.5 + r.height * 0.5), 0, 1);
-        var n = words.length;
-        words.forEach(function (w, i) { w.style.setProperty('--o', clamp(prog * n * 1.15 - i, 0.14, 1).toFixed(3)); });
-        var sr = studioImg.parentNode.getBoundingClientRect();
-        if (sr.bottom > 0 && sr.top < vh) studioImg.style.setProperty('--py', (((sr.top + sr.height / 2) - vh / 2) * -0.12 - sr.height * 0.07).toFixed(1));
-      }
-      if (numsEl.getBoundingClientRect().top < vh * 0.85) countUp();
-    }
-    hdr.classList.toggle('hide', y > lastY + 2 && y > vh * 0.8 && !document.body.classList.contains('menu-open'));
-    if (y < lastY - 2) hdr.classList.remove('hide');
-    lastY = y;
-    revealFailsafe();
-  }
-  var ticking = false;
-  addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(function () { ticking = false; frame(); }); } }, { passive: true });
-  addEventListener('resize', frame);
-
-  /* ── Lightweight inertial wheel scroll (desktop, native scrollbar kept) ── */
-  var sTarget = scrollY, sCur = scrollY, sRun = false;
-  function maxY() { return document.documentElement.scrollHeight - innerHeight; }
-  function sLoop() {
-    sCur += (sTarget - sCur) * 0.11;
-    if (Math.abs(sTarget - sCur) < 0.4) { sCur = sTarget; sRun = false; }
-    scrollTo(0, sCur);
-    if (sRun) requestAnimationFrame(sLoop);
-  }
-  function smoothTo(y) {
-    if (reduce) { scrollTo(0, y); return; }
-    if (!fine) { scrollTo({ top: y, behavior: 'smooth' }); return; }
-    if (!sRun) sCur = scrollY;
-    sTarget = clamp(y, 0, maxY()); if (!sRun) { sRun = true; requestAnimationFrame(sLoop); }
-  }
-  if (fine && !reduce) {
-    addEventListener('wheel', function (e) {
-      if (e.ctrlKey || document.body.classList.contains('menu-open')) return;
-      e.preventDefault();
-      var d = e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? innerHeight : 1);
-      if (!sRun) { sCur = scrollY; sTarget = scrollY; }
-      sTarget = clamp(sTarget + d, 0, maxY());
-      if (!sRun) { sRun = true; requestAnimationFrame(sLoop); }
-    }, { passive: false });
-    addEventListener('scroll', function () { if (!sRun) { sCur = sTarget = scrollY; } }, { passive: true });
-  }
-  function stopSmooth() { sRun = false; sCur = sTarget = scrollY; }
-
-  /* ── Cursor + floating service preview (desktop) ── */
-  if (fine && !reduce) {
-    var cur = $('#cursor'), lab = cur.firstChild, flt = $('#float');
-    var mx = -200, my = -200, cx = -200, cy = -200, fx = 0, fy = 0, fOn = false;
-    SERVICES.forEach(function (s, i) {
-      var v = document.createElement('video'); v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'none'; v.dataset.src = s.clip; v.poster = s.poster; flt.appendChild(v);
-    });
-    var fvids = $$('video', flt), active = -1;
-    addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; }, { passive: true });
-    document.addEventListener('mouseover', function (e) {
-      var t = e.target.closest && e.target.closest('[data-cursor]');
-      if (t) { lab.textContent = t.dataset.cursor; cur.classList.add('on'); } else cur.classList.remove('on');
-      var s = e.target.closest && e.target.closest('.svc');
-      if (s && !$('#home').hidden) {
-        var i = +s.dataset.i;
-        if (i !== active) {
-          fvids.forEach(function (v, k) { v.classList.toggle('cur', k === i); if (k !== i) v.pause(); });
-          var v = fvids[i]; if (!v.getAttribute('src')) v.src = v.dataset.src; v.play().catch(function () {}); active = i;
-        }
-        if (!fOn) { fx = mx; fy = my; } fOn = true; flt.classList.add('on');
-      } else { fOn = false; flt.classList.remove('on'); }
-    });
-    var fs = 0;
-    (function tick() {
-      cx += (mx - cx) * 0.22; cy += (my - cy) * 0.22;
-      fx += (mx - fx) * 0.12; fy += (my - fy) * 0.12;
-      fs += ((fOn ? 1 : 0) - fs) * 0.14;
-      cur.style.transform = 'translate3d(' + cx.toFixed(1) + 'px,' + cy.toFixed(1) + 'px,0)';
-      var rot = clamp((mx - fx) * 0.04, -8, 8);
-      flt.style.transform = 'translate3d(' + fx.toFixed(1) + 'px,' + fy.toFixed(1) + 'px,0) translate(-50%,-50%) scale(' + fs.toFixed(3) + ') rotate(' + rot.toFixed(2) + 'deg)';
-      requestAnimationFrame(tick);
-    })();
-  }
-
-  /* ── Mobile menu ── */
-  var menuBtn = $('#menuBtn'), mnav = $('#mnav');
-  function setMenu(o) { document.body.classList.toggle('menu-open', o); menuBtn.setAttribute('aria-expanded', o); menuBtn.textContent = o ? 'Close' : 'Menu'; }
-  menuBtn.addEventListener('click', function () { setMenu(!document.body.classList.contains('menu-open')); });
-  mnav.addEventListener('click', function (e) { if (e.target.closest('a')) setMenu(false); });
-
-  /* ── Page wipe into project pages ── */
-  var wipe = $('#wipe'), wiping = false;
-  function animWipe(from, to, ms) {
-    return new Promise(function (res) {
-      if (!wipe.animate) { res(); return; }
-      var a = wipe.animate([{ clipPath: from }, { clipPath: to }], { duration: ms, easing: 'cubic-bezier(0.76,0,0.24,1)', fill: 'forwards' });
-      a.onfinish = res;
-    });
-  }
-  document.addEventListener('click', function (e) {
-    var a = e.target.closest && e.target.closest('a[href^="#/work/"]');
-    if (!a || reduce || e.metaKey || e.ctrlKey || e.shiftKey || wiping) return;
-    e.preventDefault(); wiping = true;
-    var p = PROJECTS.filter(function (x) { return '#/work/' + x.slug === a.getAttribute('href'); })[0];
-    wipe.firstChild.textContent = p ? p.title : '';
-    animWipe('inset(100% 0 0 0)', 'inset(0% 0 0 0)', 650).then(function () {
-      stopSmooth(); location.hash = a.getAttribute('href');
-      setTimeout(function () { animWipe('inset(0 0 0% 0)', 'inset(0 0 100% 0)', 750).then(function () { wiping = false; }); }, 120);
-    });
-  });
-
-  /* ── Router: #/work/<slug> = project view; anything else = home (+ section anchor) ── */
-  var home = $('#home'), proj = $('#project'), homeY = 0;
-  function renderProject(p) {
-    var i = PROJECTS.indexOf(p), nx = PROJECTS[(i + 1) % PROJECTS.length];
-    var media = reduce ? '<img src="' + esc(p.poster) + '" alt="">'
-      : '<video src="' + esc(p.video) + '" poster="' + esc(p.poster) + '" muted loop playsinline autoplay preload="metadata"></video>';
-    proj.innerHTML =
-      '<div class="wrap p-head"><p class="eyebrow rv"><span class="dot"></span>' + esc(p.category) + ' &mdash; ' + ('0' + (i + 1)).slice(-2) + '/' + ('0' + PROJECTS.length).slice(-2) + '</p>' +
-      '<h1 class="rvm"><span>' + esc(p.title) + '</span></h1>' +
-      '<div class="p-media rv" data-cursor="Play">' + media + '</div></div>' +
-      '<div class="wrap"><div class="p-body"><div class="story rv">' + p.story.map(function (s) { return '<p>' + esc(s) + '</p>'; }).join('') + '</div>' +
-      '<div class="side rv"><p class="eyebrow" style="margin-bottom:14px">Credits</p><ul class="credits">' +
-      p.credits.map(function (c) { return '<li><span>' + esc(c[0]) + '</span><span>' + esc(c[1]) + '</span></li>'; }).join('') +
-      '</ul><a class="back" href="#work">&larr; All work</a></div></div>' +
-      '<a class="next" href="#/work/' + esc(nx.slug) + '" data-cursor="Next"><p class="eyebrow">Next project</p><h2>' + esc(nx.title) + ' &rarr;</h2></a></div>';
-    document.title = p.title + ' — Topper Digital';
-  }
-  function route() {
-    var h = location.hash, m = h.match(/^#\/work\/([\w-]+)/);
-    var p = m && PROJECTS.filter(function (x) { return x.slug === m[1]; })[0];
-    stopSmooth();
-    if (p) {
-      if (!home.hidden) homeY = scrollY;
-      home.hidden = true; proj.hidden = false; if (reel.pause) reel.pause();
-      renderProject(p); scrollTo(0, 0); stopSmooth(); reveal(proj);
-      var h1 = proj.querySelector('h1'); h1.tabIndex = -1; h1.focus({ preventScroll: true });
-    } else {
-      var wasProj = !proj.hidden;
-      proj.hidden = true; proj.innerHTML = ''; home.hidden = false;
-      document.title = 'Topper Digital — VFX, 3D and post-production studio, Lisbon';
-      var id = h.replace(/^#\/?/, ''), target = id && document.getElementById(id);
-      if (target) { var ty = target.getBoundingClientRect().top + scrollY; if (wasProj) { scrollTo(0, ty); stopSmooth(); } else smoothTo(ty); }
-      else if (wasProj) { scrollTo(0, homeY); stopSmooth(); }
-      else if (h === '#/') smoothTo(0);
-      if (vio && reelWanted && reel.isConnected) reel.play().catch(function () {});
-    }
-    frame();
-  }
-  addEventListener('hashchange', route);
-  reveal(document); route();
-})();
-</script>
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lb-close" id="lbClose" type="button">Close</button>
+  <video id="lbVideo" playsinline controls></video>
+  <p class="lb-title" id="lbTitle"></p>
+</div>
+<script src="js/main.js?v=981423f6ab"></script>
+<script type="module" src="js/scene.js?v=7a9f2fcebc"></script>
 </body>
 </html>
