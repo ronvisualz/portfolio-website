@@ -10,8 +10,9 @@ require_once __DIR__ . '/inc/interactions.php';
 $user = require_login();
 require_page('pipeline');
 
-// Pipeline: um separador por funil (kanban da fase comercial), mais
-// «Concluídos» e «Perdidos». Os negócios em produção vivem na aba Negócios.
+// Pipeline: um separador por funil, com todas as etapas — as comerciais e, a seguir ao
+// Kickoff, as de produção e Concluído (os mesmos negócios da aba Negócios: mudar de etapa
+// aqui muda lá). «Perdidos» à parte, à direita (não é um funil).
 
 $me = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $me->execute([(int)$user['id']]);
@@ -103,7 +104,9 @@ if (!in_array($view, ['perdidos'], true)) {
 
 [$scopeSql, $scopeArgs] = scope_sql($pdo, 'pipeline', 'd.owner_id');
 $reach = sees_unassigned($me) ? "($scopeSql OR d.owner_id IS NULL)" : $scopeSql;
-$selectDeals = function (string $where, array $args = []) use ($pdo, $reach, $scopeArgs) {
+$selectDeals = function (string $where, array $args = [], string $tab = 'pipeline') use ($pdo, $reach, $scopeArgs) {
+    // A produção segue o âmbito da aba Negócios.
+    if ($tab !== 'pipeline') [$reach, $scopeArgs] = reach_sql($pdo, $tab, 'd.owner_id');
     $st = $pdo->prepare(
         "SELECT d.*, u.name AS owner_name, u.color AS owner_color, c.name AS contact_name, f.name AS funnel_name,
                 s.name AS stage_name, ls.name AS lost_stage_name, of.name AS origin_funnel_name
@@ -147,24 +150,35 @@ render_flashes();
 ?>
 <h1>Pipeline</h1>
 
-<div class="tabs">
-  <?php foreach ($funnels as $f): ?>
-    <a href="<?= e(pipe_url(['f' => $f['id']])) ?>" class="<?= $view === 'funil' && (int)$f['id'] === $fid ? 'on' : '' ?>"><?= e($f['name']) ?></a>
-  <?php endforeach; ?>
-  <a href="<?= e(pipe_url(['v' => 'perdidos'])) ?>" class="<?= $view === 'perdidos' ? 'on' : '' ?>">Perdidos (<?= $count('lost') ?>)</a>
+<div class="tabs-row pipe-tabs">
+  <div class="tabs">
+    <?php foreach ($funnels as $f): ?>
+      <a href="<?= e(pipe_url(['f' => $f['id']])) ?>" class="<?= $view === 'funil' && (int)$f['id'] === $fid ? 'on' : '' ?>"><?= e($f['name']) ?></a>
+    <?php endforeach; ?>
+  </div>
+  <div class="tabs tabs-lost"><a href="<?= e(pipe_url(['v' => 'perdidos'])) ?>" class="<?= $view === 'perdidos' ? 'on' : '' ?>"><?= icon('x') ?> Perdidos (<?= $count('lost') ?>)</a></div>
 </div>
 <?php if (can('pipeline', PERM_MANAGE)): ?>
   <div class="sub"><a class="lnk" href="/admin/funis.php">Configurar funis e etapas</a></div>
 <?php endif; ?>
 
 <?php if ($view === 'funil' && $fid):
-    $stages = commercial_stages(funnel_stages($pdo, $fid));
+    $stages = funnel_stages($pdo, $fid);
+    // A produção (Kickoff → Concluído) também aparece, para quem vê a aba Negócios;
+    // em Concluído, só os dos últimos 30 dias (os outros estão em Negócios › Concluídos).
+    $seesProd = can('negocios');
+    $prodDeals = $seesProd ? $selectDeals("d.funnel_id = ? AND (d.phase = 'production' OR (d.phase = 'done' AND d.done_at >= ?))",
+                                          [$fid, (new DateTimeImmutable(today_lisbon()))->modify('-30 days')->format('Y-m-d') . ' 00:00:00'], 'negocios') : [];
     $allDeals = $selectDeals("d.phase = 'pipeline' AND d.funnel_id = ?", [$fid]);
     $vistaCount = [];
     foreach (array_keys(PIPE_VISTAS) as $k) $vistaCount[$k] = count(array_filter($allDeals, fn($d) => $inVista($d, $k)));
     $deals  = array_values(array_filter($allDeals, fn($d) => $inVista($d, $vista)));
     $byStage = [];
-    foreach ($deals as $d) $byStage[(int)$d['stage_id']][] = $d;
+    $doneStage = 0;
+    foreach ($stages as $s) if ($s['kind'] === 'done') $doneStage = (int)$s['id'];
+    foreach (array_merge($deals, array_values(array_filter($prodDeals, fn($d) => $inVista($d, $vista === 'risco' ? '' : $vista)))) as $d) {
+        $byStage[$d['phase'] === 'done' && $doneStage ? $doneStage : (int)$d['stage_id']][] = $d;
+    }
     // Ganhos este mês: chegaram a Kickoff neste funil desde o dia 1.
     $won = $selectDeals("d.phase IN ('production','done') AND d.funnel_id = ? AND d.id IN (
                             SELECT h.deal_id FROM deal_history h JOIN funnel_stages ts ON ts.id = h.to_stage_id
@@ -183,35 +197,38 @@ render_flashes();
 <?= views_bar(PIPE_VISTAS, $vista, fn($k) => pipe_url(array_filter(['f' => $fid, 'vista' => $k ?: null])), $vistaCount) ?>
 <div class="pboard"<?= $canEdit ? ' data-live' : '' ?>>
   <?php foreach ($stages as $s): $sid = (int)$s['id']; $cards = $byStage[$sid] ?? [];
-        $total = array_sum(array_map(fn($d) => (float)$d['value_estimate'], $cards)); ?>
-    <section class="col <?= $s['kind'] === 'kickoff' ? 'col-win' : '' ?>" data-stage="<?= $sid ?>" aria-label="<?= e($s['name']) ?>">
+        $com = in_array($s['kind'], ['xray', 'commercial'], true);
+        $zone = $com ? 'com' : ($s['kind'] === 'done' ? 'done' : 'prod');
+        $val = fn($d) => (float)($com ? $d['value_estimate'] : ($d['budget'] ?: $d['value_estimate']));
+        $total = array_sum(array_map($val, $cards)); ?>
+    <?php if ($s['kind'] === 'kickoff'): ?><div class="col-sep" aria-hidden="true"><span>Produção</span></div><?php endif; ?>
+    <section class="col z-<?= $zone ?><?= $s['kind'] === 'kickoff' ? ' col-win' : '' ?>" data-stage="<?= $sid ?>" data-zone="<?= $zone ?>" aria-label="<?= e($s['name']) ?>">
       <header>
-        <b><span><?= e($s['name']) ?></span><?php if ($s['kind'] !== 'kickoff'): ?><span data-cnt data-n="<?= count($cards) ?>"><?= count($cards) ?></span><?php endif; ?></b>
-        <?php if ($s['kind'] === 'kickoff'): ?>
-          <span class="muted">entra ao validar a aceitação do cliente</span>
-          <?php if (can('negocios')): ?><a class="lnk small" href="/admin/negocios.php">As etapas de produção seguem em Negócios →</a><?php endif; ?>
-        <?php else: ?>
-          <span class="sum" data-sum data-n="<?= $total ?>"><?= eur0($total) ?></span>
-        <?php endif; ?>
+        <b><span><?= e($s['name']) ?></span><span data-cnt data-n="<?= count($cards) ?>"><?= count($cards) ?></span></b>
+        <span class="sum" data-sum data-n="<?= $total ?>"><?= eur0($total) ?></span>
+        <?php if ($s['kind'] === 'kickoff'): ?><span class="muted">entra ao validar a aceitação do cliente</span><?php endif; ?>
+        <?php if ($s['kind'] === 'done'): ?><span class="muted">últimos 30 dias<?= $seesProd ? ' · <a class="lnk" href="/admin/negocios.php?t=concluidos">todos</a>' : '' ?></span><?php endif; ?>
+        <?php if (!$com && !$seesProd): ?><span class="muted">os negócios em produção estão na aba Negócios</span><?php endif; ?>
       </header>
       <div class="cards">
-      <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $idle > $staleLimit;
-            $gate = $s['kind'] !== 'kickoff' ? deal_gate($pdo, $d, $s) : [];
-            $gOk = count(array_filter($gate, fn($g) => $g['ok'])); ?>
-        <article class="dcard<?= $risk ? ' risk' : '' ?>" draggable="<?= $canEdit ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>" data-value="<?= (float)$d['value_estimate'] ?>">
+      <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $com && $idle > $staleLimit;
+            $gate = $s['kind'] !== 'done' && $d['phase'] !== 'done' ? deal_gate($pdo, $d, $s) : [];
+            $gOk = count(array_filter($gate, fn($g) => $g['ok']));
+            $drag = $canEdit && $d['phase'] !== 'done'; ?>
+        <article class="dcard<?= $risk ? ' risk' : '' ?><?= $d['phase'] === 'done' ? ' is-done' : '' ?>" draggable="<?= $drag ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>" data-value="<?= $val($d) ?>">
           <div class="id"><span><?= e($d['code']) ?></span><?php if ($gate): ?><span class="chip<?= $gOk === count($gate) ? ' ok' : '' ?>" data-tip="<?= e($gOk === count($gate) ? 'Requisitos cumpridos: pode avançar' : 'Falta: ' . implode(' · ', array_map(fn($g) => $g['label'], array_filter($gate, fn($g) => !$g['ok'])))) ?>" tabindex="0" aria-label="Requisitos <?= $gOk ?> de <?= count($gate) ?>"><?= $gOk ?>/<?= count($gate) ?></span><?php endif; ?><?php if ($risk): ?><span class="chip risk" data-tip="Sem movimento há <?= $idle ?> dias" aria-label="Sem movimento há <?= $idle ?> dias"><?= $idle ?>d</span><?php endif; ?></div>
-          <a class="dname" data-panel="deal:<?= (int)$d['id'] ?>" href="<?= e(pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio') ?>"><?= e($d['name']) ?></a>
+          <a class="dname" data-panel="deal:<?= (int)$d['id'] ?>" href="<?= e($com ? pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio' : '/admin/negocio.php?id=' . (int)$d['id']) ?>"><?= e($d['name']) ?></a>
           <?php if ($d['contact_name'] && $d['contact_name'] !== $d['name']): ?><div class="muted"><?= e($d['contact_name']) ?></div><?php endif; ?>
           <div class="drow">
-            <span class="mono"><?= $d['value_estimate'] !== null ? eur0((float)$d['value_estimate']) : '<span class="muted">sem valor</span>' ?></span>
+            <span class="mono"><?= $val($d) ? eur0($val($d)) : '<span class="muted">sem valor</span>' ?></span>
             <span class="owner"><span class="dot" style="background:<?= e($d['owner_color'] ?: '#ccc') ?>"></span> <?= e($d['owner_name'] ?? 'Por atribuir') ?></span>
           </div>
-          <?php if ($canEdit): ?>
+          <?php if ($drag): ?>
           <form method="post" class="dmove"><?= csrf_field() ?>
             <input type="hidden" name="do" value="move"><input type="hidden" name="id" value="<?= (int)$d['id'] ?>">
             <input type="hidden" name="back" value="<?= e($self) ?>">
             <select name="stage_id" class="mini" aria-label="Mover <?= e($d['code']) ?> para">
-              <?php foreach ($stages as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === $sid ? 'selected' : '' ?>><?= e($o['name']) ?></option><?php endforeach; ?>
+              <?php foreach ($stages as $o): if ($o['kind'] === 'done' || ($d['phase'] === 'production' && in_array($o['kind'], ['xray', 'commercial'], true))) continue; ?><option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === $sid ? 'selected' : '' ?>><?= e($o['name']) ?></option><?php endforeach; ?>
             </select>
             <noscript><button class="btn sm" type="submit">Mover</button></noscript>
           </form>

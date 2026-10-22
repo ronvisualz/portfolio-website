@@ -1266,8 +1266,16 @@ ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
     passam a tipos da aba Tarefas (19 tipos; o filtro mostra 18, em 6 × 3), cada um com a sua cor
     (Reunião violeta, Almoço âmbar, Jantar bordeaux, Evento verde-oliva); levam o campo **Local**.
     Na Nova ação da lead, **Reunião** mostra Google Meet · Discord · Presencial (com Local), como na
-    aba Tarefas. No Pipeline, a coluna Kickoff aponta para Negócios: o quadro mostra só as etapas
-    comerciais; as de produção seguem em Negócios › Em produção.
+    aba Tarefas.
+  - **Quarta ronda (Pipeline com o funil inteiro):** o quadro de cada funil mostra **todas as
+    etapas** — X-Ray, Proposta, Aguardar feedback, um separador «Produção», Kickoff, as etapas de
+    produção e Concluído (só os últimos 30 dias, com ligação para Negócios › Concluídos) — e desliza
+    na horizontal. São os mesmos negócios da aba Negócios: mover aqui (arrastar ou «Mover para»)
+    muda lá, com os mesmos gates e «Anular». Em produção não se volta à fase comercial e concluir
+    faz-se na checklist de fecho. A produção aparece a quem vê a aba Negócios, no âmbito dessa aba;
+    os indicadores do topo continuam a contar só a fase comercial. **«Perdidos»** passou para a
+    direita (não é um funil). Na **folha de orçamento**, um ícone ao lado do ID abre a ficha do
+    negócio: no Pipeline (painel aberto) na fase comercial, em Negócios a partir do Kickoff.
   - **Correções:** a bolinha amarela da etapa atual já não fica cortada em cima; no formulário de
     tarefa, Data, Hora e Duração já não se sobrepõem no iPad (as caixas de data/hora do Safari têm
     largura própria — agora encolhem à coluna).

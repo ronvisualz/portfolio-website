@@ -963,11 +963,12 @@
         if (cnt) countTo(cnt, cards.length, false);
         if (tot) countTo(tot, sum, true);
       });
-      var all = $$('.dcard:not([hidden])', board), v = 0;
+      // Os indicadores do topo contam só a fase comercial.
+      var all = $$('.col[data-zone="com"] .dcard:not([hidden])', board), v = 0;
       all.forEach(function (c) { v += parseFloat(c.getAttribute('data-value') || '0') || 0; });
       $$('[data-kpi="open-value"]').forEach(function (k) { countTo(k, v, true); });
       $$('[data-kpi="open-count"]').forEach(function (k) { countTo(k, all.length, false); });
-      $$('[data-kpi="stale"]').forEach(function (k) { countTo(k, $$('.dcard.risk:not([hidden])', board).length, false); });
+      $$('[data-kpi="stale"]').forEach(function (k) { countTo(k, $$('.col[data-zone="com"] .dcard.risk:not([hidden])', board).length, false); });
     };
     var move = function (card, col) {
       if (!col || col.contains(card)) return;
@@ -983,7 +984,7 @@
           var val = parseFloat(card.getAttribute('data-value') || '0') || 0;
           $$('[data-kpi="won-value"]').forEach(function (k) { countTo(k, (parseFloat(k.getAttribute('data-n') || '0') || 0) + val, true); });
           $$('[data-kpi="won-count"]').forEach(function (k) { countTo(k, (parseFloat(k.getAttribute('data-n') || '0') || 0) + 1, false); });
-          setTimeout(function () { card.hidden = true; recount(); }, reduced.matches ? 0 : 220);
+          card.classList.remove('risk'); recount();
         }
         toast(j.msg, j.undo ? { undo: j.undo } : {});
       }).catch(function (e) {
