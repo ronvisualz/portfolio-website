@@ -75,13 +75,14 @@ function team_sync(PDO $pdo): void {
 function team_members(PDO $pdo): array {
     team_sync($pdo);
     $rows = $pdo->query(
-        "SELECT tm.*, u.id AS user_id, u.is_active AS user_active,
+        "SELECT tm.*, u.id AS user_id, u.is_active AS user_active, u.role AS user_role,
                 (SELECT COUNT(*) FROM tasks t WHERE t.member_id = tm.id AND t.status <> 'done') AS open_tasks
            FROM team_members tm LEFT JOIN users u ON u.team_member_id = tm.id
           ORDER BY tm.position, tm.id"
     )->fetchAll();
     $out = [];
     foreach ($rows as $m) {
+        if ($m['user_role'] === 'superadmin') continue;   // o superadmin não é operador (§18.2)
         $gone = $m['user_id'] === null || (int)$m['user_active'] !== 1;
         if ($gone && (int)$m['open_tasks'] === 0) continue;
         $out[(int)$m['id']] = $m;
@@ -386,4 +387,222 @@ function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visib
         "SELECT * FROM tasks WHERE $where ORDER BY COALESCE(done_at, updated_at) DESC, id DESC LIMIT " . max(1, $limit)
     )->fetchAll();
     return [$list, $total];
+}
+
+// ════════════════════════════════════════════════════════════
+// Aba Tarefas (§18): tipos, origens, urgência, grupos automáticos, privacidade
+// ════════════════════════════════════════════════════════════
+
+/** Os 16 tipos (§18.6): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
+const TASK_TYPES = [
+    'call'     => ['Chamada', 'phone'],
+    'meeting'  => ['Reunião', 'meeting'],
+    'email'    => ['Email', 'mail'],
+    'message'  => ['Mensagem / WhatsApp', 'bubble'],
+    'followup' => ['Follow-up', 'refresh'],
+    'visit'    => ['Visita / deslocação', 'pin'],
+    'shoot'    => ['Gravação', 'camera'],
+    'edit'     => ['Edição', 'scissors'],
+    'render'   => ['Render', 'cog'],
+    'review'   => ['Revisão / aprovação', 'eye'],
+    'delivery' => ['Entrega', 'package'],
+    'quote'    => ['Orçamento / proposta', 'euro'],
+    'document' => ['Documento', 'file'],
+    'task'     => ['Tarefa', 'checklist'],
+    'personal' => ['Pessoal', 'user'],
+    'block'    => ['Bloqueio', 'ban'],
+];
+
+/** As origens (§18.6): o mesmo ícone da aba de origem no menu. */
+const TASK_ORIGINS = [
+    'lead'     => ['Lead', 'leads'],
+    'deal'     => ['Negócio', 'negocios'],
+    'mkt'      => ['Marketing', 'marketing'],
+    'relation' => ['Relação', 'contactos'],
+    'personal' => ['Pessoal', 'user'],
+    'manual'   => ['Manual', 'tarefas'],
+];
+
+const TASK_BUCKETS = ['late' => 'Em atraso', 'today' => 'Hoje', 'week' => 'Esta semana', 'later' => 'Mais tarde', 'none' => 'Sem data'];
+const TASK_DURATIONS = [0 => '1 h (por defeito)', 15 => '15 min', 30 => '30 min', 45 => '45 min', 90 => '1 h 30', 120 => '2 h', 180 => '3 h', 240 => '4 h', 480 => 'Dia inteiro (8 h)'];
+/** Quantos cartões cabem numa coluna do quadro (§18.4). */
+const TASK_BOARD_MAX = 6;
+
+/** O tipo de uma tarefa (os antigos: relação → follow-up, almoço/jantar/evento → reunião). */
+function task_type(array $t): string {
+    $k = (string)($t['kind'] ?? 'task');
+    if (isset(TASK_TYPES[$k])) return $k;
+    return ['relation' => 'followup', 'lunch' => 'meeting', 'dinner' => 'meeting', 'event' => 'meeting'][$k] ?? 'task';
+}
+
+/** A origem: pessoal, relação, Marketing, lead, negócio ou manual (feita aqui). */
+function task_origin(array $t): string {
+    if (!empty($t['private']) || in_array($t['kind'] ?? '', ['personal', 'block'], true)) return 'personal';
+    if (($t['kind'] ?? '') === 'relation') return 'relation';
+    if (!empty($t['mkt_piece_id'])) return 'mkt';
+    if (!empty($t['deal_id'])) return in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true) ? 'lead' : 'deal';
+    return 'manual';
+}
+
+function task_type_badge(array $t, string $size = ''): string {
+    $k = task_type($t);
+    [$l, $i] = TASK_TYPES[$k];
+    return '<span class="tty ty-' . $k . ($size ? ' ' . $size : '') . '" data-tip="' . e($l) . '" aria-label="' . e($l) . '" role="img">' . icon($i) . '</span>';
+}
+
+function task_origin_badge(array $t): string {
+    $k = task_origin($t);
+    [$l, $i] = TASK_ORIGINS[$k];
+    return '<span class="tor or-' . $k . '" data-tip="Origem: ' . e($l) . '" aria-label="Origem: ' . e($l) . '" role="img">' . icon($i) . '</span>';
+}
+
+/** Em atraso · Hoje · Esta semana · Mais tarde · Sem data. Com hora, «em atraso» conta a hora. */
+function task_bucket(array $t, ?string $today = null): string {
+    $today ??= today_lisbon();
+    $d = (string)($t['due_date'] ?? '');
+    if ($d === '') return 'none';
+    if ($d < $today) return 'late';
+    if ($d === $today) {
+        if ($t['due_time'] && team_ts_local($d . ' ' . substr((string)$t['due_time'], 0, 5)) + 60 * (int)($t['duration_min'] ?: 60) < time()) return 'late';
+        return 'today';
+    }
+    $sunday = (new DateTimeImmutable($today))->modify('sunday this week')->format('Y-m-d');
+    return $d <= $sunday ? 'week' : 'later';
+}
+
+/** Instante unix de «aaaa-mm-dd hh:mm» em Lisboa (sem depender da aba Equipa). */
+function team_ts_local(string $local): int {
+    return (new DateTimeImmutable($local, new DateTimeZone('Europe/Lisbon')))->getTimestamp();
+}
+
+/** «hoje 15:00», «ontem», «sex 30/10», «12/11». */
+function task_when(array $t, ?string $today = null): string {
+    $today ??= today_lisbon();
+    $d = (string)($t['due_date'] ?? '');
+    if ($d === '') return '';
+    $time = $t['due_time'] ? substr((string)$t['due_time'], 0, 5) : '';
+    $diff = (int)(new DateTimeImmutable($today))->diff(new DateTimeImmutable($d))->format('%r%a');
+    $days = [1 => 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+    $day = match (true) {
+        $diff === 0 => $time !== '' ? '' : 'hoje',
+        $diff === -1 => 'ontem',
+        $diff === 1 => 'amanhã',
+        $diff > 1 && $diff < 7 => $days[(int)date('N', strtotime($d))] . ' ' . date('d/m', strtotime($d)),
+        $diff < -1 && $diff > -7 => 'há ' . -$diff . ' dias',
+        default => date('d/m', strtotime($d)) . (substr($d, 0, 4) !== substr($today, 0, 4) ? '/' . substr($d, 2, 2) : ''),
+    };
+    return trim($day . ' ' . $time);
+}
+
+/** As tarefas automáticas iguais que se juntam numa linha (§18.3): chamadas de leads e follow-ups de relação. */
+function task_auto_group(array $t): ?string {
+    if (($t['kind'] ?? '') === 'relation') return 'relation';
+    if (($t['kind'] ?? '') === 'call' && ($t['deal_phase'] ?? '') === 'lead' && str_starts_with((string)$t['title'], 'Ligar a ')) return 'leadcall';
+    return null;
+}
+
+const TASK_AUTO_GROUPS = [
+    'leadcall' => ['Chamadas de leads', 'call', 'lead', '/admin/leads.php?urgente=1'],
+    'relation' => ['Follow-ups de relação', 'followup', 'relation', '/admin/contactos.php?t=relacoes'],
+];
+
+/** A tarefa é privada para quem a vê? (pessoal ou bloqueio de outra pessoa: só «Ocupado»). */
+function task_hidden_for(array $t, ?int $myMember): bool {
+    return !empty($t['private']) && ($t['member_id'] === null || (int)$t['member_id'] !== (int)$myMember);
+}
+
+function task_log(PDO $pdo, int $taskId, string $event, string $note = ''): void {
+    if (!db_has_table($pdo, 'task_log')) return;
+    $pdo->prepare('INSERT INTO task_log (task_id, event, note, user_id, created_at) VALUES (?,?,?,?,?)')
+        ->execute([$taskId, $event, mb_substr($note, 0, 255), current_user()['id'] ?? null, now_php()]);
+}
+
+/** O histórico de uma tarefa, mais recente primeiro. */
+function task_history(PDO $pdo, int $taskId): array {
+    if (!db_has_table($pdo, 'task_log')) return [];
+    $st = $pdo->prepare('SELECT l.*, u.name FROM task_log l LEFT JOIN users u ON u.id = l.user_id WHERE l.task_id = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 50');
+    $st->execute([$taskId]);
+    return $st->fetchAll();
+}
+
+/** A checklist: [[texto, feito]…], a partir do JSON guardado. */
+function task_checklist(array $t): array {
+    $j = json_decode((string)($t['checklist'] ?? ''), true);
+    return is_array($j) ? array_values(array_filter($j, fn($i) => is_array($i) && isset($i[0]))) : [];
+}
+
+/** Do texto do formulário («[x] item» por linha) para a lista. */
+function task_checklist_parse(string $raw): ?string {
+    $out = [];
+    foreach (preg_split('/\r?\n/', $raw) as $line) {
+        $line = trim($line);
+        if ($line === '') continue;
+        $done = (bool)preg_match('/^\[(x|X|✓)\]\s*/u', $line);
+        $line = trim(preg_replace('/^\[( |x|X|✓)?\]\s*/u', '', $line));
+        if ($line !== '') $out[] = [mb_substr($line, 0, 200), $done];
+    }
+    return $out ? json_encode(array_slice($out, 0, 40), JSON_UNESCAPED_UNICODE) : null;
+}
+
+/** Os anexos: links (Drive, WeTransfer…), um por linha. */
+function task_links_parse(string $raw): ?string {
+    $out = [];
+    foreach (preg_split('/\s+/', trim($raw)) as $u) if (preg_match('~^https?://\S+$~', $u)) $out[] = mb_substr($u, 0, 500);
+    return $out ? json_encode(array_slice(array_values(array_unique($out)), 0, 20)) : null;
+}
+
+/** Todas as tarefas abertas que posso ver (sem as privadas dos outros), com o necessário para a lista e o quadro. */
+function tasks_open(PDO $pdo, ?array $visible, ?int $myMember, bool $done = false, int $doneLimit = 200): array {
+    $vis = $visible === null ? '' : ' AND (t.member_id IS NULL' . ($visible ? ' OR t.member_id IN (' . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
+    $hasPriv = db_has_column($pdo, 'tasks', 'private');
+    $sql = 'SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, d.company AS deal_company, d.person AS deal_person, c.name AS contact_name, h.name AS help_name
+              FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id LEFT JOIN contacts c ON c.id = t.contact_id
+              LEFT JOIN users h ON h.id = ' . ($hasPriv ? 't.help_by' : 'NULL') . '
+             WHERE ' . ($done ? "t.status = 'done'" : "t.status <> 'done'") . $vis
+         . ($hasPriv ? ' AND (t.private = 0 OR t.member_id = ' . (int)$myMember . ')' : '')
+         . ($done ? ' ORDER BY t.done_at DESC, t.id DESC LIMIT ' . (int)$doneLimit : ' ORDER BY t.due_date IS NULL, t.due_date, t.due_time IS NULL, t.due_time, t.id');
+    return $pdo->query($sql)->fetchAll();
+}
+
+/** A ligação de uma tarefa: [texto, endereço]. */
+function task_link(array $t): array {
+    if (!empty($t['deal_id'])) {
+        if (in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)) {
+            $n = trim((string)($t['deal_person'] ?: $t['deal_company'] ?: $t['deal_name']));
+            return ['Lead · ' . $n, '/admin/lead.php?id=' . (int)$t['deal_id']];
+        }
+        return [trim(($t['deal_code'] ? $t['deal_code'] . ' · ' : '') . $t['deal_name']), '/admin/negocio.php?id=' . (int)$t['deal_id']];
+    }
+    if (!empty($t['contact_id']) && !empty($t['contact_name'])) return [(($t['kind'] ?? '') === 'relation' ? 'Relação · ' : '') . $t['contact_name'], '/admin/contact.php?id=' . (int)$t['contact_id']];
+    if (!empty($t['mkt_piece_id'])) return ['Marketing', '/admin/marketing_peca.php?id=' . (int)$t['mkt_piece_id']];
+    if (($t['job_name'] ?? '') !== '') return [(string)$t['job_name'], ''];
+    return ['', ''];
+}
+
+/** Ordem de urgência: em atraso primeiro, depois a data e a hora, depois a prioridade. */
+function task_urgency_sort(array &$list): void {
+    $rank = ['late' => 0, 'today' => 1, 'week' => 2, 'later' => 3, 'none' => 4];
+    $pr = ['alta' => 0, 'media' => 1, 'baixa' => 2];
+    $today = today_lisbon();
+    usort($list, fn($a, $b) => [$rank[task_bucket($a, $today)], (string)$a['due_date'] ?: '9', (string)$a['due_time'] ?: '99', $pr[$a['priority']] ?? 1, (int)$a['id']]
+                           <=> [$rank[task_bucket($b, $today)], (string)$b['due_date'] ?: '9', (string)$b['due_time'] ?: '99', $pr[$b['priority']] ?? 1, (int)$b['id']]);
+}
+
+/**
+ * Junta as tarefas automáticas iguais (§18.3): devolve itens ['task' => t] ou
+ * ['group' => chave, 'member' => id, 'tasks' => [...], 'late' => n], pela ordem de urgência.
+ */
+function task_aggregate(array $list): array {
+    $out = []; $groups = [];
+    foreach ($list as $t) {
+        $g = task_auto_group($t);
+        if ($g === null) { $out[] = ['task' => $t]; continue; }
+        $key = $g . ':' . (int)$t['member_id'];
+        if (!isset($groups[$key])) { $groups[$key] = count($out); $out[] = ['group' => $g, 'member' => $t['member_id'] !== null ? (int)$t['member_id'] : null, 'tasks' => [], 'late' => 0]; }
+        $i = $groups[$key];
+        $out[$i]['tasks'][] = $t;
+        if (task_bucket($t) === 'late') $out[$i]['late']++;
+    }
+    // Um grupo de uma só tarefa fica como tarefa normal.
+    return array_map(fn($x) => isset($x['group']) && count($x['tasks']) === 1 ? ['task' => $x['tasks'][0]] : $x, $out);
 }

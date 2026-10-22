@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash($e->getMessage(), 'err');
             redirect(leads_url($bf + ['nova' => 1]));
         }
-        $owner = owner_from_post($pdo, $me, (int)$me['id']);
+        $owner = owner_from_post($pdo, $me, $me['role'] === 'superadmin' ? null : (int)$me['id']);
         $use = (int)($_POST['use_contact'] ?? 0);
         if ($use) { $st = $pdo->prepare('SELECT COUNT(*) FROM contacts WHERE id = ?'); $st->execute([$use]); if (!(int)$st->fetchColumn()) $use = 0; }
         $id = lead_create($pdo, $v, $owner, (int)$me['id'], false, $use ?: null);

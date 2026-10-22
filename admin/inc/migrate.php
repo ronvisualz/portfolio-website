@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -253,6 +253,15 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // saída, Ocupado/Livre nas tarefas; estrutura inicial e contas dos sócios.
     require_once __DIR__ . '/migrate_team.php';
     migrate_team($pdo);
+
+    // ── 20 · aba Tarefas (§18) ──────────────────────────────
+    //
+    // admin@ passa a info@ (Superadmin, mesma palavra-passe); o superadmin deixa
+    // de ser operador e as leads dele são redistribuídas uma vez pelos 5 sócios;
+    // nas tarefas: local, plataforma, privada, checklist, anexos, participantes,
+    // pedido de ajuda, histórico e vistas guardadas.
+    require_once __DIR__ . '/migrate_tasks.php';
+    migrate_tasks_tab($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

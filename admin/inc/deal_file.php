@@ -440,12 +440,12 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                 [$kl, $ki] = task_kind_info($x['kind'] ?? 'task');
                 $late = $x['status'] !== 'done' && $x['due_date'] && $x['due_date'] < today_lisbon();
                 $rows .= '<li class="' . ($x['status'] === 'done' ? 'done' : '') . '"><span class="k" data-tip="' . e($kl) . '" aria-label="' . e($kl) . '" role="img" tabindex="0">' . icon($ki) . '</span>'
-                       . '<span class="t"><a href="' . $go('/admin/calendar.php?view=tarefas&edit=' . (int)$x['id']) . '">' . e($x['title']) . '</a></span>'
+                       . '<span class="t"><a href="' . $go('/admin/calendar.php?edit=' . (int)$x['id']) . '">' . e($x['title']) . '</a></span>'
                        . '<small class="when' . ($late ? ' late' : '') . '">' . e(($x['due_date'] ? date('d/m', strtotime($x['due_date'])) : 'sem prazo') . ' · ' . ($x['status'] === 'done' ? 'feita' : ($x['who'] ?: 'por atribuir'))) . '</small></li>';
             }
             $html = $head . '<section><h4>Tarefas <span class="mono">' . count($t['open']) . ' abertas · ' . $t['done'] . ' feitas</span></h4>' . ($rows ? '<ul class="focus">' . $rows . '</ul>' : '<p class="muted">Sem tarefas ligadas.</p>') . '</section>'
-                  . '<p><a class="btn ghost sm" href="' . $go('/admin/calendar.php?view=tarefas') . '">' . icon('tarefas') . ' Abrir em Tarefas</a></p>';
-            return ['title' => 'Produção e tarefas', 'html' => $html, 'url' => '/admin/calendar.php?view=tarefas'];
+                  . '<p><a class="btn ghost sm" href="' . $go('/admin/calendar.php') . '">' . icon('tarefas') . ' Abrir em Tarefas</a></p>';
+            return ['title' => 'Produção e tarefas', 'html' => $html, 'url' => '/admin/calendar.php'];
 
         case 'dfiles':
         case 'ddocs':

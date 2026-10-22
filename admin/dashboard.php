@@ -22,7 +22,7 @@ $lim    = alert_limits($pdo);
 
 // ── «O teu dia» ─────────────────────────────────────────────
 $today = [];
-if (can('tarefas'))    $today[] = ['Tarefas a vencer', $alerts['task'], '/admin/calendar.php?view=tarefas', 'Sem tarefas a vencer.'];
+if (can('tarefas'))    $today[] = ['Tarefas a vencer', $alerts['task'], '/admin/calendar.php', 'Sem tarefas a vencer.'];
 if (can('leads'))      $today[] = ['Leads em atraso / a aproximar', array_merge($alerts['queue'], $alerts['lead']), '/admin/leads.php?urgente=1', 'Todas as leads dentro do prazo.'];
 if (can('pipeline'))   $today[] = ['Negócios sem movimento', $alerts['deal'], '/admin/pipeline.php?vista=risco', 'Tudo a andar.'];
 if (can('financeiro')) $today[] = ['Por receber em atraso', $alerts['invoice'], '/admin/financeiro.php?tab=receber', 'Nada em atraso.'];

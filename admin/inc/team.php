@@ -25,7 +25,7 @@ const TEAM_TASK_DEFAULT_MIN = 60;      // uma tarefa com hora e sem duração oc
 const TEAM_INVITE_DAYS = 7;
 const ABSENCE_KINDS = ['ferias' => 'Férias', 'ausencia' => 'Ausência', 'doenca' => 'Doença', 'formacao' => 'Formação'];
 const ABSENCE_STATUS = ['pending' => 'Por aprovar', 'approved' => 'Aprovada', 'rejected' => 'Recusada', 'cancelled' => 'Cancelada'];
-const MEETING_PLATFORMS = ['meet' => 'Google Meet', 'discord' => 'Discord'];
+const MEETING_PLATFORMS = ['meet' => 'Google Meet', 'discord' => 'Discord', 'local' => 'Presencial'];
 const MEETING_DURATIONS = [15 => '15 min', 30 => '30 min', 45 => '45 min', 60 => '1 h', 90 => '1 h 30', 120 => '2 h'];
 const TEAM_FOCUS_OPTIONS = [30 => '30 minutos', 60 => '1 hora', 120 => '2 horas', 240 => '4 horas', 0 => 'Até ao fim do dia'];
 const TEAM_TABS = ['equipa' => 'Equipa', 'organograma' => 'Organograma', 'acessos' => 'Utilizadores e acessos', 'departamentos' => 'Departamentos'];
@@ -242,12 +242,14 @@ function team_ts(string $local): int {
 function team_busy(PDO $pdo, array $u, string $from, string $to): array {
     $out = [];
     if ($u['team_member_id']) {
-        $st = $pdo->prepare("SELECT title, due_date, due_time, duration_min, kind FROM tasks
+        $priv = db_has_column($pdo, 'tasks', 'private') ? 'private' : '0';
+        $st = $pdo->prepare("SELECT title, due_date, due_time, duration_min, kind, $priv AS private FROM tasks
                               WHERE member_id = ? AND busy = 1 AND due_time IS NOT NULL AND status <> 'done' AND due_date >= ? AND due_date < ?");
         $st->execute([(int)$u['team_member_id'], $from, $to]);
         foreach ($st->fetchAll() as $t) {
             $a = team_ts($t['due_date'] . ' ' . substr((string)$t['due_time'], 0, 5));
-            $out[] = [$a, $a + 60 * (int)($t['duration_min'] ?: TEAM_TASK_DEFAULT_MIN), $t['kind'] === 'meeting' ? 'meeting' : 'task', (string)$t['title']];
+            // Tarefas pessoais e bloqueios são privados (§18.8): todos, admins incluídos, veem «Ocupado».
+            $out[] = [$a, $a + 60 * (int)($t['duration_min'] ?: TEAM_TASK_DEFAULT_MIN), $t['kind'] === 'meeting' ? 'meeting' : 'task', (int)$t['private'] ? 'Ocupado' : (string)$t['title']];
         }
     }
     $st = $pdo->prepare("SELECT kind, start_date, end_date FROM absences WHERE user_id = ? AND status = 'approved' AND end_date >= ? AND start_date < ?");
@@ -643,11 +645,11 @@ function team_when(string $startsAt, int $minutes): string {
  * Pedir reunião: chega no chat como cartão (Aceitar / Recusar / Propor outra hora).
  * $startLocal «aaaa-mm-dd hh:mm» (Lisboa). Devolve o id.
  */
-function team_meeting_request(PDO $pdo, int $from, int $to, string $startLocal, int $minutes, string $subject, ?int $dealId, string $platform, string $link, string $group = '', ?int $parent = null): int {
+function team_meeting_request(PDO $pdo, int $from, int $to, string $startLocal, int $minutes, string $subject, ?int $dealId, string $platform, string $link, string $group = '', ?int $parent = null, string $location = ''): int {
     if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $startLocal)) throw new RuntimeException('Escolha o dia e a hora.');
     if (team_ts($startLocal) < time() - 60) throw new RuntimeException('Essa hora já passou.');
-    if (!isset(MEETING_DURATIONS[$minutes])) throw new RuntimeException('Escolha a duração.');
-    if (!isset(MEETING_PLATFORMS[$platform])) throw new RuntimeException('Escolha a plataforma (Google Meet ou Discord).');
+    if ($minutes < 5 || $minutes > 720) throw new RuntimeException('Escolha a duração.');
+    if (!isset(MEETING_PLATFORMS[$platform])) throw new RuntimeException('Escolha a plataforma (Google Meet, Discord ou presencial).');
     $subject = trim(mb_substr($subject, 0, 200));
     if ($subject === '') throw new RuntimeException('Escreva o assunto.');
     $link = trim($link);
@@ -662,7 +664,8 @@ function team_meeting_request(PDO $pdo, int $from, int $to, string $startLocal, 
                    VALUES (?,?,?,?,?,?,?,?,?,\'pending\',?,?)')
         ->execute([$from, $to, $group, $startLocal . ':00', $minutes, $subject, $dealId, $platform, mb_substr($link, 0, 500), $parent, now_php()]);
     $id = (int)$pdo->lastInsertId();
-    team_chat_send($pdo, $from, $to, '📅 Pedido de reunião: ' . $subject . ' · ' . team_when($startLocal . ':00', $minutes) . ' · ' . MEETING_PLATFORMS[$platform], $id);
+    if (trim($location) !== '' && db_has_column($pdo, 'meetings', 'location')) $pdo->prepare('UPDATE meetings SET location = ? WHERE id = ?')->execute([mb_substr(trim($location), 0, 200), $id]);
+    team_chat_send($pdo, $from, $to, '📅 Pedido de reunião: ' . $subject . ' · ' . team_when($startLocal . ':00', $minutes) . ' · ' . MEETING_PLATFORMS[$platform] . (trim($location) !== '' ? ' · ' . trim($location) : ''), $id);
     return $id;
 }
 
@@ -672,6 +675,7 @@ function team_meeting_link(array $m, string $manual): string {
     if ($manual !== '' && !preg_match('~^https://\S+$~', $manual)) throw new RuntimeException('O link da chamada começa por https://.');
     if ($manual !== '') return mb_substr($manual, 0, 500);
     if ($m['link'] !== '') return (string)$m['link'];
+    if ($m['platform'] === 'local') return '';   // presencial: sem link, segue o local
     $cfg = team_meet_config();
     if ($m['platform'] === 'discord' && $cfg['discord']) return $cfg['discord']['invite_url'];
     if ($m['platform'] === 'meet' && $cfg['google']) return team_google_meet($cfg['google'], $m);
@@ -712,7 +716,8 @@ function team_meeting_accept(PDO $pdo, array $m, int $by, string $manualLink): a
     $date = substr((string)$m['starts_at'], 0, 10);
     $time = substr((string)$m['starts_at'], 11, 5);
     $title = 'Reunião: ' . $m['subject'];
-    $notes = 'Com ' . $m['requester_name'] . ' e ' . $m['invitee_name'] . ' · ' . MEETING_PLATFORMS[$m['platform']] . "\n" . $link;
+    $where = $m['platform'] === 'local' ? trim((string)($m['location'] ?? '')) : $link;
+    $notes = 'Com ' . $m['requester_name'] . ' e ' . $m['invitee_name'] . ' · ' . MEETING_PLATFORMS[$m['platform']] . "\n" . $where;
     $mk = function (int $uid) use ($pdo, $m, $title, $notes, $date, $time): int {
         require_once __DIR__ . '/tasks.php';
         $mid = member_for_user($pdo, $uid);
@@ -736,10 +741,15 @@ function team_meeting_accept(PDO $pdo, array $m, int $by, string $manualLink): a
     if ($m['deal_id'] && function_exists('deal_log')) deal_log($pdo, (int)$m['deal_id'], 'meeting', ['note' => 'Reunião interna: ' . $m['subject'] . ' · ' . team_when((string)$m['starts_at'], (int)$m['duration_min'])]);
     $body = "Reunião: " . $m['subject'] . "\nQuando: " . team_when((string)$m['starts_at'], (int)$m['duration_min']) . " (hora de Lisboa)\n"
           . "Com: " . $m['requester_name'] . ' e ' . $m['invitee_name'] . "\n" . ($m['deal_code'] ? 'Negócio: ' . $m['deal_code'] . ' · ' . $m['deal_name'] . "\n" : '')
-          . MEETING_PLATFORMS[$m['platform']] . ": $link\n\nFicou na agenda dos dois como «Ocupado».\n\ntopper.\n";
+          . MEETING_PLATFORMS[$m['platform']] . ($where !== '' ? ": $where" : '') . "\n\nFicou na agenda dos dois como «Ocupado».\n\ntopper.\n";
     foreach ([$m['requester_email'], $m['invitee_email']] as $to) team_mail((string)$to, 'topper. — reunião: ' . $m['subject'], $body);
-    team_chat_send($pdo, $by, (int)$m['requester_id'], '✓ Aceite · ' . team_when((string)$m['starts_at'], (int)$m['duration_min']) . ' · link enviado por email', null);
-    return ['Aceite: está na agenda dos dois e o link seguiu por email.', [$rt, $it]];
+    team_chat_send($pdo, $by, (int)$m['requester_id'], '✓ Aceite · ' . team_when((string)$m['starts_at'], (int)$m['duration_min']) . ' · ' . ($m['platform'] === 'local' ? 'detalhes' : 'link') . ' enviado por email', null);
+    // A tarefa da reunião guarda a plataforma e o local (§18.7).
+    if (db_has_column($pdo, 'tasks', 'platform')) {
+        $pdo->prepare("UPDATE tasks SET platform = ?, location = ? WHERE id IN (?, ?) AND platform = ''")
+            ->execute([$m['platform'] === 'local' ? '' : $m['platform'], $m['platform'] === 'local' ? mb_substr($where, 0, 200) : '', $rt, $it]);
+    }
+    return ['Aceite: está na agenda dos dois e ' . ($m['platform'] === 'local' ? 'os detalhes seguiram' : 'o link seguiu') . ' por email.', [$rt, $it]];
 }
 
 function team_meeting_decline(PDO $pdo, array $m, int $by, string $note): string {

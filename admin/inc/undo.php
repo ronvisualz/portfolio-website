@@ -135,6 +135,15 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('UPDATE costs SET is_closed = ? WHERE id = ?')->execute([(int)$d['from'], $d['id']]);
             return 'Custo reposto.';
 
+        case 'task_new':
+            // Desfazer «Criar tarefa» (§18.7): sai, se ninguém lhe mexeu entretanto.
+            require_perm('tarefas', PERM_EDIT);
+            $st = $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status <> 'done'");
+            $st->execute([(int)$d['id']]);
+            if (!$st->rowCount()) throw new RuntimeException($changed);
+            if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([(int)$d['id']]);
+            return 'Tarefa retirada.';
+
         case 'task':
             require_once __DIR__ . '/tasks.php';
             require_perm('tarefas', PERM_EDIT);
@@ -146,6 +155,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!task_member_visible($from, $visible)) throw new RuntimeException('Sem permissão.');
             $pdo->prepare('UPDATE tasks SET status = ?, done_at = ?, member_id = ?, position = ?, updated_at = ? WHERE id = ?')
                 ->execute([$d['status'], $d['done_at'], $from, $d['position'], task_now(), $d['id']]);
+            if (array_key_exists('help_by', $d) && db_has_column($pdo, 'tasks', 'help_by')) $pdo->prepare('UPDATE tasks SET help_by = ? WHERE id = ?')->execute([$d['help_by'], $d['id']]);
             // A repetição criada ao concluir sai também (se ainda ninguém lhe mexeu).
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
