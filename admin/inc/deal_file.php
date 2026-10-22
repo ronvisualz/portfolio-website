@@ -538,6 +538,8 @@ function deal_disclose_label(array $deal): string {
 function deal_mark_delivered(PDO $pdo, array $deal, bool $on): void {
     $pdo->prepare('UPDATE deals SET delivered_at = ? WHERE id = ?')->execute([$on ? now_php() : null, $deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'delivered', ['note' => $on ? 'Entregas feitas' : 'Entregas por confirmar']);
+    // Depois da entrega o cliente entra nas Relações, com o comercial como dono (se ainda lá não estiver).
+    if ($on) { require_once __DIR__ . '/pipeline_flow.php'; flow_relation_after_delivery($pdo, $deal); }
 }
 
 /** «Enviar para o portfólio» (Marketing): fica registado e cria a tarefa de preparar o material. Devolve o id da tarefa. */

@@ -108,10 +108,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     task_log($pdo, $id, 'assign', 'Responsável: ' . ($mid ? $members[$mid]['name'] : 'por atribuir'));
                 }
                 task_log($pdo, $id, 'edit', 'Editada');
+                if (($old['doc_kind'] ?? '') === '' && ($dk = task_doc_kind_for($title, $row['deal_id'])) !== '') $pdo->prepare('UPDATE tasks SET doc_kind = ? WHERE id = ?')->execute([$dk, $id]);
                 $newParts = array_diff($parts, array_filter(array_map('intval', explode(',', (string)$old['participants']))));
                 $msg = 'Tarefa guardada.';
                 $undo = '';
             } else {
+                $row['doc_kind'] = task_doc_kind_for($title, $row['deal_id']);
                 $cols = array_keys($row);
                 $pdo->prepare('INSERT INTO tasks (' . implode(', ', $cols) . ', job_name, status, position, created_at, updated_at, created_by) VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ", '', 'todo', ?, ?, ?, ?)")
                     ->execute([...array_values($row), task_next_position($pdo, $mid), $now, $now, (int)$me['id']]);

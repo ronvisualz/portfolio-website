@@ -168,9 +168,9 @@ try {
             }
             $member = $who ? member_for_user($pdo, $who) : null;
             $now = task_now();
-            $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, kind, priority, status, position, created_at, updated_at, created_by)
-                           VALUES (?,\'\',?,\'\',?,?,?,\'media\',\'todo\',?,?,?,?)')
-                ->execute([$title, $member, $deal['id'], $date !== '' ? $date : null, $kind, task_next_position($pdo, $member), $now, $now, $me]);
+            $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, kind, priority, status, position, created_at, updated_at, created_by, doc_kind)
+                           VALUES (?,\'\',?,\'\',?,?,?,\'media\',\'todo\',?,?,?,?,?)')
+                ->execute([$title, $member, $deal['id'], $date !== '' ? $date : null, $kind, task_next_position($pdo, $member), $now, $now, $me, task_doc_kind_for($title, $deal['id'])]);
             $tid = (int)$pdo->lastInsertId();
             deal_log($pdo, (int)$deal['id'], 'task_new', ['note' => TASK_TYPES[$kind][0] . ' · ' . $title]);
             flash('Tarefa criada.', 'ok', undo_push('task_new', ['id' => $tid]));

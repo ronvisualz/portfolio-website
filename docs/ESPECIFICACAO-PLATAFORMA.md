@@ -1298,6 +1298,73 @@ Ficheiros novos: `inc/migrate_pipeline.php`, `inc/pipeline_flow.php`, `inc/pipel
 `inc/alerts.php`, `inc/interactions.php`, `inc/cron_run.php`, `inc/bootstrap.php` (página sem sessão),
 `conta.php`, `assets/app.js`, `assets/app.css`.
 
+### 10.12 Perfil e Definições, ajustes a Leads e Tarefas — §20, §21, §19.10 (22 out 2026)
+
+Base de dados **v22** (`inc/migrate_settings.php`, idempotente): tabela `settings_log` (registo
+das Definições: quem, o quê, quando, antes → depois) e `users.prefs` (JSON com as preferências do
+Perfil). O passo tira também as referências «(§…)» que passos anteriores deixaram em notas dos
+históricos (`user_history`, `deal_history`).
+
+- **Topo e barra lateral (§20.1):** avatar no canto superior direito com menu **Perfil ·
+  Definições (só admins) · Sair** (setas e Esc); o botão claro/escuro fica fora do menu. No fundo
+  da barra lateral, só a engrenagem **Definições**, só para superadmin e admins.
+- **Perfil (`conta.php`):** nome, palavra-passe, tema, menu, **vista com que cada aba abre**
+  (Leads: «As minhas» / «Todas»; Tarefas: «Eu» / «Todos») e **notificações por categoria**
+  (leads, fila, negócios, faturas, equipa) no sino e/ou por email. As secções de admin saíram
+  daqui (um aviso aponta para Definições). O sino e os emails (equipa, negócio ao comercial)
+  respeitam estas escolhas (`user_wants`).
+- **Definições (`definicoes.php`, `inc/settings_def.php`, `assets/settings.js`):** um separador
+  por aba — Geral, Leads, Pipeline, Contactos, Orçamentação, Negócios, Tarefas, Marketing,
+  Financeiro, Drive (só leitura), Integrações, Segurança — mais **Registo de alterações** e a
+  ligação a **Utilizadores e permissões** (continuam na aba Equipa). Cada campo tem ⓘ com a
+  explicação, **grava sozinho** (aviso «… · Anular»), **«Repor (valor de origem)»** quando difere,
+  e validação no servidor (ex.: IVA 0–50 %, remetente só @topperdigital.xyz, fim do dia depois do
+  início). Mudanças que mexem em dados existentes mostram antes um **aviso de impacto** com
+  Confirmar / Cancelar (prazos das leads: quantas leads ativas e quantas passam a estar em atraso;
+  cadências das relações; IVA; dias sem mexer). **Pesquisa** por nome, grupo e ajuda, que leva ao
+  campo noutro separador. O registo mostra cada alteração (nas listas, «+ item · − item») com
+  «Repor». Tabelas (serviços, pilares) gravam célula a célula. Junta o que estava espalhado:
+  prazos e listas das leads, regras anti-spam do formulário do site, motivos de perda, validade e
+  condições de pagamento da proposta, assunto e introdução do email da proposta, cadências,
+  serviços, orçamentação (MSO, margem, objetivo, ocupação, custos fixos, modelos, condições),
+  dias sem mexer, prazos de tarefas e faturas, tarefas (máximo por coluna, agrupar automáticas),
+  marketing (pilares, objetivos, voz), dados da empresa (rodapé do PDF), horário e dias úteis
+  (contam nos prazos), Discord e remetente dos emails, sessão e tentativas de entrada. O editor
+  de funis abre a partir de Definições › Pipeline. As páginas de origem têm um atalho
+  **«Configurar»** (só admins). Sem autenticação de dois passos. **Permissões no servidor:**
+  página e API recusam (403) a quem não é admin.
+- **Leads (§21.1–2):** na quarentena cada lead tem **«Não é spam»** (sai da quarentena para
+  «Por atribuir», com contactos, prazo e a chamada) e **«É spam»** (elimina com «Anular», que a
+  repõe com o mesmo ID e histórico), na lista (com o motivo) e no painel; só admins e chefes de
+  equipa. A aba abre em **«As minhas»** para operadores e em **«Todas»** para o superadmin (ou na
+  vista escolhida no Perfil); os botões mostram total e atrasos («As minhas · 23 · 22 ⚠»).
+- **Tarefas (§21.3):** «Quem» abre pela preferência do Perfil (e «Limpar filtros» volta a ela);
+  **Participantes** só em Reunião, Gravação e Visita, com o rótulo «Participantes — recebem o
+  convite no chat» (o servidor ignora participantes nos outros tipos). Não há referências à
+  especificação na interface.
+- **§19.10, §19.11 e §19.6 E confirmados**, com três acertos: «Entregas feitas» também passa o
+  cliente às **Relações** (já acontecia ao entrar em Concluído); o comercial é avisado quando as
+  rondas incluídas **se esgotam** (a última incluída) e quando há **pedido de alteração** (acima
+  do incluído), com títulos diferentes no sino; uma tarefa feita à mão **«Emitir fatura…»** ligada
+  a um negócio só fica feita com o PDF da fatura submetido, como as automáticas. O Marketing Buddy
+  tem o funil de agente de IA (Onboarding, Configuração do agente, Ativo, Revisão trimestral e
+  renovação).
+- **Testado na bancada** (MariaDB, Playwright): gravação automática, impacto e Confirmar, Repor,
+  lista com «Anular», valores inválidos recusados, tabela de serviços, pesquisa, registo e Repor,
+  menu do avatar; Colab sem engrenagem, 403 na página e na API; Perfil; quarentena (spam →
+  Anular → volta; não é spam → Por atribuir com chamada; Colab recusado); vistas iniciais de
+  operador, admin e superadmin; Participantes por tipo; fatura manual recusada sem PDF; rondas
+  2 de 2 e 3 de 2 notificadas; Relações após entrega; claro/escuro e telemóvel sem deslocamento.
+
+Ficheiros novos: `definicoes.php`, `assets/settings.js`, `inc/settings_def.php`,
+`inc/migrate_settings.php`. Alterados: `conta.php`, `inc/layout.php`, `inc/ui.php`,
+`inc/bootstrap.php`, `inc/migrate.php`, `ui_api.php`, `inc/undo.php`, `inc/alerts.php`,
+`inc/team.php`, `team_api.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget.php`,
+`inc/budget_pdf.php`, `inc/leads.php`, `inc/lead_view.php`, `inc/inline.php`, `inc/interactions.php`,
+`inc/tasks.php`, `inc/tasks_view.php`, `inc/deal_file.php`, `deal_flow.php`, `leads.php`,
+`calendar.php`, `funis.php`, `contactos.php`, `orcamentacao.php`, `negocios.php`, `marketing.php`,
+`pipeline.php`, `../contacto.php`, `assets/app.js`, `assets/tasks.js`, `assets/app.css`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

@@ -224,6 +224,14 @@ function task_has_busy(PDO $pdo): bool {
     return $has ??= db_has_column($pdo, 'tasks', 'busy');
 }
 
+/**
+ * Uma tarefa feita à mão «Emitir fatura…» ligada a um negócio segue a mesma regra das
+ * automáticas: só fica feita quando o PDF da fatura é submetido no negócio. Devolve o doc_kind.
+ */
+function task_doc_kind_for(string $title, $dealId): string {
+    return $dealId && preg_match('/^\s*emitir\s+(a\s+)?fatura/iu', $title) ? 'invoice' : '';
+}
+
 function task_create(PDO $pdo, array $v): int {
     $now = task_now();
     $pdo->prepare(

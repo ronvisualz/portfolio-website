@@ -876,7 +876,10 @@ function rounds_add(PDO $pdo, array $deal, array $stage, string $note, int $by):
     $n = rounds_count($pdo, (int)$deal['id'], (int)$stage['id']);
     $inc = $stage['rounds_included'] !== null ? (int)$stage['rounds_included'] : null;
     $over = $inc !== null && $n > $inc;
-    deal_log($pdo, (int)$deal['id'], $over ? 'rounds' : 'round', ['note' => 'Ronda ' . $n . ($inc !== null ? ' de ' . $inc . ' incluídas' : '') . ' (' . $stage['name'] . ')'
-        . ($over ? ' · acima do incluído: pedido de alteração orçamentado' : '') . (trim($note) !== '' ? ' · ' . trim($note) : ''), 'user_id' => $by]);
-    return 'Ronda ' . $n . ' registada' . ($inc !== null ? ' (' . $inc . ' incluídas)' : '') . '.' . ($over ? ' Acima do incluído: é um pedido de alteração orçamentado e o comercial foi avisado.' : '');
+    $spent = $inc !== null && $n === $inc;   // a última incluída: o comercial também é avisado
+    deal_log($pdo, (int)$deal['id'], $over || $spent ? 'rounds' : 'round', ['note' => 'Ronda ' . $n . ($inc !== null ? ' de ' . $inc . ' incluídas' : '') . ' (' . $stage['name'] . ')'
+        . ($over ? ' · acima do incluído: pedido de alteração orçamentado' : ($spent ? ' · rondas incluídas esgotadas' : '')) . (trim($note) !== '' ? ' · ' . trim($note) : ''), 'user_id' => $by]);
+    return 'Ronda ' . $n . ' registada' . ($inc !== null ? ' (' . $inc . ' incluídas)' : '') . '.'
+        . ($over ? ' Acima do incluído: é um pedido de alteração orçamentado e o comercial foi avisado.'
+                 : ($spent ? ' As rondas incluídas esgotaram: a próxima é um pedido de alteração orçamentado. O comercial foi avisado.' : ''));
 }
