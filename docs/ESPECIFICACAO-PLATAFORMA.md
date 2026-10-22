@@ -2351,3 +2351,18 @@ Só visível para superadmin e admins.
 5. **Registo de alterações:** quem, o quê, quando, antes → depois, com «Repor» por linha.
 6. **ⓘ em cada definição** com uma frase a explicar para que serve.
 Todas as alterações verificadas no servidor (só superadmin/admins).
+
+---
+
+## 21. Ajustes a Leads e Tarefas (decidido 22 out 2026)
+
+1. **Quarentena (Leads):** cada lead em quarentena tem dois botões: **«Não é spam»** (passa
+   para «Por atribuir» como lead normal, sai da quarentena) e **«É spam»** (elimina, com
+   «Anular»). O motivo da quarentena continua visível nas notas.
+2. **Vista inicial «As minhas» (Leads):** para operadores (chefes de equipa e colaboradores,
+   e admins que sejam operadores), a aba Leads abre em **«As minhas»**; o superadmin abre em
+   «Todas». Cada um pode mudar a vista inicial no Perfil (§20.1). O botão mostra o total e os
+   atrasos, ex.: «As minhas · 22 · 3 ⚠».
+3. **Participantes (formulário de tarefa, §18.7):** o campo só aparece quando o tipo é
+   **Reunião, Gravação ou Visita**. Texto do rótulo: «Participantes — recebem o convite no
+   chat». **Nunca mostrar referências à especificação (ex.: «§17.7») na interface** — regra geral.
