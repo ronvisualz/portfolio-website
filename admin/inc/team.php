@@ -157,9 +157,21 @@ function team_avatar(array $u, string $size = '', bool $presence = true): string
 // ── horário, presença, foco ─────────────────────────────────
 
 /** O horário da pessoa: dia (1=seg … 7=dom) → [início, fim]. Por defeito seg–sex 09:00–18:00. */
+/** O horário padrão (Definições › Geral: dias úteis e horas), para quem não definiu o seu. */
+function team_work_default(): array {
+    static $d = null;
+    if ($d !== null) return $d;
+    global $pdo;
+    $a = (string)setting($pdo, 'work_start', '09:00'); $b = (string)setting($pdo, 'work_end', '18:00');
+    if (!preg_match('/^\d{2}:\d{2}$/', $a) || !preg_match('/^\d{2}:\d{2}$/', $b) || $a >= $b) [$a, $b] = ['09:00', '18:00'];
+    $d = [];
+    for ($i = 1; $i <= ((string)setting($pdo, 'work_days', '5') === '6' ? 6 : 5); $i++) $d[$i] = [$a, $b];
+    return $d;
+}
+
 function team_work_hours(array $u): array {
     $j = json_decode((string)($u['work_hours'] ?? ''), true);
-    if (!is_array($j)) return TEAM_WORK_DEFAULT;
+    if (!is_array($j)) return team_work_default();
     $out = [];
     foreach ($j as $d => $r) {
         if (!isset(TEAM_DAYS[(int)$d]) || !is_array($r) || count($r) !== 2) continue;
@@ -171,7 +183,7 @@ function team_work_hours(array $u): array {
 
 function team_work_label(array $u): string {
     $h = team_work_hours($u);
-    if ($h === TEAM_WORK_DEFAULT) return 'seg–sex 09:00–18:00';
+    if ($h === team_work_default() && empty(json_decode((string)($u['work_hours'] ?? ''), true))) return 'horário padrão (' . TEAM_DAYS[1] . '–' . TEAM_DAYS[array_key_last($h)] . ' ' . $h[1][0] . '–' . $h[1][1] . ')';
     $parts = [];
     foreach ($h as $d => [$a, $b]) $parts[] = TEAM_DAYS[$d] . ' ' . $a . '–' . $b;
     return $parts ? implode(' · ', $parts) : 'sem horário';
@@ -377,7 +389,12 @@ function team_app_url(): string {
 
 /** Um email simples da plataforma. Na bancada fica no registo de erros. */
 function team_mail(string $to, string $subject, string $body): bool {
-    $headers = "From: topper. <no-reply@topperdigital.xyz>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
+    // O remetente vem de Definições › Integrações (sempre um endereço @topperdigital.xyz).
+    global $pdo;
+    $from = (string)setting($pdo, 'mail_from', 'no-reply@topperdigital.xyz');
+    if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !str_ends_with(strtolower($from), '@topperdigital.xyz')) $from = 'no-reply@topperdigital.xyz';
+    $name = trim(preg_replace('/[\r\n"<>]/', '', (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
+    $headers = 'From: =?UTF-8?B?' . base64_encode($name) . "?= <$from>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
     $sent = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
     if (defined('IS_LOCAL') && IS_LOCAL) error_log('[topper] email para ' . $to . ' (só na bancada): ' . $subject . "\n" . $body);
     elseif (!$sent) error_log('[topper] o email «' . $subject . '» não saiu para ' . $to);
@@ -505,7 +522,7 @@ function team_absence_decide(PDO $pdo, array $a, string $decision, int $by): str
     $pdo->prepare('UPDATE absences SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?')->execute([$decision, $by, now_php(), $a['id']]);
     $when = date('d/m', strtotime((string)$a['start_date'])) . ' a ' . date('d/m', strtotime((string)$a['end_date']));
     team_log($pdo, (int)$a['user_id'], 'absence', (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ' ' . $when . ': ' . mb_strtolower(ABSENCE_STATUS[$decision]), $by);
-    team_mail((string)$a['email'], 'topper. — ' . (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ' ' . ($decision === 'approved' ? 'aprovada' : 'recusada'),
+    if (user_wants($pdo, (int)$a['user_id'], 'team', 'email')) team_mail((string)$a['email'], 'topper. — ' . (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ' ' . ($decision === 'approved' ? 'aprovada' : 'recusada'),
         'Olá ' . explode(' ', trim((string)$a['name']))[0] . ",\n\nO seu pedido (" . (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ", $when) foi "
         . ($decision === 'approved' ? 'aprovado. A agenda fica bloqueada nesses dias.' : 'recusado. Fale com a direção se precisar.') . "\n\ntopper.\n");
     return $decision === 'approved' ? 'Aprovada: a agenda fica bloqueada nesses dias.' : 'Recusada. A pessoa foi avisada por email.';
@@ -626,6 +643,15 @@ function team_meet_config(): array {
     return $c;
 }
 
+/** As integrações, com o link do Discord de Definições › Integrações a valer sobre o do ficheiro. */
+function team_meet_settings(): array {
+    global $pdo;
+    $c = team_meet_config();
+    $d = trim((string)setting($pdo, 'discord_invite_url', ''));
+    if (preg_match('~^https://(discord\.gg|discord\.com)/\S+$~', $d)) $c['discord'] = ['invite_url' => $d];
+    return $c;
+}
+
 function team_meeting(PDO $pdo, int $id): ?array {
     $st = $pdo->prepare('SELECT m.*, r.name AS requester_name, r.email AS requester_email, i.name AS invitee_name, i.email AS invitee_email,
                                 d.code AS deal_code, d.name AS deal_name
@@ -676,7 +702,7 @@ function team_meeting_link(array $m, string $manual): string {
     if ($manual !== '') return mb_substr($manual, 0, 500);
     if ($m['link'] !== '') return (string)$m['link'];
     if ($m['platform'] === 'local') return '';   // presencial: sem link, segue o local
-    $cfg = team_meet_config();
+    $cfg = team_meet_settings();
     if ($m['platform'] === 'discord' && $cfg['discord']) return $cfg['discord']['invite_url'];
     if ($m['platform'] === 'meet' && $cfg['google']) return team_google_meet($cfg['google'], $m);
     throw new RuntimeException('Cole o link da chamada (' . MEETING_PLATFORMS[$m['platform']] . '): a integração ainda não está configurada.');
@@ -742,7 +768,9 @@ function team_meeting_accept(PDO $pdo, array $m, int $by, string $manualLink): a
     $body = "Reunião: " . $m['subject'] . "\nQuando: " . team_when((string)$m['starts_at'], (int)$m['duration_min']) . " (hora de Lisboa)\n"
           . "Com: " . $m['requester_name'] . ' e ' . $m['invitee_name'] . "\n" . ($m['deal_code'] ? 'Negócio: ' . $m['deal_code'] . ' · ' . $m['deal_name'] . "\n" : '')
           . MEETING_PLATFORMS[$m['platform']] . ($where !== '' ? ": $where" : '') . "\n\nFicou na agenda dos dois como «Ocupado».\n\ntopper.\n";
-    foreach ([$m['requester_email'], $m['invitee_email']] as $to) team_mail((string)$to, 'topper. — reunião: ' . $m['subject'], $body);
+    foreach ([(int)$m['requester_id'] => $m['requester_email'], (int)$m['invitee_id'] => $m['invitee_email']] as $uid => $to) {
+        if (user_wants($pdo, $uid, 'team', 'email')) team_mail((string)$to, 'topper. — reunião: ' . $m['subject'], $body);
+    }
     team_chat_send($pdo, $by, (int)$m['requester_id'], '✓ Aceite · ' . team_when((string)$m['starts_at'], (int)$m['duration_min']) . ' · ' . ($m['platform'] === 'local' ? 'detalhes' : 'link') . ' enviado por email', null);
     // A tarefa da reunião guarda a plataforma e o local (§18.7).
     if (db_has_column($pdo, 'tasks', 'platform')) {
@@ -851,7 +879,7 @@ function team_work_parse(array $post): ?string {
         }
         $out[$d] = [$a, $b];
     }
-    if ($out == TEAM_WORK_DEFAULT) return null;
+    if ($out == team_work_default()) return null;
     return $out ? json_encode($out) : '{}';
 }
 

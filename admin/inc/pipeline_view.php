@@ -432,7 +432,7 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     $foot = '';
     if ($edit && $d['phase'] === 'pipeline') {
         $reasons = '';
-        foreach (LOST_REASONS as $r) $reasons .= '<option>' . e($r) . '</option>';
+        foreach (setting_lines($pdo, 'lost_reasons', LOST_REASONS) as $r) $reasons .= '<option>' . e($r) . '</option>';
         $foot = '<details class="fl-lost"><summary>' . icon('x') . ' Marcar como perdido</summary>'
               . flow_form('lost', $d, $back, '<select name="reason" required aria-label="Motivo"><option value="">Motivo…</option>' . $reasons . '</select>'
                   . '<input type="text" name="reason_other" maxlength="200" placeholder="Detalhe (opcional)" aria-label="Detalhe"><button class="btn danger sm" type="submit">Perdido</button>', ['class' => 'fl-inline'])

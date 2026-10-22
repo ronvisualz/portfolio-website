@@ -52,10 +52,12 @@ function render_header(string $title, string $active = '', string $bodyClass = '
             . ($prefs['pref_nav'] === 'closed' ? ' data-nav="closed"' : '');
     $canIdea = mkt_idea_ready();
     $chat = team_ready();
-    $pageTitle = NAV_ITEMS[$active][0] ?? ($active === 'conta' ? 'A minha conta' : ($active === 'migracao' ? 'Migração' : $title));
+    $pageTitle = NAV_ITEMS[$active][0] ?? ($active === 'conta' ? 'Perfil' : ($active === 'migracao' ? 'Migração' : ($active === 'definicoes' ? 'Definições' : $title)));
     $crumbGroup = 'Conta';
     foreach (NAV_GROUPS as $g => $keys) if (in_array($active, $keys, true)) $crumbGroup = $g;
-    if ($active === 'migracao') $crumbGroup = 'Gestão';
+    if (in_array($active, ['migracao', 'definicoes'], true)) $crumbGroup = 'Gestão';
+    $crumbHref = $active === 'definicoes' ? '/admin/definicoes.php' : (NAV_ITEMS[$active][1] ?? '#');
+    $avColor = preg_match('/^#[0-9a-fA-F]{6}$/', $prefs['color']) ? $prefs['color'] : '#81CFE3';
     ?><!DOCTYPE html>
 <html lang="pt"<?= $html ?>>
 <head>
@@ -91,13 +93,12 @@ function render_header(string $title, string $active = '', string $bodyClass = '
       <?php endforeach; $first = false; ?>
     <?php endforeach; ?>
   </nav>
+  <?php // Definições (§20): no fundo da barra, só para superadmin e admins. O perfil está no canto superior direito. ?>
+  <?php if (is_admin()): ?>
   <div class="rail-foot">
-    <a class="who<?= $active === 'conta' ? ' on' : '' ?>" href="/admin/conta.php" aria-label="A minha conta · <?= e($u['name'] ?? '') ?>" data-tip="A minha conta" data-tip-nav>
-      <span class="av" style="--who:<?= e(preg_match('/^#[0-9a-fA-F]{6}$/', $prefs['color']) ? $prefs['color'] : '#81CFE3') ?>" aria-hidden="true"><?= e(initials((string)($u['name'] ?? ''))) ?></span>
-      <span class="nm"><?= e($u['name'] ?? '') ?><small><?= e(ROLES[$u['role'] ?? ''] ?? '') ?></small></span>
-    </a>
-    <a class="ni" href="/admin/logout.php" aria-label="Sair" data-tip="Sair" data-tip-nav><?= icon('logout') ?><span class="lbl">Sair</span></a>
+    <a class="ni<?= $active === 'definicoes' ? ' on' : '' ?>" href="/admin/definicoes.php" aria-label="Definições" data-tip="Definições" data-tip-nav<?= $active === 'definicoes' ? ' aria-current="page"' : '' ?>><?= icon('cog') ?><span class="lbl">Definições</span></a>
   </div>
+  <?php endif; ?>
 </aside>
 <?php $navLabel = $prefs['pref_nav'] === 'closed' ? 'Expandir menu' : 'Recolher menu'; ?>
 <button type="button" class="rail-edge rail-toggle" aria-controls="rail" aria-expanded="<?= $prefs['pref_nav'] === 'closed' ? 'false' : 'true' ?>"
@@ -106,7 +107,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <div class="shell">
 <header class="topbar">
   <?= icon_button('menu', 'Abrir o menu', ['class' => 'ibtn menu-btn', 'aria-controls' => 'rail', 'aria-expanded' => 'false']) ?>
-  <nav class="crumb" aria-label="Caminho"><?= e($crumbGroup) ?><i aria-hidden="true">/</i><?php if ($crumbs): ?><a href="<?= e(NAV_ITEMS[$active][1] ?? '#') ?>"><?= e($pageTitle) ?></a><?php foreach ($crumbs as $ci => $c): ?><i aria-hidden="true">/</i><?= $ci === count($crumbs) - 1 ? '<b>' . e($c) . '</b>' : e($c) ?><?php endforeach; else: ?><b><?= e($pageTitle) ?></b><?php endif; ?></nav>
+  <nav class="crumb" aria-label="Caminho"><?= e($crumbGroup) ?><i aria-hidden="true">/</i><?php if ($crumbs): ?><a href="<?= e($crumbHref) ?>"><?= e($pageTitle) ?></a><?php foreach ($crumbs as $ci => $c): ?><i aria-hidden="true">/</i><?= $ci === count($crumbs) - 1 ? '<b>' . e($c) . '</b>' : e($c) ?><?php endforeach; else: ?><b><?= e($pageTitle) ?></b><?php endif; ?></nav>
   <div class="top-actions">
     <button type="button" class="cmd-btn" data-cmdk aria-label="Pesquisar (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K">
       <?= icon('search') ?><span class="lbl">Procurar ID, negócio, lead…</span><span class="kbd" data-kbd>Ctrl K</span>
@@ -120,6 +121,18 @@ function render_header(string $title, string $active = '', string $bodyClass = '
     <div class="pop" id="notif" role="dialog" aria-label="Notificações">
       <div class="pop-head"><b>Notificações</b><button type="button" class="lnk" data-read-all>Marcar tudo como lido</button></div>
       <div class="pop-list"><div class="sp-loading">A carregar…</div></div>
+    </div>
+    <?php // O perfil (§20.1): avatar no canto superior direito → Perfil · Definições (admins) · Sair. ?>
+    <div class="me-menu">
+      <button type="button" class="me-av<?= $active === 'conta' ? ' on' : '' ?>" aria-haspopup="menu" aria-expanded="false" aria-controls="me-pop" aria-label="Perfil · <?= e($u['name'] ?? '') ?>" data-me>
+        <?= user_avatar_html($pdo, (int)($u['id'] ?? 0), (string)($u['name'] ?? ''), $avColor) ?>
+      </button>
+      <div class="me-pop" id="me-pop" role="menu" aria-label="Perfil" hidden>
+        <div class="me-head"><b><?= e($u['name'] ?? '') ?></b><small><?= e(ROLES[$u['role'] ?? ''] ?? '') ?></small></div>
+        <a role="menuitem" href="/admin/conta.php"<?= $active === 'conta' ? ' aria-current="page"' : '' ?>><?= icon('user') ?> Perfil</a>
+        <?php if (is_admin()): ?><a role="menuitem" href="/admin/definicoes.php"><?= icon('cog') ?> Definições</a><?php endif; ?>
+        <a role="menuitem" href="/admin/logout.php" class="me-out"><?= icon('logout') ?> Sair</a>
+      </div>
     </div>
   </div>
 </header>
@@ -139,6 +152,12 @@ function render_header(string $title, string $active = '', string $bodyClass = '
                . '<a href="/admin/migracao.php">Abrir a Migração</a></div>';
         }
     }
+}
+
+/** «Configurar» (só superadmin e admins): atalho para o separador das Definições desta aba (§20.3). */
+function cfg_link(string $tab, string $anchor = ''): string {
+    if (!is_admin()) return '';
+    return '<a class="cfg-link" href="/admin/definicoes.php?t=' . e($tab) . ($anchor !== '' ? '#set-' . e($anchor) : '') . '" data-tip="Definições desta aba (só admins)">' . icon('cog') . ' Configurar</a>';
 }
 
 function render_footer(): void {

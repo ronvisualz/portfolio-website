@@ -34,7 +34,7 @@ function inline_fields(?array $lead = null): array {
             'phone'      => ['text', 255],
             'email'      => ['text', 190],
             'links'      => ['textarea', 4000],
-            'types'      => ['multi', array_combine(LEAD_TYPES_LIST, LEAD_TYPES_LIST)],
+            'types'      => ['multi', array_combine(lead_types($GLOBALS['pdo']), lead_types($GLOBALS['pdo']))],
             'service'    => ['select', ['' => '—'] + array_combine(LEAD_SERVICES_LIST, LEAD_SERVICES_LIST)],
             'priority'   => ['select', LEAD_PRIORITY],
             'lead_state' => ['select', LEAD_STATE],

@@ -157,9 +157,14 @@ function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
     $date = date('d/m/Y');
     $y = 0.0;
 
-    $footer = function (int $page) use ($pdf, $L, $R, $deal, $v, $date) {
+    // A empresa (Definições › Geral): nome, NIF e morada no rodapé.
+    $co = trim((string)setting($pdo, 'company_name', 'topper.')) ?: 'topper.';
+    $nif = trim((string)setting($pdo, 'company_nif', ''));
+    $addr = trim(preg_replace('/\s*\n\s*/', ', ', (string)setting($pdo, 'company_address', '')));
+    $footer = function (int $page) use ($pdf, $L, $R, $deal, $v, $date, $co, $nif, $addr) {
         $pdf->line($L, BudgetPdf::H - 46, $R, BudgetPdf::H - 46);
-        $pdf->text($L, BudgetPdf::H - 32, 'topper. · Proposta ' . $deal['code'] . ' · v' . (int)$v['num'] . ' · ' . $date, 8, false, '#767676');
+        $pdf->text($L, BudgetPdf::H - 32, $co . ($nif !== '' ? ' · NIF ' . $nif : '') . ' · Proposta ' . $deal['code'] . ' · v' . (int)$v['num'] . ' · ' . $date, 8, false, '#767676');
+        if ($addr !== '') $pdf->text($L, BudgetPdf::H - 21, mb_strimwidth($addr, 0, 110, '…'), 7, false, '#9a9a9a');
         $pdf->text($R, BudgetPdf::H - 32, 'Página ' . $page, 8, false, '#767676', 'r');
     };
     $page = 1;

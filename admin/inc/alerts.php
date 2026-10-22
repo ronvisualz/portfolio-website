@@ -271,7 +271,10 @@ function my_alerts(PDO $pdo): array {
 
 /** O centro de notificações: todos os alertas, com o estado lido/por ler. */
 function notifications(PDO $pdo): array {
-    $all = array_merge(...array_values(my_alerts($pdo)));
+    // O Perfil (§20.1): cada um escolhe as categorias que quer na plataforma.
+    $uid = (int)(current_user()['id'] ?? 0);
+    $groups = array_filter(my_alerts($pdo), fn($k) => !isset(NOTIF_CATS[$k]) || user_wants($pdo, $uid, $k, 'app'), ARRAY_FILTER_USE_KEY);
+    $all = $groups ? array_merge(...array_values($groups)) : [];
     if (!$all) return [];
     $read = [];
     try {

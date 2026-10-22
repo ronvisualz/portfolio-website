@@ -176,6 +176,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once __DIR__ . '/inc/contacts.php';
 relation_tick($pdo);   // os follow-ups de relação que chegaram à data (§13.5)
 $f = tasks_filters($_GET, $operator);
+// Definições › Tarefas: máximo de cartões por coluna e agrupar (ou não) as tarefas automáticas.
+$boardMax = max(3, min(30, (int)setting($pdo, 'task_board_max', TASK_BOARD_MAX)));
+$groupOn = (string)setting($pdo, 'task_group_auto', '1') !== '0';
+if (!$groupOn) $f['solto'] = 1;
 $here = (string)($_SERVER['REQUEST_URI'] ?? '/admin/calendar.php');
 if (!preg_match('~^/admin/calendar\.php(\?[^#\s]*)?$~', $here)) $here = '/admin/calendar.php';
 $editUrl = function (int $id) use ($here): string {
@@ -196,7 +200,7 @@ render_header('Tarefas', 'calendar', '', [TASK_TABS[$tab]]);
 render_flashes();
 ?>
 <div class="page-head">
-  <div><h1>Tarefas</h1>
+  <div><div class="h1-row"><h1>Tarefas</h1><?= cfg_link('tarefas') ?></div>
     <p class="sub"><?= $tab === 'tarefas' ? 'O que há para fazer, por urgência.' : ($tab === 'quadro' ? 'Quem tem o quê: pegue em tarefas dos colegas ou peça ajuda.' : 'O dia, a semana e o mês em 24 horas.') ?></p></div>
   <?php if ($canEdit): ?>
     <button type="button" class="btn" data-new="#mdl-task" aria-keyshortcuts="N"><?= icon('plus') ?> Nova tarefa <span class="kbd">N</span></button>
@@ -239,7 +243,7 @@ if ($tab === 'tarefas'):
   <?php endforeach; ?>
   <?php if (!$f['solto'] && array_filter($list, fn($t) => task_auto_group($t))): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação aparecem agrupados. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 1])) ?>">Ver uma a uma</a></p>
-  <?php elseif ($f['solto']): ?>
+  <?php elseif ($f['solto'] && $groupOn): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação estão uma a uma. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 0])) ?>">Voltar a agrupar</a></p>
   <?php endif; ?>
 </div>
@@ -299,7 +303,7 @@ elseif ($tab === 'quadro'):
       </header>
       <?php if ($l): ?><div class="bload l-<?= $l['level'] ?>" data-tip="Carga da semana: <?= (int)round($l['pct']) ?>% (horas Ocupado vs disponíveis)"><i style="width:<?= min(100, (int)round($l['pct'])) ?>%"></i></div><?php endif; ?>
       <div class="bcards">
-      <?php foreach (array_slice($items, 0, TASK_BOARD_MAX) as $it):
+      <?php foreach (array_slice($items, 0, $boardMax) as $it):
           if (isset($it['group'])) {
               [$gl, $gt, $go, $gu] = TASK_AUTO_GROUPS[$it['group']]; ?>
           <div class="bcard agg"><div class="br"><?= task_type_badge(['kind' => $gt], 'sm') . task_origin_badge(['kind' => $go === 'relation' ? 'relation' : 'call', 'deal_id' => $go === 'lead' ? 1 : null, 'deal_phase' => 'lead']) ?></div>
@@ -319,8 +323,8 @@ elseif ($tab === 'quadro'):
               <?php if ($canEdit): ?><button type="button" class="tchk sm" data-done="<?= (int)$t['id'] ?>" aria-label="Concluir" data-tip><?= icon('check') ?></button><?php endif; ?></div>
           </div>
       <?php } endforeach; ?>
-      <?php if (count($items) > TASK_BOARD_MAX):
-          $rest = 0; foreach (array_slice($items, TASK_BOARD_MAX) as $it) $rest += isset($it['tasks']) ? count($it['tasks']) : 1; ?>
+      <?php if (count($items) > $boardMax):
+          $rest = 0; foreach (array_slice($items, $boardMax) as $it) $rest += isset($it['tasks']) ? count($it['tasks']) : 1; ?>
         <a class="bmore" href="<?= e(tasks_url('tarefas', $f, ['quem' => $mid ? (string)$mid : 'none'])) ?>">+ <?= $rest ?> tarefa<?= $rest === 1 ? '' : 's' ?></a>
       <?php endif; ?>
       <?php if (!$items): ?><p class="bempty muted small"><?= $mid ? 'Nada por fazer.' : 'Nada por atribuir.' ?></p><?php endif; ?>
@@ -328,7 +332,7 @@ elseif ($tab === 'quadro'):
     </section>
   <?php endforeach; ?>
 </div>
-<p class="muted small">No máximo <?= TASK_BOARD_MAX ?> cartões por coluna, os mais urgentes. Arraste um cartão para a sua coluna (ou use «Pegar»); «Pedir ajuda» manda para «Por atribuir» e avisa a equipa. As concluídas estão no filtro Concluídas da lista.</p>
+<p class="muted small">No máximo <?= $boardMax ?> cartões por coluna, os mais urgentes. Arraste um cartão para a sua coluna (ou use «Pegar»); «Pedir ajuda» manda para «Por atribuir» e avisa a equipa. As concluídas estão no filtro Concluídas da lista.</p>
 
 <?php
 // ════════════════════════════════════════════════════════════
@@ -390,7 +394,7 @@ else: // agenda
             }
         }
     }
-    $wh = $whoUser ? team_work_hours($whoUser) : TEAM_WORK_DEFAULT;
+    $wh = $whoUser ? team_work_hours($whoUser) : team_work_default();
     $nowD = (new DateTimeImmutable('now', team_tz()));
     $people = ($myMember && !isset($members[$myMember]) ? [$myMember => ['name' => $me['name']]] : []) + $members;
 ?>

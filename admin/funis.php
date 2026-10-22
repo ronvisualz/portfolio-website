@@ -302,12 +302,13 @@ function rule_form(array $f, array $s, ?array $r, array $users, array $depts): s
         . '</div><div class="actions"><button class="btn sm" type="submit">' . ($r['id'] ? 'Guardar automação' : 'Criar automação') . '</button></div></form>';
 }
 
-render_header('Funis e automações', 'pipeline');
+// Para os admins, faz parte das Definições (§20: separador Pipeline).
+render_header('Funis e automações', is_admin() ? 'definicoes' : 'pipeline', '', is_admin() ? ['Pipeline', 'Funis e automações'] : []);
 render_flashes();
 ?>
 <h1>Funis e automações</h1>
-<div class="sub"><a class="lnk" href="/admin/pipeline.php">← Pipeline</a> · <a class="lnk" href="/admin/conta.php#funis">Definições</a></div>
-<p class="muted small" style="max-width:760px">Cada etapa pode criar tarefas automaticamente e ter requisitos (gates) para avançar. Os valores iniciais vêm da §19 e são editáveis.
+<div class="sub"><?php if (is_admin()): ?><a class="lnk" href="/admin/definicoes.php?t=pipeline">← Definições › Pipeline</a> · <?php endif; ?><a class="lnk" href="/admin/pipeline.php">Pipeline</a></div>
+<p class="muted small" style="max-width:760px">Cada etapa pode criar tarefas automaticamente e ter requisitos (gates) para avançar. Os valores iniciais são um ponto de partida e são editáveis.
   Mudar uma automação não mexe nas tarefas já criadas. <?= $canRules ? '' : 'As automações só mudam com superadmin ou admin: aqui vê-as.' ?></p>
 
 <nav class="tabs" aria-label="Funis">

@@ -115,7 +115,7 @@ render_flashes();
 echo paginate_css();
 $keep = fn(array $set = []) => neg_url(array_filter(array_merge(['t' => $tab === 'producao' ? null : $tab], $set)));
 ?>
-<h1>Negócios</h1>
+<div class="h1-row"><h1>Negócios</h1><?= cfg_link('negocios') ?></div>
 <div class="sub">Desde o Kickoff, em qualquer funil · os concluídos ficam aqui · os perdidos estão no <a class="lnk" href="/admin/pipeline.php?v=perdidos">Pipeline</a></div>
 
 <div class="stats">

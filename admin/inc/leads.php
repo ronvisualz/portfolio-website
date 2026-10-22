@@ -31,6 +31,30 @@ const ARCHIVE_REASONS  = [
     'perdido_migracao' => 'Perdido (migração)',
 ];
 
+/** Os tipos de lead (Definições › Leads). */
+function lead_types(PDO $pdo): array {
+    return setting_lines($pdo, 'lead_types', LEAD_TYPES_LIST);
+}
+
+/**
+ * Os motivos de arquivo a escolher (Definições › Leads): chave → nome. Os de origem guardam a
+ * sua chave; os acrescentados guardam «c:<nome>». «Outro» pede sempre uma nota.
+ */
+function lead_archive_reasons(PDO $pdo): array {
+    $byLabel = array_flip(array_map('mb_strtolower', array_diff_key(ARCHIVE_REASONS, ['perdido_migracao' => 1])));
+    $out = [];
+    foreach (setting_lines($pdo, 'lead_archive_reasons', array_diff_key(ARCHIVE_REASONS, ['perdido_migracao' => 1])) as $l) {
+        $k = $byLabel[mb_strtolower($l)] ?? mb_substr('c:' . $l, 0, 40);
+        $out[$k] = $l;
+    }
+    return $out;
+}
+
+/** O nome de um motivo de arquivo guardado (os de origem, os acrescentados, ou o texto). */
+function lead_archive_label(string $r): string {
+    return ARCHIVE_REASONS[$r] ?? (str_starts_with($r, 'c:') ? substr($r, 2) : $r);
+}
+
 /** Prazo por estado, em horas (definições globais, só superadmin e admins mudam). */
 const LEAD_DEADLINE_DEFAULTS = ['novo' => 24, 'sem_resposta' => 24, 'follow_up' => 48];
 
@@ -234,7 +258,7 @@ function lead_input(array $src): array {
     $types = [];
     foreach ((array)($src['types'] ?? []) as $t) {
         $t = trim((string)$t);
-        if (in_array($t, LEAD_TYPES_LIST, true) && !in_array($t, $types, true)) $types[] = $t;
+        if (in_array($t, lead_types($GLOBALS['pdo']), true) && !in_array($t, $types, true)) $types[] = $t;
     }
     $txt = static fn(string $k, int $n) => mb_substr(trim((string)($src[$k] ?? '')), 0, $n);
     [$phones, $email, $links, $extra] = lead_parse_contacts($txt('phone', 255), $txt('email', 190), (string)($src['links'] ?? ''));
@@ -554,7 +578,7 @@ function lead_archive(PDO $pdo, array $l, string $reason, string $note): array {
     $pdo->prepare("UPDATE deals SET phase = 'archived', archived_reason = ?, archived_note = ?, archived_at = " . now_sql($pdo) . " WHERE id = ? AND phase = 'lead'")
         ->execute([$reason, $note, $id]);
     if ($tasks) $pdo->prepare("DELETE FROM tasks WHERE deal_id = ? AND status <> 'done'")->execute([$id]);
-    deal_log($pdo, $id, 'archive', ['note' => ARCHIVE_REASONS[$reason] . ($note !== '' ? ' · ' . $note : '')]);
+    deal_log($pdo, $id, 'archive', ['note' => lead_archive_label($reason) . ($note !== '' ? ' · ' . $note : '')]);
     return ['id' => $id, 'tasks' => $tasks];
 }
 

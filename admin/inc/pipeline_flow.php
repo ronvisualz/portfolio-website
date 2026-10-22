@@ -89,7 +89,7 @@ function flow_add_workdays(string $from, int $n): string {
     $step = $n < 0 ? '-1 day' : '+1 day';
     for ($left = abs($n); $left > 0;) {
         $d = $d->modify($step);
-        if ((int)$d->format('N') < 6) $left--;
+        if ((int)$d->format('N') < ((string)setting($GLOBALS['pdo'], 'work_days', '5') === '6' ? 7 : 6)) $left--;
     }
     return $d->format('Y-m-d');
 }
@@ -614,13 +614,19 @@ function proposal_url(string $token): string {
 function proposal_email(PDO $pdo, array $deal, array $v, array $content, int $by, string $note = ''): array {
     $client = flow_client_name($pdo, $deal);
     $who = flow_user_name($pdo, $deal['owner_id'] ?: $by);
+    // Assunto e introdução vêm de Definições › Pipeline, com {cliente} {negócio} {ID}.
+    $vars = ['{cliente}' => $client, '{negócio}' => (string)$deal['name'], '{negocio}' => (string)$deal['name'], '{ID}' => (string)$deal['code']];
+    $subject = trim(strtr((string)setting($pdo, 'proposal_mail_subject', 'Proposta {ID} · {negócio}'), $vars)) ?: 'Proposta ' . $deal['code'] . ' · ' . $deal['name'];
+    $intro = trim(strtr((string)setting($pdo, 'proposal_mail_intro', 'Segue a nossa proposta para «{negócio}».'), $vars)) ?: 'Segue a nossa proposta para «' . $deal['name'] . '».';
+    if (count($content['options']) > 1 && preg_match('/\.$/', $intro)) $intro = substr($intro, 0, -1) . ', com duas opções.';
+    $company = trim((string)setting($pdo, 'company_name', 'topper.')) ?: 'topper.';
     return [
-        'subject' => 'Proposta ' . $deal['code'] . ' · ' . $deal['name'],
+        'subject' => $subject,
         'hello'   => 'Olá' . ($client !== '' ? ' ' . $client : '') . ',',
-        'intro'   => 'Segue a nossa proposta para «' . $deal['name'] . '»' . (count($content['options']) > 1 ? ', com duas opções' : '') . '.',
+        'intro'   => $intro,
         'note'    => trim(mb_substr(str_replace("\r", '', $note), 0, 2000)),
         'valid'   => 'O link é válido até ' . date('d/m/Y', strtotime((string)$v['valid_until'])) . '. Abrir a página não altera nada: a resposta só conta quando a confirmar.',
-        'sign'    => ($who !== '' ? $who . "\n" : '') . 'topper.',
+        'sign'    => ($who !== '' ? $who . "\n" : '') . $company,
     ];
 }
 
@@ -719,7 +725,7 @@ function proposal_answer(PDO $pdo, array $p, array $content, string $decision, s
     team_mail((string)$p['sent_to'], 'Recebemos a sua resposta · ' . $deal['code'],
         'Olá ' . $name . ",\n\nRecebemos a sua resposta à proposta «" . $content['name'] . '» v' . $content['version'] . ': '
         . ($decision === 'accept' ? 'aceite' . $opt : 'recusada') . ".\nA equipa vai confirmar e entrar em contacto. Até lá, pode mudar a resposta na mesma página.\n\ntopper.");
-    if ($owner = flow_user_ok($pdo, $deal['owner_id'])) {
+    if (($owner = flow_user_ok($pdo, $deal['owner_id'])) && user_wants($pdo, $owner, 'deal', 'email')) {
         $to = (string)$pdo->query('SELECT email FROM users WHERE id = ' . $owner)->fetchColumn();
         if ($to !== '') team_mail($to, 'Resposta do cliente: ' . $label . ' · ' . $deal['code'],
             'Resposta do cliente a ' . $deal['code'] . ' · ' . $deal['name'] . ': ' . $label . ".\nNome escrito: " . $name

@@ -1005,6 +1005,22 @@
     board.addEventListener('submit', function (e) { if (e.target.closest('.dmove')) e.preventDefault(); });
   }
 
+  // ── menu do perfil (§20.1): avatar → Perfil · Definições · Sair ──
+  var meBtn = $('[data-me]'), mePop = $('#me-pop');
+  if (meBtn && mePop) {
+    var meSet = function (open) {
+      mePop.hidden = !open; meBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) { var f = $('a', mePop); if (f) f.focus({ preventScroll: true }); }
+    };
+    meBtn.addEventListener('click', function (e) { e.stopPropagation(); meSet(mePop.hidden); });
+    document.addEventListener('click', function (e) { if (!mePop.hidden && !e.target.closest('.me-menu')) meSet(false); });
+    mePop.addEventListener('keydown', function (e) {
+      var items = $$('a', mePop), i = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') { meSet(false); meBtn.focus(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
+    });
+  }
+
   // ── «Enviar a proposta» (§19.4): a pré-visualização segue o email e a mensagem que se escrevem ──
   document.addEventListener('input', function (e) {
     var t = e.target, card = t.closest && t.closest('.mdl-card.ps');

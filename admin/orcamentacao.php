@@ -125,7 +125,7 @@ $row = function (array $r) use ($money, $statusOf, $tab) {
 };
 $thead = '<thead><tr><th>ID</th><th>Negócio</th><th>Versão</th><th class="num">Preço s/ IVA</th>' . ($money ? '<th>Lucro/mês ' . budget_ii('profit_month') . '</th>' : '') . '<th>Etapa</th></tr></thead>';
 ?>
-<h1>Orçamentação</h1>
+<div class="h1-row"><h1>Orçamentação</h1><?= cfg_link('orcamentacao') ?></div>
 
 <div class="stats">
   <a class="stat hero" href="<?= e($url()) ?>"><div class="k">Em orçamentação</div><div class="v"><?= count($open) ?></div><div class="n"><?= $empty ? $empty . ' ainda sem linhas' : 'todas com linhas de custo' ?></div></a>

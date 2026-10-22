@@ -223,6 +223,22 @@ function greet_name(?array $u = null): string {
 }
 
 /** Iniciais para o avatar. */
+/** O avatar do canto superior direito: a foto, ou as iniciais na cor da pessoa. */
+function user_avatar_html(PDO $pdo, int $id, string $name, string $color): string {
+    $photo = '';
+    try {
+        if (db_has_column($pdo, 'users', 'photo')) {
+            $st = $pdo->prepare('SELECT photo FROM users WHERE id = ?');
+            $st->execute([$id]);
+            $photo = (string)$st->fetchColumn();
+        }
+    } catch (Throwable $e) { $photo = ''; }
+    [$r, $g, $b] = sscanf($color, '#%02x%02x%02x');
+    $dark = (0.299 * $r + 0.587 * $g + 0.114 * $b) < 140;
+    return '<span class="av' . ($dark ? ' dk' : '') . '" style="--who:' . e($color) . '" aria-hidden="true">'
+         . ($photo !== '' ? '<img src="/admin/avatar.php?id=' . $id . '&amp;v=' . e(substr($photo, -8)) . '" alt="">' : e(initials($name))) . '</span>';
+}
+
 function initials(string $name): string {
     $parts = array_values(array_filter(explode(' ', trim($name)), 'strlen'));
     if (!$parts) return '?';

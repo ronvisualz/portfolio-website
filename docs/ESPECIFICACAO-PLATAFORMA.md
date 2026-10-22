@@ -2301,3 +2301,68 @@ Serviço **independente** dos outros: é o **agente de IA** da topper. para otim
 dos clientes (avença mensal). Pode ser vendido em **cross-selling** com Campanhas (funil
 combinado §9.1). As etapas e tarefas do funil Marketing Buddy refletem um serviço de agente
 (acessos, configuração, otimização contínua, relatórios), não de produção de vídeo.
+
+---
+
+## 20. Perfil e Definições (decidido 22 out 2026)
+
+Aplica a §11. Objetivo: zero ruído operacional e zero microgestão.
+
+### 20.1 Barra de topo e menu do perfil
+- O **avatar do utilizador sai da barra lateral** e passa para o **canto superior direito**.
+- Clicar no avatar abre um menu: **Perfil** (todos) · **Definições** (só superadmin e admins) ·
+  **Sair**.
+- O **botão de modo claro/escuro fica fora do menu**, sempre visível na barra de topo (um clique).
+- **Perfil** = «O meu perfil» (§17.10) + **preferências pessoais** de cada um: tema · menu
+  recolhido/aberto · notificações (quais e por onde: plataforma/email) · modo Foco · vista com
+  que cada aba abre (ex.: Leads em «As minhas»). Ninguém mexe nas preferências dos outros.
+
+### 20.2 Barra lateral
+**Definições** (ícone de engrenagem) ocupa o lugar onde estava o perfil, no fundo da barra.
+Só visível para superadmin e admins.
+
+### 20.3 Separadores das Definições (um por aba com campos editáveis)
+| Separador | Conteúdo |
+|---|---|
+| Geral | dados da empresa (nome, NIF, morada, logo) · IVA 23% · dias úteis seg–sex · horário padrão 09–18 · 1 dia = 8 h · fuso horário |
+| Leads | prazos por estado (§12.4) · motivos de arquivo · tipos de lead · origens e campanhas · regras de quarentena · regra da 3.ª tentativa |
+| Pipeline | funis e etapas · gates · **automações** (§19.7) · campos do X-Ray por funil · motivos de perda · rondas de revisão incluídas · condições de pagamento · validade das propostas · textos dos emails de proposta |
+| Contactos | categorias de fornecedor · lista de serviços e unidades · cadências das Relações (A/B/C) |
+| Orçamentação | MSO · margem · meta mensal · % de ocupação padrão · custos fixos mensais (correção) · modelos de orçamento · modelo do PDF |
+| Negócios | checklist de fecho · limites dos avisos «Precisa de atenção» |
+| Tarefas | tipos (ícone e cor) · cores das origens · máximo de cartões por coluna · agrupamento de tarefas automáticas |
+| Marketing | pilares · cadência por rede · voz da topper. · modelos de formato |
+| Financeiro | a definir quando a aba for desenhada |
+| Drive | pastas base e estrutura das pastas de negócio |
+| Integrações | Google Meet · Discord · email de envio · IA (Claude: estado, uso e custo) · futuras: Meta, LinkedIn, software de faturação |
+| Segurança | sessão (60 min inativo / 12 h) · bloqueio após 6 tentativas. **Sem autenticação de dois passos.** |
+- **Utilizadores, papéis, permissões, cargos e departamentos continuam na aba Equipa** (§17);
+  Definições tem apenas um atalho para lá.
+- Regra futura: cada nova aba com campos editáveis ganha o seu separador.
+- Definições que hoje vivem noutras páginas (ex.: editor de funis, prazo de lead parada) passam
+  para aqui; as páginas de origem mostram um atalho «Configurar» só para admins.
+
+### 20.4 Funcionamento
+1. **Pesquisa nas Definições** (ex.: «margem» leva direto ao campo).
+2. **Grava sozinho**, sem botão Gravar; aviso «<campo> alterado para <valor> · Anular».
+3. **Aviso de impacto** antes de alterações que mexem em dados existentes (ex.: «recalcula 14
+   leads ativas»), com Confirmar/Cancelar.
+4. **«Repor valor de origem»** em cada campo.
+5. **Registo de alterações:** quem, o quê, quando, antes → depois, com «Repor» por linha.
+6. **ⓘ em cada definição** com uma frase a explicar para que serve.
+Todas as alterações verificadas no servidor (só superadmin/admins).
+
+---
+
+## 21. Ajustes a Leads e Tarefas (decidido 22 out 2026)
+
+1. **Quarentena (Leads):** cada lead em quarentena tem dois botões: **«Não é spam»** (passa
+   para «Por atribuir» como lead normal, sai da quarentena) e **«É spam»** (elimina, com
+   «Anular»). O motivo da quarentena continua visível nas notas.
+2. **Vista inicial «As minhas» (Leads):** para operadores (chefes de equipa e colaboradores,
+   e admins que sejam operadores), a aba Leads abre em **«As minhas»**; o superadmin abre em
+   «Todas». Cada um pode mudar a vista inicial no Perfil (§20.1). O botão mostra o total e os
+   atrasos, ex.: «As minhas · 22 · 3 ⚠».
+3. **Participantes (formulário de tarefa, §18.7):** o campo só aparece quando o tipo é
+   **Reunião, Gravação ou Visita**. Texto do rótulo: «Participantes — recebem o convite no
+   chat». **Nunca mostrar referências à especificação (ex.: «§17.7») na interface** — regra geral.

@@ -188,9 +188,17 @@ try {
         foreach (NAV_ITEMS as $key => [$label, $href, $ico]) {
             if (can(NAV_TABS[$key] ?? $key)) $nav[] = [$label, $href, $ico];
         }
-        $nav[] = ['A minha conta', '/admin/conta.php', 'user'];
-        $nav[] = ['Definições (como quer ser tratado, modo)', '/admin/conta.php#definicoes', 'user'];
+        $nav[] = ['Perfil (preferências, notificações, palavra-passe)', '/admin/conta.php', 'user'];
+        if (is_admin()) $nav[] = ['Definições', '/admin/definicoes.php', 'cog'];
         if (can('pipeline', PERM_MANAGE)) $nav[] = ['Funis e automações (Definições)', '/admin/funis.php', 'pipeline'];
+        // As próprias definições (só admins): «margem» leva direto ao campo.
+        if (is_admin() && $fq !== '' && mb_strlen($fq) >= 3) {
+            require_once __DIR__ . '/inc/settings_def.php';
+            foreach (settings_index() as $d) {
+                if (!str_contains(fold($d['l'] . ' ' . $d['g']), $fq)) continue;
+                $add('Definições', ['title' => $d['l'], 'sub' => $d['tab'] . ' · ' . $d['g'], 'url' => '/admin/definicoes.php?t=' . $d['t'] . '#set-' . $d['k'], 'icon' => icon('cog')]);
+            }
+        }
         if (is_admin()) $nav[] = ['Migração', '/admin/migracao.php', 'migracao'];
         foreach ($nav as [$label, $href, $ico]) {
             if ($fq !== '' && !str_contains(fold($label), $fq) && !str_contains('ir para ' . fold($label), $fq)) continue;
@@ -577,7 +585,7 @@ try {
             $pdo->prepare("UPDATE deals SET lead_state = 'sem_resposta', state_since = ?, no_answer = ? WHERE id = ?")->execute([now_php(), $n, $l['id']]);
             deal_log($pdo, (int)$l['id'], 'call_miss', ['note' => $n . '.ª tentativa · prazo recomeçou']);
             lead_touch($pdo, (int)$l['id']);
-            out(200, ['ok' => true, 'msg' => 'Chamada não atendida (' . $n . '.ª tentativa).', 'attempt' => $n, 'suggest_archive' => $n >= 3,
+            out(200, ['ok' => true, 'msg' => 'Chamada não atendida (' . $n . '.ª tentativa).', 'attempt' => $n, 'suggest_archive' => $n >= max(2, (int)setting($pdo, 'lead_attempts_archive', 3)),
                       'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])] + lead_parts($pdo, (int)$l['id']));
         }
         if ($res === 'followup') {
@@ -597,7 +605,7 @@ try {
         $l = lead_for_edit($pdo);
         $r = (string)($_POST['reason'] ?? '');
         $note = trim(mb_substr((string)($_POST['note'] ?? ''), 0, 255));
-        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') throw new RuntimeException('Escolha o motivo.');
+        if (!isset(lead_archive_reasons($pdo)[$r])) throw new RuntimeException('Escolha o motivo.');
         if ($r === 'outro' && $note === '') throw new RuntimeException('Escreva o motivo.');
         out(200, ['ok' => true, 'msg' => 'Lead arquivada.', 'undo' => undo_push('lead_archive', lead_archive($pdo, $l, $r, $note)),
                   'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])]);
@@ -1136,6 +1144,89 @@ try {
         out(200, ['ok' => true, 'msg' => $r['msg'], 'url' => '/admin/orcamento_pdf.php?v=' . (int)$v['id']]);
 
     // ── Pipeline: mover sem recarregar ──────────────────────
+    // ── Definições (§20): grava sozinho, com aviso de impacto, «Repor valor de origem» e «Anular» ──
+    case 'setting_save':
+    case 'setting_reset':
+    case 'setting_restore':
+        if (!$post) break;
+        require_once __DIR__ . '/inc/settings_def.php';
+        if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
+        $key = (string)($_POST['key'] ?? '');
+        $why = '';
+        if ($a === 'setting_restore') {
+            // «Repor» numa linha do registo: o valor de antes dessa alteração.
+            $st = $pdo->prepare('SELECT * FROM settings_log WHERE id = ?');
+            $st->execute([(int)($_POST['log'] ?? 0)]);
+            $row = $st->fetch();
+            if (!$row || !setting_def((string)$row['skey'])) throw new RuntimeException('Essa alteração já não pode ser reposta aqui.');
+            $key = (string)$row['skey'];
+            $value = (string)$row['old_value'];
+            $why = setting_def($key)['label'] . ' reposto';
+        } else {
+            $def = setting_def($key);
+            if (!$def) throw new RuntimeException('Definição desconhecida.');
+            $value = $a === 'setting_reset' ? (string)($def['default'] ?? '') : (string)($_POST['value'] ?? '');
+            if ($a === 'setting_reset') $why = $def['label'] . ' reposto no valor de origem';
+        }
+        try {
+            [$msg, $shown, $undo] = setting_save($pdo, $key, $value, !empty($_POST['confirm']), $why);
+        } catch (SettingImpact $e) {
+            out(409, ['ok' => false, 'impact' => $e->getMessage(), 'error' => $e->getMessage()]);
+        }
+        out(200, ['ok' => true, 'msg' => $msg . ($why !== '' ? ': ' . $shown : ''), 'key' => $key, 'value' => setting_get($pdo, $key), 'shown' => $shown, 'undo' => $undo]);
+
+    // Linhas das listas com tabela (serviços dos Contactos, pilares do Marketing): grava cada campo.
+    case 'setting_row':
+        if (!$post) break;
+        require_once __DIR__ . '/inc/settings_def.php';
+        if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
+        $tbl = (string)($_POST['table'] ?? '');
+        $fields = ['services' => ['name' => 80, 'position' => 0, 'is_active' => 0, 'default_unit' => 0],
+                   'mkt_pillars' => ['name' => 80, 'short_name' => 24, 'color' => 0, 'description' => 500, 'position' => 0, 'is_active' => 0, 'kind' => 0]][$tbl] ?? null;
+        $field = (string)($_POST['field'] ?? '');
+        if (!$fields || !array_key_exists($field, $fields) || !db_has_column($pdo, $tbl, $field)) throw new RuntimeException('Campo desconhecido.');
+        $id = (int)($_POST['id'] ?? 0);
+        $raw = (string)($_POST['value'] ?? '');
+        if ($id === 0 && $field === 'name') {
+            // Linha nova.
+            $name = trim(mb_substr($raw, 0, 80));
+            if ($name === '') throw new RuntimeException('Escreva o nome.');
+            $st = $pdo->prepare("SELECT COUNT(*) FROM $tbl WHERE LOWER(name) = ?");
+            $st->execute([mb_strtolower($name)]);
+            if ((int)$st->fetchColumn()) throw new RuntimeException('«' . $name . '» já está na lista.');
+            $pos = (int)$pdo->query("SELECT COALESCE(MAX(position), 0) + 1 FROM $tbl")->fetchColumn();
+            if ($tbl === 'services') $pdo->prepare('INSERT INTO services (name, position, is_active) VALUES (?, ?, 1)')->execute([$name, $pos]);
+            else $pdo->prepare("INSERT INTO mkt_pillars (name, short_name, color, position) VALUES (?, ?, 'neutral', ?)")->execute([$name, mb_substr($name, 0, 24), $pos]);
+            setting_log($pdo, $tbl, ($tbl === 'services' ? 'Contactos · Serviço' : 'Marketing · Pilar') . ' acrescentado', '', $name);
+            out(200, ['ok' => true, 'msg' => '«' . $name . '» acrescentado.', 'reload' => true]);
+        }
+        $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ?");
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) throw new RuntimeException('Essa linha já não existe.');
+        $max = $fields[$field];
+        if ($max > 0) {
+            $val = trim(mb_substr($raw, 0, $max));
+            if ($field === 'name' && $val === '') throw new RuntimeException('O nome não pode ficar vazio.');
+        } elseif ($field === 'color') {
+            require_once __DIR__ . '/inc/marketing.php';
+            if (!isset(MKT_PILLAR_COLORS[$raw])) throw new RuntimeException('Escolha uma cor.');
+            $val = $raw;
+        } elseif ($field === 'kind') {
+            $val = $raw === 'employer' ? 'employer' : '';
+        } elseif ($field === 'default_unit') {
+            if ($raw !== '' && !isset(SERVICE_UNITS[$raw])) throw new RuntimeException('Escolha uma unidade.');
+            $val = $raw;
+        } else {
+            $val = (string)max(0, min(999, (int)$raw));
+            if ($field === 'is_active') $val = $raw === '1' ? '1' : '0';
+        }
+        if ((string)$row[$field] === $val) out(200, ['ok' => true, 'msg' => 'Sem alterações.']);
+        $pdo->prepare("UPDATE $tbl SET $field = ? WHERE id = ?")->execute([$val, $id]);
+        $what = ($tbl === 'services' ? 'Contactos · Serviço «' : 'Marketing · Pilar «') . $row['name'] . '» · ' . ['name' => 'nome', 'short_name' => 'nome curto', 'color' => 'cor', 'description' => 'descrição', 'position' => 'ordem', 'is_active' => 'ativo', 'kind' => 'employer branding', 'default_unit' => 'unidade'][$field];
+        setting_log($pdo, $tbl . ':' . $id . ':' . $field, $what, (string)$row[$field], $val);
+        out(200, ['ok' => true, 'msg' => ucfirst(explode(' · ', $what, 2)[1]) . ' alterado.', 'undo' => undo_push('setting_row', ['table' => $tbl, 'id' => $id, 'field' => $field, 'from' => (string)$row[$field], 'to' => $val])]);
+
     case 'deal_move':
         if (!$post) break;
         require_perm('pipeline', PERM_EDIT);

@@ -148,7 +148,7 @@ $self    = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' =
 render_header('Pipeline', 'pipeline');
 render_flashes();
 ?>
-<h1>Pipeline</h1>
+<div class="h1-row"><h1>Pipeline</h1><?= cfg_link('pipeline') ?></div>
 
 <div class="tabs-row pipe-tabs">
   <div class="tabs">
@@ -158,8 +158,8 @@ render_flashes();
   </div>
   <div class="tabs tabs-lost"><a href="<?= e(pipe_url(['v' => 'perdidos'])) ?>" class="<?= $view === 'perdidos' ? 'on' : '' ?>"><?= icon('x') ?> Perdidos (<?= $count('lost') ?>)</a></div>
 </div>
-<?php if (can('pipeline', PERM_MANAGE)): ?>
-  <div class="sub"><a class="lnk" href="/admin/funis.php">Configurar funis e etapas</a></div>
+<?php if (can('pipeline', PERM_MANAGE) && !is_admin()): ?>
+  <div class="sub"><a class="lnk" href="/admin/funis.php">Funis e etapas</a></div>
 <?php endif; ?>
 
 <?php if ($view === 'funil' && $fid):

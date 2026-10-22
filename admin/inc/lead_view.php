@@ -136,7 +136,7 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
         . (!empty($a['area'])
             ? '<textarea id="' . $f($k) . '" name="f[' . $k . ']" rows="' . ($a['rows'] ?? 3) . '" maxlength="' . (int)$def[$k][1] . '"' . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . '>' . e((string)$l[$k]) . '</textarea>'
             : '<input type="text" id="' . $f($k) . '" name="f[' . $k . ']" maxlength="' . (int)$def[$k][1] . '" value="' . e((string)$l[$k]) . '"'
-              . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . (isset($a['im']) ? ' inputmode="' . $a['im'] . '"' : '') . '>')
+              . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . (isset($a['im']) ? ' inputmode="' . $a['im'] . '"' : '') . (isset($a['list']) ? ' list="' . e($a['list']) . '"' : '') . '>')
         . '</div>';
     $select = function (string $k, string $label, ?string $cur = null) use ($def, $f, $l) {
         $cur ??= (string)$l[$k];
@@ -162,7 +162,8 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
          . $select('service', 'Serviço')
          . $select('priority', 'Prioridade')
          . $select('origin', 'Origem')
-         . $text('campaign', 'Campanha')
+         . $text('campaign', 'Campanha', ['list' => 'dl-campaigns-' . $id])
+         . '<datalist id="dl-campaigns-' . $id . '">' . implode('', array_map(fn($c) => '<option value="' . e($c) . '">', setting_lines($pdo, 'lead_campaigns', []))) . '</datalist>'
          . '<div class="field"><label for="' . $f('brought_by') . '">Trazido por</label>'
          . contact_pick_html($pdo, 'f[brought_by]', 'f[brought_by_id]', $l['brought_by_id'] !== null ? (int)$l['brought_by_id'] : null, $f('brought_by'), 'Quem originou (agência, parceiro…)') . '</div>'
          . '<div class="field wide"><span class="lbl">Tipo</span><div class="chips-check" role="group" aria-label="Tipo">' . $types . '</div></div>'
@@ -239,7 +240,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
           . '<div class="lv-chips">' . lead_state_chip($l) . ($clock ? ' ' . lead_ring($clock) : '')
           . ($l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '')
           . ($quar ? ' <span class="chip wait">Quarentena</span>' : '')
-          . ($l['phase'] === 'archived' ? ' <span class="muted">' . e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) . ($l['archived_note'] ? ' · ' . e($l['archived_note']) : '') . '</span>' : '')
+          . ($l['phase'] === 'archived' ? ' <span class="muted">' . e(lead_archive_label((string)$l['archived_reason'])) . ($l['archived_note'] ? ' · ' . e($l['archived_note']) : '') . '</span>' : '')
           . '</div></header>';
 
     $left = '<div class="lv-l">' . $head . $acts
@@ -269,9 +270,8 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
  */
 function lead_modals_html(?array $arch = null, string $back = ''): string {
     $reasons = '';
-    foreach (ARCHIVE_REASONS as $k => $label) {
-        if ($k === 'perdido_migracao') continue;
-        $reasons .= '<label class="rb"><input type="radio" name="reason" value="' . $k . '"' . ($k === 'outro' ? ' data-other' : '') . ' required><span>' . e($label) . '</span></label>';
+    foreach (lead_archive_reasons($GLOBALS['pdo']) as $k => $label) {
+        $reasons .= '<label class="rb"><input type="radio" name="reason" value="' . e($k) . '"' . ($k === 'outro' ? ' data-other' : '') . ' required><span>' . e($label) . '</span></label>';
     }
     $archOpen = $arch !== null;
     return

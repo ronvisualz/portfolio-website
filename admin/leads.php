@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'archive') {
         $r = (string)($_POST['reason'] ?? '');
         $note = mb_substr(trim((string)($_POST['note'] ?? '')), 0, 255);
-        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') { flash('Escolha o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
+        if (!isset(lead_archive_reasons($pdo)[$r])) { flash('Escolha o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
         if ($r === 'outro' && $note === '') { flash('Escreva o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
         if ($lead['phase'] !== 'lead') { flash('Esta lead já não está ativa.', 'err'); redirect($back); }
         flash('Lead arquivada.', 'ok', undo_push('lead_archive', lead_archive($pdo, $lead, $r, $note)));
@@ -284,7 +284,7 @@ render_flashes();
 echo paginate_css();
 ?>
 <?php if ($openLead): ?><div data-open-panel="lead:<?= (int)$openLead['id'] ?>" hidden></div><?php endif; ?>
-<h1>Leads</h1>
+<div class="h1-row"><h1>Leads</h1><?= cfg_link('leads') ?></div>
 
 <div class="stats">
   <a class="stat hero" href="<?= e(leads_url(['urgente' => 1])) ?>"><div class="k">Em atraso</div><div class="v"><?= $kLate ?></div><div class="n"><?= $kNear ?> a aproximar do prazo</div></a>
@@ -330,7 +330,7 @@ echo paginate_css();
   <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, empresa, contacto, nota" aria-label="Procurar" data-refocus>
   <select name="tipo" aria-label="Tipo">
     <option value="">Todos os tipos</option>
-    <?php foreach (LEAD_TYPES_LIST as $t): ?><option <?= ($filters['tipo'] ?? '') === $t ? 'selected' : '' ?>><?= e($t) ?></option><?php endforeach; ?>
+    <?php foreach (lead_types($pdo) as $t): ?><option <?= ($filters['tipo'] ?? '') === $t ? 'selected' : '' ?>><?= e($t) ?></option><?php endforeach; ?>
   </select>
   <select name="prio" aria-label="Prioridade">
     <option value="">Prioridade</option>
@@ -365,7 +365,7 @@ echo paginate_css();
         <a class="b" href="/admin/lead.php?id=<?= $lid ?>&amp;back=<?= e(rawurlencode($self)) ?>" data-panel="lead:<?= $lid ?>"><?= e($l['dn']) ?></a>
         <small><?= e($l['dc'] !== '' ? $l['dc'] : implode(' · ', array_filter([(string)$l['types'], (string)$l['service']]))) ?><?= $l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '' ?></small>
       </td>
-      <td><?= $view === 'arquivadas' ? e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
+      <td><?= $view === 'arquivadas' ? e(lead_archive_label((string)$l['archived_reason'])) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
       <td><?= e($l['owner_name'] ?? 'Por atribuir') ?></td>
       <td class="hide-sm"><?php if ($l['next']): [$kl] = LEAD_TASK_KINDS[$l['next']['kind'] ?? 'task'] ?? LEAD_TASK_KINDS['task']; ?>
         <span class="<?= task_is_late($l['next']) ? 'neg' : '' ?>"><?= e($kl) ?> · <?= e(lead_task_when($l['next'])) ?></span>
@@ -404,7 +404,7 @@ if ($canEdit):
       <div class="field wide"><label for="nl-li">Redes sociais</label><textarea id="nl-li" name="links" rows="2" placeholder="Um link por linha (Instagram, LinkedIn, site…)"><?= $ov('links') ?></textarea></div>
       <div class="field wide"><label>Tipo</label>
         <div class="chips-check">
-          <?php foreach (LEAD_TYPES_LIST as $t): ?><label class="rb"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, (array)($old['types'] ?? []), true) ? 'checked' : '' ?>><span><?= e($t) ?></span></label><?php endforeach; ?>
+          <?php foreach (lead_types($pdo) as $t): ?><label class="rb"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, (array)($old['types'] ?? []), true) ? 'checked' : '' ?>><span><?= e($t) ?></span></label><?php endforeach; ?>
         </div></div>
       <div class="field"><label for="nl-se">Serviço</label>
         <select id="nl-se" name="service"><option value="">—</option><?php foreach (LEAD_SERVICES_LIST as $sv): ?><option <?= ($old['service'] ?? '') === $sv ? 'selected' : '' ?>><?= e($sv) ?></option><?php endforeach; ?></select></div>

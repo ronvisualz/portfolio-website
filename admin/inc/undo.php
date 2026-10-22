@@ -163,6 +163,27 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
 
+        case 'setting':
+            // Definições (§20): o valor volta ao de antes, se ninguém lhe mexeu entretanto.
+            require_once __DIR__ . '/settings_def.php';
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            $def = setting_def((string)$d['key']);
+            if (!$def || setting_get($pdo, (string)$d['key']) !== (string)$d['to']) throw new RuntimeException($changed);
+            setting_write($pdo, (string)$d['key'], (string)$d['from']);
+            setting_log($pdo, (string)$d['key'], SET_TABS[$def['tab']][0] . ' · ' . $def['label'] . ' (anulado)', (string)$d['to'], (string)$d['from']);
+            return $def['label'] . ' reposto: ' . setting_show($def, (string)$d['from']) . '.';
+
+        case 'setting_row':
+            // Uma célula das listas com tabela (serviços, pilares) volta ao que era.
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            if (!in_array($d['table'], ['services', 'mkt_pillars'], true) || !preg_match('/^[a-z_]+$/', (string)$d['field'])) throw new RuntimeException($changed);
+            $st = $pdo->prepare('SELECT ' . $d['field'] . ' FROM ' . $d['table'] . ' WHERE id = ?');
+            $st->execute([(int)$d['id']]);
+            $cur = $st->fetchColumn();
+            if ($cur === false || (string)$cur !== (string)$d['to']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE ' . $d['table'] . ' SET ' . $d['field'] . ' = ? WHERE id = ?')->execute([$d['from'], (int)$d['id']]);
+            return 'Reposto.';
+
         case 'task_due':
             // «Adiar» na lista (§18.3): o prazo volta ao de antes, se ninguém lhe mexeu.
             require_once __DIR__ . '/tasks.php';
