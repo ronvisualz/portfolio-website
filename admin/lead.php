@@ -21,14 +21,15 @@ $id = (int)$l['id'];
 // Só se volta para a própria lista de leads (nunca para fora do site).
 $back = (string)($_GET['back'] ?? '');
 if (!preg_match('~^/admin/leads\.php(\?[^#\s]*)?$~', $back)) $back = '/admin/leads.php' . ($l['phase'] === 'archived' ? '?v=arquivadas' : '');
-$self = '/admin/lead.php?id=' . $id . '&back=' . rawurlencode($back);
+$self = '/admin/lead.php?id=' . $id . '&back=' . rawurlencode($back) . nav_keep();
 
 [$name] = lead_display($l);
 render_header($name, 'leads', '', [$name]);
 render_flashes();
 ?>
 <div class="lead-page-top">
-  <a class="btn ghost sm" href="<?= e($back) ?>#l-<?= $id ?>" data-back><?= icon('chev-left') ?> Voltar às leads</a>
+  <?php if ($from = nav_from()): ?><a class="btn ghost sm" href="<?= e($from) ?>" data-back><?= icon('chev-left') ?> <?= e(nav_label($from)) ?></a>
+  <?php else: ?><a class="btn ghost sm" href="<?= e($back) ?>#l-<?= $id ?>" data-back><?= icon('chev-left') ?> Voltar às leads</a><?php endif; ?>
   <?php if (can('leads', PERM_EDIT)): ?><a data-new href="/admin/leads.php?nova=1" hidden></a><?php endif; ?>
 </div>
 <?= lead_view($pdo, $l, 'page', $self) ?>

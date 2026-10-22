@@ -254,8 +254,25 @@
   // ── Serviços e preços ───────────────────────────────────────
   function svcSection(el) { return el.closest('[data-services]'); }
   function svcForm(sec) { return $('form[data-svc-form]', sec); }
+  // A edição abre no lugar da linha (a linha esconde-se); acrescentar abre por baixo da tabela.
+  function svcHome(f) {
+    if (!f.__home) { f.__home = document.createComment('svc-form'); f.parentNode.insertBefore(f.__home, f); }
+    return f.__home;
+  }
+  function svcPark(f) {
+    var home = svcHome(f);
+    if (f.__row) { f.__row.hidden = false; f.__row = null; }
+    if (f.__cell) { var tr = f.__cell.parentNode; f.__cell = null; home.parentNode.insertBefore(f, home.nextSibling); if (tr.parentNode) tr.parentNode.removeChild(tr); }
+  }
   function svcOpen(sec, row) {
     var f = svcForm(sec); if (!f) return;
+    svcPark(f);
+    if (row) {
+      var tr = document.createElement('tr'), td = document.createElement('td');
+      tr.className = 'svc-edit-tr'; td.colSpan = row.children.length;
+      tr.appendChild(td); row.parentNode.insertBefore(tr, row.nextSibling);
+      td.appendChild(f); row.hidden = true; f.__row = row; f.__cell = td;
+    }
     f.reset();
     $('input[name=line]', f).value = row ? row.getAttribute('data-line') : '';
     if (row) {
@@ -278,7 +295,7 @@
     var ed = t.closest('[data-svc-edit]');
     if (ed) { svcOpen(svcSection(ed), ed.closest('tr')); return; }
     var cancel = t.closest('[data-svc-cancel]');
-    if (cancel) { var f = cancel.closest('form'); f.hidden = true; return; }
+    if (cancel) { var f = cancel.closest('form'); svcPark(f); f.hidden = true; return; }
     var hist = t.closest('[data-svc-hist]');
     if (hist) {
       var list = $('.svc-hist', svcSection(hist)), open = hist.getAttribute('aria-expanded') === 'true';

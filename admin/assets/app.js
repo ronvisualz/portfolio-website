@@ -369,7 +369,10 @@
       if (spKey !== key) return;
       sp.classList.toggle('wide', !!j.wide);
       $('#sp-title').textContent = j.title;
-      $('.sp-full', sp).setAttribute('href', j.url);
+      // A página completa leva de onde se veio: o «Voltar» de lá traz de volta aqui.
+      var full = j.url, here = location.pathname + location.search;
+      if (full.indexOf('de=') < 0 && /^\/admin\/[a-z_]+\.php/.test(here)) full += (full.indexOf('?') < 0 ? '?' : '&') + 'de=' + encodeURIComponent(here);
+      $('.sp-full', sp).setAttribute('href', full);
       bodyEl.innerHTML = j.html;
       bodyEl.scrollTop = 0;
       sp.focus({ preventScroll: true });
@@ -410,6 +413,18 @@
     if (!row || t.closest('a, button, input, select, textarea, label, form, summary')) return;
     openPanel(row.getAttribute('data-panel'));
   });
+  // Linhas que abrem uma página (ex.: Negócios, Orçamentação): clicar em qualquer sítio da linha;
+  // Ctrl/⌘-clique ou o botão do meio abrem num separador novo.
+  function rowHref(e) {
+    var t = e.target, row = t.closest && t.closest('tr[data-href]');
+    if (!row || t.closest('a, button, input, select, textarea, label, form, summary, .ie')) return null;
+    return row.getAttribute('data-href');
+  }
+  document.addEventListener('click', function (e) {
+    var href = rowHref(e); if (!href || (window.getSelection && String(window.getSelection()).length)) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey) window.open(href, '_blank', 'noopener'); else location.href = href;
+  });
+  document.addEventListener('auxclick', function (e) { var href = e.button === 1 && rowHref(e); if (href) window.open(href, '_blank', 'noopener'); });
   var auto = $('[data-open-panel]');
   if (auto) openPanel(auto.getAttribute('data-open-panel'));
 

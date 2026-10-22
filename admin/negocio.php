@@ -37,7 +37,7 @@ if (!$ok) {
 
 $file     = deal_file_row($pdo, $id);
 $rate     = vat_rate($pdo);
-$self     = '/admin/negocio.php?id=' . $id;
+$self     = '/admin/negocio.php?id=' . $id . nav_keep();   // leva o «de» (de onde se veio) em todas as ações e vistas
 $canEdit  = can('negocios', PERM_EDIT);
 $dealEdit = $canEdit && record_reach($pdo, $deal, PERM_EDIT);
 $money    = can('financeiro', PERM_VIEW);
@@ -267,7 +267,8 @@ render_flashes();
 ?>
 <div class="df" data-deal="<?= $id ?>">
 <header class="df-top">
-  <a class="ibtn df-back" href="<?= e($listUrl) ?>" aria-label="Voltar à lista (<?= $prodPhase ? 'Negócios' : 'Pipeline' ?>)" data-tip><?= icon('chev-left') ?></a>
+  <?php $back = nav_from(); ?>
+  <a class="ibtn df-back" href="<?= e($back ?? $listUrl) ?>" aria-label="<?= e($back ? nav_label($back) : 'Voltar à lista (' . ($prodPhase ? 'Negócios' : 'Pipeline') . ')') ?>" data-tip data-back><?= icon('chev-left') ?></a>
   <div class="df-who">
     <div class="df-l1">
       <span class="df-id mono"><?= e($deal['code']) ?></span>
@@ -306,7 +307,7 @@ render_flashes();
       <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="drive"><input type="hidden" name="id" value="<?= $id ?>">
         <?= icon_button('drive', 'Abrir a pasta no Drive', ['type' => 'submit']) ?></form>
     <?php endif; ?>
-    <?php if (can('orcamentacao')): ?><?= icon_button('orcamentacao', 'Abrir o orçamento', ['href' => '/admin/orcamento.php?id=' . $id]) ?><?php endif; ?>
+    <?php if (can('orcamentacao')): ?><?= icon_button('orcamentacao', 'Abrir o orçamento', ['href' => nav_to('/admin/orcamento.php?id=' . $id)]) ?><?php endif; ?>
     <?php if ($dealEdit): ?><?= icon_button('tarefas', 'Nova tarefa', ['data-dmdl' => '#mdl-dtask']) ?><?php endif; ?>
     <?php if (can('drive')): ?>
       <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="drive"><input type="hidden" name="id" value="<?= $id ?>">
@@ -318,8 +319,8 @@ render_flashes();
         <?php if ($money): ?><a role="menuitem" href="<?= e($tab('contas')) ?>"><?= icon('euro') ?> Contas e custos</a><?php endif; ?>
         <a role="menuitem" href="<?= e($tab('dados')) ?>"><?= icon('contactos') ?> Dados e contactos</a>
         <a role="menuitem" href="<?= e($self) ?>#c-hist" data-panel="dhist:<?= $id ?>"><?= icon('clock') ?> Histórico completo</a>
-        <?php if ($money): ?><a role="menuitem" href="/admin/documento.php?id=<?= $id ?>"><?= icon('file') ?> Resumo de cobrança</a><?php endif; ?>
-        <?php if (!$prodPhase && can('pipeline')): ?><a role="menuitem" href="<?= e('/admin/pipeline.php?' . http_build_query(['f' => $deal['funnel_id'], 'deal' => $id]) . '#negocio') ?>"><?= icon('pipeline') ?> Ver no Pipeline</a><?php endif; ?>
+        <?php if ($money): ?><a role="menuitem" href="<?= e(nav_to('/admin/documento.php?id=' . $id)) ?>"><?= icon('file') ?> Resumo de cobrança</a><?php endif; ?>
+        <?php if (!$prodPhase && can('pipeline')): ?><a role="menuitem" href="<?= e(nav_to('/admin/pipeline.php?' . http_build_query(['f' => $deal['funnel_id'], 'deal' => $id]) . '#negocio')) ?>"><?= icon('pipeline') ?> Ver no Pipeline</a><?php endif; ?>
       </div>
     </details>
   </div>
@@ -394,7 +395,7 @@ if (can('orcamentacao')) {
             ['Prazo orçado', '<span class="mono">' . e(budget_n($bCalc['days'], 1)) . ' dias úteis</span>'],
           ])
         : '<p class="dc-empty">' . icon('orcamentacao') . ' Sem orçamento na plataforma' . ((float)$deal['budget'] > 0 && $money ? ': o valor (' . e(budget_eur((float)$deal['budget'])) . ') e os custos vêm do Financeiro.' : '.') . '</p>',
-        ['panel' => 'dbudget:' . $id, 'href' => '/admin/orcamento.php?id=' . $id, 'more' => 'Abrir orçamento', 'count' => 'v' . (int)$bCur['num']]);
+        ['panel' => 'dbudget:' . $id, 'href' => nav_to('/admin/orcamento.php?id=' . $id), 'more' => 'Abrir orçamento', 'count' => 'v' . (int)$bCur['num']]);
 } else {
     echo deal_card('budget', 'orcamentacao', 'yel', 'Orçamento', '<p class="dc-empty">Sem acesso à Orçamentação com esta conta.</p>', ['empty' => true]);
 }
@@ -410,7 +411,7 @@ if ($fig) {
             ['Gross margin', '<span class="mono ' . $gmCls . '">' . e(budget_pct($fig['margin'])) . '</span>'],
         ]) . ($fig['value'] > 0 ? '<div class="dbar" role="img" aria-label="Custos ' . $costPct . '% · lucro ' . (100 - $costPct) . '% do preço" data-tip="Custos ' . $costPct . '% · lucro ' . (100 - $costPct) . '% do preço" tabindex="0"><i class="c" style="width:' . $costPct . '%"></i><i class="p" style="width:' . (100 - $costPct) . '%"></i></div>' : '')
         . (!$fig['has_budget'] ? '<p class="dc-note">Sem orçamento na plataforma: valor e custos existentes.</p>' : ''),
-        ['panel' => 'dresult:' . $id, 'href' => $fig['has_budget'] ? '/admin/orcamento.php?id=' . $id . '&tab=res' : $tab('contas'), 'more' => 'Ver orçado vs real']);
+        ['panel' => 'dresult:' . $id, 'href' => $fig['has_budget'] ? nav_to('/admin/orcamento.php?id=' . $id . '&tab=res') : $tab('contas'), 'more' => 'Ver orçado vs real']);
 } else {
     echo deal_card('result', 'trend', 'blue', 'Resultado', '<p class="dc-empty">' . icon('eye') . ' Preço, custos, gross profit e margem: só com acesso ao Financeiro.</p>', ['empty' => true]);
 }
@@ -446,7 +447,7 @@ echo deal_card('tasks', 'tarefas', 'green', 'Produção e tarefas', deal_kv([
         ['Tarefas', '<span class="mono">' . count($tasks['open']) . ' abertas · ' . $tasks['done'] . ' feitas</span>' . ($tasks['late'] ? ' <span class="neg b">· ' . $tasks['late'] . ' atrasadas</span>' : '')],
         ['Entregas', $deal['delivered_at'] ? '<span class="pos b">feitas</span> <span class="muted mono">' . e(date('d/m/Y', strtotime((string)$deal['delivered_at']))) . '</span>' : ($delivery ? 'previstas a <span class="mono">' . e(date('d/m/Y', strtotime($delivery))) . '</span>' : '<span class="muted">—</span>')],
         ['Prazo real vs orçado', $realVsBudget ? '<span class="mono">' . e($realVsBudget) . '</span>' : '<span class="muted">—</span>'],
-    ]), ['panel' => can('tarefas') ? 'dtasks:' . $id : '', 'href' => '/admin/calendar.php?view=tarefas', 'more' => 'Ver tarefas']);
+    ]), ['panel' => can('tarefas') ? 'dtasks:' . $id : '', 'href' => nav_to('/admin/calendar.php?view=tarefas'), 'more' => 'Ver tarefas']);
 
 // ── Ficheiros e Documentos (Drive) ──
 $drive = deal_drive_summary($pdo, $deal);

@@ -40,7 +40,8 @@ $accepted = (int)$sheet['accepted_version_id'] === (int)$v['id'];
 $last = end($versions);
 $tab = (string)($_GET['tab'] ?? 'orc');
 if (!in_array($tab, ['orc', 'res', 'hist', 'cmp'], true) || ($tab === 'res' && !$money)) $tab = 'orc';
-$self = fn(array $q = []) => '/admin/orcamento.php?' . http_build_query(array_merge(['id' => (int)$deal['id'], 'v' => (int)$v['num']], $q));
+$self = fn(array $q = []) => '/admin/orcamento.php?' . http_build_query(array_merge(['id' => (int)$deal['id'], 'v' => (int)$v['num']], $q, nav_from() ? ['de' => nav_from()] : []));
+$back = nav_from();   // veio de outra página (ex.: a ficha do negócio): «Voltar» faz o caminho inverso
 $listTab = budget_tab_of((string)$deal['phase']);
 
 $title = $deal['code'] . ' · ' . $deal['name'];
@@ -59,8 +60,12 @@ $stageChip = match ($deal['phase']) {
 };
 ?>
 <div class="lead-page-top">
-  <a class="btn ghost sm" href="/admin/orcamentacao.php<?= $listTab !== 'orcamentacao' ? '?t=' . e($listTab) : '' ?>#s-<?= (int)$sheet['id'] ?>" data-back><?= icon('chev-left') ?> Voltar às folhas</a>
-  <?php if (record_reach($pdo, $deal)): ?><a class="btn ghost sm" href="<?= e(deal_url($deal)) ?>"><?= icon('negocios') ?> Abrir o negócio</a><?php endif; ?>
+  <?php if ($back): ?>
+    <a class="btn ghost sm" href="<?= e($back) ?>" data-back><?= icon('chev-left') ?> <?= e(nav_label($back)) ?></a>
+  <?php else: ?>
+    <a class="btn ghost sm" href="/admin/orcamentacao.php<?= $listTab !== 'orcamentacao' ? '?t=' . e($listTab) : '' ?>#s-<?= (int)$sheet['id'] ?>" data-back><?= icon('chev-left') ?> Voltar às folhas</a>
+  <?php endif; ?>
+  <?php if (record_reach($pdo, $deal) && !($back && str_starts_with($back, '/admin/negocio.php?id=' . (int)$deal['id']))): ?><a class="btn ghost sm" href="<?= e(nav_to(deal_url($deal))) ?>"><?= icon('negocios') ?> Abrir o negócio</a><?php endif; ?>
 </div>
 
 <div class="bs" data-sheet="<?= (int)$sheet['id'] ?>" data-version="<?= (int)$v['id'] ?>" data-editable="<?= $editable ? '1' : '0' ?>" data-money="<?= $money ? '1' : '0' ?>">

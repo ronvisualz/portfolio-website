@@ -164,7 +164,7 @@ $keep = fn(array $set = []) => neg_url(array_filter(array_merge(['t' => $tab ===
         $step = deal_step_label($pdo, $d);
         $target = budget_setting($pdo, 'budget_margin_pct');
         $mCls = !$money || $d['margin'] === null ? '' : ($d['margin'] >= $target ? 'pos' : ($d['margin'] >= $target * 0.75 ? 'warn-t' : 'neg')); ?>
-    <tr class="<?= $d['risk'] ? 'stale' : '' ?>">
+    <tr class="<?= $d['risk'] ? 'stale' : '' ?>" data-href="/admin/negocio.php?id=<?= (int)$d['id'] ?>">
       <td class="nowrap"><a class="lnk id" href="/admin/negocio.php?id=<?= (int)$d['id'] ?>"><?= e($d['code']) ?></a></td>
       <td class="nm"><a class="b" href="/admin/negocio.php?id=<?= (int)$d['id'] ?>"><?= e($d['name']) ?></a>
         <small><?= e(trim(($d['client_name'] && $d['client_name'] !== $d['name'] ? $d['client_name'] : '') . ($d['job_type'] ? ($d['client_name'] && $d['client_name'] !== $d['name'] ? ' · ' : '') . $d['job_type'] : ''))) ?: '&nbsp;' ?></small></td>

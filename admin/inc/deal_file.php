@@ -346,6 +346,7 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
     $money = can('financeiro');
     $self = '/admin/negocio.php?id=' . $id;
     $head = '<header><div class="id mono">' . e($deal['code']) . '</div><h2>' . e($deal['name']) . '</h2></header>';
+    $go = fn(string $url) => e(nav_to($url, $self));   // para outra aba, o «Voltar» de lá traz de volta à ficha
     switch ($type) {
         case 'dcontacts':
             require_perm('contactos', PERM_VIEW);
@@ -354,7 +355,7 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
             $people = $st->fetchAll();
             $li = '';
             foreach ($people as $c) {
-                $li .= '<li><a href="/admin/contact.php?id=' . (int)$c['id'] . '" data-panel="contact:' . (int)$c['id'] . '">' . e($c['name']) . '</a>'
+                $li .= '<li><a href="' . $go('/admin/contact.php?id=' . (int)$c['id']) . '" data-panel="contact:' . (int)$c['id'] . '">' . e($c['name']) . '</a>'
                      . ' <span class="muted">' . e(trim(($c['link_role'] ?: $c['role']) . ($c['email'] ? ' · ' . $c['email'] : '') . ($c['phone'] ? ' · ' . $c['phone'] : ''), ' ·')) . '</span></li>';
             }
             $others = [];
@@ -364,7 +365,7 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                 foreach ($st->fetchAll() as $o) if (record_reach($pdo, $o)) $others[] = $o;
             }
             $oh = '';
-            foreach ($others as $o) $oh .= '<li><a href="' . e(deal_url($o)) . '"><span class="mono">' . e($o['code']) . '</span> ' . e($o['name']) . '</a> <span class="muted">· ' . e(['pipeline' => 'Pipeline', 'production' => 'Em produção', 'done' => 'Concluído', 'lost' => 'Perdido'][$o['phase']] ?? '') . '</span></li>';
+            foreach ($others as $o) $oh .= '<li><a href="' . $go(deal_url($o)) . '"><span class="mono">' . e($o['code']) . '</span> ' . e($o['name']) . '</a> <span class="muted">· ' . e(['pipeline' => 'Pipeline', 'production' => 'Em produção', 'done' => 'Concluído', 'lost' => 'Perdido'][$o['phase']] ?? '') . '</span></li>';
             $html = $head . '<section><h4>Cliente <span class="h-sub">quem paga</span></h4><p>' . deal_people_link($pdo, $deal['contact_id']) . '</p></section>'
                   . '<section><h4>Trazido por</h4><p>' . deal_people_link($pdo, $deal['brought_by_id']) . '</p></section>'
                   . '<section><h4>Pessoas do negócio <span class="mono">' . count($people) . '</span></h4>' . ($li ? '<ul class="ppl">' . $li . '</ul>' : '<p class="muted">Sem pessoas ligadas.</p>') . '</section>'
@@ -379,7 +380,7 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
             $rows = '';
             foreach ($vers as $v) {
                 $acc = (int)$sheet['accepted_version_id'] === (int)$v['id'];
-                $rows .= '<tr><td><a href="/admin/orcamento.php?id=' . $id . '&amp;v=' . (int)$v['num'] . '">v' . (int)$v['num'] . '</a>' . ($acc ? ' <span class="chip wait">aceite</span>' : '') . '</td>'
+                $rows .= '<tr><td><a href="' . $go('/admin/orcamento.php?id=' . $id . '&v=' . (int)$v['num']) . '">v' . (int)$v['num'] . '</a>' . ($acc ? ' <span class="chip wait">aceite</span>' : '') . '</td>'
                        . '<td class="small muted">' . e(date('d/m/Y', strtotime((string)$v['created_at'])) . ($v['author'] ? ' · ' . $v['author'] : '')) . '</td>'
                        . '<td class="num">' . ((float)$v['price'] > 0 ? e(budget_eur((float)$v['price'])) : '<span class="muted">—</span>') . '</td></tr>';
             }
@@ -392,8 +393,8 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                   . ($lines ? '<section><h4>Preço</h4><div class="kv"><span>Preço s/ IVA</span><div class="mono">' . e(budget_eur($calc['price'])) . '</div>'
                             . ($money ? '<span>Margem</span><div class="mono">' . e(budget_pct($calc['margin'])) . '</div><span>Lucro por mês</span><div>' . budget_status_chip($calc['status'], $calc['profit_month']) . '</div>' : '')
                             . '<span>Duração</span><div class="mono">' . e(budget_n($calc['days'], 1)) . ' dias úteis</div></div></section>' : '')
-                  . '<p><a class="btn sm" href="/admin/orcamento.php?id=' . $id . '">' . icon('orcamentacao') . ' Abrir a folha</a></p>';
-            return ['title' => 'Orçamento', 'html' => $html, 'url' => '/admin/orcamento.php?id=' . $id];
+                  . '<p><a class="btn sm" href="' . $go('/admin/orcamento.php?id=' . $id) . '">' . icon('orcamentacao') . ' Abrir a folha</a></p>';
+            return ['title' => 'Orçamento', 'html' => $html, 'url' => nav_to('/admin/orcamento.php?id=' . $id, $self)];
 
         case 'dresult':
             require_perm('financeiro', PERM_VIEW);
@@ -439,11 +440,11 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                 [$kl, $ki] = task_kind_info($x['kind'] ?? 'task');
                 $late = $x['status'] !== 'done' && $x['due_date'] && $x['due_date'] < today_lisbon();
                 $rows .= '<li class="' . ($x['status'] === 'done' ? 'done' : '') . '"><span class="k" data-tip="' . e($kl) . '" aria-label="' . e($kl) . '" role="img" tabindex="0">' . icon($ki) . '</span>'
-                       . '<span class="t"><a href="/admin/calendar.php?view=tarefas&amp;edit=' . (int)$x['id'] . '">' . e($x['title']) . '</a></span>'
+                       . '<span class="t"><a href="' . $go('/admin/calendar.php?view=tarefas&edit=' . (int)$x['id']) . '">' . e($x['title']) . '</a></span>'
                        . '<small class="when' . ($late ? ' late' : '') . '">' . e(($x['due_date'] ? date('d/m', strtotime($x['due_date'])) : 'sem prazo') . ' · ' . ($x['status'] === 'done' ? 'feita' : ($x['who'] ?: 'por atribuir'))) . '</small></li>';
             }
             $html = $head . '<section><h4>Tarefas <span class="mono">' . count($t['open']) . ' abertas · ' . $t['done'] . ' feitas</span></h4>' . ($rows ? '<ul class="focus">' . $rows . '</ul>' : '<p class="muted">Sem tarefas ligadas.</p>') . '</section>'
-                  . '<p><a class="btn ghost sm" href="/admin/calendar.php?view=tarefas">' . icon('tarefas') . ' Abrir em Tarefas</a></p>';
+                  . '<p><a class="btn ghost sm" href="' . $go('/admin/calendar.php?view=tarefas') . '">' . icon('tarefas') . ' Abrir em Tarefas</a></p>';
             return ['title' => 'Produção e tarefas', 'html' => $html, 'url' => '/admin/calendar.php?view=tarefas'];
 
         case 'dfiles':
@@ -466,7 +467,7 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                 foreach ($props as $h) $ph .= '<li>' . e($h['note']) . ' <span class="muted small">· ' . e(date('d/m/Y', strtotime((string)$h['created_at']))) . '</span></li>';
                 $html = $head . '<section><h4>Contratuais <span class="h-sub">propostas, contratos</span></h4>' . $list($dr['docs']['contract']) . ($ph ? '<ul class="ppl">' . $ph . '</ul>' : '') . '</section>'
                       . '<section><h4>Fiscais <span class="h-sub">faturas emitidas</span></h4>' . $list($dr['docs']['fiscal'])
-                      . ($money ? '<p><a class="lnk" href="/admin/documento.php?id=' . $id . '">' . icon('file') . ' Resumo de cobrança</a></p>' : '') . '</section>'
+                      . ($money ? '<p><a class="lnk" href="' . $go('/admin/documento.php?id=' . $id) . '">' . icon('file') . ' Resumo de cobrança</a></p>' : '') . '</section>'
                       . '<section><h4>Faturas de fornecedores</h4>' . $list($dr['docs']['supplier']) . '</section>'
                       . '<p class="muted small">Os documentos vêm da pasta do negócio no Drive, pelo nome e pela subpasta (Propostas, Contratos, Faturas, Fornecedores).</p>';
                 return ['title' => 'Documentos', 'html' => $html, 'url' => $dr['folder'] ? drive_page($dr['folder']) : '/admin/drive.php'];

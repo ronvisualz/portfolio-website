@@ -115,7 +115,7 @@ $row = function (array $r) use ($money, $statusOf, $tab) {
     };
     $ver = $r['num'] ? 'v' . (int)$r['num'] . ($r['accepted_version_id'] ? ' <span class="chip wait" data-tip="Versão aceite: conta para o Resultado e para o Pipeline" tabindex="0">aceite</span>' : '')
          . ((int)$r['nver'] > (int)$r['num'] ? ' <span class="muted small" data-tip="Há uma versão mais recente por aceitar" tabindex="0">+v' . (int)$r['nver'] . '</span>' : '') : '—';
-    return '<tr id="s-' . (int)$r['sheet_id'] . '">'
+    return '<tr id="s-' . (int)$r['sheet_id'] . '" data-href="' . e($href) . '">'
          . '<td class="id nowrap"><a href="' . e($href) . '">' . e($r['code']) . '</a></td>'
          . '<td class="nm"><a class="b" href="' . e($href) . '">' . e($r['name']) . '</a><small>' . e($who) . '</small></td>'
          . '<td class="nowrap">' . $ver . '</td>'

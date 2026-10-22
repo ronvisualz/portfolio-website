@@ -255,3 +255,53 @@ function ago_days(?string $date): string {
         default  => "há $d dias",
     };
 }
+
+// ── «Voltar» pelo caminho que se fez ───────────────────────
+//
+// Quando se passa de uma aba para outra a partir de um registo (ex.: ficha do
+// negócio → orçamento → contacto), cada ligação leva consigo a página de onde
+// saiu (?de=…), e o «Voltar» de cada página faz o caminho inverso, passo a passo
+// (cada «de» guarda o seu próprio «de»). Sem «de», volta à lista da aba.
+
+/** A página de onde se veio (?de=), só dentro do /admin/; null se não houver. */
+function nav_from(): ?string {
+    $de = (string)($_GET['de'] ?? '');
+    if ($de === '' || strlen($de) > 1800 || !preg_match('~^/admin/[a-z_]+\.php(\?[^#\s]*)?$~', $de)) return null;
+    return $de;
+}
+
+/** A página atual, para levar como «de» (sem o pedido de formulários abertos). */
+function nav_here(): string {
+    $u = (string)($_SERVER['REQUEST_URI'] ?? '/admin/');
+    $u = preg_replace('~[?&](avaliar|fecho|novo|nova|cost|delcost)=[^&]*~', '', $u);
+    if (strpos($u, '?') === false && strpos($u, '&') !== false) $u = preg_replace('~&~', '?', $u, 1);
+    return strlen($u) > 1800 ? (string)strtok($u, '?') : $u;
+}
+
+/** $url com o «de» desta página (ou de $from). */
+function nav_to(string $url, ?string $from = null): string {
+    $from ??= nav_here();
+    [$base, $frag] = array_pad(explode('#', $url, 2), 2, '');
+    return $base . (strpos($base, '?') === false ? '?' : '&') . 'de=' . rawurlencode($from) . ($frag !== '' ? '#' . $frag : '');
+}
+
+/** «de» que esta página deve passar às suas próprias ligações internas (para não o perder). */
+function nav_keep(): string {
+    $f = nav_from();
+    return $f ? '&de=' . rawurlencode($f) : '';
+}
+
+/** O nome do sítio para onde o «Voltar» leva. */
+function nav_label(string $url): string {
+    $p = basename((string)parse_url($url, PHP_URL_PATH));
+    return match ($p) {
+        'negocio.php' => 'Voltar ao negócio', 'negocios.php' => 'Voltar aos negócios',
+        'orcamento.php' => 'Voltar ao orçamento', 'orcamentacao.php' => 'Voltar às folhas',
+        'contact.php' => 'Voltar ao contacto', 'contactos.php' => 'Voltar aos contactos',
+        'lead.php' => 'Voltar à lead', 'leads.php' => 'Voltar às leads',
+        'pipeline.php' => 'Voltar ao Pipeline', 'financeiro.php' => 'Voltar ao Financeiro',
+        'relatorios.php' => 'Voltar aos Relatórios', 'calendar.php' => 'Voltar às Tarefas',
+        'dashboard.php' => 'Voltar ao Dashboard',
+        default => 'Voltar',
+    };
+}

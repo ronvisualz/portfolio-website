@@ -21,13 +21,14 @@ $id = (int)$c['id'];
 // Só se volta para a própria lista de contactos (nunca para fora do site).
 $back = (string)($_GET['back'] ?? '');
 if (!preg_match('~^/admin/contactos\.php(\?[^#\s]*)?$~', $back)) $back = '/admin/contactos.php';
-$self = '/admin/contact.php?id=' . $id . ($back !== '/admin/contactos.php' ? '&back=' . rawurlencode($back) : '');
+$self = '/admin/contact.php?id=' . $id . ($back !== '/admin/contactos.php' ? '&back=' . rawurlencode($back) : '') . nav_keep();
 
 render_header($c['name'], 'contactos', '', [$c['name']]);
 render_flashes();
 ?>
 <div class="lead-page-top">
-  <a class="btn ghost sm" href="<?= e($back) ?>#c-<?= $id ?>" data-back><?= icon('chev-left') ?> Voltar aos contactos</a>
+  <?php if ($from = nav_from()): ?><a class="btn ghost sm" href="<?= e($from) ?>" data-back><?= icon('chev-left') ?> <?= e(nav_label($from)) ?></a>
+  <?php else: ?><a class="btn ghost sm" href="<?= e($back) ?>#c-<?= $id ?>" data-back><?= icon('chev-left') ?> Voltar aos contactos</a><?php endif; ?>
   <?php if (can('contactos', PERM_EDIT)): ?><a data-new href="/admin/contactos.php?novo=1" hidden></a><?php endif; ?>
 </div>
 <?= contact_view($pdo, $c, 'page', $self) ?>

@@ -430,6 +430,7 @@ function budget_small_modals_html(PDO $pdo, array $sheet, array $v, array $versi
          . (count($versions) > 1 ? '<div class="mdl" id="mdl-bcmp" role="dialog" aria-modal="true" aria-labelledby="mdl-bcmp-t" hidden>'
          . '<div class="mdl-back" data-mdl-close></div>'
          . '<form class="mdl-card" method="get" action="/admin/orcamento.php"><input type="hidden" name="id" value="' . (int)$sheet['deal_id'] . '"><input type="hidden" name="tab" value="cmp">'
+         . (nav_from() ? '<input type="hidden" name="de" value="' . e(nav_from()) . '">' : '')
          . '<h3 id="mdl-bcmp-t">Comparar versões</h3>'
          . '<div class="grid"><div class="field"><label for="bc-a">Versão</label><select id="bc-a" name="a">' . $vopt($prev) . '</select></div>'
          . '<div class="field"><label for="bc-b">com</label><select id="bc-b" name="b">' . $vopt((int)$v['num'] === $prev ? end($nums) : (int)$v['num']) . '</select></div></div>'

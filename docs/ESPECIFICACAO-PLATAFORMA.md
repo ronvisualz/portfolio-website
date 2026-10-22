@@ -885,6 +885,12 @@ concluídos ficam com as entregas feitas na data da conclusão. A lógica está 
 - **§11:** modo claro e escuro com os tokens, degradês da §11.21 nos cartões e no pulso, animação
   dos formulários (checklist e nova tarefa saem do botão), «Anular», dicas em todos os ícones e
   chips, e a ficha cabe num telemóvel.
+- **Voltar pelo caminho feito (22 out 2026):** quem salta entre abas a partir do ecossistema de um
+  negócio (ficha → orçamento → contacto…) leva consigo de onde veio (`?de=`); «Voltar» faz o caminho
+  inverso, passo a passo, e diz para onde vai («Voltar ao negócio», «Voltar ao orçamento»…). Sem
+  origem, volta à lista da aba. Nas listas de Negócios e Orçamentação a linha inteira abre a ficha
+  (Ctrl/⌘ ou botão do meio abre noutro separador). Na tabela de serviços de um contacto, editar
+  abre o formulário no lugar do serviço.
 
 Ficheiros novos: `inc/deal_file.php`, `inc/migrate_deal_file.php`, `assets/deal.js`; `negocio.php` e
 `negocios.php` reescritos.

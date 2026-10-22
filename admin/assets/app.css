@@ -333,7 +333,7 @@ th {
 td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: var(--hover); }
-tr[data-panel] { cursor: pointer; }
+tr[data-panel], tr[data-href] { cursor: pointer; }
 tr.sel > td { background: color-mix(in srgb, var(--sky) 14%, var(--panel)) !important; }
 tr.sel > td:first-child { box-shadow: inset 3px 0 0 var(--sky); }
 .num { text-align: right; white-space: nowrap; }
@@ -1074,6 +1074,8 @@ button.on-dot:disabled { opacity: .5; cursor: default; }
 .svc-hist li { margin: 2px 0; }
 .svc-form { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
 .svc-form[hidden] { display: none; }
+.svc-t tr.svc-edit-tr > td { padding: 0 0 8px; border-top: 0; }
+.svc-t tr.svc-edit-tr .svc-form { margin-top: 4px; box-shadow: inset 3px 0 0 var(--hi); }
 .svc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .svc-grid label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--mute); }
 .svc-grid label.chk { display: flex; align-items: center; gap: 6px; align-self: end; padding-bottom: 8px; color: var(--fg); font-weight: 500; }

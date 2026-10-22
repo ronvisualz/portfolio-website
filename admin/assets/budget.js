@@ -303,7 +303,9 @@
   // Depois de criar ou aceitar uma versão: a página nova mostra o aviso com «Anular».
   function go(j, url) {
     try { sessionStorage.setItem('topper-undo', JSON.stringify({ msg: j.msg, undo: j.undo || '' })); } catch (e) { /* sem armazenamento: só o aviso */ }
-    location.href = j.url || url || location.href;
+    var to = j.url || url || location.href, de = new URLSearchParams(location.search).get('de');
+    if (de && to.indexOf('de=') < 0) to += (to.indexOf('?') < 0 ? '?' : '&') + 'de=' + encodeURIComponent(de);   // o «Voltar» continua a levar de onde se veio
+    location.href = to;
   }
 })();
 
