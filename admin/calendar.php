@@ -85,7 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $location = ($kind === 'meeting' && $platform === '') || in_array($kind, ['lunch', 'dinner', 'event'], true) ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
             $parts = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['participants'] ?? [])))));
             $ownerUid = $mid !== null && isset($members[$mid]) ? (int)$members[$mid]['user_id'] : (int)$me['id'];
-            $parts = $priv ? [] : array_values(array_filter($parts, fn($u) => $u !== $ownerUid));
+            // Participantes só em reuniões, gravações e visitas (recebem o convite no chat).
+            $parts = $priv || !in_array($kind, TASK_GUEST_KINDS, true) ? [] : array_values(array_filter($parts, fn($u) => $u !== $ownerUid));
             $row = [
                 'title' => $title, 'description' => trim((string)($_POST['description'] ?? '')), 'kind' => $kind, 'member_id' => $mid,
                 'deal_id' => task_deal_in($_POST['deal_id'] ?? 0, $pdo), 'contact_id' => (int)($_POST['contact_id'] ?? 0) ?: null,
@@ -175,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ── dados ───────────────────────────────────────────────────
 require_once __DIR__ . '/inc/contacts.php';
 relation_tick($pdo);   // os follow-ups de relação que chegaram à data (§13.5)
-$f = tasks_filters($_GET, $operator);
+$f = tasks_filters($_GET, $operator, user_start_view($pdo, (int)$user['id'], 'tarefas'));
 // Definições › Tarefas: máximo de cartões por coluna e agrupar (ou não) as tarefas automáticas.
 $boardMax = max(3, min(30, (int)setting($pdo, 'task_board_max', TASK_BOARD_MAX)));
 $groupOn = (string)setting($pdo, 'task_group_auto', '1') !== '0';

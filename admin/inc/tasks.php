@@ -400,6 +400,9 @@ function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visib
 // ════════════════════════════════════════════════════════════
 
 /** Os 19 tipos (§18.6; Almoço, Jantar e Evento vêm da ficha da lead): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
+/** Os tipos com participantes (recebem o convite no chat). */
+const TASK_GUEST_KINDS = ['meeting', 'shoot', 'visit'];
+
 const TASK_TYPES = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],

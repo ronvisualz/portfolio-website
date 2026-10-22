@@ -96,6 +96,13 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             deal_log($pdo, (int)$d['id'], 'state', ['note' => (LEAD_STATE[$d['to']] ?? $d['to']) . ' → ' . (LEAD_STATE[$d['from']] ?? $d['from']) . ' (anulado)']);
             return 'Estado reposto.';
 
+        case 'lead_spam':
+            if (!can('leads', PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            if (record_get($pdo, (int)$d['deal']['id'])) throw new RuntimeException($changed);
+            require_once __DIR__ . '/leads.php';
+            lead_spam_restore($pdo, $d);
+            return '«' . lead_display_name($d['deal']) . '» voltou à quarentena.';
+
         case 'lead_archive':
             $lead = record_get($pdo, (int)$d['id']);
             if (!$lead || $lead['phase'] !== 'archived' || !record_reach($pdo, $lead, PERM_EDIT)) throw new RuntimeException($changed);

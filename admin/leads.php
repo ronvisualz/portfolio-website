@@ -15,8 +15,8 @@ require_page('leads');
 // é lead.php. Quem vê o quê vem do âmbito da aba Leads (inc/perm.php).
 
 const VIEWS = ['ativas' => 'Ativas', 'fila' => 'Por atribuir', 'arquivadas' => 'Arquivadas', 'quarentena' => 'Quarentena'];
-/** Vistas guardadas (§11.12). «Em risco» = sem próxima ação (§12.7). */
-const LEAD_VISTAS = ['meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
+/** Vistas rápidas. «Todas» é a que não filtra; «Em risco» = sem próxima ação. */
+const LEAD_VISTAS = ['todas' => 'Todas', 'meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
 
 function lead_filters(array $src): array {
     $f = [];
@@ -127,10 +127,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(leads_url($bf + ['open' => $id]));
     }
 
-    if ($do === 'release') {   // tirar da quarentena: entra a sério (contactos, prazo, primeira chamada)
-        $pdo->prepare('UPDATE deals SET is_quarantined = 0, state_since = ? WHERE id = ?')->execute([now_php(), $id]);
-        lead_start($pdo, $id, null, (int)$me['id']);
-        flash('Lead libertada da quarentena.');
+    // Quarentena: «Não é spam» passa à fila «Por atribuir» como lead normal (contactos, prazo,
+    // primeira chamada); «É spam» elimina, com «Anular». Só quem gere a fila.
+    if (in_array($do, ['release', 'spam'], true)) {
+        if (!$manager || !can('leads', PERM_EDIT)) { flash('Só admins e chefes de equipa tratam a quarentena.', 'err'); redirect($back); }
+        if ($lead['phase'] !== 'lead' || !(int)$lead['is_quarantined']) { flash('Esta lead já não está em quarentena.', 'err'); redirect(leads_url(['v' => 'quarentena'])); }
+        $name = lead_display_name($lead);
+        if ($do === 'release') {
+            $pdo->prepare('UPDATE deals SET is_quarantined = 0, owner_id = NULL, state_since = ? WHERE id = ?')->execute([now_php(), $id]);
+            deal_log($pdo, $id, 'release', ['note' => 'Não é spam: passou para «Por atribuir»']);
+            lead_start($pdo, $id, null, (int)$me['id']);
+            flash('«' . $name . '» passou para «Por atribuir».');
+        } else {
+            flash('«' . $name . '» eliminada como spam.', 'ok', undo_push('lead_spam', lead_spam_delete($pdo, $lead)));
+        }
         redirect(leads_url(['v' => 'quarentena']));
     }
 
@@ -164,6 +174,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── dados ───────────────────────────────────────────────────
 $filters = lead_filters($_GET);
+// Sem nada no endereço, a aba abre na vista do Perfil; por defeito, os operadores em
+// «As minhas» e o superadmin em «Todas».
+if (!$filters && !isset($_GET['open'])) {
+    $start = user_start_view($pdo, (int)$me['id'], 'leads');
+    if ($start === '') $start = $me['role'] === 'superadmin' ? 'ativas' : 'minhas';
+    if ($start === 'minhas') $filters['vista'] = 'meus';
+}
 $view = $filters['v'] ?? 'ativas';
 if (!isset(VIEWS[$view]) || (in_array($view, ['fila', 'quarentena'], true) && !$manager)) $view = 'ativas';
 
@@ -210,12 +227,13 @@ $monthStart = (new DateTimeImmutable(today_lisbon()))->format('Y-m-01');
 $inVista = static function (array $l, string $vista) use ($me, $monthStart): bool {
     return match ($vista) {
         'meus'  => (int)$l['owner_id'] === (int)$me['id'],
+        'todas' => true,
         'risco' => $l['phase'] === 'lead' && $l['next'] === null,
         'mes'   => substr((string)($l['phase'] === 'archived' ? $l['archived_at'] : $l['created_at']), 0, 10) >= $monthStart,
         default => true,
     };
 };
-$vista   = isset(LEAD_VISTAS[$filters['vista'] ?? '']) ? (string)$filters['vista'] : '';
+$vista   = isset(LEAD_VISTAS[$filters['vista'] ?? '']) && $filters['vista'] !== 'todas' ? (string)$filters['vista'] : '';
 $estado  = isset(LEAD_STATE[$filters['estado'] ?? '']) ? (string)$filters['estado'] : '';
 $urgente = !empty($filters['urgente']);
 $isLate  = static fn(array $l) => $l['clock'] && $l['clock']['level'] === 'late';
@@ -240,6 +258,7 @@ $base = array_values(array_filter($all, $rest));
 $vistaCount = []; foreach (array_keys(LEAD_VISTAS) as $k) $vistaCount[$k] = count(array_filter($base, fn($l) => $inVista($l, $k) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
 $stateCount = []; foreach (array_keys(LEAD_STATE) as $k) $stateCount[$k] = count(array_filter($base, fn($l) => $l['lead_state'] === $k && $inVista($l, $vista) && (!$urgente || $isLate($l))));
 $lateCount = count(array_filter($base, fn($l) => $isLate($l) && $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado)));
+$vistaLate = []; foreach (array_keys(LEAD_VISTAS) as $k) $vistaLate[$k] = count(array_filter($base, fn($l) => $inVista($l, $k) && $isLate($l) && (!$estado || $l['lead_state'] === $estado)));
 
 $rows = array_values(array_filter($base, fn($l) => $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
 usort($rows, static function ($a, $b) use ($view) {
@@ -319,8 +338,8 @@ echo paginate_css();
     <a href="<?= e($estado === $k ? $chip([], ['estado']) : $chip(['estado' => $k])) ?>" class="<?= $estado === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $stateCount[$k] ?></span></a>
   <?php endforeach; ?>
   <span class="sep" aria-hidden="true"></span>
-  <?php foreach (LEAD_VISTAS as $k => $label): ?>
-    <a href="<?= e($vista === $k ? $chip([], ['vista']) : $chip(['vista' => $k])) ?>" class="<?= $vista === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $vistaCount[$k] ?></span></a>
+  <?php foreach (LEAD_VISTAS as $k => $label): $on = $k === 'todas' ? $vista === '' : $vista === $k; ?>
+    <a href="<?= e($chip(['vista' => $on || $k === 'todas' ? 'todas' : $k])) ?>" class="<?= $on ? 'on' : '' ?>"<?= $on ? ' aria-current="true"' : '' ?>><?= e($label) ?> <span class="mono">· <?= $vistaCount[$k] ?></span><?php if (in_array($k, ['todas', 'meus'], true) && $vistaLate[$k]): ?> <span class="vlate" data-tip="Em atraso">· <?= $vistaLate[$k] ?> <?= icon('alert') ?></span><?php endif; ?></a>
   <?php endforeach; ?>
 </nav>
 <?php endif; ?>
@@ -354,7 +373,7 @@ echo paginate_css();
 <table class="leads-t">
   <thead>
     <tr><th><?= $view === 'arquivadas' ? 'Arquivada' : 'Prazo' ?></th><th>Nome</th><th><?= $view === 'arquivadas' ? 'Motivo' : 'Estado' ?></th><th>Responsável</th>
-        <th class="hide-sm">Próxima ação</th><th class="hide-sm">Último contacto</th></tr>
+        <?php if ($view === 'quarentena'): ?><th>Motivo</th><th class="t-act"><span class="sr">Ações</span></th><?php else: ?><th class="hide-sm">Próxima ação</th><th class="hide-sm">Último contacto</th><?php endif; ?></tr>
   </thead>
   <tbody>
   <?php if (!$rows): ?><tr><td colspan="6" class="empty">Nenhuma lead aqui.</td></tr><?php endif; ?>
@@ -367,10 +386,15 @@ echo paginate_css();
       </td>
       <td><?= $view === 'arquivadas' ? e(lead_archive_label((string)$l['archived_reason'])) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
       <td><?= e($l['owner_name'] ?? 'Por atribuir') ?></td>
+      <?php if ($view === 'quarentena'): ?>
+      <td class="muted small"><?= e(shorten(lead_quarantine_reason($l), 70)) ?></td>
+      <td class="t-act nowrap"><?= $canEdit ? lead_spam_buttons($lid, true) : '' ?></td>
+      <?php else: ?>
       <td class="hide-sm"><?php if ($l['next']): [$kl] = LEAD_TASK_KINDS[$l['next']['kind'] ?? 'task'] ?? LEAD_TASK_KINDS['task']; ?>
         <span class="<?= task_is_late($l['next']) ? 'neg' : '' ?>"><?= e($kl) ?> · <?= e(lead_task_when($l['next'])) ?></span>
       <?php elseif ($l['phase'] === 'lead'): ?><span class="risk-txt">Sem próxima ação</span><?php else: ?><span class="muted">—</span><?php endif; ?></td>
       <td class="hide-sm nowrap muted"><?= e(lead_ago($l['last_contact_at'])) ?></td>
+      <?php endif; ?>
     </tr>
   <?php endforeach; ?>
   </tbody>

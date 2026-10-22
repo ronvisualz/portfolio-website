@@ -161,6 +161,8 @@
     // Local: reunião presencial, almoço, jantar e evento.
     $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0); });
     $$('[data-not="block"]', form).forEach(function (n) { n.hidden = k === 'block' || k === 'personal'; });
+    // Participantes: só em Reunião, Gravação e Visita.
+    $$('[data-only="guests"]', form).forEach(function (n) { n.hidden = ['meeting', 'shoot', 'visit'].indexOf(k) < 0; });
     var who = $('#tk-who', form); if (who) who.closest('.field').hidden = k === 'block' || k === 'personal';
     var busy = form.querySelector('input[name=busy][value="1"]');
     if (busy && (k === 'block' || k === 'personal')) busy.checked = true;

@@ -860,6 +860,9 @@ body.is-dragging .board { scroll-snap-type: none; }
 .tabs-row .add-lead { margin-left: auto; }
 .lead-views .sep { width: 1px; height: 18px; background: var(--line-2); margin: 0 4px; }
 .lead-views a .mono { font-size: 11px; opacity: .7; margin-left: 2px; }
+.lead-views .vlate { display: inline-flex; align-items: center; gap: 3px; font: 600 11px var(--mono); color: var(--danger); }
+.lead-views .vlate svg { width: 12px; height: 12px; }
+.lead-views a.on .vlate { color: inherit; }
 .lead-views .urg { background: var(--bad-bg); color: var(--bad-fg); font-weight: 600; }
 .lead-views .urg i { font: 600 11px var(--mono); font-style: normal; background: var(--danger); color: #fff; border-radius: 100px; padding: 0 6px; margin-left: 4px; }
 .lead-views .urg.on { background: var(--danger); color: #fff; }
@@ -2678,3 +2681,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .prof-admin .ico { width: 15px; height: 15px; vertical-align: -2px; }
 .h1-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
 .h1-row h1 { margin-right: 0; }
+
+/* Quarentena: «Não é spam» / «É spam» na linha */
+.leads-t .t-act { text-align: right; }
+.leads-t .t-act form.inl { display: inline-flex; margin-left: 6px; }

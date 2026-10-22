@@ -13,6 +13,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/interactions.php';
 require_once __DIR__ . '/inline.php';
+require_once __DIR__ . '/reach.php';
 require_once __DIR__ . '/contacts.php';   // «Trazido por» (§13.4)
 
 /** Anel do prazo (enche com a percentagem) + texto, com a hora limite na dica. */
@@ -177,6 +178,15 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
          . '</form>';
 }
 
+/** Os dois botões da quarentena: «Não é spam» (vai para «Por atribuir») e «É spam» (elimina, com «Anular»). */
+function lead_spam_buttons(int $id, bool $small = false): string {
+    $f = fn(string $do, string $cls, string $ic, string $label, string $tip) => '<form method="post" action="/admin/leads.php" class="inl">' . csrf_field()
+        . '<input type="hidden" name="do" value="' . $do . '"><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="back[v]" value="quarentena">'
+        . '<button class="btn ' . $cls . ($small ? ' sm' : '') . '" type="submit" data-tip="' . e($tip) . '">' . icon($ic) . ' ' . $label . '</button></form>';
+    return $f('release', '', 'check', 'Não é spam', 'Passa para «Por atribuir» como lead normal')
+         . $f('spam', 'ghost danger-t', 'ban', 'É spam', 'Elimina a lead (pode anular)');
+}
+
 /**
  * A vista completa. $mode 'panel' (painel lateral) ou 'page' (lead.php).
  * $back: para onde voltar depois de converter/arquivar sem JavaScript.
@@ -224,9 +234,8 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
     if ($edit && $active && !$quar) {
         if (can('pipeline', PERM_EDIT)) $foot .= '<a class="btn" href="/admin/leads.php?conv=' . $id . '#converter">' . icon('arrow') . ' Converter em negócio</a>';
         $foot .= '<button type="button" class="btn ghost" data-archive="' . $id . '" data-name="' . e($name) . '">' . icon('archive') . ' Arquivar</button>';
-    } elseif ($edit && $quar) {
-        $foot .= '<form method="post" action="/admin/leads.php">' . csrf_field() . '<input type="hidden" name="do" value="release"><input type="hidden" name="id" value="' . $id . '">'
-               . '<input type="hidden" name="back[v]" value="quarentena"><button class="btn" type="submit">' . icon('check') . ' Não é spam</button></form>';
+    } elseif ($edit && $quar && sees_unassigned(me_row($pdo))) {
+        $foot .= lead_spam_buttons($id);
     } elseif ($edit) {
         $foot .= '<form method="post" action="/admin/leads.php">' . csrf_field() . '<input type="hidden" name="do" value="reactivate"><input type="hidden" name="id" value="' . $id . '">'
                . '<button class="btn" type="submit">' . icon('refresh') . ' Reativar</button></form>';

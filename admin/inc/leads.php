@@ -406,6 +406,49 @@ function lead_start(PDO $pdo, int $id, ?int $useContactId = null, ?int $by = nul
                      null, $l['owner_id'] !== null ? (int)$l['owner_id'] : null, '', $by);
 }
 
+/** Porque ficou em quarentena (a linha «Quarentena: …» das notas). */
+function lead_quarantine_reason(array $l): string {
+    return preg_match('/Quarentena:\s*([^\n]+)/u', (string)$l['notes'], $m) ? trim($m[1]) : '—';
+}
+
+/** O que guarda uma lead (a linha e o que pende dela), para «É spam» se poder anular. */
+const LEAD_SPAM_TABLES = ['deal_history', 'interactions', 'deal_contacts', 'tasks', 'events'];
+
+/** «É spam»: elimina a lead em quarentena. Devolve a cópia para o «Anular». */
+function lead_spam_delete(PDO $pdo, array $l): array {
+    $id = (int)$l['id'];
+    $snap = ['deal' => $l, 'rows' => []];
+    foreach (LEAD_SPAM_TABLES as $t) {
+        if (!db_has_table($pdo, $t)) continue;
+        $st = $pdo->prepare("SELECT * FROM $t WHERE deal_id = ?");
+        $st->execute([$id]);
+        $snap['rows'][$t] = $st->fetchAll();
+    }
+    $pdo->beginTransaction();
+    foreach (['tasks', 'events'] as $t) if (db_has_table($pdo, $t)) $pdo->prepare("DELETE FROM $t WHERE deal_id = ?")->execute([$id]);
+    $pdo->prepare('DELETE FROM deals WHERE id = ?')->execute([$id]);   // o resto vai em cascata
+    $pdo->commit();
+    return $snap;
+}
+
+/** Repõe a lead eliminada por «É spam», com o mesmo ID e o mesmo histórico. */
+function lead_spam_restore(PDO $pdo, array $snap): void {
+    $ins = static function (string $t, array $r) use ($pdo) {
+        $cols = array_keys(array_filter($r, 'is_string', ARRAY_FILTER_USE_KEY));
+        $pdo->prepare("INSERT INTO $t (" . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')
+            ->execute(array_map(fn($c) => $r[$c], $cols));
+    };
+    $pdo->beginTransaction();
+    try {
+        $ins('deals', $snap['deal']);
+        foreach ($snap['rows'] as $t => $rows) foreach ($rows as $r) $ins($t, $r);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw new RuntimeException('Já não foi possível repor esta lead.');
+    }
+}
+
 // ── prazos (24/7) ──────────────────────────────────────────
 
 function lead_deadline_hours(PDO $pdo): array {

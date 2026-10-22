@@ -202,7 +202,7 @@ function deal_attention(PDO $pdo, array $deal, ?array $fig, array $tasks, array 
     $toRate = array_values(array_filter($check['items'], fn($i) => $i['key'] === 'rated'))[0];
     if (!$toRate['ok']) {
         [$r, $n] = array_map('intval', explode('/', $toRate['detail']));
-        $out[] = ['Avaliar ' . ($n - $r) . ($n - $r === 1 ? ' fornecedor' : ' fornecedores'), 'o', 'Como correu o trabalho (Contactos, §13.3)'];
+        $out[] = ['Avaliar ' . ($n - $r) . ($n - $r === 1 ? ' fornecedor' : ' fornecedores'), 'o', 'Como correu o trabalho (fica em Contactos)'];
     }
     $sheet = budget_sheet_get($pdo, (int)$deal['id']);
     if (!$sheet || !budget_has_lines($pdo, $sheet)) $out[] = ['Sem orçamento na plataforma', '', $deal['created_at'] < '2026-10-21' ? 'Negócio anterior à plataforma: o Resultado usa o valor e os custos existentes' : 'A folha da Orçamentação ainda não tem linhas'];

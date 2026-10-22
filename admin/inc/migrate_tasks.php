@@ -63,7 +63,7 @@ function migrate_tasks_tab(PDO $pdo): void {
         $super = (int)$adm['id'];
         if (db_has_table($pdo, 'user_history')) {
             $pdo->prepare('INSERT INTO user_history (user_id, event, note, by_user, created_at) VALUES (?,?,?,?,?)')
-                ->execute([$super, 'role', 'admin@topperdigital.xyz → ' . SUPERADMIN_EMAIL . ' · Superadmin (§18.0)', null, now_php()]);
+                ->execute([$super, 'role', 'admin@topperdigital.xyz → ' . SUPERADMIN_EMAIL . ' · Superadmin', null, now_php()]);
         }
     } elseif ($info) {
         $super = (int)$info['id'];
@@ -99,7 +99,7 @@ function migrate_tasks_tab(PDO $pdo): void {
             $own->execute([$o['id'], $l['id']]);
             $tk->execute(array_merge([$members[(int)$o['id']], $l['id']], $superMember ? [$superMember] : []));
             $moved['tasks'] += $tk->rowCount();
-            $log->execute([$l['id'], 'assign', 'Responsável: ' . $o['name'] . ' (redistribuição única: o superadmin não é operador, §18.2)', null]);
+            $log->execute([$l['id'], 'assign', 'Responsável: ' . $o['name'] . ' (redistribuição única: o superadmin não é operador)', null]);
             $moved['leads']++;
         }
     }

@@ -6,6 +6,8 @@
  *    com «Repor» por linha.
  *  · users.prefs: as preferências pessoais do Perfil (notificações e por onde, vista com que
  *    cada aba abre), em JSON. Tema e menu continuam nas colunas pref_theme e pref_nav.
+ *  · Tira as referências à especificação («§17.9») das notas que passos anteriores
+ *    deixaram nos históricos (a interface nunca as mostra).
  *
  * Idempotente: corre de novo sem duplicar.
  */
@@ -24,4 +26,12 @@ function migrate_settings_tab(PDO $pdo): void {
         KEY skey (skey),
         KEY created_at (created_at)");
     db_add_column($pdo, 'users', 'prefs', 'TEXT NULL', 'TEXT NULL');
+    foreach (['user_history' => 'note', 'deal_history' => 'note'] as $t => $c) {
+        if (!db_has_table($pdo, $t)) continue;
+        $up = $pdo->prepare("UPDATE $t SET $c = ? WHERE id = ?");
+        foreach ($pdo->query("SELECT id, $c FROM $t WHERE $c LIKE '%§%'")->fetchAll() as $r) {
+            $v = preg_replace(['/\s*\(§[\d.]+\)/u', '/,\s*§[\d.]+\)/u', '/\s*§[\d.]+/u'], ['', ')', ''], (string)$r[$c]);
+            $up->execute([$v, $r['id']]);
+        }
+    }
 }

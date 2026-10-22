@@ -36,6 +36,7 @@ const HISTORY_TYPES = [
     'note'       => ['Nota', 'bubble', 'note'],
     'archive'    => ['Arquivada', 'archive', 'red'],
     'reactivate' => ['Reativada', 'refresh', 'sky'],
+    'release'    => ['Saiu da quarentena', 'check', 'green'],
     'convert'    => ['Convertida em negócio', 'arrow', 'yellow'],
     'late'       => ['Prazo em atraso', 'clock', 'red'],
     'stage'      => ['Mudou de etapa', 'arrows', 'neutral'],
