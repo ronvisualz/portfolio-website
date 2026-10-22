@@ -25,7 +25,7 @@ $ago15 = $lite ? "datetime('now','-15 minutes')" : 'NOW() - INTERVAL 15 MINUTE';
 /** O pedido de recuperação ainda válido para este código, ou null. */
 function reset_row(PDO $pdo, string $token, string $now): ?array {
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
-    $st = $pdo->prepare("SELECT r.id, r.user_id FROM password_resets r JOIN users u ON u.id = r.user_id
+    $st = $pdo->prepare("SELECT r.id, r.user_id, " . (db_has_column($pdo, 'password_resets', 'kind') ? 'r.kind' : "'reset' AS kind") . ", u.name FROM password_resets r JOIN users u ON u.id = r.user_id
                           WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > $now
                             AND u.is_active = 1 AND u.deactivated_at IS NULL");
     $st->execute([hash('sha256', $token)]);
@@ -45,9 +45,12 @@ function reset_link(string $token): string {
 }
 
 $token = (string)($_GET['reset'] ?? $_POST['token'] ?? '');
+$invite = null;   // um convite da aba Equipa (§17.8): o mesmo link, outro texto
 if ($token !== '') {
     $view = 'reset';
-    if (!reset_row($pdo, $token, $now)) {
+    $rr = reset_row($pdo, $token, $now);
+    if ($rr && $rr['kind'] === 'invite') $invite = $rr;
+    if (!$rr) {
         $view = 'forgot';
         $error = 'Este link já não é válido. Peça outro.';
         $token = '';
@@ -108,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($p1, PASSWORD_DEFAULT), (int)$row['user_id']]);
             $pdo->prepare("UPDATE password_resets SET used_at = $now WHERE user_id = ? AND used_at IS NULL")->execute([(int)$row['user_id']]);
+            if (db_has_column($pdo, 'users', 'invite_pending')) $pdo->prepare('UPDATE users SET invite_pending = 0 WHERE id = ?')->execute([(int)$row['user_id']]);
             $view = 'login'; $token = '';
             $note = 'Palavra-passe definida. Já pode entrar.';
         }
@@ -166,8 +170,13 @@ $msg = function (string $for) use ($view, $error, $note) {
   <div class="login-views">
     <?php if ($view === 'reset'): ?>
     <section data-view="reset" aria-hidden="false">
+      <?php if ($invite): ?>
+      <h1>Bem-vindo, <?= e(explode(' ', trim((string)$invite['name']))[0]) ?></h1>
+      <p>Defina a sua palavra-passe para entrar na plataforma da topper. (pelo menos <?= RESET_PASSWORD_MIN ?> caracteres).</p>
+      <?php else: ?>
       <h1>Nova palavra-passe</h1>
       <p>Escolha uma palavra-passe com pelo menos <?= RESET_PASSWORD_MIN ?> caracteres.</p>
+      <?php endif; ?>
       <?= $msg('reset') ?>
       <form method="post" autocomplete="off">
         <?= csrf_field() ?><input type="hidden" name="do" value="reset"><input type="hidden" name="token" value="<?= e($token) ?>">

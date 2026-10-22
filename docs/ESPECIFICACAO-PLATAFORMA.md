@@ -979,6 +979,100 @@ Ficheiros novos: `inc/migrate_marketing.php`, `inc/marketing.php`, `inc/marketin
 `go.php`. Alterados: `contacto.php` e `index.html` (origem «rede · peça»), Negócios (divulgação,
 portfólio → ideia), Conhecimento (Voz da topper.), Definições, menu, ⌘K.
 
+### 10.9 Aba Equipa — §17 (22 out 2026)
+
+A §17 está aplicada, com as contas iniciais dos sócios (§17.9). Base de dados **versão 19**
+(`inc/migrate_team.php`): em `users` — `is_partner`, `reports_to`, `phone`, `photo`, `birthday`,
+`skills`, `work_hours`, `last_seen_at`, `focus_until`, `invite_pending`, `invited_at`; cargos
+(`positions`, `user_positions`), posições por preencher (`team_openings`), subdepartamentos
+(`departments.parent_id`), histórico da conta (`user_history`), checklists de entrada e saída
+(`team_checklists`), chat (`chat_messages`), pedidos de reunião (`meetings`), férias e ausências
+(`absences`), convites (`password_resets.kind = invite`) e **Ocupado/Livre** nas tarefas
+(`tasks.busy`). Lógica em `inc/team.php`, ecrãs em `inc/team_view.php`, `equipa.php` (separadores),
+pedidos em `team_api.php`, fotos em `avatar.php`, comportamento em `assets/chat.js` (todas as
+páginas) e `assets/team.js` (a página Equipa).
+
+- **17.1 Separadores:** Equipa (todos) · Organograma (superadmin, admins, chefes de equipa) ·
+  Utilizadores e acessos (superadmin, admins; inclui a **grelha de permissões** e as exceções por
+  pessoa) · Departamentos (superadmin, admins). A visibilidade decide-se pelo papel lido na base;
+  a aba Equipa fica sempre visível (no mínimo «Ver») na grelha.
+- **17.2 Papel ≠ cargo ≠ sócio:** cargos geridos pelos admins (Utilizadores e acessos › Cargos), vários
+  por pessoa; a marca Sócio é à parte. Lista inicial: CEO · COO · CMO · CTO · CFO · Business Developer
+  · Post Production Lead · Desenvolvedor de Produto · 3D Artist · Compositor · Editor · Produtor (os
+  antigos «Função» passaram a cargos).
+- **17.3 Estrutura inicial:** Direção · Comercial · Pós-Produção e VFX · Campanhas e Adverts (com os
+  subdepartamentos **Adverts** e **Campanhas**, «equipa a definir») · Produto e Otimização de
+  Processos; os quatro respondem ao CEO; **CFO por preencher** (a tracejado). Os departamentos de
+  arranque sem uso (Orçamentação, VFX, Desenvolvimento) foram retirados.
+- **17.4 Organograma:** árvore por «responde a» (avatar, nome, cargos, departamento, sócio
+  marcado), subdepartamentos sem pessoas e posições por preencher a tracejado; quem ainda não
+  responde a ninguém nem tem equipa fica numa faixa «Sem «responde a»». Clicar abre a
+  disponibilidade; **admins arrastam** uma pessoa para cima de outra (ou para «Topo») com «Anular»;
+  o servidor recusa círculos. Posições por preencher geridas no próprio separador.
+- **17.5 Cartão da pessoa:** foto ou iniciais, sócio, cargos, departamento, **online/offline em
+  tempo real** (ponto verde/cinzento, «visto há X min»), estado da agenda (Disponível · Ocupado até
+  HH:MM · Em foco até HH:MM · Ausente · Fora do horário), competências, telemóvel e email, botões
+  Chat · Ver disponibilidade · Ligar. Pesquisa por nome, cargo ou **competência** e filtro por
+  departamento. **Custo/hora e horas/mês só para admins** — no HTML e na API (`team_people` tira-os
+  para os outros; testado).
+- **Presença:** sinal da sessão a cada ~30 s com a página à vista (`team_api.php?a=ping`): grava só a
+  hora (`last_seen_at`); online = sinal nos últimos 75 s. **Não prolonga a sessão** (o «sair por
+  inatividade» continua a valer) e **nunca regista o que a pessoa faz**. Sem registo de horas.
+- **17.6 Chat:** só **1:1**, painel lateral em todas as páginas (botão na barra de topo, **tecla C**,
+  Esc fecha), lista de pessoas com presença e não lidas, contador na barra de topo e aviso «Nova
+  mensagem de …» com «Abrir»; Enter envia (Shift+Enter muda de linha). Links de lead, negócio,
+  contacto, orçamento, tarefa ou peça de Marketing viram **cartões** — só se quem lê os pode ver.
+  Mensagens no servidor; só os dois participantes as leem. Também nas notificações (sino).
+- **17.7 Disponibilidade e reuniões:** tarefas com hora têm **Ocupado/Livre** e duração (formulário
+  das Tarefas; por defeito Ocupado, 1 h); o horário de cada pessoa (por defeito **seg–sex
+  09:00–18:00**), as férias/ausências aprovadas e o Foco bloqueiam. «Ver disponibilidade»: semana em
+  blocos de 30 min; **os outros veem só «Ocupado»/«Ausente», admins veem o título**. Clicar num bloco
+  livre → pedido de reunião (dia, hora, duração, assunto, negócio opcional, **Google Meet ou
+  Discord**, link opcional). O pedido chega **no chat** como cartão com **Aceitar · Recusar · Propor
+  outra hora** (quem pediu pode cancelar). **Ao aceitar:** tarefa «Reunião: …» Ocupado na agenda
+  dos dois (num pedido a várias pessoas, quem pediu fica com uma só), histórico do negócio se houver,
+  e **email aos dois com o link**. **Integrações:** `admin/inc/meet_config.php` (fora do Git; modelo
+  em `meet_config.example.php`) com `google` (client_id, client_secret, refresh_token, calendar_id →
+  cria o evento com Meet pela API do Google Calendar) e `discord` (invite_url). **Credenciais só no
+  servidor.** **PENDENTE** configurar as duas; até lá, quem aceita **cola o link** (o cartão pede-o).
+  **«Encontrar hora»** (botão na página Equipa): várias pessoas, duração e semana → espaços livres
+  comuns → pedido a todos de uma vez.
+- **17.8 Utilizadores e acessos:** lista Ativas · Convite pendente · Desativadas; **«+ Utilizador»**
+  (tecla N) com papel, departamento/subdepartamento, cargos, sócio, responde a, horário, custo/hora e
+  horas/mês → **convite por email** para definir a palavra-passe (link de 7 dias; ecrã «Bem-vindo,
+  <nome>»; reenviar convite). Página da conta: editar (com «Anular»), permissões, **desativar nunca
+  apagar** — com trabalho aberto (leads, negócios, tarefas, relações, peças) pede a quem passa e
+  reatribui; também retira chefias, «responde a» e convites por usar; reativar. **Só o superadmin
+  mexe em admins** (e só ele dá o papel de admin) — confirmado no servidor, também contra pedidos
+  forjados; ninguém mexe no superadmin.
+- **17.9 Contas dos sócios:** a migração cria (ou, se o email já existir, **atualiza sem duplicar**)
+  Rodrigo Nicolau (CEO, Direção), Santiago Apolónio (COO · Business Developer, Comercial), Guilherme
+  Albano (Post Production Lead, Pós-Produção e VFX), Valdir Furtado (CMO, Campanhas e Adverts) e
+  Diogo Vasconcelos (**CTO** · Desenvolvedor de Produto, Produto e Otimização de Processos,
+  `diogovasconcelos@topperhub.xyz`) como **Admin**, sócio, responsável do seu departamento, e envia
+  o **convite por email** a cada conta nova. O superadmin continua a ser só `info@topperdigital.xyz`.
+  Contas que já existiam (ex.: Ron) ficam como estavam.
+- **17.10 Sem microgestão:** **Carga da equipa** (admins; Equipa › Carga): por semana, horas Ocupado
+  vs horas disponíveis (horário menos ausências), 🟢 <80% · 🟠 80–100% · 🔴 >100%. **Entrada e
+  saída:** checklist de entrada criada com a conta (conta e convite marcados; primeira tarefa
+  marca-se sozinha; pasta no Drive e apresentação com atalhos) e de saída ao desativar. **Férias e
+  ausências:** pedido em A minha conta → aprovação por admin (Equipa › Férias e ausências, com
+  «Anular», email à pessoa, contador no menu e notificação) → bloqueia a agenda; calendário das
+  próximas 5 semanas. **«Hoje na equipa»:** ausentes, em reunião, em foco, aniversários. **Modo
+  Foco:** 30 min a fim do dia (no chat ou em A minha conta): silencia o chat e as notificações, os
+  pedidos de reunião ficam em espera, o cartão mostra «Em foco até HH:MM» e quem escreve é avisado.
+  **Competências** pesquisáveis. **O meu perfil** (A minha conta): foto (recortada a 256 px, guardada
+  em `inc/avatars/`, fora do acesso direto, servida só com sessão), telemóvel, competências, horário,
+  aniversário (opcional).
+- **§11:** claro e escuro com os tokens, degradês nos cartões, painel do chat a deslizar, formulários
+  que saem do botão, «Anular» em contas, organograma, férias e perfil, dicas nos campos, e cabe no
+  telemóvel (sem deslocamento horizontal).
+
+Ficheiros novos: `inc/migrate_team.php`, `inc/team.php`, `inc/team_view.php`, `team_api.php`,
+`avatar.php`, `assets/chat.js`, `assets/team.js`, `inc/meet_config.example.php`. Alterados:
+`equipa.php` (reescrita), `conta.php` (O meu perfil, Foco, férias), `index.php` (convite), Tarefas
+(hora, duração, Ocupado/Livre), alertas e notificações, permissões, menu e barra de topo.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -1513,3 +1607,105 @@ Métricas por publicação (alcance, interações, guardados, partilhas, cliques
 pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
 site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
 Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.
+
+---
+
+## 17. Aba Equipa (decidido 22 out 2026)
+
+Substitui o que contradiga a §3.9 e completa a §9.3/§9.6. Aplica a §11.
+
+### 17.1 Separadores
+| Separador | Quem vê | Conteúdo |
+|---|---|---|
+| **Equipa** (por defeito) | todos | cartão de cada pessoa |
+| **Organograma** | superadmin, admins, chefes de equipa | estrutura da empresa |
+| **Utilizadores e acessos** | superadmin, admins | contas, papéis, **permissões** (grelha papel × aba e exceções por utilizador, §9.3) |
+| **Departamentos** | superadmin, admins | departamentos, subdepartamentos e chefes |
+
+### 17.2 Papel, cargo e sócio
+- **Papel** = o que pode fazer (Superadmin · Admin · Chefe de equipa · Colaborador).
+- **Cargo** = título na empresa; não dá permissões. Lista gerida por admins; uma pessoa pode
+  ter vários cargos; um cargo pode estar **por preencher** (posição aberta no organograma).
+  Lista inicial: **CEO · COO · CMO · CTO · CFO** · Business Developer · Post Production Lead ·
+  Desenvolvedor de Produto + cargos de produção (3D Artist, Compositor, Editor, Produtor…).
+- **Sócio** = marca sim/não. Sócios: Rodrigo Nicolau, Valdir Furtado, Guilherme Albano,
+  Diogo Vasconcelos, Santiago Apolónio.
+
+### 17.3 Estrutura inicial (documento «Estrutura da Topper Digital», 18 out 2026)
+| Departamento | Responsável | Cargo |
+|---|---|---|
+| Direção | Rodrigo Nicolau | CEO (transversal: entra em todas as áreas) |
+| Comercial | Santiago Apolónio | COO e Business Developer |
+| Pós-Produção e VFX | Guilherme Albano | Post Production Lead |
+| Campanhas e Adverts (subdep.: **Adverts**, **Campanhas**; equipas a definir) | Valdir Furtado | CMO |
+| Produto e Otimização de Processos | Diogo Vasconcelos | **CTO** (e Desenvolvedor de Produto); passa a CPO, ou acumula, se a área vender produtos |
+- Os quatro departamentos respondem ao CEO. Suportar **subdepartamentos**.
+- A estrutura vai mudar: tudo editável pelos admins, sem código.
+
+### 17.4 Organograma
+Árvore a partir de «responde a»: foto, nome, cargo(s), departamento; sócios marcados;
+cargos por preencher a tracejado; clicar abre o cartão; admins editam arrastando.
+
+### 17.5 Cartão da pessoa (separador Equipa)
+Foto · nome · cargo(s) · departamento · telemóvel e email (ligar / email) ·
+**online/offline em tempo real** (ponto verde/cinzento; «visto há X min» quando offline;
+presença por sinal periódico da sessão, ~30 s) · estado da agenda (Disponível · Ocupado até
+HH:MM · Ausente) · botões **Chat** e **Ver disponibilidade**.
+Custo/hora e horas disponíveis por mês (Orçamentação) no mesmo perfil, **visíveis só a admins**.
+
+### 17.6 Chat interno
+- **Só conversas privadas 1:1** (grupos ficam para depois).
+- Painel lateral, sem sair da página; contador de não lidas na barra de topo + notificação.
+- Links de registos (lead, negócio, tarefa) aparecem como cartões clicáveis.
+- Mensagens guardadas no servidor; só os dois participantes as leem.
+
+### 17.7 Disponibilidade e reuniões
+- Tarefas com hora têm **Ocupado / Livre**; Ocupado bloqueia o bloco na agenda.
+- Horário de trabalho por pessoa (por defeito **seg–sex 09:00–18:00**, editável); férias e
+  ausências bloqueiam.
+- «Ver disponibilidade»: semana com blocos Livre/Ocupado; os outros veem só «Ocupado»;
+  **admins veem o título**.
+- **Pedir reunião:** clicar num bloco livre → duração, assunto, negócio (opcional),
+  **plataforma: Google Meet ou Discord**. O pedido chega **no chat** como cartão com
+  **Aceitar / Recusar** (e «Propor outra hora»).
+- **Ao aceitar:** cria a tarefa Ocupado na agenda dos dois (e no histórico do negócio, se
+  houver) e **envia email** aos participantes com o **link da chamada**:
+  - Google Meet: link criado pela integração Google (a configurar — credenciais só no servidor);
+  - Discord: link de redirecionamento para o canal/servidor de voz da topper. (a configurar).
+  Até as integrações estarem configuradas, o campo de link fica manual.
+- «Encontrar hora» para várias pessoas (espaços livres comuns).
+
+### 17.8 Utilizadores e acessos
+Criar utilizador → convite por email para definir palavra-passe. **Desativar, nunca
+apagar**; ao desativar, pede reatribuição de leads, negócios e tarefas abertas. Campos:
+papel, departamento/subdepartamento, cargo(s), sócio, responde a, horário, custo/hora,
+horas/mês. Permissões geridas aqui. Só o superadmin mexe em admins.
+
+### 17.9 Contas iniciais dos sócios
+Criar com convite por email (definir palavra-passe), papel **Admin**, sócio = sim, e cada
+um como chefe do seu departamento. O superadmin continua a ser só `info@topperdigital.xyz`.
+| Nome | Email | Departamento | Cargo |
+|---|---|---|---|
+| Rodrigo Nicolau | rodrigonicolau@topperdigital.xyz | Direção | CEO |
+| Santiago Apolónio | santiagoapolonio@topperdigital.xyz | Comercial | COO · Business Developer |
+| Guilherme Albano | guilhermealbano@topperdigital.xyz | Pós-Produção e VFX | Post Production Lead |
+| Valdir Furtado | valdirfurtado@topperdigital.xyz | Campanhas e Adverts | CMO |
+| Diogo Vasconcelos | diogovasconcelos@topperhub.xyz | Produto e Otimização de Processos | CTO |
+Se alguma destas contas já existir, atualizar em vez de duplicar.
+
+### 17.10 Gerir sem microgestão
+Princípios: **sem registo de horas, sem vigiar atividade**; online/offline diz só se a
+pessoa está na plataforma, nunca o que faz.
+- **Carga da equipa** (admins): mapa semanal por pessoa — horas Ocupado vs horas disponíveis
+  (🟢 <80% · 🟠 80–100% · 🔴 >100%), para distribuir trabalho.
+- **Entrada e saída:** checklist automática de entrada (conta, acessos, pasta no Drive,
+  apresentação à equipa, primeira tarefa); saída = reatribuir trabalho e retirar acessos.
+- **Férias e ausências:** pedido pela pessoa → aprovação por admin → bloqueia a agenda;
+  calendário de ausências da equipa.
+- **«Hoje na equipa»:** linha no topo do separador Equipa — ausentes, em reunião, aniversários.
+- **Modo Foco / Não incomodar:** a pessoa silencia chat e notificações por um período;
+  cartão mostra «Em foco até HH:MM»; pedidos de reunião ficam em espera até ao fim.
+- **«Quem sabe o quê»:** competências por pessoa (ex.: Houdini, Nuke, After Effects, color
+  grading), pesquisáveis no separador Equipa.
+- **O meu perfil:** cada pessoa edita foto, telemóvel, competências, horário e data de
+  aniversário (opcional).

@@ -102,7 +102,7 @@ function aging_bucket(int $age): string {
 function my_alerts(PDO $pdo): array {
     static $out = null;
     if ($out !== null) return $out;
-    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => []];
+    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => [], 'team' => []];
     $me = current_user();
     if ($me === null) return $out;
     $uid = (int)$me['id'];
@@ -196,6 +196,36 @@ function my_alerts(PDO $pdo): array {
             'url' => '/admin/financeiro.php?tab=receber&doc=' . (int)$r['id'],
         ];
     }
+
+    // Equipa (§17): mensagens por ler, pedidos de reunião e férias por aprovar (admins).
+    // Durante o modo Foco ficam em silêncio.
+    if (current_user() && db_has_table($pdo, 'chat_messages') && db_has_column($pdo, 'users', 'focus_until')) {
+        require_once __DIR__ . '/team.php';
+        $meRow = team_person($pdo, $uid);
+        if ($meRow && !team_focus_until($meRow)) {
+            $st = $pdo->prepare('SELECT m.from_id, u.name, COUNT(*) AS n, MAX(m.id) AS last, MAX(m.created_at) AS at FROM chat_messages m JOIN users u ON u.id = m.from_id
+                                  WHERE m.to_id = ? AND m.read_at IS NULL GROUP BY m.from_id, u.name');
+            $st->execute([$uid]);
+            foreach ($st->fetchAll() as $c) {
+                $out['team'][] = ['key' => 'chat:' . $c['from_id'] . ':' . $c['last'], 'kind' => 'chat', 'icon' => 'bubble', 'sev' => 'warn', 'date' => substr((string)$c['at'], 0, 10),
+                                  'title' => 'Mensagem de ' . $c['name'], 'sub' => (int)$c['n'] === 1 ? '1 mensagem por ler' : (int)$c['n'] . ' mensagens por ler',
+                                  'url' => '/admin/equipa.php?chat=' . (int)$c['from_id']];
+            }
+            foreach (team_meetings_pending($pdo, $meRow) as $m) {
+                $out['team'][] = ['key' => 'meet:' . $m['id'], 'kind' => 'meeting', 'icon' => 'meeting', 'sev' => 'warn', 'date' => substr((string)$m['starts_at'], 0, 10),
+                                  'title' => 'Pedido de reunião: ' . $m['subject'], 'sub' => 'De ' . $m['requester_name'] . ' · ' . team_when((string)$m['starts_at'], (int)$m['duration_min']),
+                                  'url' => '/admin/equipa.php?chat=' . (int)$m['requester_id']];
+            }
+            if (role_is_admin((string)$meRow['role'])) {
+                foreach ($pdo->query("SELECT a.id, a.kind, a.start_date, a.end_date, u.name FROM absences a JOIN users u ON u.id = a.user_id WHERE a.status = 'pending' ORDER BY a.start_date")->fetchAll() as $a) {
+                    $out['team'][] = ['key' => 'abs:' . $a['id'], 'kind' => 'absence', 'icon' => 'plane', 'sev' => 'warn', 'date' => $a['start_date'],
+                                      'title' => (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ' por aprovar: ' . $a['name'],
+                                      'sub' => date('d/m', strtotime($a['start_date'])) . ' a ' . date('d/m', strtotime($a['end_date'])),
+                                      'url' => '/admin/equipa.php?v=ausencias'];
+                }
+            }
+        }
+    }
     return $out;
 }
 
@@ -243,6 +273,8 @@ function nav_badges(PDO $pdo): array {
         $late = count(array_filter($a['task'], fn($t) => $t['sev'] === 'bad'));
         $out['calendar'] = ['n' => count($a['task']), 'al' => $late > 0, 'tip' => $late ? "$late atrasadas" : count($a['task']) . ' a vencer'];
     }
+    $abs = count(array_filter($a['team'], fn($t) => $t['kind'] === 'absence'));
+    if ($abs) $out['equipa'] = ['n' => $abs, 'al' => false, 'tip' => $abs === 1 ? '1 pedido de férias por aprovar' : "$abs pedidos de férias por aprovar"];
     if ($a['invoice']) $out['financeiro'] = ['n' => count($a['invoice']), 'al' => true, 'tip' => count($a['invoice']) . ' por receber em atraso'];
     return $out;
 }

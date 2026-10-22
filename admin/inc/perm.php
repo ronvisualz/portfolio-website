@@ -109,12 +109,20 @@ function perm_grid(PDO $pdo, array $user): array {
     }
 
     $grid = perm_defaults($role);
+    $grid = perm_grid_rows($pdo, $role, (int)$user['id'], $grid);
+    // A Equipa (o separador dos cartões) é para todos (§17.1); o resto da aba é por papel.
+    $grid['equipa']['level'] = max(PERM_VIEW, $grid['equipa']['level']);
+    return $grid;
+}
+
+/** Aplica à grelha as linhas do papel e as exceções do utilizador. */
+function perm_grid_rows(PDO $pdo, string $role, int $uid, array $grid): array {
     $st = $pdo->prepare(
         "SELECT role, user_id, tab, level, scope FROM permissions
           WHERE (role = ? AND user_id = 0) OR (role = '' AND user_id = ?)
           ORDER BY user_id"   // linhas do papel primeiro, exceções do utilizador por cima
     );
-    $st->execute([$role, (int)$user['id']]);
+    $st->execute([$role, $uid]);
     foreach ($st->fetchAll() as $r) {
         if (!isset($grid[$r['tab']])) continue;
         $grid[$r['tab']]['level'] = max(PERM_NONE, min(PERM_MANAGE, (int)$r['level']));
@@ -224,7 +232,9 @@ function can_assign_to(array $actor, array $target): bool {
 
 /** Papéis que $actor pode dar ao criar ou editar um utilizador. */
 function assignable_roles(array $actor): array {
-    return role_is_admin($actor['role']) ? ['admin', 'lead', 'member'] : [];
+    // Só o superadmin cria ou promove admins (§17.8).
+    if ($actor['role'] === 'superadmin') return ['admin', 'lead', 'member'];
+    return role_is_admin($actor['role']) ? ['lead', 'member'] : [];
 }
 
 /**

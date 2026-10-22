@@ -95,6 +95,16 @@ const HISTORY_TYPES = [
     'm_metrics'  => ['Métricas', 'trend', 'sky'],
     'm_shoot'    => ['Dia de gravação', 'camera', 'neutral'],
     'm_blocked'  => ['Bloqueada: divulgação', 'alert', 'red'],
+    // Equipa (§17)
+    'u_create'   => ['Conta criada', 'star', 'neutral'],
+    'u_invite'   => ['Convite enviado', 'mail', 'blue'],
+    'u_edit'     => ['Dados alterados', 'pencil', 'neutral'],
+    'u_role'     => ['Papel alterado', 'arrows', 'sky'],
+    'u_off'      => ['Conta desativada', 'power', 'red'],
+    'u_on'       => ['Conta reativada', 'refresh', 'sky'],
+    'u_absence'  => ['Férias e ausências', 'calendar', 'orange'],
+    'u_check'    => ['Entrada e saída', 'checklist', 'green'],
+    'u_reassign' => ['Trabalho reatribuído', 'user-arrow', 'yellow'],
 ];
 
 /** O ícone de uma entrada: cor do tipo e o nome do tipo como dica e nome acessível. */
