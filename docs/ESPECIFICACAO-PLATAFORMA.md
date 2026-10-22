@@ -1923,7 +1923,7 @@ mínimo 3 meses.
 | **Adverts** | Conceito e tratamento → Pré-produção (PPM) → Rodagem → Montagem offline → Picture lock → Pós (cor, VFX, som, música) → Versões e entrega |
 | **Campanhas** | Estratégia e calendário → Guiões do lote → Gravação do lote → Edição do lote → Revisão → Entrega e agendamento → Relatório (repete por lote) |
 | **Ads** | Ângulos e ganchos → Guiões → Produção → Edição e variações → Revisão → Exportação por plataforma → Lançamento e leitura |
-| **Marketing Buddy** | Onboarding → Estratégia trimestral → Ciclo mensal (Planear → Produzir → Rever → Entregar → Reportar, repete) → Revisão trimestral e renovação |
+| **Marketing Buddy** | Onboarding → Configuração do agente → Ativo (ciclo mensal: otimizar → reportar, repete) → Revisão trimestral e renovação — *serviço de agente de IA, ver 19.11* |
 - Funis: os 5 atuais passam a **6**, separando **Adverts** de **Campanhas** (aprovado). Funis combinados (§9.1) juntam as etapas.
 - Rondas de revisão incluídas por defeito (Definições, por funil): VFX 2 por shot · CGI 2 no
   styleframe, 2 no animatic, 1 no render · Adverts 2 offline + 1 online · Campanhas/Ads 1 por lote.
@@ -2060,16 +2060,17 @@ fornecedores · Tarefa · E · +5 — Pedir testemunho e autorização de portf�
 - Lançamento e leitura: Confirmar upload/lançamento com quem gere o media · Mensagem · E · dia
   D — Leitura de resultados (CTR, hook rate, CPA) e recomendações · Documento · E · +7 a +14.
 
-**6. Marketing Buddy** (avença)
-- Onboarding: Acessos (redes, marca, Drive) · Email · E · +2 [gate] — Workshop de marca e
-  objetivos · Reunião · E · +5 — Faturação mensal recorrente configurada · Orçamento · C · +2 [gate].
-- Estratégia trimestral: Plano trimestral com KPI · Documento · E · +10 — Aprovação do plano ·
-  Revisão · E [gate].
-- Ciclo mensal (recorrente): Calendário do mês · Documento · E · dia 1–3 — Produzir ·
-  Gravação/Edição · E — Rever e aprovar · Revisão · E [gate] — Entregar/agendar · Entrega · E
-  — Relatório mensal · Documento · E · dia 5 do mês seguinte — Fatura mensal e validar
-  pagamento · Orçamento · C · dia 1 [gate] — Verificar autorizações e licenças de música do
-  mês · Tarefa · E.
+**6. Marketing Buddy** (agente de IA para otimizar campanhas; avença — ver 19.11)
+- Onboarding: Acessos às contas de anúncios, redes e analytics do cliente · Email · E · +2
+  [gate] — Reunião de objetivos e KPI (CPA, ROAS, orçamento de media) · Reunião · E · +3 —
+  Faturação mensal recorrente configurada · Orçamento · C · +2 [gate] — Acordo de tratamento
+  de dados (RGPD) para acesso às contas · Documento · C · +2 [gate].
+- Configuração do agente: Ligar fontes de dados e definir regras/limites do agente · Tarefa ·
+  E · +5 — Validar configuração com o cliente · Revisão · E · +7 [gate].
+- Ativo (recorrente mensal): Rever recomendações/otimizações do agente · Revisão · E ·
+  semanal — Relatório mensal ao cliente · Documento · E · dia 5 — Fatura mensal (submeter
+  documento) e validar pagamento · Orçamento · C · dia 1 [gate] — Oportunidades de
+  cross-selling (ex.: Campanhas) · Tarefa · C · mensal.
 - Revisão trimestral e renovação: Reunião de resultados · Reunião · C+E · fim do trimestre —
   Proposta de renovação/upsell · Orçamento · C · −15 dias do fim — Contrato renovado ou
   terminado · Documento · C [gate].
@@ -2086,9 +2087,12 @@ fornecedores · Tarefa · E · +5 — Pedir testemunho e autorização de portf�
   rondas por fase e avisa quando se ultrapassa o incluído.
 
 #### E. Faturação (atualiza §19.9)
-A topper. **ainda não tem software de faturação certificado**. Até existir, as tarefas
-«Emitir fatura» são manuais (fora da plataforma) e a plataforma regista número, valor, data e
-estado de pagamento. Recomendação: escolher software certificado pela AT com API (ATCUD/QR,
+A topper. **ainda não tem software de faturação certificado**. Até existir, as faturas são
+emitidas **fora da plataforma**, e a tarefa «Emitir fatura …» **só fica concluída quando o
+documento da fatura (PDF) é submetido na plataforma**, com número, data, valor s/ IVA, IVA e
+total. O documento fica na pasta do negócio no Drive (`<ID>_<NOME>/Faturas/`) e no Financeiro.
+«Validar pagamento» pede a data de recebimento e, opcionalmente, o comprovativo. Sem
+documento submetido, o gate não passa. Recomendação: escolher software certificado pela AT com API (ATCUD/QR,
 SAF-T) para integrar mais tarde.
 
 ### 19.7 Motor de automações (Definições › Funis e automações)
@@ -2115,3 +2119,25 @@ Notas & Histórico como nas Leads.
 A plataforma cria as tarefas «Emitir fatura» e regista o valor e o estado, mas **não emite
 faturas legais** (em Portugal exigem software certificado pela AT). Integração com o software
 de faturação a decidir no desenho do Financeiro.
+
+### 19.10 Papel do Comercial e da Execução
+- **O Comercial é o principal elo entre o exterior e a empresa.** O responsável comercial
+  conduz a lead desde o primeiro contacto, faz o X-Ray e leva o negócio até ao Kickoff; depois
+  **mantém-se no negócio até ao fim**: orçamentos, prazos, faturação, alterações de âmbito
+  (pedidos de alteração) e acompanhamento do cliente.
+- **A Execução** trata do alinhamento do produto com o cliente durante a produção (versões,
+  revisões, aprovações técnicas e criativas).
+- Consequências na plataforma:
+  - o responsável comercial **não sai** do negócio no Kickoff; os dois responsáveis coexistem;
+  - tarefas de pedidos de alteração, faturação, prazos e renovações → **C**; tarefas de
+    produto, revisões e entregas técnicas → **E**;
+  - o responsável comercial recebe notificação quando o negócio passa um gate de produção,
+    quando há pedido de alteração ou quando as rondas incluídas se esgotam;
+  - **depois da entrega**, o contacto do cliente entra automaticamente nas **Relações**
+    (§13.5) com o responsável comercial como dono, para gerar trabalho futuro.
+
+### 19.11 Marketing Buddy
+Serviço **independente** dos outros: é o **agente de IA** da topper. para otimizar campanhas
+dos clientes (avença mensal). Pode ser vendido em **cross-selling** com Campanhas (funil
+combinado §9.1). As etapas e tarefas do funil Marketing Buddy refletem um serviço de agente
+(acessos, configuração, otimização contínua, relatórios), não de produção de vídeo.
