@@ -1429,3 +1429,76 @@ Métricas por publicação (alcance, interações, guardados, partilhas, cliques
 pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
 site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
 Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.
+
+---
+
+## 17. Aba Equipa (decidido 22 out 2026)
+
+Substitui o que contradiga a §3.9 e completa a §9.3/§9.6. Aplica a §11.
+
+### 17.1 Separadores
+| Separador | Quem vê | Conteúdo |
+|---|---|---|
+| **Equipa** (por defeito) | todos | cartão de cada pessoa |
+| **Organograma** | superadmin, admins, chefes de equipa | estrutura da empresa |
+| **Utilizadores e acessos** | superadmin, admins | contas, papéis, **permissões** (grelha papel × aba e exceções por utilizador, §9.3) |
+| **Departamentos** | superadmin, admins | departamentos, subdepartamentos e chefes |
+
+### 17.2 Papel, cargo e sócio
+- **Papel** = o que pode fazer (Superadmin · Admin · Chefe de equipa · Colaborador).
+- **Cargo** = título na empresa; não dá permissões. Lista gerida por admins; uma pessoa pode
+  ter vários cargos; um cargo pode estar **por preencher** (posição aberta no organograma).
+  Lista inicial: **CEO · COO · CMO · CTO · CFO** · Business Developer · Post Production Lead ·
+  Desenvolvedor de Produto + cargos de produção (3D Artist, Compositor, Editor, Produtor…).
+- **Sócio** = marca sim/não. Sócios: Rodrigo Nicolau, Valdir Furtado, Guilherme Albano,
+  Diogo Vasconcelos, Santiago Apolónio.
+
+### 17.3 Estrutura inicial (documento «Estrutura da Topper Digital», 18 out 2026)
+| Departamento | Responsável | Cargo |
+|---|---|---|
+| Direção | Rodrigo Nicolau | CEO (transversal: entra em todas as áreas) |
+| Comercial | Santiago Apolónio | COO e Business Developer |
+| Pós-Produção e VFX | Guilherme Albano | Post Production Lead |
+| Campanhas e Adverts (subdep.: **Adverts**, **Campanhas**; equipas a definir) | Valdir Furtado | CMO |
+| Produto e Otimização de Processos | Diogo Vasconcelos | Desenvolvedor de Produto — **cargo C-level PENDENTE** (CTO ou CPO) |
+- Os quatro departamentos respondem ao CEO. Suportar **subdepartamentos**.
+- A estrutura vai mudar: tudo editável pelos admins, sem código.
+
+### 17.4 Organograma
+Árvore a partir de «responde a»: foto, nome, cargo(s), departamento; sócios marcados;
+cargos por preencher a tracejado; clicar abre o cartão; admins editam arrastando.
+
+### 17.5 Cartão da pessoa (separador Equipa)
+Foto · nome · cargo(s) · departamento · telemóvel e email (ligar / email) ·
+**online/offline em tempo real** (ponto verde/cinzento; «visto há X min» quando offline;
+presença por sinal periódico da sessão, ~30 s) · estado da agenda (Disponível · Ocupado até
+HH:MM · Ausente) · botões **Chat** e **Ver disponibilidade**.
+Custo/hora e horas disponíveis por mês (Orçamentação) no mesmo perfil, **visíveis só a admins**.
+
+### 17.6 Chat interno
+- **Só conversas privadas 1:1** (grupos ficam para depois).
+- Painel lateral, sem sair da página; contador de não lidas na barra de topo + notificação.
+- Links de registos (lead, negócio, tarefa) aparecem como cartões clicáveis.
+- Mensagens guardadas no servidor; só os dois participantes as leem.
+
+### 17.7 Disponibilidade e reuniões
+- Tarefas com hora têm **Ocupado / Livre**; Ocupado bloqueia o bloco na agenda.
+- Horário de trabalho por pessoa (por defeito **seg–sex 09:00–18:00**, editável); férias e
+  ausências bloqueiam.
+- «Ver disponibilidade»: semana com blocos Livre/Ocupado; os outros veem só «Ocupado»;
+  **admins veem o título**.
+- **Pedir reunião:** clicar num bloco livre → duração, assunto, negócio (opcional),
+  **plataforma: Google Meet ou Discord**. O pedido chega **no chat** como cartão com
+  **Aceitar / Recusar** (e «Propor outra hora»).
+- **Ao aceitar:** cria a tarefa Ocupado na agenda dos dois (e no histórico do negócio, se
+  houver) e **envia email** aos participantes com o **link da chamada**:
+  - Google Meet: link criado pela integração Google (a configurar — credenciais só no servidor);
+  - Discord: link de redirecionamento para o canal/servidor de voz da topper. (a configurar).
+  Até as integrações estarem configuradas, o campo de link fica manual.
+- «Encontrar hora» para várias pessoas (espaços livres comuns).
+
+### 17.8 Utilizadores e acessos
+Criar utilizador → convite por email para definir palavra-passe. **Desativar, nunca
+apagar**; ao desativar, pede reatribuição de leads, negócios e tarefas abertas. Campos:
+papel, departamento/subdepartamento, cargo(s), sócio, responde a, horário, custo/hora,
+horas/mês. Permissões geridas aqui. Só o superadmin mexe em admins.
