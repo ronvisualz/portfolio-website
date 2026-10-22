@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -245,6 +245,14 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // IA, «Pode ser divulgado?» nos negócios e a estrutura da fase 2.
     require_once __DIR__ . '/migrate_marketing.php';
     migrate_marketing($pdo);
+
+    // ── 19 · aba Equipa (§17) ───────────────────────────────
+    //
+    // Cargos, sócio, «responde a», subdepartamentos, horário, presença, Foco,
+    // convites, chat 1:1, reuniões, férias e ausências, checklists de entrada e
+    // saída, Ocupado/Livre nas tarefas; estrutura inicial e contas dos sócios.
+    require_once __DIR__ . '/migrate_team.php';
+    migrate_team($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

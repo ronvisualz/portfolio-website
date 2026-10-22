@@ -134,6 +134,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mkt_
     redirect('/admin/conta.php#marketing');
 }
 
+// O meu perfil (§17.10): foto, telemóvel, competências, horário, aniversário; férias e ausências.
+$teamOn = team_ready();
+if ($teamOn) {
+    require_once __DIR__ . '/inc/team_view.php';
+    require_once __DIR__ . '/inc/undo.php';
+    $meRow = team_person($pdo, (int)$user['id']);
+}
+if ($teamOn && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['profile', 'photo_del', 'absence', 'absence_cancel'], true)) {
+    csrf_check();
+    $uid = (int)$user['id'];
+    try {
+        switch ($_POST['do']) {
+        case 'profile':
+            $phone = mb_substr(trim(preg_replace('/[^\d+ ()-]/', '', (string)($_POST['phone'] ?? ''))), 0, 40);
+            $bd = trim((string)($_POST['birthday'] ?? ''));
+            if ($bd !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $bd) || $bd > date('Y-m-d'))) throw new RuntimeException('Data de aniversário inválida.');
+            $wh = team_work_parse($_POST);
+            $photo = $meRow['photo'];
+            if (!empty($_FILES['photo']['name'])) {
+                $photo = team_photo_save($uid, $_FILES['photo']);
+                team_photo_delete($meRow['photo']);
+            }
+            $pdo->prepare('UPDATE users SET phone = ?, birthday = ?, skills = ?, work_hours = ?, photo = ? WHERE id = ?')
+                ->execute([$phone, $bd !== '' ? $bd : null, team_skills_parse((string)($_POST['skills'] ?? '')), $wh, $photo, $uid]);
+            flash('Perfil guardado.', 'ok', undo_push('team', ['what' => 'user', 'self' => true, 'id' => $uid, 'msg' => 'Perfil reposto.',
+                'row' => ['phone' => $meRow['phone'], 'birthday' => $meRow['birthday'], 'skills' => $meRow['skills'], 'work_hours' => $meRow['work_hours']]]));
+            redirect('/admin/conta.php#perfil');
+        case 'photo_del':
+            team_photo_delete($meRow['photo']);
+            $pdo->prepare('UPDATE users SET photo = NULL WHERE id = ?')->execute([$uid]);
+            flash('Foto retirada: aparecem as iniciais.');
+            redirect('/admin/conta.php#perfil');
+        case 'absence':
+            team_absence_request($pdo, $uid, (string)($_POST['kind'] ?? ''), (string)($_POST['from'] ?? ''), (string)($_POST['to'] ?? ''), (string)($_POST['note'] ?? ''));
+            flash('Pedido enviado. Fica a bloquear a agenda quando um admin o aprovar.');
+            redirect('/admin/conta.php#ausencias');
+        case 'absence_cancel':
+            $pdo->prepare("UPDATE absences SET status = 'cancelled', decided_at = ? WHERE id = ? AND user_id = ? AND status IN ('pending','approved') AND end_date >= ?")
+                ->execute([now_php(), (int)($_POST['id'] ?? 0), $uid, date('Y-m-d')]);
+            team_log($pdo, $uid, 'absence', 'Pedido cancelado pela própria pessoa');
+            flash('Pedido cancelado.');
+            redirect('/admin/conta.php#ausencias');
+        }
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'err');
+        redirect('/admin/conta.php#' . (str_starts_with((string)$_POST['do'], 'absence') ? 'ausencias' : 'perfil'));
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -175,6 +224,61 @@ render_flashes();
 <div class="sub"><?= e($user['name']) ?> · <?= e($user['email']) ?> · <?= e(ROLES[$user['role']] ?? $user['role']) ?></div>
 
 <?php $prefs = ui_prefs(); ?>
+<?php if ($teamOn):
+    $myAbs = $pdo->prepare("SELECT * FROM absences WHERE user_id = ? AND (end_date >= ? OR created_at >= ?) ORDER BY start_date DESC LIMIT 20");
+    $myAbs->execute([(int)$user['id'], date('Y-m-d', strtotime('-60 days')), date('Y-m-d', strtotime('-60 days'))]);
+    $myAbs = $myAbs->fetchAll();
+    $f = team_focus_until($meRow); ?>
+<h2 id="perfil">O meu perfil</h2>
+<form method="post" class="panel profile" style="max-width:920px" enctype="multipart/form-data">
+  <?= csrf_field() ?><input type="hidden" name="do" value="profile">
+  <div class="prof-top">
+    <?= team_avatar($meRow, 'xl', false) ?>
+    <div class="field"><label for="ph-f">Foto <span class="muted">(JPG, PNG ou WebP até 5 MB; fica quadrada)</span></label>
+      <input type="file" id="ph-f" name="photo" accept="image/jpeg,image/png,image/webp">
+      <?php if ($meRow['photo']): ?><button class="lnk del small" type="submit" name="do" value="photo_del" formnovalidate>Retirar a foto</button><?php endif; ?></div>
+  </div>
+  <div class="grid">
+    <div class="field"><label for="pf-ph">Telemóvel</label><input type="tel" id="pf-ph" name="phone" maxlength="40" value="<?= e((string)$meRow['phone']) ?>" placeholder="+351 9…"></div>
+    <div class="field"><label for="pf-bd">Aniversário <span class="muted">(opcional; aparece em «Hoje na equipa»)</span></label><input type="date" id="pf-bd" name="birthday" value="<?= e((string)$meRow['birthday']) ?>"></div>
+    <div class="field wide"><label for="pf-sk">Competências <span class="ii" tabindex="0" role="img" aria-label="Ajuda: separadas por vírgulas. Pesquisáveis no separador Equipa («quem sabe o quê»)." data-tip="Separadas por vírgulas. Pesquisáveis no separador Equipa («quem sabe o quê»).">i</span></label>
+      <input type="text" id="pf-sk" name="skills" maxlength="500" value="<?= e((string)$meRow['skills']) ?>" placeholder="Houdini, Nuke, After Effects, color grading…"></div>
+    <div class="field wide"><span class="lbl">Horário de trabalho</span><?= team_work_fields($meRow) ?>
+      <span class="muted small">Fora do horário aparece indisponível. As tarefas com hora marcadas «Ocupado» bloqueiam a agenda.</span></div>
+  </div>
+  <div class="actions"><button class="btn" type="submit">Guardar perfil</button></div>
+</form>
+
+<h2 id="foco">Modo Foco</h2>
+<div class="panel" style="max-width:720px">
+  <p class="muted"><?= $f ? 'Em foco até <b>' . e(lisbon_fmt($f, 'H:i')) . '</b>.' : 'Silencia o chat e as notificações por um período; os pedidos de reunião ficam em espera até ao fim. O seu cartão mostra «Em foco até HH:MM».' ?></p>
+  <div class="chips-wrap"><?php foreach (TEAM_FOCUS_OPTIONS as $m => $l): ?><button type="button" class="chip-btn" data-focus="<?= $m ?>"><?= e($l) ?></button><?php endforeach; ?>
+    <button type="button" class="lnk" data-focus-off<?= $f ? '' : ' hidden' ?>>Desligar</button></div>
+</div>
+
+<h2 id="ausencias">Férias e ausências</h2>
+<div class="panel" style="max-width:920px">
+  <form method="post" class="grid"><?= csrf_field() ?><input type="hidden" name="do" value="absence">
+    <div class="field"><label for="ab-k">Tipo</label><select id="ab-k" name="kind"><?= team_opts(ABSENCE_KINDS, 'ferias') ?></select></div>
+    <div class="field"><label for="ab-f">De</label><input type="date" id="ab-f" name="from" required min="<?= date('Y-m-d') ?>"></div>
+    <div class="field"><label for="ab-t">Até (inclusive)</label><input type="date" id="ab-t" name="to" required min="<?= date('Y-m-d') ?>"></div>
+    <div class="field"><label for="ab-n">Nota (opcional)</label><input type="text" id="ab-n" name="note" maxlength="255"></div>
+    <div class="field act"><button class="btn" type="submit"><?= icon('plane') ?> Pedir</button></div>
+  </form>
+  <p class="muted small">Pedido → aprovação por um admin → bloqueia a agenda nesses dias. Recebe a resposta por email.</p>
+  <?php if ($myAbs): ?>
+  <ul class="abslist">
+  <?php foreach ($myAbs as $a): ?>
+    <li><span class="ust ust-<?= e($a['status']) ?>"><?= e(ABSENCE_STATUS[$a['status']] ?? $a['status']) ?></span>
+      <?= e(ABSENCE_KINDS[$a['kind']] ?? $a['kind']) ?> · <?= e(date('d/m', strtotime($a['start_date']))) ?> a <?= e(date('d/m/Y', strtotime($a['end_date']))) ?><?= $a['note'] !== '' ? ' <small class="muted">— ' . e($a['note']) . '</small>' : '' ?>
+      <?php if (in_array($a['status'], ['pending', 'approved'], true) && $a['end_date'] >= date('Y-m-d')): ?>
+        <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="absence_cancel"><input type="hidden" name="id" value="<?= (int)$a['id'] ?>"><button class="lnk del small" type="submit">Cancelar</button></form>
+      <?php endif; ?></li>
+  <?php endforeach; ?>
+  </ul>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
 <h2 id="definicoes">Definições</h2>
 <form method="post" class="panel" style="max-width:720px">
   <?= csrf_field() ?><input type="hidden" name="do" value="settings">

@@ -51,6 +51,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
     $html   = ($prefs['pref_theme'] !== '' ? ' data-theme="' . e($prefs['pref_theme']) . '"' : '')
             . ($prefs['pref_nav'] === 'closed' ? ' data-nav="closed"' : '');
     $canIdea = mkt_idea_ready();
+    $chat = team_ready();
     $pageTitle = NAV_ITEMS[$active][0] ?? ($active === 'conta' ? 'A minha conta' : ($active === 'migracao' ? 'Migração' : $title));
     $crumbGroup = 'Conta';
     foreach (NAV_GROUPS as $g => $keys) if (in_array($active, $keys, true)) $crumbGroup = $g;
@@ -111,6 +112,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
       <?= icon('search') ?><span class="lbl">Procurar ID, negócio, lead…</span><span class="kbd" data-kbd>Ctrl K</span>
     </button>
     <?php if ($canIdea): ?><button type="button" class="ibtn idea-btn" data-new="#mdl-idea" data-new-idea aria-keyshortcuts="I" aria-label="Nova ideia de conteúdo ( I )" data-tip><?= icon('bulb') ?></button><?php endif; ?>
+    <?php if ($chat): ?><button type="button" class="ibtn chat-btn" data-chat-open aria-keyshortcuts="C" aria-label="Chat da equipa ( C )" data-tip><?= icon('bubble') ?><span class="badge" hidden>0</span></button><?php endif; ?>
     <button type="button" class="ibtn theme-btn" aria-label="Mudar de modo (claro / escuro)" data-tip><?= icon('moon', 'i-moon') . icon('sun', 'i-sun') ?></button>
     <button type="button" class="ibtn bell" aria-label="Notificações<?= $unread ? ' · ' . $unread . ' por ler' : '' ?>" data-tip aria-haspopup="dialog" aria-expanded="false" aria-controls="notif">
       <?= icon('bell') ?><span class="badge"<?= $unread ? '' : ' hidden' ?>><?= $unread ?></span>
@@ -176,10 +178,25 @@ function render_footer(): void {
   </div>
 </div>
 <div class="tip" id="tip" role="tooltip"></div>
+<?php if (team_ready()) { require_once __DIR__ . '/team_view.php'; echo team_global_html(); } ?>
 <script src="<?= asset_url('app.js') ?>" defer></script>
+<?php if (team_ready()): ?><script src="<?= asset_url('chat.js') ?>" defer></script><?php endif; ?>
 </body>
 </html>
 <?php
+}
+
+/** Chat, presença e reuniões da Equipa (§17) em todas as páginas, depois do passo 19 da base. */
+function team_ready(): bool {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    global $pdo;
+    try {
+        $ok = current_user() !== null && (int)$pdo->query("SELECT svalue FROM settings WHERE skey = 'schema_version'")->fetchColumn() >= 19;
+    } catch (Throwable $e) {
+        $ok = false;
+    }
+    return $ok;
 }
 
 /** Quem edita a Marketing tem o «+ Ideia» e o atalho I em todas as páginas (depois do passo 18 da base). */

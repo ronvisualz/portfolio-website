@@ -328,6 +328,11 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('INSERT INTO budget_templates (' . implode(',', $cols) . ') VALUES (?,?,?,?,?)')->execute(array_map(fn($c) => $d[$c], $cols));
             return 'Modelo reposto.';
 
+        case 'team':
+            // Equipa (§17): conta, cargos, decisão de ausência, posições por preencher.
+            require_once __DIR__ . '/team.php';
+            return team_undo_apply($pdo, $d);
+
         case 'mkt':
             // Marketing (§16): triagem, etapas, revisão, agendar, publicar, textos — a peça volta ao que era.
             require_once __DIR__ . '/marketing.php';

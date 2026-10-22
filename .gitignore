@@ -13,3 +13,7 @@ assets/fonts/
 admin/inc/r2_config.php
 # Assistente do Drive (chave da Anthropic) — copie ai_config.example.php para ai_config.php no servidor.
 admin/inc/ai_config.php
+# Integrações das reuniões (Google Meet, Discord) — copie meet_config.example.php para meet_config.php no servidor.
+admin/inc/meet_config.php
+# Fotos de perfil (Equipa): ficam só no servidor.
+admin/inc/avatars/

@@ -532,7 +532,7 @@ $confirmDel = $editing && !empty($_GET['del']);
 $dealOptions = task_deal_options($pdo, $editing ? (int)$editing['deal_id'] : null);
 
 $f = $editing ?: ['id' => 0, 'title' => '', 'description' => '', 'member_id' => $person,
-                  'job_name' => '', 'deal_id' => null, 'due_date' => '', 'priority' => 'media', 'status' => 'todo'];
+                  'job_name' => '', 'deal_id' => null, 'due_date' => '', 'due_time' => null, 'duration_min' => null, 'busy' => 1, 'priority' => 'media', 'status' => 'todo'];
 $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
 ?>
 
@@ -585,6 +585,25 @@ $fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
       <div class="field">
         <label for="t_due">Prazo</label>
         <input type="date" id="t_due" name="due_date" value="<?= e((string)$f['due_date']) ?>">
+      </div>
+      <div class="field">
+        <label for="t_time">Hora <span class="muted">(opcional)</span></label>
+        <input type="time" id="t_time" name="due_time" step="900" value="<?= e(substr((string)($f['due_time'] ?? ''), 0, 5)) ?>">
+      </div>
+      <div class="field">
+        <label for="t_dur">Duração</label>
+        <select id="t_dur" name="duration_min">
+          <?php foreach ([0 => '1 h (por defeito)', 15 => '15 min', 30 => '30 min', 45 => '45 min', 90 => '1 h 30', 120 => '2 h', 180 => '3 h', 240 => '4 h', 480 => 'Dia inteiro (8 h)'] as $k => $l): ?>
+            <option value="<?= $k ?>"<?= (int)($f['duration_min'] ?? 0) === $k ? ' selected' : '' ?>><?= $l ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="field">
+        <span class="lbl">Na agenda <span class="ii" tabindex="0" role="img" aria-label="Ajuda: com hora, «Ocupado» bloqueia esse bloco na disponibilidade (Equipa); «Livre» fica só como lembrete." data-tip="Com hora, «Ocupado» bloqueia esse bloco na disponibilidade (Equipa); «Livre» fica só como lembrete.">i</span></span>
+        <div class="chips-check">
+          <label class="rb"><input type="radio" name="busy" value="1"<?= (int)($f['busy'] ?? 1) === 1 ? ' checked' : '' ?>><span>Ocupado</span></label>
+          <label class="rb"><input type="radio" name="busy" value="0"<?= (int)($f['busy'] ?? 1) === 0 ? ' checked' : '' ?>><span>Livre</span></label>
+        </div>
       </div>
       <div class="field">
         <label for="t_prio">Prioridade</label>

@@ -194,6 +194,10 @@ function task_input(array $in, array $members, ?PDO $pdo = null): array {
     if ($due !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $due)) {
         return [null, 'Indique um prazo válido.'];
     }
+    $time = trim((string)($in['due_time'] ?? ''));
+    if ($time !== '' && !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $time)) return [null, 'Indique uma hora válida.'];
+    if ($time !== '' && $due === '') return [null, 'Uma hora precisa de um dia: indique o prazo.'];
+    $dur = (int)($in['duration_min'] ?? 0);
     $prio   = (string)($in['priority'] ?? 'media');
     $status = (string)($in['status'] ?? 'todo');
 
@@ -204,22 +208,34 @@ function task_input(array $in, array $members, ?PDO $pdo = null): array {
         'job_name'    => clip(trim((string)($in['job_name'] ?? '')), 160),
         'deal_id'     => $pdo ? task_deal_in($in['deal_id'] ?? 0, $pdo) : null,
         'due_date'    => $due !== '' ? $due : null,
+        // Com hora: Ocupado bloqueia o bloco na agenda (§17.7); Livre fica só como lembrete.
+        'due_time'    => $time !== '' ? substr($time, 0, 5) . ':00' : null,
+        'duration_min'=> $time !== '' && $dur > 0 ? min(720, $dur) : null,
+        'busy'        => ($in['busy'] ?? '1') === '0' ? 0 : 1,
         'priority'    => isset(TASK_PRIO[$prio]) ? $prio : 'media',
         'status'      => isset(TASK_STATUS[$status]) ? $status : 'todo',
     ], null];
 }
 
+/** A tarefa já tem Ocupado/Livre (passo 19 da base de dados)? */
+function task_has_busy(PDO $pdo): bool {
+    static $has = null;
+    return $has ??= db_has_column($pdo, 'tasks', 'busy');
+}
+
 function task_create(PDO $pdo, array $v): int {
     $now = task_now();
     $pdo->prepare(
-        'INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, priority, status, position, done_at, created_at, updated_at, created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, due_time, duration_min, priority, status, position, done_at, created_at, updated_at, created_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     )->execute([
-        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'],
+        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'], $v['due_time'] ?? null, $v['duration_min'] ?? null,
         $v['priority'], $v['status'], task_next_position($pdo, $v['member_id']),
         $v['status'] === 'done' ? $now : null, $now, $now, current_user()['id'] ?? null,
     ]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    if (task_has_busy($pdo)) $pdo->prepare('UPDATE tasks SET busy = ? WHERE id = ?')->execute([(int)($v['busy'] ?? 1), $id]);
+    return $id;
 }
 
 function task_update(PDO $pdo, array $old, array $v): void {
@@ -235,13 +251,14 @@ function task_update(PDO $pdo, array $old, array $v): void {
     }
 
     $pdo->prepare(
-        'UPDATE tasks SET title = ?, description = ?, member_id = ?, job_name = ?, deal_id = ?, due_date = ?,
+        'UPDATE tasks SET title = ?, description = ?, member_id = ?, job_name = ?, deal_id = ?, due_date = ?, due_time = ?, duration_min = ?,
                           priority = ?, status = ?, position = ?, done_at = ?, updated_at = ?
           WHERE id = ?'
     )->execute([
-        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'],
+        $v['title'], $v['description'], $v['member_id'], $v['job_name'], $v['deal_id'], $v['due_date'], $v['due_time'] ?? null, $v['duration_min'] ?? null,
         $v['priority'], $v['status'], $pos, $doneAt, task_now(), (int)$old['id'],
     ]);
+    if (task_has_busy($pdo)) $pdo->prepare('UPDATE tasks SET busy = ? WHERE id = ?')->execute([(int)($v['busy'] ?? 1), (int)$old['id']]);
 }
 
 /**
