@@ -267,6 +267,7 @@ if ($open):
 ?>
 <h2 id="negocio" class="sr-only"><?= e($open['code']) ?> · <?= e($open['name']) ?></h2>
 <div class="fl-pagewrap"><?= str_replace('lv lv-panel fl', 'lv lv-page fl', flow_panel_html($pdo, $open, $openBack)) ?></div>
+<script src="<?= asset_url('tasks.js') ?>" defer></script>
 <?php if (in_array($open['phase'], ['pipeline', 'lost'], true) && $canEdit):
     $curStage = stage_get($pdo, (int)$open['stage_id']);
     $otherFunnels = array_filter($funnels, fn($f) => (int)$f['id'] !== (int)$open['funnel_id']);

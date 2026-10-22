@@ -2405,3 +2405,31 @@ a.tlink:hover { color: var(--fg); }
 .ar-sform label.ck { flex: 1 1 320px; }
 .ar-sform label.ck input, .ar-grid label.ck input, .fl-grid input[type=checkbox] { width: auto; flex: 0 0 auto; }
 .fl-req form.inl { display: inline-flex; width: auto; margin: 0; }
+
+/* §19.8 — etapas numa linha, no topo azul do painel do negócio */
+.fl > .fl-top { grid-column: 1 / -1; margin: 0; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); background-image: var(--g-band); }
+.lv-page.fl > .fl-top { border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg); }
+.fl-top .lv-chips { margin-top: 6px; }
+.fl-steps { margin-top: 14px; }
+.fl-fn { display: block; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); margin-bottom: 8px; }
+.fl-step { list-style: none; margin: 0; padding: 2px 0 4px; display: flex; overflow-x: auto; scrollbar-width: thin; }
+.fl-step li { position: relative; flex: 1 1 0; min-width: 78px; display: grid; justify-items: center; align-content: start; gap: 5px; text-align: center; padding: 0 3px; }
+.fl-step li::before { content: ''; position: absolute; top: 9px; left: -50%; width: 100%; height: 2px; background: var(--line-2); z-index: 0; }
+.fl-step li:first-child::before { display: none; }
+.fl-step li.done::before, .fl-step li.cur::before, .fl-step li.lost::before { background: var(--ok-fg); }
+.fl-step .dot { position: relative; z-index: 1; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); border: 2px solid var(--line-2); }
+.fl-step .dot .ico { width: 11px; height: 11px; stroke-width: 3; }
+.fl-step li.done .dot { background: var(--ok-fg); border-color: var(--ok-fg); color: var(--panel); }
+.fl-step li.cur .dot { background-image: var(--g-yel); background-color: var(--hi); border-color: var(--hi); box-shadow: 0 0 0 4px color-mix(in srgb, var(--hi) 30%, transparent); }
+.fl-step li.lost .dot { background: var(--bad-fg); border-color: var(--bad-fg); }
+.fl-step .nm { font-size: 11.5px; line-height: 1.25; color: var(--mute); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fl-step li.done .nm { color: var(--fg); opacity: .75; }
+.fl-step li.cur .nm { color: var(--fg); font-weight: 700; }
+.fl-step li.z-kickoff .nm, .fl-step li.z-done .nm { font-weight: 600; }
+.fl-step li small { white-space: nowrap; font: 600 9px var(--mono); letter-spacing: .04em; text-transform: uppercase; background-image: var(--g-yel); background-color: var(--hi); color: var(--on-hi); border-radius: 999px; padding: 1px 7px; }
+.fl-step li.lost small { background: var(--bad-bg); color: var(--bad-fg); }
+.fl-newrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.tyrow.mini { display: flex; flex-wrap: wrap; gap: 4px; }
+.tyrow.mini .tyb { width: 38px; padding: 0; border: 0; background: none; font: inherit; }
+@media (max-width: 560px) { .fl-step li { min-width: 70px; } }
+.fl > .fl-top, .fl-steps, .fl-step { min-width: 0; max-width: 100%; }

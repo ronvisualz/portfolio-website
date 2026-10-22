@@ -103,6 +103,13 @@
     var title = $('#tk-title', form);
     if (title && k === 'block' && title.value === '') title.value = 'Bloqueio';
   }
+  // «Nova tarefa» de um tipo (painel do negócio): o formulário abre com esse tipo escolhido.
+  document.addEventListener('click', function (e) {
+    var k = e.target.closest && e.target.closest('[data-new][data-kind]');
+    if (!k || !form) return;
+    var r = form.querySelector('input[name=kind][value="' + k.getAttribute('data-kind') + '"]');
+    if (r) { r.checked = true; sync(); }
+  }, true);
   if (form) {
     form.addEventListener('change', function (e) { if (e.target.name === 'kind' || e.target.name === 'platform') sync(); });
     sync();

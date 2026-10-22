@@ -62,19 +62,12 @@ function flow_stages_html(PDO $pdo, array $deal, string $back): string {
     if ($i === null) return '';
     $cur = $order[$i];
     $active = in_array($deal['phase'], ['pipeline', 'production'], true);
-    $bar = '';
-    foreach ($order as $k => $s) {
-        $cls = $k < $i ? 'done' : ($k === $i ? 'cur' : '');
-        if ($deal['phase'] === 'done') $cls = 'done';
-        $bar .= '<li class="' . $cls . ' z-' . e($s['kind']) . '"' . ($k === $i ? ' aria-current="step"' : '') . '><span>' . e($s['name']) . '</span></li>';
-    }
-    $h = '<section class="lv-blk fl-stages"><h4>Etapas <span class="h-sub">' . e((string)$pdo->query('SELECT name FROM funnels WHERE id = ' . (int)$deal['funnel_id'])->fetchColumn()) . '</span></h4>'
-       . '<ol class="fl-bar" aria-label="Etapas do funil">' . $bar . '</ol>';
-    if (!$active || !isset($order[$i + 1])) return $h . '</section>';
+    if (!$active || !isset($order[$i + 1])) return '';
     $next = $order[$i + 1];
+    $h = '<section class="lv-blk fl-stages"><h4>Para avançar <span class="h-sub">' . e($cur['name']) . ' → ' . e($next['name']) . '</span></h4>';
     $items = deal_gate($pdo, $deal, $cur);
     $missing = array_filter($items, fn($x) => !$x['ok']);
-    $h .= '<div class="fl-gate"><h5>Para avançar para «' . e($next['name']) . '»</h5>';
+    $h .= '<div class="fl-gate">';
     $canDo = flow_can_edit($pdo, $deal);
     $h .= $items ? '<ul class="fl-req">' . implode('', array_map(fn($x) => flow_req_html($x, $canDo ? $deal : null, $back), $items)) . '</ul>' : '<p class="muted small">Sem requisitos nesta etapa.</p>';
     if (flow_can_edit($pdo, $deal)) {
@@ -99,6 +92,30 @@ function flow_stages_html(PDO $pdo, array $deal, string $back): string {
         }
     }
     return $h . '</div></section>';
+}
+
+/**
+ * As etapas do funil numa linha (no topo azul do painel): feitas ✓, a atual em destaque
+ * («Etapa atual»), as seguintes apagadas. Comercial e produção separadas pelo Kickoff.
+ */
+function flow_stepper_html(PDO $pdo, array $deal): string {
+    if (!$deal['funnel_id'] || !$deal['stage_id']) return '';
+    $order = flow_order($pdo, (int)$deal['funnel_id']);
+    $i = flow_index($order, (int)$deal['stage_id']);
+    if ($i === null) return '';
+    $lost = $deal['phase'] === 'lost';
+    $h = '';
+    foreach ($order as $k => $s) {
+        $st = $deal['phase'] === 'done' || $k < $i ? 'done' : ($k === $i ? ($lost ? 'lost' : 'cur') : 'next');
+        $tip = $s['name'] . ' · ' . ['done' => 'feita', 'cur' => 'etapa atual', 'next' => 'por fazer', 'lost' => 'perdido aqui'][$st];
+        $h .= '<li class="' . $st . ' z-' . e($s['kind']) . '"' . ($st === 'cur' || $st === 'lost' ? ' aria-current="step"' : '') . ' data-tip="' . e($tip) . '">'
+            . '<span class="dot" aria-hidden="true">' . ($st === 'done' ? icon('check') : '') . '</span>'
+            . '<span class="nm">' . e($s['name']) . '</span>'
+            . ($st === 'cur' ? '<small>Etapa atual</small>' : ($st === 'lost' ? '<small>Perdido</small>' : '')) . '</li>';
+    }
+    $funnel = (string)$pdo->query('SELECT name FROM funnels WHERE id = ' . (int)$deal['funnel_id'])->fetchColumn();
+    return '<div class="fl-steps"><span class="fl-fn">' . e($funnel) . ' · etapa ' . ($i + 1) . ' de ' . count($order) . '</span>'
+         . '<ol class="fl-step" aria-label="Etapas do funil ' . e($funnel) . '">' . $h . '</ol></div>';
 }
 
 /** A proposta e a resposta do cliente (§19.4). */
@@ -252,23 +269,32 @@ function flow_focus_html(PDO $pdo, array $deal, string $back): string {
     return $h . '</ul></section>';
 }
 
-/** Nova ação ligada ao negócio (aparece em Tarefas). */
+/** Nova tarefa: o mesmo formulário da aba Tarefas (§18.7), já ligado a este negócio. */
 function flow_new_action_html(PDO $pdo, array $deal, string $back): string {
-    if (!flow_can_edit($pdo, $deal)) return '';
-    require_once __DIR__ . '/leads.php';
-    $opts = '';
-    foreach (TASK_TYPES as $k => [$label]) if (!in_array($k, ['personal', 'block'], true)) $opts .= '<option value="' . $k . '">' . e($label) . '</option>';
-    $who = '<option value="">Por atribuir</option>';
-    foreach (assignable_users($pdo, me_row($pdo)) as $u) {
-        if ($u['role'] === 'superadmin') continue;
-        $who .= '<option value="' . (int)$u['id'] . '"' . ((int)$u['id'] === (int)current_user()['id'] ? ' selected' : '') . '>' . e($u['name']) . '</option>';
+    if (!flow_can_edit($pdo, $deal) || !can('tarefas', PERM_EDIT)) return '';
+    $types = '';
+    foreach (['call', 'meeting', 'email', 'followup', 'document', 'quote', 'task'] as $k) {
+        [$l, $i] = TASK_TYPES[$k];
+        $types .= '<button type="button" class="tyb ty-' . $k . '" data-new="#mdl-task" data-kind="' . $k . '" data-tip="' . e($l) . '" aria-label="Nova tarefa: ' . e($l) . '"><span>' . icon($i) . '</span></button>';
     }
-    return '<section class="lv-blk fl-new"><h4>Nova ação</h4>' . flow_form('task_add', $deal, $back,
-        '<div class="fl-grid"><label>Tipo<select name="kind">' . $opts . '</select></label>'
-        . '<label>Para<select name="assignee">' . $who . '</select></label>'
-        . '<label class="wide">O quê<input type="text" name="title" maxlength="200" required placeholder="ex.: Ligar para confirmar a data de rodagem"></label>'
-        . '<label>Até<input type="date" name="date" value="' . e(today_lisbon()) . '"></label></div>'
-        . '<button class="btn sm" type="submit">' . icon('plus') . ' Criar tarefa</button>') . '</section>';
+    return '<section class="lv-blk fl-new"><h4>Nova tarefa <span class="h-sub">ligada a ' . e((string)$deal['code']) . '</span></h4>'
+         . '<div class="fl-newrow"><button type="button" class="btn" data-new="#mdl-task">' . icon('plus') . ' Nova tarefa</button>'
+         . '<div class="tyrow mini" role="group" aria-label="Começar por um tipo">' . $types . '</div></div>'
+         . '<p class="muted small">O mesmo formulário da aba Tarefas: tipo, quando, duração, Ocupado/Livre, responsável, reunião (Meet, Discord ou presencial), participantes, checklist e anexos.</p></section>';
+}
+
+/** O formulário «+ Nova tarefa» da aba Tarefas, com o negócio já escolhido; volta para aqui. */
+function flow_task_modal_html(PDO $pdo, array $deal, string $back): string {
+    if (!flow_can_edit($pdo, $deal) || !can('tarefas', PERM_EDIT)) return '';
+    require_once __DIR__ . '/tasks_view.php';
+    $members = team_members($pdo);
+    $visible = task_visible_members($pdo, $members);
+    $assignable = array_filter($members, fn($m, $mid) => task_can_assign($pdo, (int)$mid, $members, $visible), ARRAY_FILTER_USE_BOTH);
+    $me = (int)current_user()['id'];
+    $myMember = member_for_user($pdo, $me);
+    $participants = [];
+    foreach ($members as $m) if ($m['user_id'] !== null && (int)$m['user_id'] !== $me) $participants[(int)$m['user_id']] = $m['name'];
+    return task_modal_html($pdo, null, $assignable, isset($members[$myMember]) ? $myMember : null, $participants, $back, false, ['deal_id' => (int)$deal['id']]);
 }
 
 /** Responsáveis (comercial e execução: só admins mudam) e datas do negócio: [linhas do resumo, formulário]. */
@@ -324,10 +350,11 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
           . '</div>';
 
     $owner = flow_user_name($pdo, $d['owner_id']);
-    $head = '<header class="lv-head"><div class="id mono">' . e((string)$d['code']) . '</div><h2 class="lv-name">' . e($d['name']) . '</h2>'
+    $head = '<header class="lv-head fl-top"><div class="id mono">' . e((string)$d['code']) . '</div><h2 class="lv-name">' . e($d['name']) . '</h2>'
           . ($client !== '' && $client !== $d['name'] ? '<div class="lv-co">' . e($client) . '</div>' : '')
-          . '<div class="lv-chips"><span class="chip">' . e($phase) . '</span>' . ($stage ? ' <span class="chip">' . e($stage['name']) . '</span>' : '')
-          . ($score !== null ? ' <span class="chip" data-tip="Qualificação do X-Ray (orçamento, autoridade, necessidade, prazo)">' . $score . '/12</span>' : '') . '</div></header>';
+          . '<div class="lv-chips"><span class="chip">' . e($phase) . '</span>'
+          . ($score !== null ? ' <span class="chip" data-tip="Qualificação do X-Ray (orçamento, autoridade, necessidade, prazo)">' . $score . '/12</span>' : '') . '</div>'
+          . flow_stepper_html($pdo, $d) . '</header>';
     [$peopleKv, $peopleForm] = flow_people_html($pdo, $d, $back);
     $kv = '<span>Cliente</span><div>' . deal_people_link($pdo, $d['contact_id']) . '</div>'
         . '<span>Valor</span><div>' . ($d['value_estimate'] !== null ? e(eur0((float)$d['value_estimate'])) : '<span class="muted">sem valor</span>') . '</div>'
@@ -341,11 +368,11 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
                   . '<input type="text" name="reason_other" maxlength="200" placeholder="Detalhe (opcional)" aria-label="Detalhe"><button class="btn danger sm" type="submit">Perdido</button>', ['class' => 'fl-inline'])
               . '</details>';
     }
-    $left = '<div class="lv-l">' . $head . $acts . '<div class="lv-read"><div class="kv">' . $kv . '</div>' . $peopleForm
+    $left = '<div class="lv-l">' . $acts . '<div class="lv-read"><div class="kv">' . $kv . '</div>' . $peopleForm
           . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '') . '</div></div>';
     $right = '<div class="lv-r">' . flow_stages_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back) . flow_billing_html($pdo, $d, $back)
            . flow_rounds_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_focus_html($pdo, $d, $back)
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, $back, '', ['note']) . '</section></div>';
-    return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $left . $right . '</div>';
+    return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back);
 }

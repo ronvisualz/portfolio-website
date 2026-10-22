@@ -42,7 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = (string)($_POST['do'] ?? '');
     $back = (string)($_POST['back'] ?? '/admin/calendar.php');
-    if (!preg_match('~^/admin/calendar\.php(\?[^#\s]*)?$~', $back)) $back = '/admin/calendar.php';
+    // O formulário também se abre no negócio (Pipeline, ficha): volta para lá.
+    if (!preg_match('~^/admin/(calendar|pipeline|negocio)\.php(\?[^#\s]*)?(#[A-Za-z0-9_-]*)?$~', $back)) $back = '/admin/calendar.php';
     $back = preg_replace('~([?&])(edit|nova)=[^&]*&?~', '$1', $back);
     $back = rtrim($back, '?&');
     try {

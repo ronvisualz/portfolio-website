@@ -43,7 +43,9 @@ function panel_lead(PDO $pdo, array $l): array {
 /** O negócio no painel lateral (§19.8): igual ao da lead, mais completo — etapas e gates, proposta, faturação. */
 function panel_deal(PDO $pdo, array $d): array {
     require_once __DIR__ . '/pipeline_view.php';
-    return ['title' => 'Negócio', 'html' => flow_panel_html($pdo, $d, deal_url($d)), 'url' => deal_url($d), 'wide' => true];
+    $js = __DIR__ . '/../assets/tasks.js';
+    return ['title' => 'Negócio', 'html' => flow_panel_html($pdo, $d, deal_url($d)), 'url' => deal_url($d), 'wide' => true,
+            'script' => '/admin/assets/tasks.js?v=' . (is_file($js) ? filemtime($js) : 0)];
 }
 
 /** O contacto no painel lateral: a vista larga em duas colunas (§13.7). */
