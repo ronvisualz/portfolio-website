@@ -1073,6 +1073,71 @@ Ficheiros novos: `inc/migrate_team.php`, `inc/team.php`, `inc/team_view.php`, `t
 `equipa.php` (reescrita), `conta.php` (O meu perfil, Foco, férias), `index.php` (convite), Tarefas
 (hora, duração, Ocupado/Livre), alertas e notificações, permissões, menu e barra de topo.
 
+### 10.10 Aba Tarefas — §18 (22 out 2026)
+
+A §18 está aplicada. Base de dados **versão 20** (`inc/migrate_tasks.php`): nas tarefas — `location`,
+`platform`, `private` (pessoal/bloqueio), `checklist`, `attachments` (links), `participants`,
+`help_by` (pedido de ajuda); histórico das tarefas (`task_log`); vistas guardadas (`task_views`);
+`meetings.location` (reunião presencial). Lógica em `inc/tasks.php`, ecrãs em `inc/tasks_view.php`,
+página `calendar.php` (reescrita), pedidos em `tasks_api.php`, comportamento em `assets/tasks.js`.
+
+- **18.0 Conta do superadmin:** a migração muda o email da conta existente `admin@topperdigital.xyz`
+  para `info@topperdigital.xyz` e o papel para **Superadmin**, sem tocar no hash da palavra-passe
+  (não cria outra conta; testado: o hash fica igual). Fica uma linha no histórico da conta.
+- **18.1 Separadores:** Tarefas (por defeito) · Quadro da equipa · Agenda (antes «Mês»/Calendário).
+  O separador «Equipa» desta aba saiu. Os endereços antigos (`?view=…`) continuam a abrir o sítio certo.
+- **18.2 O superadmin não é operador:** nunca é responsável possível (leads, negócios, tarefas —
+  regra central em `can_assign_to`), não tem coluna no quadro nem entra em distribuições; uma lead
+  nova criada por ele fica «Por atribuir». Continua a ver e gerir tudo. **Redistribuição única:** as
+  leads dele, pela ordem de criação, em rotação Rodrigo → Santiago → Valdir → Guilherme → Diogo
+  (111 → 23/22/22/22/22); as tarefas abertas de cada lead (as «Ligar a…») acompanham; uma linha
+  «Atribuída» no histórico de cada lead; as outras tarefas abertas dele ficam «Por atribuir». O
+  resumo antes/depois fica em `settings.tasks_redistribution`.
+- **18.3 Lista:** linhas compactas (concluir · ícone do tipo · marca de origem · título com
+  checklist n/m, ↻, 🙋, plataforma/local, privada · ligação · prazo · responsável); grupos Em atraso
+  (sempre aberto, vermelho) · Hoje · Esta semana · Mais tarde · Sem data, recolhíveis (o browser
+  lembra-se); concluir com «Concluída · Anular»; concluídas no filtro próprio (com Reabrir).
+  **Agrupamento:** as chamadas de leads («Ligar a…» de leads) e os follow-ups de relação aparecem
+  numa linha por pessoa — «Chamadas de leads · 22 · 10 em atraso · Abrir fila →» (Leads com
+  «Urgente» / Contactos › Relações); «Ver uma a uma» desfaz o agrupamento.
+- **18.4 Quadro da equipa:** Por atribuir + uma coluna por operador, com a barra de carga da semana
+  (§17.10) e atrasadas · hoje · total; **no máximo 6 cartões** (os mais urgentes, grupos contam como
+  um) e «+ N tarefas» que abre a lista dessa pessoa; sem coluna Feito. **Entreajuda:** arrastar um
+  cartão para outra coluna (a sua), «Pegar» nas tarefas dos colegas, «Pedir ajuda» (vai para Por
+  atribuir com 🙋 e avisa os operadores no sino); tudo com «Anular» e no histórico da tarefa (e do
+  negócio, se houver).
+- **18.5 Filtros:** Estado · Urgência (com o número em atraso) · Quem (eu, todos, por atribuir, cada
+  operador) · Tipo · Origem · Negócio, combináveis; **vistas guardadas** por pessoa.
+- **18.6 Tipos e origens:** 16 tipos com ícone e cor própria (Chamada, Reunião, Email,
+  Mensagem/WhatsApp, Follow-up, Visita, Gravação, Edição, Render, Revisão, Entrega,
+  Orçamento/proposta, Documento, Tarefa, Pessoal, Bloqueio); 6 origens com o ícone da aba de origem
+  (Leads, Negócios, Marketing, Contactos, Pessoal, Tarefas); cores em tokens claro/escuro; dica com
+  o nome. Os tipos antigos mapeiam-se (relação → follow-up; almoço/jantar/evento → reunião).
+- **18.7 «+ Nova tarefa»** (botão e tecla N, com a animação da §13.8): tipo só com ícones, título,
+  notas, atalhos (Em 1 h · Em 3 h · Amanhã 9:00 · Próxima semana · Sem data), data, hora, duração,
+  Ocupado/Livre, responsável (nunca o superadmin), negócio/lead, contacto, prioridade, repetir,
+  checklist («[x]» = feito), **anexos como links** (Drive, WeTransfer…; o Drive não foi alterado),
+  participantes — **convite pelo chat (§17.7)**: com dia e hora é um pedido de reunião
+  (Aceitar/Recusar/Propor), sem hora uma mensagem; ao aceitarem não se duplica a tarefa de quem
+  pediu. **Reunião:** Google Meet, Discord ou nenhuma = **presencial** com o campo **Local** (também
+  nos pedidos do chat: «Presencial», o local segue no email). Editar abre o mesmo formulário, com o
+  histórico e «Eliminar» (confirmação). Criar tem «Anular».
+- **18.8 Agenda:** Dia · Semana · Mês, **24 horas**; abre na hora atual (linha vermelha de
+  «agora»); horas fora do horário de trabalho mais escuras; a minha ou a de um colega. **Arrastar na
+  grelha** (na minha) → Tarefa · Tarefa pessoal · Bloqueio, com o formulário já preenchido. Mostra
+  tarefas com hora (largura partilhada quando se sobrepõem), reuniões, ausências, prazos de tarefas
+  sem hora e os eventos antigos. **Pessoal e bloqueio são privados:** todos — admins incluídos —
+  veem só «Ocupado» (agenda, disponibilidade da Equipa, lista e quadro); a agenda de um colega segue
+  a §17.7 (não-admins veem «Ocupado», admins o título).
+- **§11:** claro e escuro, degradês, «Anular», dicas, e cabe no telemóvel (o quadro desliza coluna a
+  coluna; a agenda desliza na horizontal). A criação de «eventos» à parte saiu: agora é uma tarefa
+  (Reunião, Bloqueio…); os eventos antigos continuam visíveis na Agenda.
+
+Ficheiros novos: `inc/migrate_tasks.php`, `inc/tasks_view.php`. Reescritos: `calendar.php`,
+`tasks_api.php`, `assets/tasks.js`. Alterados: `inc/tasks.php`, `inc/perm.php` (`can_assign_to`),
+`inc/team.php` (presencial, privacidade), `inc/alerts.php` (pedidos de ajuda), `inc/undo.php`,
+`leads.php`, ligações antigas para as Tarefas.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -1709,3 +1774,77 @@ pessoa está na plataforma, nunca o que faz.
   grading), pesquisáveis no separador Equipa.
 - **O meu perfil:** cada pessoa edita foto, telemóvel, competências, horário e data de
   aniversário (opcional).
+
+---
+
+## 18. Aba Tarefas (decidido 22 out 2026)
+
+Substitui o que contradiga a §3.5. Aplica a §11 e a §17.7.
+
+### 18.0 Conta do superadmin
+A conta de login atual **admin@topperdigital.xyz** (fictícia) passa a ter o email
+**info@topperdigital.xyz**, **mantendo a mesma palavra-passe** e o papel **Superadmin**
+(alterar o email da conta existente; não criar outra; não tocar no hash da palavra-passe).
+A partir daí, todas as referências a «admin» como pessoa passam a ser o superadmin `info@`.
+
+### 18.1 Separadores
+**Tarefas** (abre por defeito) · **Quadro da equipa** · **Agenda** (antes «Calendário»).
+O separador «Equipa» desta aba sai (existe a aba Equipa).
+
+### 18.2 O superadmin não é operador
+- Operadores: **Rodrigo, Santiago, Valdir, Guilherme, Diogo**. O superadmin (`info@`) não
+  aparece como responsável possível, nem como coluna no quadro, nem em distribuições;
+  continua a ver e gerir tudo.
+- **Redistribuição única** das leads atribuídas à conta admin: em rotação pelos 5 operadores
+  (por ordem de criação; 23/22/22/22/22 para 111). As tarefas «Ligar a…» de cada lead
+  acompanham o novo responsável. Registar no histórico de cada lead.
+
+### 18.3 Tarefas (lista)
+- Linhas compactas: ícone do tipo · marca de origem · título · ligação · prazo · responsável.
+- Grupos recolhíveis por urgência: **Em atraso** (sempre aberto, vermelho) · **Hoje** ·
+  **Esta semana** · **Mais tarde** · **Sem data**.
+- Concluídas não aparecem (filtro próprio); ao concluir, «Concluída · Anular».
+- **Agrupamento de tarefas automáticas iguais:** chamadas de leads e follow-ups de relação
+  aparecem numa linha por pessoa, ex.: «☎ Chamadas de leads · 22 · 5 em atraso · Abrir fila →»
+  (abre a aba Leads com «Urgente»/a lista de Relações).
+
+### 18.4 Quadro da equipa
+- Colunas: **Por atribuir** + uma por operador; topo de cada coluna com barra de carga
+  (§17.10) e contadores atrasadas · hoje · total.
+- **Máximo 6 cartões por coluna** (os mais urgentes) + «+ N tarefas» que expande/abre a
+  lista da pessoa. Tarefas automáticas agrupadas como na lista.
+- **Sem coluna «Feito»** (filtro Concluídas).
+- Entreajuda: **arrastar** para a própria coluna; botão **«Pegar»** em tarefas de colegas;
+  botão **«Pedir ajuda»** (envia para Por atribuir com 🙋 e notifica a equipa). Tudo no histórico.
+
+### 18.5 Filtros (lista e quadro)
+Botões combináveis: **Estado** (Por fazer · Concluídas · Todas) · **Urgência** (Em atraso ·
+Hoje · Esta semana) · **Responsável** (eu · cada operador · por atribuir) · **Tipo** ·
+**Origem** (Lead · Negócio · Marketing · Relação · Pessoal · Manual) · **Negócio** (ID/nome).
+Filtros guardáveis como vistas.
+
+### 18.6 Tipos, origens, ícones e cores
+- **Tipo** = ícone principal da tarefa (16): Chamada · Reunião · Email · Mensagem/WhatsApp ·
+  Follow-up · Visita/deslocação · Gravação · Edição · Render · Revisão/aprovação · Entrega ·
+  Orçamento/proposta · Documento · Tarefa genérica · Pessoal · Bloqueio.
+- **Origem** = marca pequena com **o mesmo ícone da aba de origem no menu** e a cor dessa
+  origem: Lead · Negócio · Marketing · Relação (Contactos) · Pessoal · Manual (Tarefas).
+- Cada tipo e cada origem têm cor própria a partir da paleta (tokens claro/escuro); dica com
+  o nome ao passar o cursor (§11). A mesma linguagem na lista, no quadro e na agenda.
+
+### 18.7 «+ Nova tarefa»
+Mesmo formulário da «Nova ação» das Leads (§12.7), com a animação da §13.8, mais completo:
+tipo (**só ícones**, sem texto; o nome do tipo aparece ao passar o cursor ou com toque longo — §18.6) · título · notas · atalhos de tempo · data, hora, duração · responsável
+(nunca o superadmin) · ligação a negócio/lead/contacto · prioridade · checklist · anexos ·
+repetir · Ocupado/Livre · participantes (convite pelo chat, §17.7).
+**Tipo Reunião:** escolher **Google Meet** ou **Discord**; sem nenhum = **presencial** e
+aparece o campo **Local**.
+
+### 18.8 Agenda
+- Vistas Dia · Semana · Mês com as **24 horas completas**; ao abrir, desloca-se para a hora
+  atual; horas fora do horário de trabalho mais escuras.
+- Criar arrastando na grelha → **Tarefa**, **Tarefa pessoal** ou **Bloqueio**.
+- **Bloqueio:** tempo reservado sem tarefa; ocupado.
+- **Tarefa pessoal:** sempre ocupada e **privada** — **todos, incluindo admins, veem só
+  «Ocupado»** (exceção à §17.7).
+- Mostra tarefas com hora, reuniões, ausências e prazos de tarefas sem hora.

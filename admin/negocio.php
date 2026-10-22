@@ -464,7 +464,7 @@ echo deal_card('tasks', 'tarefas', 'green', 'Produção e tarefas', deal_kv([
         ['Tarefas', '<span class="mono">' . count($tasks['open']) . ' abertas · ' . $tasks['done'] . ' feitas</span>' . ($tasks['late'] ? ' <span class="neg b">· ' . $tasks['late'] . ' atrasadas</span>' : '')],
         ['Entregas', $deal['delivered_at'] ? '<span class="pos b">feitas</span> <span class="muted mono">' . e(date('d/m/Y', strtotime((string)$deal['delivered_at']))) . '</span>' : ($delivery ? 'previstas a <span class="mono">' . e(date('d/m/Y', strtotime($delivery))) . '</span>' : '<span class="muted">—</span>')],
         ['Prazo real vs orçado', $realVsBudget ? '<span class="mono">' . e($realVsBudget) . '</span>' : '<span class="muted">—</span>'],
-    ]), ['panel' => can('tarefas') ? 'dtasks:' . $id : '', 'href' => nav_to('/admin/calendar.php?view=tarefas'), 'more' => 'Ver tarefas']);
+    ]), ['panel' => can('tarefas') ? 'dtasks:' . $id : '', 'href' => nav_to('/admin/calendar.php'), 'more' => 'Ver tarefas']);
 
 // ── Ficheiros e Documentos (Drive) ──
 $drive = deal_drive_summary($pdo, $deal);

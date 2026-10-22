@@ -1,718 +1,456 @@
 <?php
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
-require_once __DIR__ . '/inc/tasks.php';
+require_once __DIR__ . '/inc/tasks_view.php';
 require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/team.php';
 $user = require_login();
 require_page('tarefas');
 
-// Três vistas no mesmo separador: o mês, as pilhas de tarefas e a equipa.
-$view = (string)($_GET['view'] ?? 'mes');
-if (!in_array($view, ['mes', 'tarefas', 'equipa'], true)) $view = 'mes';
+// Tarefas (§18): Tarefas (lista por urgência, abre por defeito) · Quadro da equipa ·
+// Agenda (24 h). O superadmin vê e gere tudo, mas não é operador: não é responsável,
+// não tem coluna no quadro e não entra em distribuições (§18.2). Tarefas pessoais e
+// bloqueios são privados: os outros — admins incluídos — veem só «Ocupado».
 
-$allMembers = team_members($pdo);
-// Só as pilhas dentro do meu âmbito da aba Tarefas (null = todas).
-$visible = task_visible_members($pdo, $allMembers);
-$members = $visible === null ? $allMembers : array_intersect_key($allMembers, array_flip($visible));
-// ?p=<id> — só esta pessoa (no mês: as tarefas dela; nas tarefas: a pilha dela em grande).
-$person = task_member_in($_GET['p'] ?? 0, $members);
-/** Restringe uma consulta às tarefas que posso ver. */
-$visSql = $visible === null ? '' : ' AND (member_id IS NULL' . ($visible ? ' OR member_id IN (' . implode(',', $visible) . ')' : '') . ')';
+const TASK_TABS = ['tarefas' => 'Tarefas', 'quadro' => 'Quadro da equipa', 'agenda' => 'Agenda'];
 
-// Mês a mostrar. Formato AAAA-MM no endereço; o mês corrente por omissão.
-$ym = (string)($_GET['ym'] ?? date('Y-m'));
-if (!preg_match('/^\d{4}-\d{2}$/', $ym)) $ym = date('Y-m');
-[$year, $month] = array_map('intval', explode('-', $ym));
-if ($month < 1 || $month > 12) { $year = (int)date('Y'); $month = (int)date('n'); }
+// Os endereços antigos continuam a funcionar.
+$tab = (string)($_GET['t'] ?? '');
+if ($tab === '' && isset($_GET['view'])) $tab = ['mes' => 'agenda', 'tarefas' => 'tarefas'][$_GET['view']] ?? 'tarefas';
+if (!isset(TASK_TABS[$tab])) $tab = 'tarefas';
 
-$first = new DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month));
-$prev  = $first->modify('-1 month')->format('Y-m');
-$next  = $first->modify('+1 month')->format('Y-m');
+$me = me_row($pdo);
+$admin = role_is_admin((string)$me['role']);
+$members = team_members($pdo);                       // operadores (sem o superadmin)
+$visible = task_visible_members($pdo, $members);
+if ($visible !== null) $members = array_intersect_key($members, array_flip($visible));
+$myMember = member_for_user($pdo, (int)$me['id']);
+$operator = $myMember !== null && isset($members[$myMember]);
+$canEdit = can('tarefas', PERM_EDIT);
+$assignable = array_filter($members, fn($m, $mid) => task_can_assign($pdo, (int)$mid, $members, $visible), ARRAY_FILTER_USE_BOTH);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    csrf_check();
-    $do   = $_POST['do'] ?? '';
-    $back = '/admin/calendar.php?ym=' . urlencode((string)($_POST['ym'] ?? $ym));
-
-    if ($do === 'add_event') {
-        $date = trim((string)($_POST['event_date'] ?? ''));
-        $ini  = trim((string)($_POST['start_time'] ?? ''));
-        $fim  = trim((string)($_POST['end_time'] ?? ''));
-
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            flash('Indique uma data válida.', 'err');
-            redirect($back);
-        }
-        // Fim antes do início quase de certeza é um engano — vale mais
-        // avisar do que guardar um intervalo impossível.
-        if ($ini !== '' && $fim !== '' && $fim < $ini) {
-            flash('A hora de fim é anterior à de início.', 'err');
-            redirect($back);
-        }
-
-        $pdo->prepare(
-            'INSERT INTO events (title, event_date, start_time, end_time, deal_id, location, notes)
-             VALUES (?,?,?,?,?,?,?)'
-        )->execute([
-            trim((string)($_POST['title'] ?? '')) ?: 'Sem título',
-            $date,
-            $ini !== '' ? $ini : null,
-            $fim !== '' ? $fim : null,
-            task_deal_in($_POST['deal_id'] ?? 0, $pdo),
-            trim((string)($_POST['location'] ?? '')),
-            trim((string)($_POST['notes'] ?? '')),
-        ]);
-        flash('Evento criado.');
-        redirect('/admin/calendar.php?ym=' . substr($date, 0, 7));
-    }
-
-    if ($do === 'delete_event') {
-        $pdo->prepare('DELETE FROM events WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
-        flash('Evento eliminado.');
-        redirect($back);
-    }
-
-    // ── tarefas ─────────────────────────────────────────────
-    $pBack = task_member_in($_POST['p'] ?? 0, $members);
-    $board = '/admin/calendar.php?view=tarefas' . ($pBack ? '&p=' . $pBack : '');
-
-    // Uma tarefa fora do meu âmbito não se mexe, nem pelo id.
-    $guard = function (?array $t) use ($visible, $board) {
-        if (!$t || !task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible)) {
-            flash('Essa tarefa já não existe.', 'err');
-            redirect($board);
-        }
-        return $t;
-    };
-
-    if ($do === 'add_task' || $do === 'update_task') {
-        [$v, $err] = task_input($_POST, $members, $pdo);
-        $old = $do === 'update_task' ? $guard(task_by_id($pdo, (int)($_POST['id'] ?? 0))) : null;
-        $oldMember = $old && $old['member_id'] !== null ? (int)$old['member_id'] : null;
-        if (!$err && $v['member_id'] !== $oldMember && !task_can_assign($pdo, $v['member_id'], $allMembers, $visible)) {
-            $err = 'Não pode atribuir tarefas a essa pessoa.';
-        }
-        if ($err) {
-            flash($err, 'err');
-            redirect($old ? $board . '&edit=' . (int)$old['id'] : $board);
-        }
-        if ($old) {
-            task_update($pdo, $old, $v);
-            flash('Tarefa guardada.');
-        } else {
-            task_create($pdo, $v);
-            flash('Tarefa criada.');
-        }
-        redirect($board);
-    }
-
-    $taskSnap = fn(array $t) => ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
-
-    if ($do === 'move_task') {
-        $id = (int)($_POST['id'] ?? 0);
-        $mt = $guard(task_by_id($pdo, $id));
-        if ((string)($_POST['to'] ?? '') === 'done') {
-            $spawned = task_done($pdo, $id);
-            flash('Tarefa marcada como feita.', 'ok', undo_push('task', $taskSnap($mt) + ['spawned' => $spawned]));
-            redirect($board);
-        }
-        $to = task_member_in($_POST['to'] ?? 0, $members);
-        if (!task_can_assign($pdo, $to, $allMembers, $visible)) {
-            flash('Não pode atribuir tarefas a essa pessoa.', 'err');
-            redirect($board);
-        }
-        task_move($pdo, $id, $to);
-        flash('Tarefa movida para ' . ($to ? $members[$to]['name'] : 'Por atribuir') . '.', 'ok', undo_push('task', $taskSnap($mt)));
-        redirect($board);
-    }
-
-    // «✓ Feito» e «Reabrir» — sem JavaScript, formulários normais.
-    if ($do === 'done_task' || $do === 'reopen_task') {
-        $id = (int)($_POST['id'] ?? 0);
-        $t = $guard(task_by_id($pdo, $id));
-        if ($do === 'done_task') {
-            $spawned = task_done($pdo, $id);
-            flash('«' . $t['title'] . '» está feita.', 'ok', undo_push('task', $taskSnap($t) + ['spawned' => $spawned]));
-        } else {
-            $to = task_member_in($t['member_id'], $members);
-            task_reopen($pdo, $id, $to);
-            flash('«' . $t['title'] . '» reaberta' . ($to ? ' para ' . $members[$to]['name'] : '') . '.');
-        }
-        redirect($board);
-    }
-
-    if ($do === 'delete_task') {
-        $guard(task_by_id($pdo, (int)($_POST['id'] ?? 0)));
-        $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
-        flash('Tarefa eliminada.');
-        redirect($board);
-    }
-
-}
-
-// ── eventos do mês ──────────────────────────────────────────
-$eq = $pdo->prepare(
-    'SELECT e.*, CASE WHEN d.id IS NULL THEN NULL ELSE ' . (db_is_sqlite($pdo) ? "d.code || ' · ' || d.name" : "CONCAT(d.code, ' · ', d.name)") . ' END AS job_name
-       FROM events e
-       LEFT JOIN deals d ON d.id = e.deal_id
-      WHERE e.event_date BETWEEN ? AND ?
-      ORDER BY e.event_date, COALESCE(e.start_time, "23:59"), e.id'
-);
-$eq->execute([$first->format('Y-m-d'), $first->modify('last day of this month')->format('Y-m-d')]);
-$events = $eq->fetchAll();
-
-$byDay = [];
-foreach ($events as $ev) {
-    $byDay[(int)substr($ev['event_date'], 8, 2)][] = $ev;
-}
-
-$dealOptions = task_deal_options($pdo);
-
-// Evento à espera de confirmação para ser eliminado.
-$pendingEvent = (int)($_GET['del'] ?? 0);
-
-/** «14:00 – 16:30», ou «Todo o dia» quando não há horas. */
-function event_hours(array $ev): string {
-    $i = $ev['start_time'] ? substr($ev['start_time'], 0, 5) : '';
-    $f = $ev['end_time']   ? substr($ev['end_time'], 0, 5)   : '';
-    if ($i === '' && $f === '') return 'Todo o dia';
-    if ($f === '') return $i;
-    if ($i === '') return 'até ' . $f;
-    return $i . ' – ' . $f;
-}
-
-const DIAS_PT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-
-render_header('Tarefas', 'calendar');
-render_flashes();
-
-/** Endereço desta página com os parâmetros dados (os vazios saem). */
-function cal_url(array $q): string {
-    $q = array_filter($q, fn($v) => $v !== null && $v !== '' && $v !== 0);
-    return '/admin/calendar.php' . ($q ? '?' . http_build_query($q) : '');
-}
-
-/** Um cartão de tarefa: arrasta-se pela pega, ou muda-se de pilha pelo «Mover para…». */
-function task_card(array $t, array $members, ?int $person): void {
-    $tid = (int)$t['id'];
-    $mid = $t['member_id'] !== null ? (int)$t['member_id'] : 0;
-    $who = $mid && isset($members[$mid]) ? member_color($members[$mid]) : 'var(--faint)';
-    $done = $t['status'] === 'done';
-    $late = $t['due_date'] && !$done && $t['due_date'] < date('Y-m-d');
-    $whoName = $mid && isset($members[$mid]) ? first_name($members[$mid]['name']) : 'Sem dono';
-    $hid = function (string $do) use ($tid, $person) {
-        return csrf_field() . '<input type="hidden" name="do" value="' . $do . '">'
-             . '<input type="hidden" name="id" value="' . $tid . '">'
-             . '<input type="hidden" name="p" value="' . (int)$person . '">';
-    };
-    ?>
-    <article class="card st-<?= e($t['status']) ?> prio-<?= e($t['priority']) ?>" data-id="<?= $tid ?>"
-             data-status="<?= e($t['status']) ?>" data-mid="<?= $mid ?>" style="--who:<?= e($who) ?>">
-      <div class="card-top">
-        <span class="grip" aria-hidden="true" title="Arrastar">⠿</span>
-        <a class="card-t" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'edit' => $tid])) ?>"><?= e($t['title']) ?></a>
-      </div>
-      <div class="card-meta">
-        <span class="who-chip" title="Quem fez"><?= e($whoName) ?></span>
-        <span class="st"><?= e(TASK_STATUS[$t['status']] ?? $t['status']) ?></span>
-        <span class="pr"><?= e(TASK_PRIO[$t['priority']] ?? $t['priority']) ?></span>
-        <?php if ($t['due_date']): ?>
-          <span class="due<?= $late ? ' late' : '' ?>" title="Prazo"><?= e(task_due_label($t['due_date'])) ?></span>
-        <?php endif; ?>
-      </div>
-      <?php if (!empty($t['deal_code'])): ?>
-        <div class="card-job"><a href="/admin/negocio.php?id=<?= (int)$t['deal_id'] ?>"><?= e($t['deal_code'] . ' · ' . $t['deal_name']) ?></a></div>
-      <?php elseif (!empty($t['deal_id']) && in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)): ?>
-        <div class="card-job"><a href="/admin/lead.php?id=<?= (int)$t['deal_id'] ?>">Lead · <?= e($t['deal_name']) ?></a></div>
-      <?php elseif (!empty($t['contact_name'])): ?>
-        <div class="card-job"><a href="/admin/contact.php?id=<?= (int)$t['contact_id'] ?>"><?= ($t['kind'] ?? '') === 'relation' ? 'Relação' : 'Contacto' ?> · <?= e($t['contact_name']) ?></a></div>
-      <?php elseif ($t['job_name'] !== ''): ?>
-        <div class="card-job"><?= e($t['job_name']) ?></div>
-      <?php endif; ?>
-      <form method="post" action="/admin/calendar.php" class="card-move">
-        <?= csrf_field() ?>
-        <input type="hidden" name="do" value="move_task">
-        <input type="hidden" name="id" value="<?= $tid ?>">
-        <input type="hidden" name="p" value="<?= (int)$person ?>">
-        <label class="sr" for="mv-<?= $tid ?>">Mover para…</label>
-        <select id="mv-<?= $tid ?>" name="to">
-          <option value="0"<?= !$done && $mid === 0 ? ' selected' : '' ?>>Por atribuir</option>
-          <?php foreach ($members as $m): ?>
-            <option value="<?= (int)$m['id'] ?>"<?= !$done && $mid === (int)$m['id'] ? ' selected' : '' ?>><?= e($m['name']) ?></option>
-          <?php endforeach; ?>
-          <option value="done"<?= $done ? ' selected' : '' ?>>Feito</option>
-        </select>
-        <button class="btn ghost sm" type="submit">Mover</button>
-      </form>
-      <div class="card-acts">
-        <form method="post" action="/admin/calendar.php" class="card-done">
-          <?= $hid('done_task') ?>
-          <button class="btn ghost sm" type="submit" title="Marcar como feita">✓ Feito</button>
-        </form>
-        <form method="post" action="/admin/calendar.php" class="card-reopen">
-          <?= $hid('reopen_task') ?>
-          <button class="btn ghost sm" type="submit" title="Voltar a pôr na pilha">Reabrir</button>
-        </form>
-      </div>
-    </article>
-    <?php
-}
-
-$today = (new DateTimeImmutable('today'))->format('Y-m-d');
-?>
-
-<h1>Tarefas</h1>
-<?php
-// Resumo (§11.5): as tarefas que posso ver.
-$kq = fn(string $where, array $a = []) => (function () use ($pdo, $where, $a, $visSql) {
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tasks WHERE $where$visSql"); $st->execute($a); return (int)$st->fetchColumn(); })();
-$dueDays = max(0, (int)setting($pdo, 'task_due_days', 2));
-$kOpen = $kq("status <> 'done'");
-$kLate = $kq("status <> 'done' AND due_date < ?", [$today]);
-$kSoon = $kq("status <> 'done' AND due_date BETWEEN ? AND ?", [$today, (new DateTimeImmutable($today))->modify("+$dueDays days")->format('Y-m-d')]);
-$kDone = $kq("status = 'done' AND done_at >= ?", [(new DateTimeImmutable($today))->modify('monday this week')->format('Y-m-d') . ' 00:00:00']);
-?>
-<div class="stats">
-  <a class="stat hero" href="<?= e(cal_url(['view' => 'tarefas'])) ?>"><div class="k">Por fazer</div><div class="v"><?= $kOpen ?></div><div class="n">tarefas abertas</div></a>
-  <div class="stat<?= $kLate ? ' risk' : '' ?>"><div class="k">Atrasadas</div><div class="v<?= $kLate ? ' neg' : '' ?>"><?= $kLate ?></div><div class="n">prazo já passou</div></div>
-  <div class="stat"><div class="k">A vencer</div><div class="v"><?= $kSoon ?></div><div class="n">até <?= $dueDays ?> dias</div></div>
-  <div class="stat"><div class="k">Feitas esta semana</div><div class="v"><?= $kDone ?></div><div class="n">desde segunda-feira</div></div>
-</div>
-
-<div class="tabs">
-  <a href="<?= e(cal_url(['ym' => $ym, 'p' => $person])) ?>" class="<?= $view === 'mes' ? 'on' : '' ?>">Mês</a>
-  <a href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person])) ?>" class="<?= $view === 'tarefas' ? 'on' : '' ?>">Tarefas</a>
-  <a href="<?= e(cal_url(['view' => 'equipa'])) ?>" class="<?= $view === 'equipa' ? 'on' : '' ?>">Equipa</a>
-</div>
-
-<?php if ($view !== 'equipa'): ?>
-<div class="people" aria-label="Filtrar por pessoa">
-  <a href="<?= e(cal_url(['view' => $view === 'mes' ? null : $view, 'ym' => $view === 'mes' ? $ym : null])) ?>"
-     class="<?= $person === null ? 'on' : '' ?>">Todos</a>
-  <?php foreach ($members as $m): $mid = (int)$m['id']; ?>
-    <a href="<?= e(cal_url(['view' => $view === 'mes' ? null : $view, 'ym' => $view === 'mes' ? $ym : null, 'p' => $mid])) ?>"
-       class="<?= $person === $mid ? 'on' : '' ?>" style="--who:<?= e(member_color($m)) ?>">
-      <i class="sw"></i><?= e(first_name($m['name'])) ?>
-    </a>
-  <?php endforeach; ?>
-</div>
-<?php endif; ?>
-
-<?php if ($view === 'mes'):
-// ── tarefas com prazo neste mês ─────────────────────────────
-$tq = $pdo->prepare(
-    'SELECT * FROM tasks WHERE due_date BETWEEN ? AND ?' . ($person ? ' AND member_id = ?' : '') . $visSql
-  . ' ORDER BY due_date, position, id'
-);
-$tq->execute(array_merge(
-    [$first->format('Y-m-d'), $first->modify('last day of this month')->format('Y-m-d')],
-    $person ? [$person] : []
-));
-$monthTasks = $tq->fetchAll();
-$tasksByDay = [];
-foreach ($monthTasks as $t) $tasksByDay[(int)substr((string)$t['due_date'], 8, 2)][] = $t;
-
-$taskChip = function (array $t, bool $long = false) use ($members, $person): string {
-    $mid  = $t['member_id'] !== null ? (int)$t['member_id'] : 0;
-    $name = $mid && isset($members[$mid]) ? first_name($members[$mid]['name']) : 'Por atribuir';
-    $who  = $mid && isset($members[$mid]) ? member_color($members[$mid]) : 'var(--paper)';
-    return '<a class="ev task' . ($t['status'] === 'done' ? ' done' : '') . '" style="--who:' . e($who) . '"'
-         . ' href="' . e(cal_url(['view' => 'tarefas', 'p' => $person, 'edit' => (int)$t['id']])) . '"'
-         . ' title="' . e('Tarefa · ' . $t['title'] . ' · ' . $name . ' · ' . (TASK_STATUS[$t['status']] ?? '')) . '">'
-         . '<b>' . e($name) . '</b> ' . e($long ? $t['title'] : shorten($t['title'], 22)) . '</a>';
+/** Uma tarefa que posso ver e mexer (as privadas dos outros não existem para mim). */
+$reach = function (?array $t) use ($visible, $myMember): ?array {
+    if (!$t) return null;
+    if (task_hidden_for($t, $myMember)) return null;
+    if (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible) && (int)$t['member_id'] !== (int)$myMember) return null;
+    return $t;
 };
 
-// A grelha começa sempre à segunda-feira anterior ao dia 1.
-$start   = $first->modify('monday this week');
-if ($start > $first) $start = $start->modify('-1 week');
-$semanas = (int)ceil(((int)$first->format('N') - 1 + (int)$first->format('t')) / 7);
-$pq      = $person ? '&amp;p=' . $person : '';
-?>
+// ── ações ───────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
+    $do = (string)($_POST['do'] ?? '');
+    $back = (string)($_POST['back'] ?? '/admin/calendar.php');
+    if (!preg_match('~^/admin/calendar\.php(\?[^#\s]*)?$~', $back)) $back = '/admin/calendar.php';
+    $back = preg_replace('~([?&])(edit|nova)=[^&]*&?~', '$1', $back);
+    $back = rtrim($back, '?&');
+    try {
+        if (in_array($do, ['save_task', 'delete_task'], true)) {
+            if (!$canEdit) throw new RuntimeException('Sem permissão para editar tarefas.');
+            $id = (int)($_POST['id'] ?? 0);
+            $old = $id ? $reach(task_by_id($pdo, $id)) : null;
+            if ($id && !$old) throw new RuntimeException('Essa tarefa já não existe.');
 
-<div class="sub">
-  <a href="?ym=<?= $prev ?><?= $pq ?>">← anterior</a>
-  · <b style="color:var(--black)"><?= month_name($month) ?> <?= $year ?></b>
-  · <a href="?ym=<?= $next ?><?= $pq ?>">seguinte →</a>
-  · <a href="?ym=<?= date('Y-m') ?><?= $pq ?>">hoje</a>
-</div>
+            if ($do === 'delete_task') {
+                $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
+                if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
+                flash('Tarefa eliminada.');
+                redirect($back);
+            }
 
-<div class="cal">
-  <?php foreach (DIAS_PT as $d): ?>
-    <div class="cal-h"><?= $d ?></div>
-  <?php endforeach; ?>
+            $kind = isset(TASK_TYPES[$_POST['kind'] ?? '']) ? (string)$_POST['kind'] : 'task';
+            $priv = in_array($kind, ['personal', 'block'], true);
+            $title = trim(mb_substr((string)($_POST['title'] ?? ''), 0, 200));
+            if ($title === '') $title = $kind === 'block' ? 'Bloqueio' : '';
+            if ($title === '') throw new RuntimeException('A tarefa precisa de um título.');
+            $due = trim((string)($_POST['due_date'] ?? ''));
+            if ($due !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $due)) throw new RuntimeException('Indique uma data válida.');
+            $time = trim((string)($_POST['due_time'] ?? ''));
+            if ($time !== '' && !preg_match('/^\d{2}:\d{2}$/', $time)) throw new RuntimeException('Indique uma hora válida.');
+            if ($time !== '' && $due === '') throw new RuntimeException('Uma hora precisa de um dia: indique a data.');
+            if ($kind === 'block' && ($due === '' || $time === '')) throw new RuntimeException('Um bloqueio precisa de dia e hora.');
+            $dur = (int)($_POST['duration_min'] ?? 0);
+            if (!isset(TASK_DURATIONS[$dur])) $dur = 0;
+            // Responsável: um operador (nunca o superadmin). Pessoal e bloqueio são de quem os cria.
+            $mid = (int)($_POST['member_id'] ?? 0) ?: null;
+            if ($priv) $mid = $old ? ($old['member_id'] !== null ? (int)$old['member_id'] : $myMember) : $myMember;
+            elseif ($mid !== null && !isset($members[$mid])) throw new RuntimeException('Escolha um responsável da equipa.');
+            $oldMid = $old && $old['member_id'] !== null ? (int)$old['member_id'] : null;
+            if (!$priv && $mid !== $oldMid && !task_can_assign($pdo, $mid, $members, $visible)) throw new RuntimeException('Não pode atribuir tarefas a essa pessoa.');
+            $platform = $kind === 'meeting' && in_array($_POST['platform'] ?? '', ['meet', 'discord'], true) ? (string)$_POST['platform'] : '';
+            $location = $kind === 'meeting' && $platform === '' ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
+            $parts = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['participants'] ?? [])))));
+            $ownerUid = $mid !== null && isset($members[$mid]) ? (int)$members[$mid]['user_id'] : (int)$me['id'];
+            $parts = $priv ? [] : array_values(array_filter($parts, fn($u) => $u !== $ownerUid));
+            $row = [
+                'title' => $title, 'description' => trim((string)($_POST['description'] ?? '')), 'kind' => $kind, 'member_id' => $mid,
+                'deal_id' => task_deal_in($_POST['deal_id'] ?? 0, $pdo), 'contact_id' => (int)($_POST['contact_id'] ?? 0) ?: null,
+                'due_date' => $due !== '' ? $due : null, 'due_time' => $time !== '' ? $time . ':00' : null, 'duration_min' => $time !== '' && $dur ? $dur : null,
+                'priority' => isset(TASK_PRIO[$_POST['priority'] ?? '']) ? (string)$_POST['priority'] : 'media',
+                'repeat_rule' => isset(TASK_REPEAT[$_POST['repeat_rule'] ?? '']) ? (string)$_POST['repeat_rule'] : '',
+                'busy' => $priv ? 1 : (($_POST['busy'] ?? '1') === '0' ? 0 : 1), 'private' => $priv ? 1 : 0,
+                'platform' => $platform, 'location' => $location,
+                'checklist' => task_checklist_parse((string)($_POST['checklist'] ?? '')), 'attachments' => task_links_parse((string)($_POST['attachments'] ?? '')),
+                'participants' => implode(',', $parts),
+            ];
+            if ($row['contact_id'] && !(int)$pdo->query('SELECT COUNT(*) FROM contacts WHERE id = ' . (int)$row['contact_id'])->fetchColumn()) $row['contact_id'] = null;
+            $now = task_now();
+            if ($old) {
+                $pdo->prepare('UPDATE tasks SET ' . implode(', ', array_map(fn($c) => "$c = ?", array_keys($row))) . ', updated_at = ? WHERE id = ?')
+                    ->execute([...array_values($row), $now, $id]);
+                if ($oldMid !== $mid) {
+                    $pdo->prepare('UPDATE tasks SET help_by = NULL, position = ? WHERE id = ?')->execute([task_next_position($pdo, $mid), $id]);
+                    task_log($pdo, $id, 'assign', 'Responsável: ' . ($mid ? $members[$mid]['name'] : 'por atribuir'));
+                }
+                task_log($pdo, $id, 'edit', 'Editada');
+                $newParts = array_diff($parts, array_filter(array_map('intval', explode(',', (string)$old['participants']))));
+                $msg = 'Tarefa guardada.';
+                $undo = '';
+            } else {
+                $cols = array_keys($row);
+                $pdo->prepare('INSERT INTO tasks (' . implode(', ', $cols) . ', job_name, status, position, created_at, updated_at, created_by) VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ", '', 'todo', ?, ?, ?, ?)")
+                    ->execute([...array_values($row), task_next_position($pdo, $mid), $now, $now, (int)$me['id']]);
+                $id = (int)$pdo->lastInsertId();
+                task_log($pdo, $id, 'create', TASK_TYPES[$kind][0] . ($mid ? ' · ' . $members[$mid]['name'] : ($priv ? '' : ' · por atribuir')));
+                $newParts = $parts;
+                $msg = $kind === 'block' ? 'Bloqueio criado: fica «Ocupado» para os outros.' : ($priv ? 'Tarefa pessoal criada: os outros veem só «Ocupado».' : 'Tarefa criada.');
+                $undo = undo_push('task_new', ['id' => $id]);
+            }
+            // Participantes (§18.7): convite pelo chat (§17.7). Com dia e hora é um pedido de
+            // reunião (Aceitar/Recusar/Propor); sem hora, uma mensagem com a tarefa.
+            if ($newParts) {
+                $sent = 0; $warn = '';
+                $group = bin2hex(random_bytes(6));
+                foreach ($newParts as $uid) {
+                    try {
+                        if ($row['due_date'] && $row['due_time']) {
+                            team_meeting_request($pdo, (int)$me['id'], (int)$uid, $due . ' ' . $time, $dur ?: 60, $title, $row['deal_id'], $platform ?: 'local', '', $group, null, $location);
+                        } else {
+                            team_chat_send($pdo, (int)$me['id'], (int)$uid, 'Juntei-te à tarefa «' . $title . '»: /admin/calendar.php?edit=' . $id);
+                        }
+                        $sent++;
+                    } catch (RuntimeException $e) { $warn = $e->getMessage(); }
+                }
+                // Quem pediu já tem a tarefa: ao aceitarem, não se cria outra (§17.7).
+                $pdo->prepare('UPDATE meetings SET requester_task_id = ? WHERE group_key = ?')->execute([$id, $group]);
+                if ($sent) task_log($pdo, $id, 'invite', $sent . ' participante(s) convidado(s) pelo chat');
+                $msg .= $sent ? ' Convite enviado no chat a ' . $sent . ' pessoa(s).' : '';
+                if ($warn !== '') $msg .= ' Convite não enviado: ' . $warn;
+            }
+            flash($msg, 'ok', $undo);
+            redirect($back);
+        }
 
-  <?php
-  $cursor = $start;
-  for ($i = 0; $i < $semanas * 7; $i++):
-      $iso  = $cursor->format('Y-m-d');
-      $dia  = (int)$cursor->format('j');
-      $fora = (int)$cursor->format('n') !== $month;
-      $lista = $fora ? [] : ($byDay[$dia] ?? []);
-      $tlist = $fora ? [] : ($tasksByDay[$dia] ?? []);
-  ?>
-    <div class="cal-d<?= $fora ? ' fora' : '' ?><?= $iso === $today ? ' hoje' : '' ?>">
-      <div class="n"><?= $dia ?></div>
-      <?php foreach ($lista as $ev): ?>
-        <a class="ev<?= $ev['deal_id'] ? ' job' : '' ?>"
-           href="#ev-<?= (int)$ev['id'] ?>"
-           title="<?= e($ev['title'] . ' · ' . event_hours($ev) . ($ev['job_name'] ? ' · ' . $ev['job_name'] : '')) ?>">
-          <b><?= e(substr(event_hours($ev), 0, 5)) ?></b> <?= e(shorten($ev['title'], 22)) ?>
-        </a>
-      <?php endforeach; ?>
-      <?php foreach ($tlist as $t) echo $taskChip($t); ?>
-    </div>
-  <?php $cursor = $cursor->modify('+1 day'); endfor; ?>
-</div>
+        if ($do === 'save_view' || $do === 'del_view') {
+            if ($do === 'save_view') {
+                $name = trim(mb_substr((string)($_POST['name'] ?? ''), 0, 60));
+                $q = (string)($_POST['query'] ?? '');
+                if ($name === '' || strlen($q) > 500 || preg_match('/[<>"\s]/', $q)) throw new RuntimeException('Dê um nome à vista.');
+                $pdo->prepare('INSERT INTO task_views (user_id, name, query) VALUES (?,?,?)')->execute([(int)$me['id'], $name, $q]);
+                flash('Vista «' . $name . '» guardada.');
+            } else {
+                $pdo->prepare('DELETE FROM task_views WHERE id = ? AND user_id = ?')->execute([(int)($_POST['id'] ?? 0), (int)$me['id']]);
+                flash('Vista apagada.');
+            }
+            redirect($back);
+        }
 
-<?php /* No telemóvel a grelha fica apertada: a mesma coisa em lista, dia a dia. */ ?>
-<div class="agenda">
-  <?php
-  $dias = array_unique(array_merge(array_keys($byDay), array_keys($tasksByDay)));
-  sort($dias);
-  if (!$dias): ?>
-    <div class="empty">Nada marcado em <?= month_name($month) ?>.</div>
-  <?php endif;
-  foreach ($dias as $dia):
-      $iso = sprintf('%04d-%02d-%02d', $year, $month, $dia);
-      $dow = DIAS_PT[(int)(new DateTimeImmutable($iso))->format('N') - 1];
-  ?>
-    <div class="ag-day<?= $iso === $today ? ' hoje' : '' ?>">
-      <div class="ag-n"><b><?= $dia ?></b> <?= $dow ?></div>
-      <div class="ag-items">
-        <?php foreach ($byDay[$dia] ?? [] as $ev): ?>
-          <a class="ev<?= $ev['deal_id'] ? ' job' : '' ?>" href="#ev-<?= (int)$ev['id'] ?>">
-            <b><?= e(event_hours($ev)) ?></b> <?= e($ev['title']) ?>
-          </a>
-        <?php endforeach; ?>
-        <?php foreach ($tasksByDay[$dia] ?? [] as $t) echo $taskChip($t, true); ?>
-      </div>
-    </div>
-  <?php endforeach; ?>
-</div>
+        if ($do === 'delete_event') {
+            if (!$canEdit) throw new RuntimeException('Sem permissão.');
+            $pdo->prepare('DELETE FROM events WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
+            flash('Evento eliminado.');
+            redirect($back);
+        }
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'err');
+        redirect($back);
+    }
+    redirect($back);
+}
 
-<div class="legend">
-  <span><i class="sw" style="--who:var(--paper)"></i>Evento</span>
-  <span><i class="sw" style="--who:var(--sky)"></i>Evento de um trabalho</span>
-  <?php foreach ($members as $m): ?>
-    <span style="--who:<?= e(member_color($m)) ?>"><i class="sw"></i>Tarefa · <?= e(first_name($m['name'])) ?></span>
-  <?php endforeach; ?>
-</div>
-
-<?php // ↓ o que vem a seguir é a lista de eventos de sempre ?>
-<h2><?= count($events) ?> <?= count($events) === 1 ? 'evento' : 'eventos' ?> em <?= month_name($month) ?></h2>
-<div class="tablewrap">
-<table>
-  <thead>
-    <tr>
-      <th>Dia</th>
-      <th>Horas</th>
-      <th>Evento</th>
-      <th>Trabalho</th>
-      <th>Onde</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-  <?php if (!$events): ?>
-    <tr><td colspan="6" class="empty">Sem eventos neste mês. Crie o primeiro abaixo.</td></tr>
-  <?php endif; ?>
-  <?php foreach ($events as $ev): $eid = (int)$ev['id']; ?>
-    <tr id="ev-<?= $eid ?>" class="<?= $pendingEvent === $eid ? 'pending' : '' ?>">
-      <td class="nowrap b"><?= (int)substr($ev['event_date'], 8, 2) ?> <?= month_name($month) ?></td>
-      <td class="nowrap"><?= e(event_hours($ev)) ?></td>
-      <td>
-        <?= e($ev['title']) ?>
-        <?php if ($ev['notes']): ?>
-          <div class="muted" style="font-size:0.62rem"><?= e(shorten($ev['notes'], 70)) ?></div>
-        <?php endif; ?>
-      </td>
-      <td>
-        <?php if ($ev['deal_id']): ?>
-          <a href="/admin/negocio.php?id=<?= (int)$ev['deal_id'] ?>"><?= e((string)$ev['job_name']) ?></a>
-        <?php else: ?>
-          <span class="muted">—</span>
-        <?php endif; ?>
-      </td>
-      <td class="muted" style="font-size:0.72rem"><?= e($ev['location']) ?></td>
-      <td class="num nowrap">
-        <?php if ($pendingEvent === $eid): ?>
-          <form method="post" style="display:inline">
-            <?= csrf_field() ?>
-            <input type="hidden" name="do" value="delete_event">
-            <input type="hidden" name="id" value="<?= $eid ?>">
-            <input type="hidden" name="ym" value="<?= e($ym) ?>">
-            <button class="btn danger sm" type="submit">Sim, eliminar</button>
-          </form>
-          <a class="lnk" href="?ym=<?= e($ym) ?>">Cancelar</a>
-        <?php else: ?>
-          <a class="lnk del" href="?ym=<?= e($ym) ?>&amp;del=<?= $eid ?>#ev-<?= $eid ?>">Eliminar</a>
-        <?php endif; ?>
-      </td>
-    </tr>
-  <?php endforeach; ?>
-  </tbody>
-</table>
-</div>
-
-<details class="panel" style="margin-top:2rem" <?= $pendingEvent ? '' : 'open' ?>>
-  <summary style="cursor:pointer;font-size:0.62rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gray)">
-    Novo evento
-  </summary>
-  <form method="post" style="margin-top:1.2rem">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="add_event">
-    <input type="hidden" name="ym" value="<?= e($ym) ?>">
-    <div class="grid">
-      <div class="field">
-        <label for="title">O que é</label>
-        <input type="text" id="title" name="title" required placeholder="Reunião com o cliente">
-      </div>
-      <div class="field">
-        <label for="event_date">Dia</label>
-        <input type="date" id="event_date" name="event_date" required
-               value="<?= e($first->format('Y-m-') . str_pad((string)min((int)date('j'), (int)$first->format('t')), 2, '0', STR_PAD_LEFT)) ?>">
-      </div>
-      <div class="field">
-        <label for="start_time">Começa</label>
-        <input type="time" id="start_time" name="start_time">
-      </div>
-      <div class="field">
-        <label for="end_time">Acaba</label>
-        <input type="time" id="end_time" name="end_time">
-      </div>
-      <div class="field">
-        <label for="deal_id">Negócio (opcional)</label>
-        <select id="deal_id" name="deal_id">
-          <option value="0">— nenhum —</option>
-          <?php foreach ($dealOptions as $did => $label): ?>
-            <option value="<?= (int)$did ?>"><?= e($label) ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field">
-        <label for="location">Onde</label>
-        <input type="text" id="location" name="location" placeholder="Estúdio / Zoom">
-      </div>
-      <div class="field wide">
-        <label for="notes">Notas</label>
-        <input type="text" id="notes" name="notes">
-      </div>
-    </div>
-    <div class="actions">
-      <button class="btn" type="submit">Criar evento</button>
-      <span class="muted" style="font-size:0.68rem">
-        Sem horas, o evento conta como sendo todo o dia.
-      </span>
-    </div>
-  </form>
-</details>
-
-<?php elseif ($view === 'tarefas'):
+// ── dados ───────────────────────────────────────────────────
 require_once __DIR__ . '/inc/contacts.php';
 relation_tick($pdo);   // os follow-ups de relação que chegaram à data (§13.5)
-$all = $pdo->query('SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, c.name AS contact_name FROM tasks t
-                      LEFT JOIN deals d ON d.id = t.deal_id LEFT JOIN contacts c ON c.id = t.contact_id
-                     WHERE 1=1' . $visSql . ' ORDER BY t.position, t.id')->fetchAll();
-$stacks = [0 => []];
-foreach ($members as $mid => $m) $stacks[$mid] = [];
-foreach ($all as $t) {
-    if ($t['status'] === 'done') continue; // essas vão para a coluna «Feito»
-    $k = $t['member_id'] !== null && isset($members[(int)$t['member_id']]) ? (int)$t['member_id'] : 0;
-    $stacks[$k][] = $t;
-}
-// Pessoa escolhida: só a pilha dela, em grande, com «Por atribuir» ao lado para ir buscar trabalho.
-if ($person) $stacks = [0 => $stacks[0], $person => $stacks[$person]];
+$f = tasks_filters($_GET, $operator);
+$here = (string)($_SERVER['REQUEST_URI'] ?? '/admin/calendar.php');
+if (!preg_match('~^/admin/calendar\.php(\?[^#\s]*)?$~', $here)) $here = '/admin/calendar.php';
+$editUrl = function (int $id) use ($here): string {
+    $u = preg_replace('~([?&])(edit|nova)=[^&]*&?~', '$1', $here);
+    $u = rtrim($u, '?&');
+    return $u . (str_contains($u, '?') ? '&' : '?') . 'edit=' . $id;
+};
+$open = tasks_open($pdo, $visible, $myMember);
+$views = $pdo->prepare('SELECT * FROM task_views WHERE user_id = ? ORDER BY name');
+$views->execute([(int)$me['id']]);
+$views = $views->fetchAll();
+$lateMine = count(array_filter(tasks_filter($open, ['urg' => 'late'] + $f, $myMember, $tab === 'tarefas'), fn($t) => $t['kind'] !== 'block'));
+$editing = isset($_GET['edit']) ? $reach(task_by_id($pdo, (int)$_GET['edit'])) : null;
+$participants = [];
+foreach ($members as $m) if ($m['user_id'] !== null && (int)$m['user_id'] !== (int)$me['id']) $participants[(int)$m['user_id']] = $m['name'];
 
-// «Feito»: as mais recentes primeiro, TASK_DONE_PAGE de cada vez (?feitas=60 mostra mais).
-$doneLimit = max(TASK_DONE_PAGE, min(5000, (int)($_GET['feitas'] ?? 0)));
-[$doneList, $doneCount] = task_done_list($pdo, $doneLimit, $person, $visible);
-$editing   = isset($_GET['edit']) ? task_by_id($pdo, (int)$_GET['edit']) : null;
-if ($editing && !task_member_visible($editing['member_id'] !== null ? (int)$editing['member_id'] : null, $visible)) $editing = null;
-$confirmDel = $editing && !empty($_GET['del']);
-$dealOptions = task_deal_options($pdo, $editing ? (int)$editing['deal_id'] : null);
-
-$f = $editing ?: ['id' => 0, 'title' => '', 'description' => '', 'member_id' => $person,
-                  'job_name' => '', 'deal_id' => null, 'due_date' => '', 'due_time' => null, 'duration_min' => null, 'busy' => 1, 'priority' => 'media', 'status' => 'todo'];
-$fMember = $f['member_id'] !== null ? (int)$f['member_id'] : 0;
+render_header('Tarefas', 'calendar', '', [TASK_TABS[$tab]]);
+render_flashes();
 ?>
-
-<div class="sub">
-  <?= count($all) ?> <?= count($all) === 1 ? 'tarefa' : 'tarefas' ?>
-  · arraste um cartão pela pega ⠿ para outra pilha ou para «Feito», ou use «Mover para…»
-</div>
-
-<?php if ($editing): ?>
-<div class="panel" id="editar" style="margin-bottom:1.6rem">
-  <h2 style="margin-top:0">Editar tarefa</h2>
-<?php else: ?>
-<details class="panel" style="margin-bottom:1.6rem">
-  <summary style="cursor:pointer;font-size:0.62rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gray)">
-    Nova tarefa
-  </summary>
-<?php endif; ?>
-  <form method="post" action="/admin/calendar.php" style="margin-top:1.2rem">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="<?= $editing ? 'update_task' : 'add_task' ?>">
-    <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
-    <input type="hidden" name="p" value="<?= (int)$person ?>">
-    <div class="grid">
-      <div class="field wide">
-        <label for="t_title">Título</label>
-        <input type="text" id="t_title" name="title" required maxlength="200" value="<?= e($f['title']) ?>" placeholder="Montar o teaser">
-      </div>
-      <div class="field">
-        <label for="t_member">Responsável</label>
-        <select id="t_member" name="member_id">
-          <option value="0">Por atribuir</option>
-          <?php foreach ($members as $m): ?>
-            <option value="<?= (int)$m['id'] ?>"<?= $fMember === (int)$m['id'] ? ' selected' : '' ?>><?= e($m['name']) ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field">
-        <label for="t_deal">Negócio (opcional)</label>
-        <select id="t_deal" name="deal_id">
-          <option value="0">— interno —</option>
-          <?php foreach ($dealOptions as $did => $label): ?>
-            <option value="<?= (int)$did ?>"<?= (int)$f['deal_id'] === (int)$did ? ' selected' : '' ?>><?= e($label) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <?php if ($f['job_name'] !== '' && !$f['deal_id']): ?>
-          <input type="hidden" name="job_name" value="<?= e($f['job_name']) ?>">
-          <div class="muted" style="font-size:0.68rem">Antes: «<?= e($f['job_name']) ?>»</div>
-        <?php endif; ?>
-      </div>
-      <div class="field">
-        <label for="t_due">Prazo</label>
-        <input type="date" id="t_due" name="due_date" value="<?= e((string)$f['due_date']) ?>">
-      </div>
-      <div class="field">
-        <label for="t_time">Hora <span class="muted">(opcional)</span></label>
-        <input type="time" id="t_time" name="due_time" step="900" value="<?= e(substr((string)($f['due_time'] ?? ''), 0, 5)) ?>">
-      </div>
-      <div class="field">
-        <label for="t_dur">Duração</label>
-        <select id="t_dur" name="duration_min">
-          <?php foreach ([0 => '1 h (por defeito)', 15 => '15 min', 30 => '30 min', 45 => '45 min', 90 => '1 h 30', 120 => '2 h', 180 => '3 h', 240 => '4 h', 480 => 'Dia inteiro (8 h)'] as $k => $l): ?>
-            <option value="<?= $k ?>"<?= (int)($f['duration_min'] ?? 0) === $k ? ' selected' : '' ?>><?= $l ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field">
-        <span class="lbl">Na agenda <span class="ii" tabindex="0" role="img" aria-label="Ajuda: com hora, «Ocupado» bloqueia esse bloco na disponibilidade (Equipa); «Livre» fica só como lembrete." data-tip="Com hora, «Ocupado» bloqueia esse bloco na disponibilidade (Equipa); «Livre» fica só como lembrete.">i</span></span>
-        <div class="chips-check">
-          <label class="rb"><input type="radio" name="busy" value="1"<?= (int)($f['busy'] ?? 1) === 1 ? ' checked' : '' ?>><span>Ocupado</span></label>
-          <label class="rb"><input type="radio" name="busy" value="0"<?= (int)($f['busy'] ?? 1) === 0 ? ' checked' : '' ?>><span>Livre</span></label>
-        </div>
-      </div>
-      <div class="field">
-        <label for="t_prio">Prioridade</label>
-        <select id="t_prio" name="priority">
-          <?php foreach (TASK_PRIO as $k => $l): ?>
-            <option value="<?= $k ?>"<?= $f['priority'] === $k ? ' selected' : '' ?>><?= $l ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field">
-        <label for="t_status">Estado</label>
-        <select id="t_status" name="status">
-          <?php foreach (TASK_STATUS as $k => $l): ?>
-            <option value="<?= $k ?>"<?= $f['status'] === $k ? ' selected' : '' ?>><?= $l ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field wide">
-        <label for="t_desc">Descrição (opcional)</label>
-        <textarea id="t_desc" name="description" rows="3"><?= e((string)$f['description']) ?></textarea>
-      </div>
-    </div>
-    <div class="actions">
-      <button class="btn" type="submit"><?= $editing ? 'Guardar tarefa' : 'Criar tarefa' ?></button>
-      <?php if ($editing): ?>
-        <a class="lnk" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person])) ?>">Cancelar</a>
-        <span class="spacer"></span>
-        <?php if (!$confirmDel): ?>
-          <a class="lnk del" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'edit' => (int)$f['id'], 'del' => 1])) ?>#editar">Eliminar</a>
-        <?php endif; ?>
-      <?php endif; ?>
-    </div>
-  </form>
-  <?php if ($confirmDel): ?>
-    <form method="post" action="/admin/calendar.php" class="actions">
-      <?= csrf_field() ?>
-      <input type="hidden" name="do" value="delete_task">
-      <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
-      <input type="hidden" name="p" value="<?= (int)$person ?>">
-      <span class="muted" style="font-size:0.72rem">Eliminar «<?= e($f['title']) ?>»?</span>
-      <button class="btn danger sm" type="submit">Sim, eliminar</button>
-      <a class="lnk" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'edit' => (int)$f['id']])) ?>#editar">Não</a>
-    </form>
+<div class="page-head">
+  <div><h1>Tarefas</h1>
+    <p class="sub"><?= $tab === 'tarefas' ? 'O que há para fazer, por urgência.' : ($tab === 'quadro' ? 'Quem tem o quê: pegue em tarefas dos colegas ou peça ajuda.' : 'O dia, a semana e o mês em 24 horas.') ?></p></div>
+  <?php if ($canEdit): ?>
+    <button type="button" class="btn" data-new="#mdl-task" aria-keyshortcuts="N"><?= icon('plus') ?> Nova tarefa <span class="kbd">N</span></button>
   <?php endif; ?>
-<?php if ($editing): ?>
 </div>
-<?php else: ?>
-</details>
+
+<nav class="tabs" aria-label="Separadores">
+  <?php foreach (TASK_TABS as $k => $label): ?>
+    <a href="/admin/calendar.php<?= $k !== 'tarefas' ? '?t=' . $k : '' ?>" class="<?= $tab === $k ? 'on' : '' ?>"<?= $tab === $k ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+  <?php endforeach; ?>
+</nav>
+
+<?php
+// ════════════════════════════════════════════════════════════
+if ($tab === 'tarefas'):
+    $list = array_values(array_filter(tasks_filter($open, $f, $myMember), fn($t) => $t['kind'] !== 'block'));
+    task_urgency_sort($list);
+    echo tasks_filters_html($f, $members, $myMember, 'tarefas', $views, task_deal_options($pdo), ['late' => $lateMine]);
+    $showWho = $f['quem'] !== 'me';
+    if ($f['est'] !== 'done'):
+        $byBucket = array_fill_keys(array_keys(TASK_BUCKETS), []);
+        foreach ($f['solto'] ? array_map(fn($t) => ['task' => $t], $list) : task_aggregate($list) as $it) {
+            $t = $it['task'] ?? $it['tasks'][0];
+            $byBucket[task_bucket($t)][] = $it;
+        }
+        $total = count($list);
+?>
+<div class="tlist" data-tlist>
+  <?php if (!$total): ?><p class="empty-s muted">Nada por fazer com estes filtros. <?= $f['quem'] === 'me' ? '<a href="' . e(tasks_url('tarefas', $f, ['quem' => 'all'])) . '">Ver as da equipa</a>' : '' ?></p><?php endif; ?>
+  <?php foreach ($byBucket as $k => $items): if (!$items) continue;
+      // Um grupo conta, em cada secção, só as tarefas dessa urgência (ex.: «Em atraso 10» de 22 chamadas).
+      $n = 0; foreach ($items as $it) $n += isset($it['tasks']) ? count(array_filter($it['tasks'], fn($x) => task_bucket($x) === $k)) : 1;
+      $rows = '';
+      foreach ($items as $it) $rows .= isset($it['task']) ? task_row_html($it['task'], $members, $editUrl((int)$it['task']['id'])) : task_group_html($it, $members, $showWho); ?>
+    <?php if ($k === 'late'): ?>
+      <section class="tgrp late" data-grp="late"><h2 class="tgh"><?= icon('alert') ?> <?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></h2><div class="tgb"><?= $rows ?></div></section>
+    <?php else: ?>
+      <details class="tgrp" data-grp="<?= $k ?>"<?= in_array($k, ['today'], true) || $total < 25 ? ' open' : '' ?>><summary class="tgh"><?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></summary><div class="tgb"><?= $rows ?></div></details>
+    <?php endif; ?>
+  <?php endforeach; ?>
+  <?php if (!$f['solto'] && array_filter($list, fn($t) => task_auto_group($t))): ?>
+    <p class="muted small">As chamadas de leads e os follow-ups de relação aparecem agrupados. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 1])) ?>">Ver uma a uma</a></p>
+  <?php endif; ?>
+</div>
+<?php endif;
+    if ($f['est'] !== 'todo'):
+        $done = tasks_filter(tasks_open($pdo, $visible, $myMember, true), $f, $myMember); ?>
+<section class="tgrp done" data-grp="done"><h2 class="tgh"><?= icon('check') ?> Concluídas <span class="n"><?= count($done) ?></span> <small class="muted">as mais recentes</small></h2>
+  <div class="tgb"><?php foreach ($done as $t) echo task_row_html($t, $members, $editUrl((int)$t['id'])); ?>
+  <?php if (!$done): ?><p class="empty-s muted">Ainda não há concluídas.</p><?php endif; ?></div></section>
 <?php endif; ?>
 
-<div id="board" class="board<?= $person ? ' solo' : '' ?>"
-     data-api="/admin/tasks_api.php" data-csrf="<?= e(csrf_token()) ?>">
-  <?php foreach ($stacks as $mid => $list):
+<?php
+// ════════════════════════════════════════════════════════════
+elseif ($tab === 'quadro'):
+    echo tasks_filters_html($f, $members, $myMember, 'quadro', $views, task_deal_options($pdo), ['late' => $lateMine]);
+    $all = array_values(array_filter(tasks_filter($open, $f, $myMember, false), fn($t) => $t['kind'] !== 'block' && !$t['private']));
+    $cols = [0 => []];
+    foreach ($members as $mid => $m) $cols[$mid] = [];
+    foreach ($all as $t) {
+        $k = $t['member_id'] !== null && isset($members[(int)$t['member_id']]) ? (int)$t['member_id'] : ($t['member_id'] === null ? 0 : null);
+        if ($k !== null) $cols[$k][] = $t;
+    }
+    // Carga da semana (§17.10) de cada operador.
+    $uids = array_filter(array_map(fn($m) => $m['user_id'] !== null ? (int)$m['user_id'] : null, $members));
+    $people = $uids ? $pdo->query('SELECT * FROM users WHERE id IN (' . implode(',', $uids) . ')')->fetchAll() : [];
+    $load = team_load($pdo, $people, (new DateTimeImmutable('now', team_tz()))->modify('monday this week')->format('Y-m-d'));
+    $today = today_lisbon();
+?>
+<div class="tboard" data-board>
+  <?php foreach ($cols as $mid => $list):
+      task_urgency_sort($list);
+      $items = $f['solto'] ? array_map(fn($t) => ['task' => $t], $list) : task_aggregate($list);
+      $late = count(array_filter($list, fn($t) => task_bucket($t, $today) === 'late'));
+      $tod = count(array_filter($list, fn($t) => task_bucket($t, $today) === 'today'));
       $m = $mid ? $members[$mid] : null;
-      $open = count($list);
+      $l = $m && $m['user_id'] !== null ? ($load[(int)$m['user_id']] ?? null) : null;
+      $mine = $mid && $mid === $myMember;
   ?>
-    <section class="stack<?= $mid ? '' : ' none' ?><?= $person && $mid === $person ? ' big' : '' ?>"
-             style="--who:<?= e($m ? member_color($m) : 'var(--paper)') ?>">
-      <header>
-        <?php if ($m): ?>
-          <a href="<?= e(cal_url(['view' => 'tarefas', 'p' => $mid])) ?>"><?= e($m['name']) ?></a>
-        <?php else: ?>
-          <span>Por atribuir</span>
-        <?php endif; ?>
-        <span class="count" title="Por fazer"><?= $open ?></span>
+    <section class="bcol<?= $mine ? ' mine' : '' ?>" data-col="<?= (int)$mid ?>" aria-label="<?= e($m ? $m['name'] : 'Por atribuir') ?>">
+      <header class="bch">
+        <b><?= $m ? task_who_html($members, $mid) . ' ' . e(first_name($m['name'])) : icon('hand') . ' Por atribuir' ?><?= $mine ? ' <small class="muted">(eu)</small>' : '' ?></b>
+        <small class="mono" data-tip="Atrasadas · hoje · total"><span class="<?= $late ? 'late' : '' ?>"><?= $late ?></span> · <?= $tod ?> · <?= count($list) ?></small>
       </header>
-      <div class="stack-list" data-member="<?= (int)$mid ?>">
-        <?php foreach ($list as $t) task_card($t, $members, $person); ?>
+      <?php if ($l): ?><div class="bload l-<?= $l['level'] ?>" data-tip="Carga da semana: <?= (int)round($l['pct']) ?>% (horas Ocupado vs disponíveis)"><i style="width:<?= min(100, (int)round($l['pct'])) ?>%"></i></div><?php endif; ?>
+      <div class="bcards">
+      <?php foreach (array_slice($items, 0, TASK_BOARD_MAX) as $it):
+          if (isset($it['group'])) {
+              [$gl, $gt, $go, $gu] = TASK_AUTO_GROUPS[$it['group']]; ?>
+          <div class="bcard agg"><div class="br"><?= task_type_badge(['kind' => $gt], 'sm') . task_origin_badge(['kind' => $go === 'relation' ? 'relation' : 'call', 'deal_id' => $go === 'lead' ? 1 : null, 'deal_phase' => 'lead']) ?></div>
+            <b><?= e($gl) ?> · <?= count($it['tasks']) ?></b><span class="<?= $it['late'] ? 'late' : 'muted' ?>"><?= $it['late'] ? $it['late'] . ' em atraso' : 'agrupadas' ?></span>
+            <a class="tgo" href="<?= e($gu) ?>">Abrir fila →</a></div>
+      <?php } else { $t = $it['task']; [$lt] = task_link($t); $b = task_bucket($t, $today); ?>
+          <div class="bcard" data-task="<?= (int)$t['id'] ?>"<?= $canEdit ? ' draggable="true"' : '' ?>>
+            <div class="br"><?= task_type_badge($t, 'sm') . task_origin_badge($t) ?><?= !empty($t['help_by']) ? '<span class="help" data-tip="Pedido de ajuda de ' . e((string)$t['help_name']) . '">🙋</span>' : '' ?>
+              <span class="spacer"></span>
+              <?php if ($canEdit && $operator && !$mine): ?><button type="button" class="pick" data-take="<?= (int)$t['id'] ?>" data-tip="Passa para mim">Pegar</button><?php endif; ?>
+              <?php if ($canEdit && $mine): ?><button type="button" class="pick" data-help="<?= (int)$t['id'] ?>" data-tip="Envia para «Por atribuir» com 🙋 e avisa a equipa">Pedir ajuda</button><?php endif; ?>
+            </div>
+            <a class="bt" href="<?= e($editUrl((int)$t['id'])) ?>"><?= e($t['title']) ?></a>
+            <?php if ($lt !== ''): ?><span class="muted small"><?= e(shorten($lt, 34)) ?></span><?php endif; ?>
+            <?php if (!empty($t['help_by']) && !$mid): ?><span class="muted small">pedido de ajuda · <?= e(first_name((string)$t['help_name'])) ?></span><?php endif; ?>
+            <div class="br"><span class="tdue<?= $b === 'late' ? ' late' : '' ?>"><?= e(task_when($t)) ?></span><span class="spacer"></span>
+              <?php if ($canEdit): ?><button type="button" class="tchk sm" data-done="<?= (int)$t['id'] ?>" aria-label="Concluir" data-tip><?= icon('check') ?></button><?php endif; ?></div>
+          </div>
+      <?php } endforeach; ?>
+      <?php if (count($items) > TASK_BOARD_MAX):
+          $rest = 0; foreach (array_slice($items, TASK_BOARD_MAX) as $it) $rest += isset($it['tasks']) ? count($it['tasks']) : 1; ?>
+        <a class="bmore" href="<?= e(tasks_url('tarefas', $f, ['quem' => $mid ? (string)$mid : 'none'])) ?>">+ <?= $rest ?> tarefa<?= $rest === 1 ? '' : 's' ?></a>
+      <?php endif; ?>
+      <?php if (!$items): ?><p class="bempty muted small"><?= $mid ? 'Nada por fazer.' : 'Nada por atribuir.' ?></p><?php endif; ?>
       </div>
     </section>
   <?php endforeach; ?>
-  <section class="stack feito" data-total="<?= $doneCount ?>">
-    <header>
-      <span>feito</span>
-      <span class="count" title="Feitas"><?= $doneCount ?></span>
-    </header>
-    <div class="stack-list" data-member="done">
-      <?php foreach ($doneList as $t) task_card($t, $members, $person); ?>
+</div>
+<p class="muted small">No máximo <?= TASK_BOARD_MAX ?> cartões por coluna, os mais urgentes. Arraste um cartão para a sua coluna (ou use «Pegar»); «Pedir ajuda» manda para «Por atribuir» e avisa a equipa. As concluídas estão no filtro Concluídas da lista.</p>
+
+<?php
+// ════════════════════════════════════════════════════════════
+else: // agenda
+    $v = in_array($_GET['v'] ?? '', ['dia', 'semana', 'mes'], true) ? (string)$_GET['v'] : 'semana';
+    $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['d'] ?? '')) ? new DateTimeImmutable($_GET['d'], team_tz()) : new DateTimeImmutable('now', team_tz());
+    // De quem é a agenda: a minha por defeito; posso ver a dos colegas.
+    $pp = (int)($_GET['p'] ?? 0);
+    $who = $pp && (isset($members[$pp]) || $pp === $myMember) ? $pp : ($myMember ?: (array_key_first($members) ?? 0));
+    $whoUser = null;
+    if ($who) { $st = $pdo->prepare('SELECT * FROM users WHERE team_member_id = ?'); $st->execute([$who]); $whoUser = $st->fetch() ?: null; }
+    $own = $who === $myMember;
+    if ($v === 'dia') { $from = $d; $days = 1; }
+    elseif ($v === 'semana') { $from = $d->modify('monday this week'); $days = 7; }
+    else { $from = $d->modify('first day of this month')->modify('monday this week'); $days = (int)ceil(((int)$d->modify('first day of this month')->format('N') - 1 + (int)$d->format('t')) / 7) * 7; }
+    $to = $from->modify('+' . $days . ' days');
+    $step = $v === 'dia' ? '+1 day' : ($v === 'semana' ? '+1 week' : '+1 month');
+    $nav = fn(DateTimeImmutable $x) => '/admin/calendar.php?' . http_build_query(['t' => 'agenda', 'v' => $v, 'd' => $x->format('Y-m-d'), 'p' => $who ?: null]);
+    $prevD = $d->modify(str_replace('+', '-', $step)); $nextD = $d->modify($step);
+    // O que aparece: tarefas (com hora → bloco; sem hora → prazo), ausências, eventos.
+    $items = []; $allday = [];
+    if ($who) {
+        $st = $pdo->prepare("SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, d.company AS deal_company, d.person AS deal_person, NULL AS contact_name
+                               FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id WHERE t.member_id = ? AND t.due_date >= ? AND t.due_date < ? AND (t.status <> 'done' OR t.due_time IS NOT NULL)");
+        $st->execute([$who, $from->format('Y-m-d'), $to->format('Y-m-d')]);
+        foreach ($st->fetchAll() as $t) {
+            // Privada (pessoal, bloqueio) de outra pessoa: só «Ocupado», para todos — admins incluídos (§18.8).
+            // Tarefas de um colega: os não-admins veem «Ocupado» (§17.7); os admins veem o título.
+            $hidden = task_hidden_for($t, $myMember) || (!$own && !$admin);
+            $label = $hidden ? 'Ocupado' : $t['title'];
+            $url = $hidden ? '' : $editUrl((int)$t['id']);
+            if ($t['due_time']) {
+                $a = (int)substr((string)$t['due_time'], 0, 2) * 60 + (int)substr((string)$t['due_time'], 3, 2);
+                $items[$t['due_date']][] = ['a' => $a, 'b' => min(1440, $a + (int)($t['duration_min'] ?: 60)), 't' => $t, 'label' => $label, 'url' => $url, 'hidden' => $hidden];
+            } else {
+                $allday[$t['due_date']][] = ['label' => ($hidden ? '' : 'Prazo: ') . $label, 'url' => $url, 't' => $t, 'hidden' => $hidden, 'cls' => 'due'];
+            }
+        }
+        if ($whoUser) {
+            foreach (team_absences_between($pdo, $from->format('Y-m-d'), $to->modify('-1 day')->format('Y-m-d')) as $ab) {
+                if ((int)$ab['user_id'] !== (int)$whoUser['id']) continue;
+                for ($x = new DateTimeImmutable(max($ab['start_date'], $from->format('Y-m-d'))); $x->format('Y-m-d') <= min($ab['end_date'], $to->modify('-1 day')->format('Y-m-d')); $x = $x->modify('+1 day')) {
+                    $allday[$x->format('Y-m-d')][] = ['label' => $own || $admin ? (ABSENCE_KINDS[$ab['kind']] ?? 'Ausente') : 'Ausente', 'url' => '', 'cls' => 'abs'];
+                }
+            }
+        }
+    }
+    // Os eventos antigos do calendário (da empresa) continuam visíveis.
+    if (db_has_table($pdo, 'events')) {
+        $st = $pdo->prepare('SELECT * FROM events WHERE event_date >= ? AND event_date < ?');
+        $st->execute([$from->format('Y-m-d'), $to->format('Y-m-d')]);
+        foreach ($st->fetchAll() as $ev) {
+            if ($ev['start_time']) {
+                $a = (int)substr((string)$ev['start_time'], 0, 2) * 60 + (int)substr((string)$ev['start_time'], 3, 2);
+                $b = $ev['end_time'] ? (int)substr((string)$ev['end_time'], 0, 2) * 60 + (int)substr((string)$ev['end_time'], 3, 2) : $a + 60;
+                $items[$ev['event_date']][] = ['a' => $a, 'b' => max($a + 15, $b), 't' => ['kind' => 'event'], 'label' => $ev['title'] . ($ev['location'] ? ' · ' . $ev['location'] : ''), 'url' => '', 'hidden' => false, 'event' => true];
+            } else {
+                $allday[$ev['event_date']][] = ['label' => $ev['title'], 'url' => '', 'cls' => 'ev'];
+            }
+        }
+    }
+    $wh = $whoUser ? team_work_hours($whoUser) : TEAM_WORK_DEFAULT;
+    $nowD = (new DateTimeImmutable('now', team_tz()));
+    $people = ($myMember && !isset($members[$myMember]) ? [$myMember => ['name' => $me['name']]] : []) + $members;
+?>
+<div class="agbar">
+  <div class="seg"><?php foreach (['dia' => 'Dia', 'semana' => 'Semana', 'mes' => 'Mês'] as $k => $l): ?>
+    <a href="<?= e('/admin/calendar.php?' . http_build_query(['t' => 'agenda', 'v' => $k, 'd' => $d->format('Y-m-d'), 'p' => $who ?: null])) ?>" class="<?= $v === $k ? 'on' : '' ?>"><?= $l ?></a><?php endforeach; ?></div>
+  <a class="ibtn" href="<?= e($nav($prevD)) ?>" aria-label="Anterior" data-tip><?= icon('chev-left') ?></a>
+  <a class="btn ghost sm" href="<?= e($nav($nowD)) ?>">Hoje</a>
+  <a class="ibtn" href="<?= e($nav($nextD)) ?>" aria-label="Seguinte" data-tip><?= icon('chev-right') ?></a>
+  <b class="agtitle"><?= e($v === 'mes' ? month_name((int)$d->format('n')) . ' ' . $d->format('Y') : ($v === 'dia' ? TEAM_DAYS_LONG[(int)$d->format('N')] . ', ' . $d->format('d/m/Y') : 'Semana de ' . $from->format('d/m') . ' a ' . $to->modify('-1 day')->format('d/m'))) ?></b>
+  <span class="spacer"></span>
+  <form method="get" class="inl-f"><input type="hidden" name="t" value="agenda"><input type="hidden" name="v" value="<?= e($v) ?>"><input type="hidden" name="d" value="<?= e($d->format('Y-m-d')) ?>">
+    <label class="sr" for="ag-p">Agenda de</label><select id="ag-p" name="p" onchange="this.form.submit()">
+      <?php foreach ($people as $mid => $m): ?><option value="<?= (int)$mid ?>"<?= $mid === $who ? ' selected' : '' ?>><?= e($mid === $myMember ? 'A minha agenda' : $m['name']) ?></option><?php endforeach; ?>
+    </select></form>
+</div>
+<?php if ($v === 'mes'): ?>
+<div class="agmonth">
+  <?php foreach (['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'] as $dn): ?><div class="amh"><?= $dn ?></div><?php endforeach; ?>
+  <?php for ($i = 0; $i < $days; $i++): $x = $from->modify("+$i days"); $ds = $x->format('Y-m-d');
+      $list = array_merge(array_map(fn($it) => $it + ['time' => sprintf('%02d:%02d', intdiv($it['a'], 60), $it['a'] % 60)], $items[$ds] ?? []), $allday[$ds] ?? []);
+      usort($list, fn($p, $q) => ($p['time'] ?? '') <=> ($q['time'] ?? '')); ?>
+    <div class="amd<?= $x->format('n') !== $d->format('n') ? ' out' : '' ?><?= $ds === $nowD->format('Y-m-d') ? ' is-today' : '' ?>" data-day="<?= $ds ?>">
+      <a class="amn" href="<?= e('/admin/calendar.php?' . http_build_query(['t' => 'agenda', 'v' => 'dia', 'd' => $ds, 'p' => $who ?: null])) ?>"><?= (int)$x->format('j') ?></a>
+      <?php foreach (array_slice($list, 0, 4) as $it): $ty = isset($it['t']) && empty($it['hidden']) ? task_type($it['t']) : 'busy'; ?>
+        <<?= $it['url'] ? 'a href="' . e($it['url']) . '"' : 'span' ?> class="amc ty-<?= e($ty) ?><?= !empty($it['hidden']) ? ' priv' : '' ?> <?= e($it['cls'] ?? '') ?>"><?= isset($it['time']) ? '<b>' . e($it['time']) . '</b> ' : '' ?><?= e(shorten((string)$it['label'], 24)) ?></<?= $it['url'] ? 'a' : 'span' ?>>
+      <?php endforeach; ?>
+      <?php if (count($list) > 4): ?><span class="muted small">+ <?= count($list) - 4 ?></span><?php endif; ?>
     </div>
-    <?php if ($doneCount > count($doneList)): ?>
-      <a class="lnk more" href="<?= e(cal_url(['view' => 'tarefas', 'p' => $person, 'feitas' => $doneLimit + TASK_DONE_PAGE])) ?>#board">
-        Ver mais (<?= $doneCount - count($doneList) ?> mais antigas)
-      </a>
-    <?php endif; ?>
-  </section>
+  <?php endfor; ?>
 </div>
-
-<div class="toast" id="toast" role="alert" aria-live="assertive" hidden></div>
-<script src="/admin/assets/tasks.js?v=<?= (int)@filemtime(__DIR__ . '/assets/tasks.js') ?>" defer></script>
-
-<?php else: /* equipa */ ?>
-
-<div class="sub">As pessoas, os nomes e as cores gerem-se na aba <a class="lnk" href="/admin/equipa.php">Equipa</a>.</div>
-
-<div class="tablewrap">
-<table>
-  <thead><tr><th>Pessoa</th><th class="num">Tarefas por fazer</th></tr></thead>
-  <tbody>
-  <?php foreach ($members as $m): $mid = (int)$m['id']; ?>
-    <tr>
-      <td><i class="sw" style="--who:<?= e(member_color($m)) ?>"></i> <?= e($m['name']) ?>
-        <?= $m['user_id'] === null || (int)$m['user_active'] !== 1 ? ' <span class="chip">sem conta ativa</span>' : '' ?></td>
-      <td class="num"><a href="<?= e(cal_url(['view' => 'tarefas', 'p' => $mid])) ?>"><?= (int)$m['open_tasks'] ?></a></td>
-    </tr>
-  <?php endforeach; ?>
-  </tbody>
-</table>
+<?php else: ?>
+<div class="agwrap" style="--days:<?= $days ?>">
+  <div class="aghead"><span></span>
+    <?php for ($i = 0; $i < $days; $i++): $x = $from->modify("+$i days"); ?>
+      <span class="<?= $x->format('Y-m-d') === $nowD->format('Y-m-d') ? 'is-today' : '' ?>"><?= e(TEAM_DAYS[(int)$x->format('N')]) ?> <b><?= $x->format('d') ?></b></span>
+    <?php endfor; ?></div>
+  <div class="agallday"><span class="muted small">dia</span>
+    <?php for ($i = 0; $i < $days; $i++): $ds = $from->modify("+$i days")->format('Y-m-d'); ?>
+      <div><?php foreach ($allday[$ds] ?? [] as $it): ?><<?= $it['url'] ? 'a href="' . e($it['url']) . '"' : 'span' ?> class="agc <?= e($it['cls'] ?? '') ?><?= !empty($it['hidden']) ? ' priv' : '' ?>"><?= e(shorten((string)$it['label'], 30)) ?></<?= $it['url'] ? 'a' : 'span' ?>><?php endforeach; ?></div>
+    <?php endfor; ?></div>
+  <div class="agscroll" data-agscroll>
+    <div class="aggrid">
+      <div class="aghours"><?php for ($h = 0; $h < 24; $h++): ?><span><?= sprintf('%02d:00', $h) ?></span><?php endfor; ?></div>
+      <?php for ($i = 0; $i < $days; $i++): $x = $from->modify("+$i days"); $ds = $x->format('Y-m-d'); $dow = (int)$x->format('N'); $w = $wh[$dow] ?? null; ?>
+        <div class="agday<?= $own && $canEdit ? ' can-make' : '' ?>" data-day="<?= $ds ?>">
+          <?php for ($h = 0; $h < 24; $h++): $off = !$w || sprintf('%02d:00', $h) < $w[0] || sprintf('%02d:00', $h) >= $w[1]; ?><i class="<?= $off ? 'off' : '' ?>"></i><?php endfor; ?>
+          <?php foreach (agenda_lanes($items[$ds] ?? []) as $it): $t = $it['t']; $ty = $it['hidden'] ? 'busy' : (!empty($it['event']) ? 'event' : task_type($t)); ?>
+            <<?= $it['url'] ? 'a href="' . e($it['url']) . '"' : 'div' ?> class="agev ty-<?= e($ty) ?><?= $it['hidden'] ? ' priv' : '' ?><?= ($t['status'] ?? '') === 'done' ? ' is-done' : '' ?><?= ($t['kind'] ?? '') === 'block' ? ' blk' : '' ?><?= isset($t['busy']) && !(int)$t['busy'] ? ' free' : '' ?>"
+              style="top:calc(<?= $it['a'] ?> * var(--min));height:calc(<?= max(15, $it['b'] - $it['a']) ?> * var(--min));left:calc(<?= $it['lane'] ?> / <?= $it['lanes'] ?> * 100%);width:calc(100% / <?= $it['lanes'] ?> - 3px)"
+              data-tip="<?= e(sprintf('%02d:%02d–%02d:%02d', intdiv($it['a'], 60), $it['a'] % 60, intdiv($it['b'], 60) % 24, $it['b'] % 60) . ' · ' . $it['label']) ?>">
+              <?= !$it['hidden'] && empty($it['event']) ? icon(TASK_TYPES[task_type($t)][1]) : '' ?><b><?= e(sprintf('%02d:%02d', intdiv($it['a'], 60), $it['a'] % 60)) ?></b> <?= e((string)$it['label']) ?>
+              <?php if (!$it['hidden'] && ($t['platform'] ?? '') !== ''): ?><small><?= e(MEETING_PLATFORMS_TASK[$t['platform']] ?? '') ?></small><?php elseif (!$it['hidden'] && ($t['location'] ?? '') !== ''): ?><small><?= e((string)$t['location']) ?></small><?php endif; ?>
+            </<?= $it['url'] ? 'a' : 'div' ?>>
+          <?php endforeach; ?>
+          <?php if ($ds === $nowD->format('Y-m-d')): ?><span class="agnow" style="top:calc(<?= (int)$nowD->format('G') * 60 + (int)$nowD->format('i') ?> * var(--min))" data-now></span><?php endif; ?>
+        </div>
+      <?php endfor; ?>
+    </div>
+  </div>
 </div>
-
+<p class="muted small"><?= $own && $canEdit ? 'Arraste na grelha para criar uma tarefa, uma tarefa pessoal ou um bloqueio. ' : '' ?>Horas fora do horário de trabalho mais escuras. Tarefas pessoais e bloqueios aparecem aos outros só como «Ocupado».</p>
+<div class="agpick" data-agpick hidden role="menu" aria-label="Criar">
+  <button type="button" role="menuitem" data-make="task"><?= icon('checklist') ?> Tarefa</button>
+  <button type="button" role="menuitem" data-make="personal"><?= icon('user') ?> Tarefa pessoal</button>
+  <button type="button" role="menuitem" data-make="block"><?= icon('ban') ?> Bloqueio</button>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
-<?php render_footer(); ?>
+<?php
+// «+ Nova tarefa» / editar (§18.7). ?nova=1&dia=&hora=&dur=&tipo= abre já preenchido.
+$pre = [];
+if (!empty($_GET['dia']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['dia'])) $pre['due_date'] = $_GET['dia'];
+if (!empty($_GET['hora']) && preg_match('/^\d{2}:\d{2}$/', $_GET['hora'])) $pre['due_time'] = $_GET['hora'] . ':00';
+if (!empty($_GET['dur'])) $pre['duration_min'] = (int)$_GET['dur'];
+if (isset(TASK_TYPES[$_GET['tipo'] ?? ''])) $pre['kind'] = $_GET['tipo'];
+if (!$operator) $pre['member_id'] = null;
+if ($canEdit) echo task_modal_html($pdo, $editing, $assignable, $operator ? $myMember : null, $participants, $here, $editing !== null || !empty($_GET['nova']), $pre);
+?>
+<script src="<?= asset_url('tasks.js') ?>" defer></script>
+<?php render_footer();

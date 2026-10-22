@@ -285,7 +285,7 @@ try {
                 $st->execute([$l]);
                 foreach ($st->fetchAll() as $t) {
                     $add('Tarefas', ['title' => $t['title'], 'sub' => trim(($t['who'] ?? 'Por atribuir') . ' · ' . (TASK_STATUS[$t['status']] ?? '') . ($t['due_date'] ? ' · ' . date('d/m', strtotime($t['due_date'])) : '')),
-                                     'url' => '/admin/calendar.php?view=tarefas&edit=' . $t['id'], 'icon' => icon('tarefas')]);
+                                     'url' => '/admin/calendar.php?edit=' . $t['id'], 'icon' => icon('tarefas')]);
                 }
             }
 

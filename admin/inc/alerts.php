@@ -127,7 +127,7 @@ function my_alerts(PDO $pdo): array {
                 'title' => $t['title'], 'sev' => $late ? 'bad' : 'warn', 'date' => $t['due_date'],
                 'sub' => ($late ? 'Atrasada ' . ($d === -1 ? 'desde ontem' : 'há ' . -$d . ' dias') : ($d === 0 ? 'Vence hoje' : ($d === 1 ? 'Vence amanhã' : "Vence daqui a $d dias")))
                        . ($t['code'] ? ' · ' . $t['code'] : ''),
-                'url' => '/admin/calendar.php?view=tarefas&edit=' . (int)$t['id'],
+                'url' => '/admin/calendar.php?edit=' . (int)$t['id'],
             ];
         }
     }
@@ -215,6 +215,17 @@ function my_alerts(PDO $pdo): array {
                 $out['team'][] = ['key' => 'meet:' . $m['id'], 'kind' => 'meeting', 'icon' => 'meeting', 'sev' => 'warn', 'date' => substr((string)$m['starts_at'], 0, 10),
                                   'title' => 'Pedido de reunião: ' . $m['subject'], 'sub' => 'De ' . $m['requester_name'] . ' · ' . team_when((string)$m['starts_at'], (int)$m['duration_min']),
                                   'url' => '/admin/equipa.php?chat=' . (int)$m['requester_id']];
+            }
+            // «Pedir ajuda» no quadro das Tarefas (§18.4): avisa os operadores.
+            if ($meRow['role'] !== 'superadmin' && db_has_column($pdo, 'tasks', 'help_by') && can('tarefas')) {
+                $st = $pdo->prepare('SELECT t.id, t.title, t.due_date, u.name FROM tasks t JOIN users u ON u.id = t.help_by
+                                      WHERE t.member_id IS NULL AND t.help_by IS NOT NULL AND t.help_by <> ? AND t.status <> \'done\' AND t.private = 0');
+                $st->execute([$uid]);
+                foreach ($st->fetchAll() as $t) {
+                    $out['team'][] = ['key' => 'help:' . $t['id'], 'kind' => 'help', 'icon' => 'hand', 'sev' => 'warn', 'date' => $t['due_date'] ?: today_lisbon(),
+                                      'title' => '🙋 Pedido de ajuda: ' . $t['title'], 'sub' => 'De ' . $t['name'] . ' · está em «Por atribuir»',
+                                      'url' => '/admin/calendar.php?t=quadro'];
+                }
             }
             if (role_is_admin((string)$meRow['role'])) {
                 foreach ($pdo->query("SELECT a.id, a.kind, a.start_date, a.end_date, u.name FROM absences a JOIN users u ON u.id = a.user_id WHERE a.status = 'pending' ORDER BY a.start_date")->fetchAll() as $a) {

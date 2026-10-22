@@ -75,7 +75,7 @@ function msg_out(PDO $pdo, array $m, int $me): array {
                            'platform' => MEETING_PLATFORMS[$mt['platform']] ?? '', 'deal' => $mt['deal_code'] ? $mt['deal_code'] . ' · ' . $mt['deal_name'] : '',
                            'link' => $mt['status'] === 'accepted' ? (string)$mt['link'] : '', 'can_answer' => (int)$mt['invitee_id'] === $me && $mt['status'] === 'pending',
                            'can_cancel' => (int)$mt['requester_id'] === $me && $mt['status'] === 'pending', 'start' => substr((string)$mt['starts_at'], 0, 16),
-                           'needs_link' => $mt['link'] === '' && !(($mt['platform'] === 'meet' && team_meet_config()['google']) || ($mt['platform'] === 'discord' && team_meet_config()['discord']))];
+                           'needs_link' => $mt['link'] === '' && $mt['platform'] !== 'local' && !(($mt['platform'] === 'meet' && team_meet_config()['google']) || ($mt['platform'] === 'discord' && team_meet_config()['discord']))];
     }
     return $out;
 }

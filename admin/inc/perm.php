@@ -218,6 +218,8 @@ function in_my_scope(PDO $pdo, string $tab, ?int $ownerId): bool {
  */
 function can_assign_to(array $actor, array $target): bool {
     if (!empty($target['deactivated_at']) || (int)($target['is_active'] ?? 1) !== 1) return false;
+    // O superadmin não é operador (§18.2): nunca é responsável de leads, negócios ou tarefas.
+    if (($target['role'] ?? '') === 'superadmin') return false;
     if ((int)$actor['id'] === (int)$target['id']) return true;
     switch ($actor['role']) {
         case 'superadmin': return true;
