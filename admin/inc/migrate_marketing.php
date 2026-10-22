@@ -191,6 +191,8 @@ function migrate_marketing(PDO $pdo): void {
     }
     db_add_column($pdo, 'tasks', 'mkt_piece_id',  'INT UNSIGNED NULL', 'INTEGER NULL');
 
+    mkt_settings_text($pdo);
+
     // Cadência alvo por semana (§16.6) e a voz da topper. (Centro de Conhecimento).
     $defaults = ['mkt_target_ig_min' => '2', 'mkt_target_ig_max' => '3', 'mkt_target_li' => '5', 'mkt_target_x' => '10',
                  'mkt_voice' => MKT_VOICE_SEED];
@@ -199,6 +201,23 @@ function migrate_marketing(PDO $pdo): void {
     foreach ($defaults as $k => $v) {
         $has->execute([$k]);
         if (!(int)$has->fetchColumn()) $ins->execute([$k, $v]);
+    }
+}
+
+/**
+ * Algumas bases têm settings.svalue como VARCHAR(255): a voz da topper. (e as condições da
+ * proposta, até 4000) não cabem e o MySQL sem modo estrito corta-as sem erro. Passa a TEXT e,
+ * se a voz ficou cortada no texto de partida, repõe-na inteira. Pode correr as vezes que forem.
+ */
+function mkt_settings_text(PDO $pdo): void {
+    if (db_is_sqlite($pdo)) return;
+    $type = strtolower((string)($pdo->query("SHOW COLUMNS FROM settings LIKE 'svalue'")->fetch()['Type'] ?? ''));
+    if (str_starts_with($type, 'varchar')) $pdo->exec('ALTER TABLE settings MODIFY svalue TEXT NOT NULL');
+    $st = $pdo->prepare("SELECT svalue FROM settings WHERE skey = 'mkt_voice'");
+    $st->execute();
+    $v = $st->fetchColumn();
+    if (is_string($v) && $v !== '' && mb_strlen($v) < mb_strlen(MKT_VOICE_SEED) && str_starts_with(MKT_VOICE_SEED, $v)) {
+        $pdo->prepare("UPDATE settings SET svalue = ? WHERE skey = 'mkt_voice'")->execute([MKT_VOICE_SEED]);
     }
 }
 
