@@ -1513,7 +1513,6 @@ Métricas por publicação (alcance, interações, guardados, partilhas, cliques
 pilar, formato, rede, dia/hora. **Link com rastreio por publicação**: leads do formulário do
 site vindas dele entram com Origem «<rede> · <peça>» → medir conteúdo → lead → negócio → €.
 Para employer branding: candidaturas/contactos de talento. Resumo mensal escrito pela IA.
-<<<<<<< HEAD
 
 ---
 
@@ -1587,8 +1586,6 @@ Criar utilizador → convite por email para definir palavra-passe. **Desativar, 
 apagar**; ao desativar, pede reatribuição de leads, negócios e tarefas abertas. Campos:
 papel, departamento/subdepartamento, cargo(s), sócio, responde a, horário, custo/hora,
 horas/mês. Permissões geridas aqui. Só o superadmin mexe em admins.
-=======
->>>>>>> origin/main
 
 ### 17.9 Contas iniciais dos sócios
 Criar com convite por email (definir palavra-passe), papel **Admin**, sócio = sim, e cada
