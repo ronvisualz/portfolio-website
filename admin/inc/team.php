@@ -873,9 +873,16 @@ function team_user_input(PDO $pdo, array $actor, ?array $editing, array $post): 
     $email = strtolower(trim((string)($post['email'] ?? '')));
     if ($name === '' || mb_strlen($name) > 120) throw new RuntimeException('Indique o nome (até 120 caracteres).');
     if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) throw new RuntimeException('Email inválido.');
-    if ($email === SUPERADMIN_EMAIL) throw new RuntimeException('Esse email é reservado ao superadmin.');
     $role = (string)($post['role'] ?? 'member');
-    if (!in_array($role, assignable_roles($actor), true)) throw new RuntimeException('Só o superadmin dá o papel de admin.');
+    if ($email === SUPERADMIN_EMAIL) {
+        // A conta de superadmin (info@) cria-se uma vez, por um admin, se ainda não existir.
+        if ($editing || (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'superadmin'")->fetchColumn() > 0) {
+            throw new RuntimeException('Esse email é reservado ao superadmin.');
+        }
+        $role = 'superadmin';
+    } elseif (!in_array($role, assignable_roles($actor), true)) {
+        throw new RuntimeException('Só o superadmin dá o papel de admin.');
+    }
     $st = $pdo->prepare('SELECT id FROM users WHERE LOWER(email) = ? AND id <> ?');
     $st->execute([$email, (int)($editing['id'] ?? 0)]);
     if ($st->fetchColumn() !== false) throw new RuntimeException('Já existe uma conta com esse email.');

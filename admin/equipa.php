@@ -557,7 +557,7 @@ elseif ($tab === 'acessos'):
   </tbody>
 </table>
 </div>
-<p class="muted small">Papel = o que pode fazer · Cargo = título na empresa (não dá permissões) · Sócio = marca. Só o superadmin mexe em contas de admin. A conta de superadmin é só <?= e(SUPERADMIN_EMAIL) ?>.</p>
+<p class="muted small">Papel = o que pode fazer · Cargo = título na empresa (não dá permissões) · Sócio = marca. Só o superadmin mexe em contas de admin. A conta de superadmin é só <?= e(SUPERADMIN_EMAIL) ?><?= (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'superadmin'")->fetchColumn() ? '' : ' — ainda não existe: crie-a com «+ Utilizador» e esse email (recebe o convite)' ?>.</p>
 
 <section class="box" id="cargos" aria-labelledby="pos-h">
   <h2 id="pos-h">Cargos</h2>
