@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $oldMid = $old && $old['member_id'] !== null ? (int)$old['member_id'] : null;
             if (!$priv && $mid !== $oldMid && !task_can_assign($pdo, $mid, $members, $visible)) throw new RuntimeException('Não pode atribuir tarefas a essa pessoa.');
             $platform = $kind === 'meeting' && in_array($_POST['platform'] ?? '', ['meet', 'discord'], true) ? (string)$_POST['platform'] : '';
-            $location = $kind === 'meeting' && $platform === '' ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
+            $location = ($kind === 'meeting' && $platform === '') || in_array($kind, ['lunch', 'dinner', 'event'], true) ? trim(mb_substr((string)($_POST['location'] ?? ''), 0, 200)) : '';
             $parts = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['participants'] ?? [])))));
             $ownerUid = $mid !== null && isset($members[$mid]) ? (int)$members[$mid]['user_id'] : (int)$me['id'];
             $parts = $priv ? [] : array_values(array_filter($parts, fn($u) => $u !== $ownerUid));

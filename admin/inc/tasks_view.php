@@ -132,9 +132,20 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
     }
     $h .= '<div class="fg"><em>Urgência</em>' . $chip('urg', 'late', 'Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : ''), 'urg') . $chip('urg', 'today', 'Hoje') . $chip('urg', 'week', 'Esta semana') . '</div>';
     if ($tab === 'tarefas') {
-        $who = ($myMember !== null && isset($members[$myMember]) ? $chip('quem', 'me', 'Eu') : '') . $chip('quem', 'all', 'Todos') . $chip('quem', 'none', 'Por atribuir');
-        foreach ($members as $mid => $m) if ($mid !== $myMember) $who .= $chip('quem', (string)$mid, e(first_name($m['name'])));
-        $h .= '<div class="fg"><em>Quem</em>' . $who . '</div>';
+        // «Quem»: um botão que abre a lista de pessoas (em vez de um botão por pessoa).
+        $opts = ($myMember !== null && isset($members[$myMember]) ? ['me' => ['Eu', task_who_html($members, $myMember)]] : [])
+              + ['all' => ['Todos', '<span class="fpl-i">' . icon('equipa') . '</span>'], 'none' => ['Por atribuir', '<span class="fpl-i">' . icon('hand') . '</span>']];
+        foreach ($members as $mid => $m) if ($mid !== $myMember) $opts[(string)$mid] = [$m['name'], task_who_html($members, (int)$mid)];
+        $cur = (string)$f['quem'];
+        $items = ''; $sep = false;
+        foreach ($opts as $v => [$l, $av]) {
+            $on = $cur === (string)$v;
+            if (is_int($v) && !$sep) { $items .= '<hr>'; $sep = true; }   // as pessoas, depois de Eu · Todos · Por atribuir
+            $items .= '<a class="fpl' . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['quem' => (string)$v])) . '"' . ($on ? ' aria-current="true"' : '') . '>' . $av . '<span>' . e($l) . '</span>' . ($on ? '<span class="ok">' . icon('check') . '</span>' : '') . '</a>';
+        }
+        $label = $opts[$cur][0] ?? 'Todos';
+        $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($cur !== 'all' ? ' on' : '') . '">' . icon('user') . ' Quem: ' . e($cur === 'me' ? 'Eu' : (ctype_digit($cur) ? first_name($label) : $label)) . ' ' . icon('chev-down', 'chev') . '</summary>'
+            . '<div class="fpop-box" role="menu" aria-label="Quem"><div class="fpop-h"><b>Quem</b></div><div class="fpop-l">' . $items . '</div></div></details></div>';
     }
     // Tipo e origem: um botão que abre uma caixa com os ícones (tipo: 5 × 3).
     $pop = function (string $k, string $title, array $list, string $cls) use ($f, $tab) {

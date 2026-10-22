@@ -15,7 +15,7 @@
  *   Leads v2 (§12):
  *   GET  a=lead_dups&email=&phone=   duplicados enquanto se escreve (nova lead)
  *   POST a=lead_save          id, f[campo] — «Gravar» na ficha (todos os campos de uma vez, com «Anular»)
- *   POST a=lead_task          id, kind, title, notes, date, time, duration, assignee, repeat — Nova ação
+ *   POST a=lead_task          id, kind, title, notes, date, time, duration, assignee, repeat, [platform, location] — Nova ação
  *   POST a=lead_task_done     id, task — concluir no Foco (uma chamada abre «Como correu?»)
  *   POST a=lead_outcome       id, result (missed | followup), note
  *   POST a=lead_archive       id, reason, note — com «Anular»
@@ -546,7 +546,7 @@ try {
         $dur = (int)($_POST['duration'] ?? 0);
         lead_task_create($pdo, $l, $kind, $title, trim(mb_substr((string)($_POST['notes'] ?? ''), 0, 4000)),
                          $date . ($time !== '' ? ' ' . $time : ''), $dur > 0 && $dur <= 600 ? $dur : null, $who,
-                         (string)($_POST['repeat'] ?? ''), (int)current_user()['id']);
+                         (string)($_POST['repeat'] ?? ''), (int)current_user()['id'], (string)($_POST['platform'] ?? ''), (string)($_POST['location'] ?? ''));
         out(200, ['ok' => true, 'msg' => 'Tarefa criada.'] + lead_parts($pdo, (int)$l['id']));
 
     // Foco: concluir. Uma chamada abre «Como correu?» (§12.8).

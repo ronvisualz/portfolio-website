@@ -2072,25 +2072,28 @@ form.inl { display: inline; margin-left: auto; }
 @media (max-width: 380px) { .pcards { grid-template-columns: 1fr; } }
 
 /* ══ Tarefas (§18) ══════════════════════════════════════════ */
-/* Tipos (16) e origens: uma cor por tipo, a partir da paleta, nos dois modos. */
+/* Tipos (19) e origens: uma cor por tipo, a partir da paleta, nos dois modos. */
 :root {
   --ty-call: #2F77B1; --ty-meeting: #7B5CD6; --ty-email: #3A8FA8; --ty-message: #2A9D6F; --ty-followup: #2F77B1; --ty-visit: #C8553D;
   --ty-shoot: #D9443A; --ty-edit: #B5487A; --ty-render: #EE8A3C; --ty-review: #2A86A8; --ty-delivery: #3A9A37; --ty-quote: #A07800;
-  --ty-document: #6B6B66; --ty-task: #55554F; --ty-personal: #8A6FB8; --ty-block: #6B6B66; --ty-event: #2F77B1; --ty-busy: #6B6B66;
+  --ty-document: #6B6B66; --ty-task: #55554F; --ty-personal: #8A6FB8; --ty-block: #6B6B66; --ty-event: #6F8B12; --ty-busy: #6B6B66;
+  --ty-lunch: #B86E14; --ty-dinner: #8E2C54;
   --or-lead: #2F77B1; --or-deal: #A07800; --or-mkt: #EE8A3C; --or-relation: #3A9A37; --or-personal: #8A6FB8; --or-manual: #6B6B66;
   --min: 0.8px;
 }
 :root[data-theme="dark"] {
   --ty-call: #8CBDEB; --ty-meeting: #B9A6F0; --ty-email: #81CFE3; --ty-message: #7FD3AE; --ty-followup: #8CBDEB; --ty-visit: #F2A38F;
   --ty-shoot: #F2857E; --ty-edit: #E59AC0; --ty-render: #F6B27A; --ty-review: #81CFE3; --ty-delivery: #8FD18C; --ty-quote: #F3D772;
-  --ty-document: #B4B4AE; --ty-task: #C8C8C2; --ty-personal: #C6B3EE; --ty-block: #9A9A94; --ty-event: #8CBDEB; --ty-busy: #9A9A94;
+  --ty-document: #B4B4AE; --ty-task: #C8C8C2; --ty-personal: #C6B3EE; --ty-block: #9A9A94; --ty-event: #C6DD6E; --ty-busy: #9A9A94;
+  --ty-lunch: #F2B868; --ty-dinner: #E88AAA;
   --or-lead: #8CBDEB; --or-deal: #F3D772; --or-mkt: #F6B27A; --or-relation: #8FD18C; --or-personal: #C6B3EE; --or-manual: #B4B4AE;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ty-call: #8CBDEB; --ty-meeting: #B9A6F0; --ty-email: #81CFE3; --ty-message: #7FD3AE; --ty-followup: #8CBDEB; --ty-visit: #F2A38F;
     --ty-shoot: #F2857E; --ty-edit: #E59AC0; --ty-render: #F6B27A; --ty-review: #81CFE3; --ty-delivery: #8FD18C; --ty-quote: #F3D772;
-    --ty-document: #B4B4AE; --ty-task: #C8C8C2; --ty-personal: #C6B3EE; --ty-block: #9A9A94; --ty-event: #8CBDEB; --ty-busy: #9A9A94;
+    --ty-document: #B4B4AE; --ty-task: #C8C8C2; --ty-personal: #C6B3EE; --ty-block: #9A9A94; --ty-event: #C6DD6E; --ty-busy: #9A9A94;
+  --ty-lunch: #F2B868; --ty-dinner: #E88AAA;
     --or-lead: #8CBDEB; --or-deal: #F3D772; --or-mkt: #F6B27A; --or-relation: #8FD18C; --or-personal: #C6B3EE; --or-manual: #B4B4AE;
   }
 }
@@ -2098,7 +2101,7 @@ form.inl { display: inline; margin-left: auto; }
 .ty-followup { --c: var(--ty-followup); } .ty-visit { --c: var(--ty-visit); } .ty-shoot { --c: var(--ty-shoot); } .ty-edit { --c: var(--ty-edit); }
 .ty-render { --c: var(--ty-render); } .ty-review { --c: var(--ty-review); } .ty-delivery { --c: var(--ty-delivery); } .ty-quote { --c: var(--ty-quote); }
 .ty-document { --c: var(--ty-document); } .ty-task { --c: var(--ty-task); } .ty-personal { --c: var(--ty-personal); } .ty-block { --c: var(--ty-block); }
-.ty-event { --c: var(--ty-event); } .ty-busy { --c: var(--ty-busy); }
+.ty-event { --c: var(--ty-event); } .ty-lunch { --c: var(--ty-lunch); } .ty-dinner { --c: var(--ty-dinner); } .ty-busy { --c: var(--ty-busy); }
 .or-lead { --c: var(--or-lead); } .or-deal { --c: var(--or-deal); } .or-mkt { --c: var(--or-mkt); } .or-relation { --c: var(--or-relation); }
 .or-personal { --c: var(--or-personal); } .or-manual { --c: var(--or-manual); }
 .tty { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; flex: none; color: var(--c);
@@ -2140,7 +2143,7 @@ form.inl { display: inline; margin-left: auto; }
 .fpop-h b { font: 500 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); }
 .fpop-h a { color: var(--link); text-decoration: none; font-weight: 600; }
 .fpop-g { display: grid; grid-template-columns: repeat(3, 84px); gap: 6px; }
-.fpop.wide .fpop-g { grid-template-columns: repeat(5, 84px); }
+.fpop.wide .fpop-g { grid-template-columns: repeat(6, 84px); }
 .fpi { display: grid; justify-items: center; gap: 5px; padding: 8px 4px 7px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); text-decoration: none; text-align: center; transition: border-color var(--t), background var(--t), transform var(--t); }
 .fpi span { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
 .fpi .ico { width: 17px; height: 17px; }
@@ -2260,7 +2263,7 @@ a.tlink:hover { color: var(--fg); }
 .help { font-size: 13px; }
 
 /* «+ Nova tarefa» */
-.tyrow { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 5px; margin: 6px 0 14px; }
+.tyrow { display: grid; grid-template-columns: repeat(19, minmax(0, 1fr)); gap: 5px; margin: 6px 0 14px; }
 .tyb { position: relative; cursor: pointer; }
 .tyb input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .tyb span { display: grid; place-items: center; height: 36px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--c); transition: background var(--t), border-color var(--t), transform var(--t); }
@@ -2338,7 +2341,7 @@ a.tlink:hover { color: var(--fg); }
   .trow .tact:not([data-snooze]) { display: none; }
   .trow.agg { grid-template-columns: 24px 26px 18px minmax(0, 1fr) 112px; }
   .trow.agg .tgo { grid-column: 4 / -1; justify-self: start; }
-  .tyrow { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .tyrow { grid-template-columns: repeat(10, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
   /* telemóvel: o prazo passa para baixo do título */
@@ -2539,3 +2542,18 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .ps-opts li .mono { text-align: right; font-size: 12.5px; }
 .ps-opts li small { color: var(--mute); }
 @media (max-width: 760px) { .ps-cols { grid-template-columns: minmax(0, 1fr); } }
+.newact .lmeet { display: grid; gap: 5px; }
+.newact .lmeet[hidden] { display: none; }
+.newact .lmeet .lbl { font-size: 12px; font-weight: 600; color: var(--mute); }
+/* Filtro «Quem»: uma caixa com as pessoas */
+.fpop-l { display: grid; gap: 2px; min-width: 210px; max-height: 360px; overflow-y: auto; }
+.fpl { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 8px; color: var(--fg); text-decoration: none; font-size: 13px; }
+.fpl:hover { background: var(--chip); }
+.fpl .ico { width: 15px; height: 15px; color: var(--mute); }
+.fpl > .twho { width: 22px; height: 22px; font-size: 9px; }
+.fpl .fpl-i { display: inline-grid; place-items: center; width: 22px; height: 22px; }
+.fpl.on { background: color-mix(in srgb, var(--fg) 8%, transparent); font-weight: 600; }
+.fpl .ok { margin-left: auto; color: var(--ok-fg); }
+.fpl hr, .fpop-l hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.newact .lmeet .rb span { display: inline-flex; gap: 6px; align-items: center; }
+.newact .lmeet .rb .ico { width: 15px; height: 15px; }

@@ -103,6 +103,12 @@ function lead_new_action_html(PDO $pdo, array $l): string {
          . '<div class="kinds" role="radiogroup" aria-label="Tipo de ação">' . $kinds . '</div>'
          . '<input type="text" name="title" maxlength="200" placeholder="Ligar a ' . e(lead_display_name($l)) . '" aria-label="O quê" data-who="' . e(lead_display_name($l)) . '">'
          . '<textarea name="notes" rows="2" maxlength="4000" placeholder="Notas (opcional)" aria-label="Notas"></textarea>'
+         // Reunião: Google Meet, Discord ou presencial (como na aba Tarefas); almoço, jantar e evento pedem o local.
+         . '<div class="lmeet" data-lk-meet hidden role="radiogroup" aria-label="Reunião via"><span class="lbl">Reunião via</span><div class="chips-check">'
+         . '<label class="rb"><input type="radio" name="platform" value="meet" checked><span>' . icon('video') . ' Google Meet</span></label>'
+         . '<label class="rb"><input type="radio" name="platform" value="discord"><span>' . icon('video') . ' Discord</span></label>'
+         . '<label class="rb"><input type="radio" name="platform" value=""><span>' . icon('pin') . ' Presencial</span></label></div></div>'
+         . '<input type="text" name="location" maxlength="200" placeholder="Local (estúdio, morada, restaurante…)" aria-label="Local" data-lk-local hidden>'
          . '<div class="quick" role="group" aria-label="Quando">'
          . '<button type="button" data-quick="1h">Em 1h</button><button type="button" data-quick="3h">Em 3h</button>'
          . '<button type="button" data-quick="tomorrow">Amanhã</button><button type="button" data-quick="week">Próxima semana</button></div>'

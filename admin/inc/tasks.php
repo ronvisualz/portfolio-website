@@ -399,10 +399,13 @@ function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visib
 // Aba Tarefas (§18): tipos, origens, urgência, grupos automáticos, privacidade
 // ════════════════════════════════════════════════════════════
 
-/** Os 16 tipos (§18.6): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
+/** Os 19 tipos (§18.6; Almoço, Jantar e Evento vêm da ficha da lead): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
 const TASK_TYPES = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],
+    'lunch'    => ['Almoço', 'utensils'],
+    'dinner'   => ['Jantar', 'wine'],
+    'event'    => ['Evento', 'calendar'],
     'email'    => ['Email', 'mail'],
     'message'  => ['Mensagem / WhatsApp', 'bubble'],
     'followup' => ['Follow-up', 'refresh'],
@@ -438,7 +441,7 @@ const TASK_BOARD_MAX = 6;
 function task_type(array $t): string {
     $k = (string)($t['kind'] ?? 'task');
     if (isset(TASK_TYPES[$k])) return $k;
-    return ['relation' => 'followup', 'lunch' => 'meeting', 'dinner' => 'meeting', 'event' => 'meeting'][$k] ?? 'task';
+    return ['relation' => 'followup'][$k] ?? 'task';
 }
 
 /** A origem: pessoal, relação, Marketing, lead, negócio ou manual (feita aqui). */

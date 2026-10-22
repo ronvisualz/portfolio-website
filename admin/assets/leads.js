@@ -237,9 +237,19 @@
     }
     return d;
   }
+  // Reunião → Google Meet, Discord ou presencial; presencial, almoço, jantar e evento → Local.
+  function meetSync(f) {
+    var k = (f.querySelector('input[name=kind]:checked') || {}).value || 'call';
+    var plat = (f.querySelector('input[name=platform]:checked') || {}).value || '';
+    var m = $('[data-lk-meet]', f), loc = $('[data-lk-local]', f);
+    if (m) m.hidden = k !== 'meeting';
+    if (loc) loc.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0);
+  }
   document.addEventListener('change', function (e) {
     var r = e.target;
-    if (!r.matches || !r.matches('form[data-lead-task] input[name=kind]')) return;
+    if (!r.matches || !r.matches('form[data-lead-task] input[name=kind], form[data-lead-task] input[name=platform]')) return;
+    meetSync(r.form);
+    if (r.name !== 'kind') return;
     var t = $('input[name=title]', r.form);
     t.placeholder = (TITLES[r.value] || TITLES.task) + t.getAttribute('data-who');
   });
@@ -261,6 +271,7 @@
       applyParts(id, j);
       $('input[name=title]', f).value = '';
       $('textarea[name=notes]', f).value = '';
+      var lc = $('input[name=location]', f); if (lc) lc.value = '';
       $$('[data-quick]', f).forEach(function (b) { b.classList.remove('on'); b.removeAttribute('aria-pressed'); });
       T.toast(j.msg);
     }).catch(fail).then(function () { btn.disabled = false; });

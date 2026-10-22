@@ -158,7 +158,8 @@
     var plat = (form.querySelector('input[name=platform]:checked') || {}).value || '';
     form.setAttribute('data-kind', k);
     $$('[data-only="meeting"]', form).forEach(function (n) { n.hidden = k !== 'meeting'; });
-    $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !(k === 'meeting' && plat === ''); });
+    // Local: reunião presencial, almoço, jantar e evento.
+    $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0); });
     $$('[data-not="block"]', form).forEach(function (n) { n.hidden = k === 'block' || k === 'personal'; });
     var who = $('#tk-who', form); if (who) who.closest('.field').hidden = k === 'block' || k === 'personal';
     var busy = form.querySelector('input[name=busy][value="1"]');

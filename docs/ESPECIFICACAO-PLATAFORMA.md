@@ -1261,6 +1261,13 @@ ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
     negócio/lead. No telemóvel o prazo passa para baixo do título.
   - **Ficha da lead e Nova tarefa do negócio:** os ícones dos tipos são os da aba Tarefas, com as
     mesmas cores (Documento passou ao ícone de ficheiro; Almoço, Jantar e Evento na cor de Reunião).
+  - **Terceira ronda:** o filtro **«Quem»** passou a um só botão («Quem: Eu») que abre a lista
+    (Eu, Todos, Por atribuir e cada pessoa, com as iniciais na cor dela). **Almoço, Jantar e Evento**
+    passam a tipos da aba Tarefas (19 tipos; o filtro mostra 18, em 6 × 3), cada um com a sua cor
+    (Reunião violeta, Almoço âmbar, Jantar bordeaux, Evento verde-oliva); levam o campo **Local**.
+    Na Nova ação da lead, **Reunião** mostra Google Meet · Discord · Presencial (com Local), como na
+    aba Tarefas. No Pipeline, a coluna Kickoff aponta para Negócios: o quadro mostra só as etapas
+    comerciais; as de produção seguem em Negócios › Em produção.
   - **Correções:** a bolinha amarela da etapa atual já não fica cortada em cima; no formulário de
     tarefa, Data, Hora e Duração já não se sobrepõem no iPad (as caixas de data/hora do Safari têm
     largura própria — agora encolhem à coluna).

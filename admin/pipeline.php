@@ -189,6 +189,7 @@ render_flashes();
         <b><span><?= e($s['name']) ?></span><?php if ($s['kind'] !== 'kickoff'): ?><span data-cnt data-n="<?= count($cards) ?>"><?= count($cards) ?></span><?php endif; ?></b>
         <?php if ($s['kind'] === 'kickoff'): ?>
           <span class="muted">entra ao validar a aceitação do cliente</span>
+          <?php if (can('negocios')): ?><a class="lnk small" href="/admin/negocios.php">As etapas de produção seguem em Negócios →</a><?php endif; ?>
         <?php else: ?>
           <span class="sum" data-sum data-n="<?= $total ?>"><?= eur0($total) ?></span>
         <?php endif; ?>
