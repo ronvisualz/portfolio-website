@@ -1,7 +1,7 @@
 /**
  * topper. admin — aba Tarefas (§18)
  *   · lista: grupos recolhíveis (lembra-se do que fechou), concluir / reabrir com «Anular»
- *   · quadro: «Pegar», «Pedir ajuda», arrastar um cartão para outra coluna
+ *   · quadro: «Pegar», «Pedir ajuda», arrastar um cartão para outra coluna (rato ou dedo)
  *   · «+ Nova tarefa»: tipo só com ícones, atalhos de tempo, reunião Meet/Discord/presencial
  *   · agenda: abre na hora atual, linha de «agora», arrastar na grelha para criar
  */
@@ -58,32 +58,19 @@
   });
 
   // ── quadro: arrastar um cartão para outra coluna ──────────
-  var board = $('[data-board]'), drag = null;
-  if (board) {
-    board.addEventListener('dragstart', function (e) {
-      var c = e.target.closest('.bcard[draggable="true"]'); if (!c) return;
-      drag = c; c.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.getAttribute('data-task'));
-    });
-    board.addEventListener('dragend', function () {
-      if (drag) drag.classList.remove('dragging'); drag = null;
-      $$('.bcol.over', board).forEach(function (c) { c.classList.remove('over'); });
-    });
-    board.addEventListener('dragover', function (e) {
-      var col = e.target.closest('.bcol'); if (!col || !drag || drag.closest('.bcol') === col) return;
-      e.preventDefault();
-      $$('.bcol.over', board).forEach(function (c) { if (c !== col) c.classList.remove('over'); });
-      col.classList.add('over');
-    });
-    board.addEventListener('drop', function (e) {
-      var col = e.target.closest('.bcol'); if (!col || !drag || drag.closest('.bcol') === col) return;
-      e.preventDefault(); col.classList.remove('over');
-      var card = drag;
+  var board = $('[data-board]');
+  // Rato, trackpad e toque (pressão longa): o arrastar partilhado do app.js (que pode carregar
+  // depois deste ficheiro: espera por ele).
+  function bindBoard() {
+    if (!board || !T() || !T().dragCards) return;
+    $$('.bcard[draggable="true"]', board).forEach(function (c) { c.setAttribute('draggable', 'false'); c.setAttribute('data-drag', ''); });
+    T().dragCards(board, { card: '.bcard[data-drag]', col: '.bcol', drop: function (card, col) {
       $('.bcards', col).insertBefore(card, $('.bcards', col).firstChild);
       api({ do: 'move', id: card.getAttribute('data-task'), to: col.getAttribute('data-col') }).then(later)
         .catch(function (er) { T().toast(er.message, { err: true }); setTimeout(function () { location.reload(); }, 1200); });
-    });
+    } });
   }
+  if (T() && T().dragCards) bindBoard(); else document.addEventListener('DOMContentLoaded', bindBoard, { once: true });
 
   // ── «+ Nova tarefa» ───────────────────────────────────────
   var form = $('[data-task-form]');

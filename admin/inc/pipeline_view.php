@@ -98,7 +98,7 @@ function flow_stages_html(PDO $pdo, array $deal, string $back): string {
  * As etapas do funil numa linha (no topo azul do painel): feitas ✓, a atual em destaque
  * («Etapa atual»), as seguintes apagadas. Comercial e produção separadas pelo Kickoff.
  */
-function flow_stepper_html(PDO $pdo, array $deal): string {
+function flow_stepper_html(PDO $pdo, array $deal, array $o = []): string {
     if (!$deal['funnel_id'] || !$deal['stage_id']) return '';
     $order = flow_order($pdo, (int)$deal['funnel_id']);
     $i = flow_index($order, (int)$deal['stage_id']);
@@ -108,10 +108,21 @@ function flow_stepper_html(PDO $pdo, array $deal): string {
     foreach ($order as $k => $s) {
         $st = $deal['phase'] === 'done' || $k < $i ? 'done' : ($k === $i ? ($lost ? 'lost' : 'cur') : 'next');
         $tip = $s['name'] . ' · ' . ['done' => 'feita', 'cur' => 'etapa atual', 'next' => 'por fazer', 'lost' => 'perdido aqui'][$st];
-        $h .= '<li class="' . $st . ' z-' . e($s['kind']) . '"' . ($st === 'cur' || $st === 'lost' ? ' aria-current="step"' : '') . ' data-tip="' . e($tip) . '">'
-            . '<span class="dot" aria-hidden="true">' . ($st === 'done' ? icon('check') : '') . '</span>'
-            . '<span class="nm">' . e($s['name']) . '</span>'
-            . ($st === 'cur' ? '<small>Etapa atual</small>' : ($st === 'lost' ? '<small>Perdido</small>' : '')) . '</li>';
+        $inner = '<span class="dot" aria-hidden="true">' . ($st === 'done' ? icon('check') : '') . '</span>'
+               . '<span class="nm">' . e($s['name']) . '</span>'
+               . ($st === 'cur' ? '<small>Etapa atual</small>' : ($st === 'lost' ? '<small>Perdido</small>' : ''));
+        // Na ficha (aba Negócios): as etapas de produção carregam-se para mudar de etapa (com os gates)
+        // e «Concluído» abre a checklist de fecho.
+        if (!empty($o['steps']) && $st !== 'cur') {
+            if ($s['kind'] === 'production') {
+                $inner = '<button class="fl-sb" name="step" value="s' . (int)$s['id'] . '" data-tip="' . e(($deal['phase'] === 'done' ? 'Reabrir em ' : 'Passar a ') . $s['name']) . '">' . $inner . '</button>';
+                $tip = '';
+            } elseif ($s['kind'] === 'done' && !empty($o['close'])) {
+                $inner = '<button type="button" class="fl-sb" data-dmdl="#mdl-close" data-tip="Concluir: abre a checklist de fecho">' . $inner . '</button>';
+                $tip = '';
+            }
+        }
+        $h .= '<li class="' . $st . ' z-' . e($s['kind']) . '"' . ($st === 'cur' || $st === 'lost' ? ' aria-current="step"' : '') . ($tip !== '' ? ' data-tip="' . e($tip) . '"' : '') . '>' . $inner . '</li>';
     }
     $funnel = (string)$pdo->query('SELECT name FROM funnels WHERE id = ' . (int)$deal['funnel_id'])->fetchColumn();
     return '<div class="fl-steps"><span class="fl-fn">' . e($funnel) . ' · etapa ' . ($i + 1) . ' de ' . count($order) . '</span>'
@@ -294,7 +305,9 @@ function flow_task_modal_html(PDO $pdo, array $deal, string $back): string {
     $myMember = member_for_user($pdo, $me);
     $participants = [];
     foreach ($members as $m) if ($m['user_id'] !== null && (int)$m['user_id'] !== $me) $participants[(int)$m['user_id']] = $m['name'];
-    return task_modal_html($pdo, null, $assignable, isset($members[$myMember]) ? $myMember : null, $participants, $back, false, ['deal_id' => (int)$deal['id']]);
+    $html = task_modal_html($pdo, null, $assignable, isset($members[$myMember]) ? $myMember : null, $participants, $back, false, ['deal_id' => (int)$deal['id']]);
+    // No painel ao lado, gravar volta à página de onde se abriu, com o painel aberto (app.js).
+    return preg_replace('~(<input type="hidden" name="back" value="[^"]*")~', '$1 data-back-here', $html, 1);
 }
 
 /** Responsáveis (comercial e execução: só admins mudam) e datas do negócio: [linhas do resumo, formulário]. */
@@ -371,8 +384,8 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     $left = '<div class="lv-l">' . $acts . '<div class="lv-read"><div class="kv">' . $kv . '</div>' . $peopleForm
           . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '') . '</div></div>';
-    $right = '<div class="lv-r">' . flow_stages_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back) . flow_billing_html($pdo, $d, $back)
-           . flow_rounds_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_focus_html($pdo, $d, $back)
+    $right = '<div class="lv-r">' . flow_stages_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back)
+           . flow_billing_html($pdo, $d, $back) . flow_rounds_html($pdo, $d, $back) . flow_focus_html($pdo, $d, $back)
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, $back, '', ['note']) . '</section></div>';
     return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back);
 }

@@ -1229,6 +1229,17 @@ ecrãs em `inc/pipeline_view.php`, ações em `deal_flow.php`.
   Kickoff · Drive), barra de etapas com os requisitos ✓/✗ (as tarefas obrigatórias concluem-se ali),
   Avançar / Forçar, proposta e resposta, faturação, rondas, Nova ação, Foco e Notas & Histórico; as
   ações voltam com o painel aberto. A ficha da aba Negócios tem os mesmos blocos.
+- **Ajustes de 22 out (aprovados na demonstração):** o topo azul do painel ocupa a largura toda e
+  mostra as etapas do funil **numa linha** (feitas ✓, a atual em amarelo com «Etapa atual», as
+  seguintes apagadas; desliza na horizontal no telemóvel); a mesma linha, conforme o funil do
+  negócio, substitui a barra de etapas da ficha na aba Negócios (as de produção carregam-se para
+  mudar de etapa, com os gates e «Anular»; «Concluído» abre a checklist de fecho). «Nova ação» deu
+  lugar a **Nova tarefa**, logo a seguir a «Para avançar»: o botão e os atalhos por tipo abrem o
+  formulário da aba Tarefas (§18.7) com o negócio escolhido; gravar volta ao negócio com o painel
+  aberto. **Arrastar cartões** (Quadro da equipa e quadro do Pipeline): o arrastar nativo do browser
+  foi trocado por um próprio que funciona com rato, trackpad e dedo (pressão longa de ~0,3 s e
+  arrastar; um toque rápido ou um deslize continuam a abrir/deslocar); junto às margens o quadro
+  desliza. Os cartões agrupados («Chamadas de leads · n») não se arrastam: abrem a fila.
 - **Testado na bancada** (MariaDB, Playwright): migração idempotente; X-Ray → Proposta → envio →
   página do cliente (GET sem escrita nem cookie, POST sem a caixa ou com assinatura errada recusado) →
   validação → Kickoff (Opção B, valor do negócio) → fatura e pagamento → produção, forçar e anular,

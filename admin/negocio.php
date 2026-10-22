@@ -301,7 +301,14 @@ render_flashes();
     </div>
     <p class="df-sub">Cliente <b><?= e((string)($file['client_name'] ?: '—')) ?></b> · trazido por <?= e((string)($file['brought_name'] ?: '—')) ?>
       · responsável <?= e((string)($owner ?: 'por atribuir')) ?> · funil <?= e((string)($funnel['name'] ?? '—')) ?> · <?= e($vatTxt) ?></p>
-    <?php if ($steps): ?>
+    <?php if ($deal['funnel_id'] && $deal['stage_id'] && (!$steps || $steps['mode'] === 'stage')):
+        // As etapas do funil numa linha (§19.8), como no painel do Pipeline.
+        require_once __DIR__ . '/inc/pipeline_view.php'; ?>
+      <form method="post" class="df-flow" aria-label="Etapas do funil">
+        <?= csrf_field() ?><input type="hidden" name="do" value="step"><input type="hidden" name="id" value="<?= $id ?>">
+        <?= flow_stepper_html($pdo, $deal, ['steps' => $dealEdit && $prodPhase, 'close' => $dealEdit && $deal['phase'] === 'production']) ?>
+      </form>
+    <?php elseif ($steps): ?>
       <form method="post" class="df-steps" aria-label="Etapas de produção">
         <?= csrf_field() ?><input type="hidden" name="do" value="step"><input type="hidden" name="id" value="<?= $id ?>">
         <?php foreach ($steps['items'] as $i => $s):
@@ -319,9 +326,7 @@ render_flashes();
             <?php endif; ?>
         <?php endforeach; ?>
       </form>
-      <?php if ($steps['mode'] === 'step'): ?><p class="df-hint">Etapas de produção da casa; quando o funil tiver etapas de produção próprias, a barra passa a usá-las.</p><?php endif; ?>
-    <?php elseif ($deal['phase'] === 'pipeline'): ?>
-      <p class="df-hint">Na fase comercial (<?= e($stage['name'] ?? '—') ?>). As etapas de produção começam no Kickoff.</p>
+      <p class="df-hint">Etapas de produção da casa; quando o funil tiver etapas de produção próprias, a barra passa a usá-las.</p>
     <?php endif; ?>
   </div>
   <div class="df-acts">
