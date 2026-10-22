@@ -565,6 +565,8 @@ try {
         $st->execute([(int)($_POST['task'] ?? 0), (int)$l['id']]);
         $t = $st->fetch();
         if (!$t || $t['status'] === 'done') throw new RuntimeException('Essa tarefa já não está aberta.');
+        // Uma chamada de uma lead ativa só fica feita com o resultado: primeiro «Como correu?».
+        if ($t['kind'] === 'call' && $l['phase'] === 'lead') out(200, ['ok' => true, 'needs_outcome' => true, 'task' => (int)$t['id']]);
         $snap = ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
         $snap['spawned'] = task_done($pdo, (int)$t['id']);   // fica no histórico da lead; se se repete, cria a seguinte
         // Reunião, email, almoço ou jantar feitos contam como contacto e, em Follow-Up, como follow-up.
@@ -580,6 +582,24 @@ try {
         if (!$post) break;
         $l = lead_for_edit($pdo);
         $res = (string)($_POST['result'] ?? '');
+        if (!in_array($res, ['missed', 'followup', 'answered'], true)) throw new RuntimeException('Escolha como correu.');
+        // A chamada que deu origem ao «Como correu?» fica feita agora, com o resultado.
+        if (($tid = (int)($_POST['task'] ?? 0)) > 0) {
+            $st = $pdo->prepare("SELECT * FROM tasks WHERE id = ? AND deal_id = ? AND kind = 'call'");
+            $st->execute([$tid, (int)$l['id']]);
+            $t = $st->fetch();
+            if (!$t) throw new RuntimeException('Essa chamada já não existe. Recarregue a página.');
+            if ($t['status'] !== 'done') {
+                $GLOBALS['LEAD_OUTCOME_OK'] = true;
+                task_done($pdo, $tid);
+                unset($GLOBALS['LEAD_OUTCOME_OK']);
+            }
+        }
+        if ($res === 'answered') {   // atendida, a seguir vem Arquivar ou Converter
+            deal_log($pdo, (int)$l['id'], 'call_ok', ['note' => 'Chamada atendida']);
+            lead_touch($pdo, (int)$l['id']);
+            out(200, ['ok' => true, 'msg' => 'Chamada registada.'] + lead_parts($pdo, (int)$l['id']));
+        }
         if ($res === 'missed') {
             $n = (int)$l['no_answer'] + 1;
             $pdo->prepare("UPDATE deals SET lead_state = 'sem_resposta', state_since = ?, no_answer = ? WHERE id = ?")->execute([now_php(), $n, $l['id']]);

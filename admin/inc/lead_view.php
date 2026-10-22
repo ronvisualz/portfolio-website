@@ -299,6 +299,7 @@ function lead_modals_html(?array $arch = null, string $back = ''): string {
     . '<div class="mdl-back" data-mdl-close></div>'
     . '<div class="mdl-card pop-in">'
     . '<h3 id="mdl-out-t">Como correu?</h3><p class="muted" data-out-name></p>'
+    . '<p class="muted small out-hint">A chamada só fica feita quando escolher o resultado. Fechar deixa-a por fazer.</p>'
     . '<div class="out-step" data-step="choose"><div class="opts">'
     . '<button type="button" class="opt" data-out="missed">' . icon('phone-off') . '<b>Chamada não atendida</b><small>→ Sem resposta · o prazo recomeça</small></button>'
     . '<button type="button" class="opt" data-out="followup">' . icon('phone') . '<b>Follow-Up</b><small>→ nota da conversa + próxima ação</small></button>'

@@ -224,6 +224,15 @@ function task_has_busy(PDO $pdo): bool {
     return $has ??= db_has_column($pdo, 'tasks', 'busy');
 }
 
+/** Concluir a chamada de uma lead pede o resultado: abre-se a ficha da lead («Como correu?»). */
+class TaskNeedsOutcome extends RuntimeException {
+    public int $lead;
+    public function __construct(int $lead) {
+        parent::__construct('Registe como correu a chamada (não atendida, Follow-Up, arquivar ou converter): a tarefa fica feita com o resultado.');
+        $this->lead = $lead;
+    }
+}
+
 /**
  * Uma tarefa feita à mão «Emitir fatura…» ligada a um negócio segue a mesma regra das
  * automáticas: só fica feita quando o PDF da fatura é submetido no negócio. Devolve o doc_kind.
@@ -278,6 +287,12 @@ function task_update(PDO $pdo, array $old, array $v): void {
  */
 function task_done(PDO $pdo, int $id): ?int {
     $t = task_by_id($pdo, $id);
+    // A chamada de uma lead só fica feita com o resultado («Como correu?»), registado na ficha da lead.
+    if ($t && $t['status'] !== 'done' && $t['kind'] === 'call' && !empty($t['deal_id']) && empty($GLOBALS['LEAD_OUTCOME_OK'])) {
+        $ph = $pdo->prepare('SELECT phase FROM deals WHERE id = ?');
+        $ph->execute([(int)$t['deal_id']]);
+        if ($ph->fetchColumn() === 'lead') throw new TaskNeedsOutcome((int)$t['deal_id']);
+    }
     // Faturas, pagamentos e X-Ray (§19.6 E) só ficam feitos pelo documento/validação no negócio.
     if ($t && $t['status'] !== 'done' && ($t['doc_kind'] ?? '') !== '') {
         require_once __DIR__ . '/pipeline_flow.php';
