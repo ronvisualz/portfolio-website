@@ -1769,7 +1769,7 @@ Filtros guardáveis como vistas.
 
 ### 18.7 «+ Nova tarefa»
 Mesmo formulário da «Nova ação» das Leads (§12.7), com a animação da §13.8, mais completo:
-tipo (ícones 18.6) · título · notas · atalhos de tempo · data, hora, duração · responsável
+tipo (**só ícones**, sem texto; o nome do tipo aparece ao passar o cursor ou com toque longo — §18.6) · título · notas · atalhos de tempo · data, hora, duração · responsável
 (nunca o superadmin) · ligação a negócio/lead/contacto · prioridade · checklist · anexos ·
 repetir · Ocupado/Livre · participantes (convite pelo chat, §17.7).
 **Tipo Reunião:** escolher **Google Meet** ou **Discord**; sem nenhum = **presencial** e
