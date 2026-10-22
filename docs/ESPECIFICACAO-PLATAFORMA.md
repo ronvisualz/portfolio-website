@@ -1853,8 +1853,8 @@ aparece o campo **Local**.
 
 ## 19. Pipeline, funis e automações — PROPOSTA v1 (22 out 2026, a validar com a equipa)
 
-> Estado: proposta baseada em práticas do setor; **a validar na reunião de domingo** com as
-> equipas comercial e de execução. Implementar a **estrutura** (etapas configuráveis, gates,
+> Estado (23 out 2026): **6 funis e etapas aprovados**; tarefas automáticas da §19.6 definidas
+> após pesquisa, a confirmar com a equipa no domingo. Implementar a **estrutura** (etapas configuráveis, gates,
 > X-Ray, propostas com duas opções, resposta do cliente, motor de automações) e carregar as
 > etapas/tarefas abaixo como **valores iniciais editáveis** em Definições.
 
@@ -1924,8 +1924,7 @@ mínimo 3 meses.
 | **Campanhas** | Estratégia e calendário → Guiões do lote → Gravação do lote → Edição do lote → Revisão → Entrega e agendamento → Relatório (repete por lote) |
 | **Ads** | Ângulos e ganchos → Guiões → Produção → Edição e variações → Revisão → Exportação por plataforma → Lançamento e leitura |
 | **Marketing Buddy** | Onboarding → Estratégia trimestral → Ciclo mensal (Planear → Produzir → Rever → Entregar → Reportar, repete) → Revisão trimestral e renovação |
-- Funis: os 5 atuais passam a **6**, separando **Adverts** de **Campanhas** (como no documento
-  da estrutura) — **a confirmar**. Funis combinados (§9.1) juntam as etapas.
+- Funis: os 5 atuais passam a **6**, separando **Adverts** de **Campanhas** (aprovado). Funis combinados (§9.1) juntam as etapas.
 - Rondas de revisão incluídas por defeito (Definições, por funil): VFX 2 por shot · CGI 2 no
   styleframe, 2 no animatic, 1 no render · Adverts 2 offline + 1 online · Campanhas/Ads 1 por lote.
   Alterações fora disso = pedido de alteração orçamentado.
@@ -1933,36 +1932,164 @@ mínimo 3 meses.
   modelação final; Adverts PPM aprovado antes da rodagem e picture lock por escrito antes da
   pós; todos: aprovação final do cliente por escrito antes de Entrega.
 
-### 19.6 Tarefas automáticas iniciais
-Formato: tarefa · tipo · responsável · prazo relativo · **[obrigatória]** = gate.
-**Todos os funis — fase comercial**
-- X-Ray: Reunião de descoberta (Reunião, resp. comercial, +2 dias úteis) · Preencher X-Ray
-  **[obrigatória]** (Documento, resp. comercial, +3) · Validar X-Ray **[obrigatória]**.
-- Proposta: Criar orçamento Opção A **[obrigatória]** · Criar Proposta de valor (recomendada) ·
-  Rever margens e lucro/mês (admin) · Gerar e enviar proposta **[obrigatória]**.
-- Aguardar feedback: Follow-up da proposta (+3 dias úteis) · 2.º follow-up (+7) · Alerta de
-  validade a expirar (−2 dias da validade).
-- Kickoff: Redigir contrato de prestação de serviços **[obrigatória]** · Enviar contrato e
-  recolher assinatura **[obrigatória]** · Emitir fatura de adjudicação **[obrigatória]** ·
-  Validar pagamento de adjudicação **[obrigatória]** · Reunião de arranque com a equipa ·
-  Criar pasta e estrutura no Drive · Reservar freelancers e enviar NDA · Confirmar specs de entrega.
-**Todos os funis — fecho (Entrega → Concluído)**
-Aprovação final por escrito **[obrigatória]** · Entregar masters e versões · Documento de
-direitos de uso/licenças · Emitir fatura final **[obrigatória]** · Validar pagamento final
-**[obrigatória]** · Arquivar projeto · Avaliar fornecedores · Pedir testemunho · Pedir
-autorização de divulgação/portfólio · Follow-up de upsell (+45 dias, cria tarefa de Relação).
-**Específicas (exemplos iniciais)**
-- VFX: Verificar pacote de turnover **[obrigatória]** · Criar tracker de shots · Enviar LUT/
-  pipeline de cor · Relatório de QC **[obrigatória]**.
-- CGI: Pedir CAD/amostras · Aprovação de styleframes **[obrigatória]** · Aprovação do animatic
-  **[obrigatória]** · Aprovação do modelo.
-- Adverts: Casting e locais · Licenças de filmagem e seguro · Call sheets · PPM **[obrigatória]**
-  · Autorizações de imagem (talento e locais) · Licença de música · Picture lock **[obrigatória]**.
-- Campanhas: Calendário aprovado **[obrigatória]** · Guiões do lote aprovados **[obrigatória]** ·
-  Relatório de desempenho do lote.
-- Ads: Verificar políticas da plataforma · Direitos de criadores/UGC · Convenção de nomes para tracking.
-- Marketing Buddy (recorrentes mensais): Fatura mensal · Validar pagamento mensal · Relatório
-  mensal · Controlo de capacidade; aviso de renovação 30 dias antes do fim do período mínimo.
+### 19.6 Tarefas automáticas por etapa (v2, após pesquisa — 23 out 2026)
+Legenda: tipo (§18.6) · **C** = responsável comercial do negócio · **E** = responsável de
+execução do negócio · prazo relativo à entrada na etapa (d.u. = dias úteis) ou à data de
+entrega/rodagem · **[gate]** = tem de estar concluída para sair da etapa (só quando saltá-la
+cria risco legal, financeiro ou de qualidade). Todas editáveis no motor de automações (§19.7).
+
+**Responsáveis:** cada negócio tem **responsável comercial** (fase comercial) e **responsável
+de execução** (produção), atribuídos por um admin (por agora qualquer operador). As
+automações usam estes dois papéis; se não houver responsável atribuído, a tarefa vai para
+«Por atribuir».
+
+#### A. Fase comercial (todos os funis)
+- **X-Ray:** Chamada de descoberta (objetivo, público, orçamento, prazo, decisor) · Chamada ·
+  C · +1 [gate] — Recolher brief, referências e materiais da marca · Email · C · +2 —
+  Confirmar decisor, orçamento e data-alvo · Tarefa · C · +2 — Validar viabilidade técnica e
+  capacidade com a execução · Reunião · E · +3 — Preencher e validar X-Ray · Documento · C ·
+  +3 [gate].
+- **Proposta:** Orçamento Opção A (linhas, IVA, extras, deslocações) · Orçamento · C · +3
+  [gate] — Proposta de valor (Opção B) · Orçamento · C · +3 — Âmbito escrito: entregáveis,
+  formatos, nº de rondas de revisão incluídas e preço de ronda extra · Documento · C · +3
+  [gate] — Direitos de utilização propostos (meios, território, duração, orgânico/pago) ·
+  Documento · C · +3 [gate] — Cronograma com marcos de aprovação · Documento · E · +3 —
+  Enviar e apresentar a proposta numa chamada · Reunião · C · +4.
+- **Aguardar feedback:** Follow-up 1 · Follow-up · C · +3 — Follow-up 2 (lembrar validade) ·
+  Follow-up · C · +7 — Sem resposta: decidir perder ou manter · Tarefa · C · +15 (sugere
+  «Perdido» com motivo «Sem resposta»).
+- **Kickoff:** Contrato assinado (âmbito, rondas, alterações, direitos, pagamentos) ·
+  Documento · C · +2 [gate] — Emitir fatura de adjudicação · Orçamento · C · +1 [gate] —
+  Validar receção do pagamento de adjudicação · Tarefa · C · +5 [gate] — Reunião de passagem
+  Comercial → Execução (brief, contrato, contactos, riscos) · Reunião · C+E · +3 [gate] —
+  Reunião de arranque com o cliente (aprovadores e canal único de feedback) · Reunião · E · +5
+  — Criar pasta no Drive, canal e cronograma detalhado · Tarefa · E · +3.
+
+#### B. Fecho (Entrega → Concluído, todos os funis; junta-se à §15.5)
+Aprovação final por escrito · Email · E · +2 [gate] — Enviar entregáveis finais com
+comprovativo de download · Entrega · E · +1 [gate] — Documento de direitos e licenças
+(música, stock, talento: âmbito e validade) · Documento · C · +2 [gate] — Emitir fatura final
+· Orçamento · C · +1 [gate] — Validar pagamento final · Tarefa · C · +30 [gate para fechar o
+Resultado] — Arquivar projeto (masters, projetos, autorizações) · Tarefa · E · +10 — Avaliar
+fornecedores · Tarefa · E · +5 — Pedir testemunho e autorização de portfólio · Email · C · +5
+— Case study (após autorização) · Documento · C · +20 — Follow-up de upsell · Follow-up · C ·
++45 (cria tarefa de Relação).
+
+#### C. Produção por funil
+**1. VFX & Pós-produção**
+- Turnover e breakdown: Receber turnover (EDL/XML, plates EXR, handles, corte de referência,
+  LUT, specs) · Tarefa · E · +1 [gate] — Verificar lineup (frames, handles, timecode,
+  formato) · Revisão · E · +2 [gate] — Breakdown e orçamento por shot · Documento · E · +3 —
+  Teste de pipeline com um shot · Render · E · +3.
+- Look dev / shot de referência: Produzir shot de referência · Edição · E · +5 — Aprovação do
+  look por escrito · Revisão · E · +7 [gate].
+- Produção de shots: Tracker de shots (estado e versões) · Tarefa · E · contínuo — Dailies
+  internos e QC por versão · Revisão · E · diário (recorrente) — Status semanal ao cliente ·
+  Email · E · semanal (recorrente).
+- Revisões do cliente: Enviar versões com contador de rondas · Revisão · E · por ronda —
+  Consolidar feedback numa lista única · Documento · E · +1 — Fora do âmbito ou acima das
+  rondas → pedido de alteração aprovado por escrito · Orçamento · C · antes de executar [gate].
+- Finais e QC: Render dos finais nas specs · Render · E · −5 dias da entrega — QC técnico
+  (frames, artefactos, espaço de cor, nomes) · Revisão · E · −3 [gate].
+- Entrega: Entregar EXR/ProRes e documento de entrega · Entrega · E · data de entrega.
+
+**2. CGI / 3D**
+- Styleframes: Moodboard e referências · Documento · E · +2 — 2 a 3 styleframes · Edição · E ·
+  +5 — Aprovação do estilo por escrito · Revisão · E · +7 [gate].
+- Storyboard e animatic: Storyboard · Documento · E · +3 — Animatic com timing e áudio guia ·
+  Edição · E · +5 — Aprovação do animatic (fecha câmara e duração) · Revisão · E · +7 [gate].
+- Modelação e lookdev: Receber CAD/ficheiros do produto · Email · E · +1 — Modelos e
+  materiais · Tarefa · E · conforme plano — Turntables para aprovação · Revisão · E · fim da
+  etapa [gate].
+- Animação: Blocking · Edição · E — Revisão do blocking com o cliente · Revisão · E — Polish ·
+  Edição · E.
+- Render e composição: Teste de render e estimativa de tempo de farm · Render · E · +1 —
+  Render final · Render · E · −5 da entrega — Composição e cor · Edição · E · −3.
+- Revisões: como VFX (pedido de alteração [gate]).
+- Entrega: QC técnico · Revisão · E · −1 [gate] — Entregar masters e versões · Entrega · E.
+
+**3. Adverts**
+- Conceito e tratamento: Tratamento (conceito, look, referências) · Documento · E · +5 —
+  Guião · Documento · E · +5 — Aprovação do tratamento e guião · Revisão · E · +7 [gate].
+- Pré-produção (PPM): Casting com contratos e **autorização de imagem por escrito** (RGPD e
+  art. 79.º do Código Civil; âmbito e duração) · Documento · E · −5 dias da rodagem [gate] —
+  **Licença de filmagem municipal** (Lisboa Film Commission/CML; estradas e linhas de comboio
+  ≥ 15 d.u. antes) · Documento · E · −15 d.u. da rodagem [gate] — Seguros (RC, equipamento,
+  acidentes de trabalho) · Documento · E · −5 [gate] — Autorizações dos locais · Documento · E
+  · −5 [gate] — Visita técnica ao local · Visita · E · −5 — Reunião de PPM com o cliente
+  (lista de planos, guarda-roupa, cronograma) · Reunião · E · −3 [gate] — Folha de serviço
+  (call sheet) · Documento · E · −1.
+- Rodagem: Rodagem · Gravação · E · dia D — Recolher autorizações assinadas no set (incl.
+  figurantes) · Documento · E · dia D [gate] — Cópia de segurança dupla do material ·
+  Tarefa · E · dia D [gate].
+- Montagem offline: Sincronizar e importar · Edição · E · +1 — Primeiro corte · Edição · E · +5
+  — Revisão do cliente · Revisão · E.
+- Picture lock: Aprovação do lock por escrito (depois disto, mudanças = pedido de alteração) ·
+  Revisão · E [gate] — Turnover para a pós · Tarefa · E · +1.
+- Pós (cor, VFX, som, música): **Licença de música** (library com licença para meios pagos,
+  ou sync + master) · Documento · C · antes da mistura [gate] — Cor · Edição · E — Mistura de
+  som com loudness por plataforma · Edição · E — VFX e grafismo · Edição · E.
+- Versões e entrega: Cutdowns e formatos · Render · E · −3 da entrega — QC final (legendas,
+  ortografia, loudness, safe areas) · Revisão · E · −2 [gate] — Entregar · Entrega · E.
+
+**4. Campanhas** (repete por lote)
+- Estratégia e calendário: Workshop de pilares e formatos · Reunião · E · +3 — Calendário
+  editorial aprovado · Documento · E · +5 [gate só no 1.º lote].
+- Guiões do lote: Guiões e ganchos · Documento · E · +3 — Aprovação dos guiões · Revisão · E ·
+  −3 da gravação [gate].
+- Gravação do lote: Confirmar local, talento e autorizações de imagem válidas · Documento · E ·
+  −2 [gate] — Gravação · Gravação · E — Cópia de segurança · Tarefa · E · dia D.
+- Edição do lote: Edição com legendas e música licenciada · Edição · E · +5 — QC interno ·
+  Revisão · E · +6.
+- Revisão: Enviar com contador de rondas · Revisão · E — Aprovação final do lote · Email · E [gate].
+- Entrega e agendamento: Exportar e entregar · Entrega · E — Agendar publicação (se no âmbito) · Tarefa · E.
+- Relatório: Métricas e aprendizagens do lote · Documento · E · +7 após publicação — Faturar o
+  lote (se o contrato for por lote) · Orçamento · C [gate].
+
+**5. Ads**
+- Ângulos e ganchos: Pesquisa (anúncios da concorrência, reviews, dores do público) · Tarefa
+  · E · +2 — Matriz ângulos × ganchos aprovada · Documento · E · +3 [gate].
+- Guiões: Guiões por ângulo com **afirmações confirmadas pelo cliente** (publicidade) ·
+  Documento · E · +3 [gate].
+- Produção: Gravação/UGC com **autorizações que cobrem meios pagos** · Gravação · E [gate].
+- Edição e variações: Master por ângulo · Edição · E — Variações de gancho, CTA e duração com
+  convenção de nomes para testes · Edição · E.
+- Revisão: Rondas de revisão · Revisão · E — Aprovação · Email · E [gate].
+- Exportação por plataforma: Formatos 9:16, 4:5, 1:1, 16:9, safe zones, legendas · Render · E ·
+  −1 — QC · Revisão · E [gate].
+- Lançamento e leitura: Confirmar upload/lançamento com quem gere o media · Mensagem · E · dia
+  D — Leitura de resultados (CTR, hook rate, CPA) e recomendações · Documento · E · +7 a +14.
+
+**6. Marketing Buddy** (avença)
+- Onboarding: Acessos (redes, marca, Drive) · Email · E · +2 [gate] — Workshop de marca e
+  objetivos · Reunião · E · +5 — Faturação mensal recorrente configurada · Orçamento · C · +2 [gate].
+- Estratégia trimestral: Plano trimestral com KPI · Documento · E · +10 — Aprovação do plano ·
+  Revisão · E [gate].
+- Ciclo mensal (recorrente): Calendário do mês · Documento · E · dia 1–3 — Produzir ·
+  Gravação/Edição · E — Rever e aprovar · Revisão · E [gate] — Entregar/agendar · Entrega · E
+  — Relatório mensal · Documento · E · dia 5 do mês seguinte — Fatura mensal e validar
+  pagamento · Orçamento · C · dia 1 [gate] — Verificar autorizações e licenças de música do
+  mês · Tarefa · E.
+- Revisão trimestral e renovação: Reunião de resultados · Reunião · C+E · fim do trimestre —
+  Proposta de renovação/upsell · Orçamento · C · −15 dias do fim — Contrato renovado ou
+  terminado · Documento · C [gate].
+
+#### D. Rondas de revisão e pedidos de alteração
+- **Ronda de revisão** = um conjunto **único e consolidado** de comentários do cliente sobre
+  uma versão. Cada proposta diz quantas estão incluídas por fase (valores por defeito em
+  Definições, por funil: VFX 2 por shot · CGI 2 no styleframe, 2 no animatic, 1 no render ·
+  Adverts 2 offline + 1 online · Campanhas/Ads 1 por lote) e o preço de cada ronda extra.
+- Comentários que contradizem ou reabrem algo já aprovado contam como nova ronda.
+- **Pedido de alteração:** tudo o que sai do âmbito (novos entregáveis, versões, locais) ou
+  mexe depois de um gate de aprovação (look, animatic, picture lock) é orçamentado à parte,
+  aprovado por escrito **antes** de se fazer e faturado separadamente. A plataforma conta as
+  rondas por fase e avisa quando se ultrapassa o incluído.
+
+#### E. Faturação (atualiza §19.9)
+A topper. **ainda não tem software de faturação certificado**. Até existir, as tarefas
+«Emitir fatura» são manuais (fora da plataforma) e a plataforma regista número, valor, data e
+estado de pagamento. Recomendação: escolher software certificado pela AT com API (ATCUD/QR,
+SAF-T) para integrar mais tarde.
 
 ### 19.7 Motor de automações (Definições › Funis e automações)
 - Por funil → por etapa → lista de regras em frase legível:
@@ -1970,8 +2097,8 @@ autorização de divulgação/portfólio · Follow-up de upsell (+45 dias, cria 
   com prazo [+N dias úteis / data relativa] · [obrigatória sim/não] · [checklist]».
 - **Gatilhos v1:** entra na etapa · N dias antes/depois de uma data do negócio (entrega,
   validade da proposta) · recorrente mensal (retainers) · ao validar aceitação · ao validar pagamento.
-- **Responsável:** responsável comercial · gestor do projeto · responsável do departamento ·
-  pessoa concreta · por atribuir. Nunca o superadmin (§18.2).
+- **Responsável:** responsável comercial · responsável de execução · responsável do
+  departamento · pessoa concreta · por atribuir. Nunca o superadmin (§18.2).
 - **Títulos com variáveis:** {cliente} {negócio} {ID} {etapa}.
 - Ações: criar, editar, duplicar, ativar/desativar, eliminar (com «Anular»), reordenar;
   **«Aplicar a todos os funis»** para regras comuns; pré-visualização («ao entrar em Kickoff
