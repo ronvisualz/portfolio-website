@@ -3294,3 +3294,18 @@ Quatro números no topo: Saldo disponível · Por receber (em atraso a vermelho)
 - Lembretes de cobrança aprovados antes de enviar.
 - Integração futura com o programa de faturação certificado escolhido (InvoiceXpress, Moloni, TOConline, etc.) para emitir a fatura a partir do negócio e importar automaticamente — fase 2.
 - Interface sem referências «§» (§21); «Anular» em todas as ações (§11).
+
+### 28.14 Faturas pelo contabilista (enquanto não há programa de faturação)
+Hoje a topper. não tem programa de faturação: envia os dados ao contabilista e ele devolve a fatura por email. O sistema automatiza o circuito:
+1. **Pedir fatura** — botão no negócio, em «A receber» e na tarefa «Emitir fatura» (§19.6 E). Abre um rascunho já preenchido: cliente (nome, NIF, morada, email), descrição do serviço, base, taxa de IVA ou menção de isenção/autoliquidação, total, prestação (ex.: «1.ª de 2 — 50%»), vencimento, referência do negócio. O utilizador revê e envia. O email sai da caixa da topper. (SMTP Hostinger) para o contabilista (email em Definições › Financeiro), com o **código de referência no assunto**, ex.: `[topper FAT-2026-0142] Pedido de fatura — NEG-0123`. Fica um lançamento «Fatura pedida» (estado novo, antes de «Emitida»).
+2. **Receber a fatura** — uma caixa de correio dedicada (ex.: `faturas@` no domínio da topper., criada no Hostinger) é lida automaticamente por IMAP (`imap.hostinger.com`, porta 993, SSL) a cada 5 minutos pelo cron que já existe. O contabilista responde ao email (ou envia para essa caixa).
+3. **Ligar ao pedido** — por esta ordem: código de referência no assunto/corpo; se faltar, a IA lê o PDF (NIF do cliente, total, data) e procura o pedido aberto que corresponde. Se houver dúvida, fica em «Por confirmar» com as opções sugeridas — nunca liga sozinho com baixa confiança.
+4. **Registar** — o PDF vai para a Drive (Financeiro e pasta do negócio), a IA preenche nº da fatura, data, base, IVA e total e **compara com o pedido** (avisa se o valor ou o NIF não batem). O lançamento passa a «Emitida» e a tarefa «Emitir fatura» conclui com esse PDF.
+5. **Avisar** — notificação ao responsável e ao comercial do negócio: «A fatura FT 2026/142 do NEG-0123 está pronta para enviar ao cliente».
+6. **Enviar ao cliente** — botão que abre um email pronto (PDF anexado, dados de pagamento/IBAN, vencimento), revisto e enviado da caixa da topper.; fica registado no histórico do negócio e do contacto. A partir daqui segue o circuito normal (comprovativo → «Paga»).
+- O mesmo leitor da caixa `faturas@` aceita **faturas de fornecedores** reencaminhadas para lá: entram em «A pagar» para confirmar (§28.4).
+- Também para **recibos**: quando o pagamento é confirmado, botão «Pedir recibo» ao contabilista com o mesmo circuito.
+- Credenciais da caixa (palavra-passe IMAP/SMTP) guardadas só no servidor, num ficheiro de configuração fora do repositório (como `cc_config.php`), nunca no código, na base de dados em claro, nem no chat. Definições › Integrações › Email mostra o estado da ligação («última leitura há 3 min») e um botão «Testar».
+- Leitura IMAP em PHP com uma biblioteca pura (ex.: webklex/php-imap) para não depender da extensão `imap` do PHP (removida do núcleo a partir do PHP 8.4).
+- Mensagens lidas são movidas para uma pasta «Processadas» na caixa; nada é apagado.
+- Quando houver programa de faturação certificado, este circuito é substituído pela integração direta (§28.13), mantendo os mesmos estados.
