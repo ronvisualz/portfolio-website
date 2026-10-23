@@ -171,7 +171,7 @@ const NAV_ITEMS = [
     'marketing'    => ['Marketing',       '/admin/marketing.php',                  'marketing'],
     'negocios'     => ['Negócios',        '/admin/negocios.php',                   'negocios'],
     'orcamentacao' => ['Orçamentação',    '/admin/orcamentacao.php',               'orcamentacao'],
-    'criativo'     => ['Centro Criativo', '/admin/brevemente.php?t=criativo',      'criativo'],
+    'criativo'     => ['Centro Criativo', '/admin/criativo.php',                    'criativo'],
     'calendar'     => ['Tarefas',         '/admin/calendar.php',                   'tarefas'],
     'drive'        => ['Drive',           '/admin/drive.php',                      'drive'],
     'financeiro'   => ['Financeiro',      '/admin/financeiro.php',                 'financeiro'],

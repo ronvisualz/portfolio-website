@@ -54,6 +54,7 @@ const TAB_PAGES = [
     'contactos' => '/admin/contactos.php',
     'negocios'  => '/admin/negocios.php',
     'orcamentacao' => '/admin/orcamentacao.php',
+    'criativo'  => '/admin/criativo.php',
     'tarefas'   => '/admin/calendar.php',
     'drive'     => '/admin/drive.php',
     'financeiro'=> '/admin/financeiro.php',

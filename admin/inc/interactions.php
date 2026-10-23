@@ -84,6 +84,7 @@ const HISTORY_TYPES = [
     'b_close'    => ['Resultado fechado', 'won', 'green'],
     'b_reopen'   => ['Folha reaberta', 'refresh', 'sky'],
     'b_send'     => ['Proposta enviada', 'send', 'blue'],
+    'b_cc'       => ['Pré-criativo ligado', 'criativo', 'yellow'],
     // Pipeline, funis e automações (§19)
     'auto'       => ['Tarefas automáticas', 'cog', 'neutral'],
     'gate_force' => ['Passagem forçada', 'alert', 'red'],

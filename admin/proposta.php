@@ -53,7 +53,31 @@ function pp_css(): string {
          . 'button{font:600 16px Inter;border:0;border-radius:10px;padding:12px 18px;cursor:pointer}.yes{background:var(--hi);color:#111}.no{background:transparent;color:var(--fg);border:1px solid var(--line)}'
          . 'button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--hi);outline-offset:2px}'
          . 'details{margin-top:18px}summary{cursor:pointer;color:var(--mute)}.msg{border-left:4px solid var(--hi);background:var(--card);padding:12px 16px;border-radius:8px;margin:16px 0}'
-         . '.msg.ok{border-color:var(--ok)}.msg.err{border-color:var(--bad)}.pp-foot{margin-top:48px;color:var(--mute);font-size:13px}.sr{position:absolute;left:-9999px}';
+         . '.msg.ok{border-color:var(--ok)}.msg.err{border-color:var(--bad)}.pp-foot{margin-top:48px;color:var(--mute);font-size:13px}.sr{position:absolute;left:-9999px}'
+         . '.optcol{display:flex;flex-direction:column;gap:12px;min-width:0}.ccp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}'
+         . '.ccp small{display:block;font:600 11px Inter;letter-spacing:.1em;color:var(--mute)}.ccp h3{font:700 22px/1.2 Jost,sans-serif;margin:6px 0 6px}'
+         . '.cc-c{font-size:17px;font-weight:500;margin:0 0 8px}.cc-a{color:var(--mute);font-size:15px;margin:0 0 12px;white-space:pre-line}'
+         . '.cc-g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.cc-g img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;background:var(--line);display:block}'
+         . '.cc-f{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:12px;font-size:13px;color:var(--mute)}'
+         . '.cc-pal{display:inline-flex;gap:4px}.cc-pal i{display:block;width:26px;height:26px;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}';
+}
+
+/** Uma página do pré-criativo (§23.3) ao lado da opção: título, conceito, abordagem, 6 referências, paleta, técnica. */
+function pp_cc_page(array $pg, string $token): string {
+    $imgs = '';
+    foreach ($pg['refs'] as $i => $aid) {
+        $imgs .= '<img src="/admin/cc_file.php?pt=' . pp_h(rawurlencode($token)) . '&amp;a=' . (int)$aid . '&amp;s=768" alt="Referência ' . ($i + 1) . '" loading="lazy" decoding="async">';
+    }
+    $pal = '';
+    foreach ($pg['palette'] as $hex) $pal .= '<i style="background:' . pp_h($hex) . '" title="' . pp_h($hex) . '"></i>';
+    $meta = array_filter([$pg['technique'], $pg['complexity'] !== '' ? 'Complexidade ' . mb_strtolower($pg['complexity']) : '']);
+    return '<section class="ccp" aria-label="Pré-criativo"><small>PRÉ-CRIATIVO' . ($pg['front'] !== '' ? ' · ' . pp_h(mb_strtoupper($pg['front'])) : '') . '</small>'
+         . ($pg['title'] !== '' ? '<h3>' . pp_h($pg['title']) . '</h3>' : '')
+         . ($pg['concept'] !== '' ? '<p class="cc-c">' . pp_h($pg['concept']) . '</p>' : '')
+         . ($pg['approach'] !== '' ? '<p class="cc-a">' . pp_h($pg['approach']) . '</p>' : '')
+         . ($imgs !== '' ? '<div class="cc-g">' . $imgs . '</div>' : '')
+         . ($pal !== '' || $meta ? '<div class="cc-f">' . ($pal !== '' ? '<span class="cc-pal" aria-label="Paleta">' . $pal . '</span>' : '') . '<span>' . pp_h(implode(' · ', $meta)) . '</span></div>' : '')
+         . '</section>';
 }
 
 function pp_gone(): void {
@@ -102,12 +126,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ── a página ───────────────────────────────────────────────
 $c = $content;
 $opts = '';
+require_once __DIR__ . '/inc/cc_flow.php';
 foreach ($c['options'] as $i => $o) {
     $sel = $p['choice'] === $o['key'] || ($p['choice'] === '' && $i === count($c['options']) - 1);
-    $opts .= '<label class="opt"><small>' . pp_h(mb_strtoupper($o['label'])) . '</small>'
+    $cc = '';
+    foreach (cc_pages_for_opt($c['creative'] ?? [], $o['key']) as $pg) $cc .= pp_cc_page($pg, $token);
+    $opts .= '<div class="optcol"><label class="opt"><small>' . pp_h(mb_strtoupper($o['label'])) . '</small>'
            . (count($c['options']) > 1 && $state === 'ok' && $p['status'] !== 'validated' ? '<input type="radio" name="choice" value="' . $o['key'] . '"' . ($sel ? ' checked' : '') . ' aria-label="Escolher ' . pp_h($o['label']) . '">' : '')
            . '<div class="p">' . pp_eur($o['price']) . '</div><div class="v">s/ IVA · IVA (' . pp_pct((float)$c['vat_rate']) . ') ' . pp_eur($o['vat']) . ' · total ' . pp_eur($o['total']) . '</div>'
-           . ($o['scope'] !== '' ? '<div class="s">' . pp_h($o['scope']) . '</div>' : '') . '</label>';
+           . ($o['scope'] !== '' ? '<div class="s">' . pp_h($o['scope']) . '</div>' : '') . '</label>' . $cc . '</div>';
 }
 $terms = '';
 foreach (['Prazo' => $c['term'], 'Pagamento' => $c['payment'], 'Revisões incluídas' => $c['revisions'], 'Direitos de utilização' => $c['rights'], 'Outras condições' => $c['conditions']] as $k => $txt) {
