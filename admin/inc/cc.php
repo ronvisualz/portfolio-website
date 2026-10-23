@@ -752,9 +752,13 @@ function cc_jobs_run(PDO $pdo, float $seconds = 20.0): int {
     $end = microtime(true) + $seconds;
     $n = 0;
     while (microtime(true) < $end) {
-        $pdo->exec("UPDATE cc_jobs SET status = 'queued' WHERE status = 'running' AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "' AND attempts < 3");
-        $pdo->exec("UPDATE cc_jobs SET status = 'error', error = 'Interrompido três vezes.' WHERE status = 'running' AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "'");
-        $id = (int)$pdo->query("SELECT id FROM cc_jobs WHERE status = 'queued' ORDER BY CASE WHEN kind = 'import' THEN 0 ELSE 1 END, id LIMIT 1")->fetchColumn();
+        // presos há mais de 15 min (4 h para os vídeos do Review, que o ffmpeg demora a preparar): o pedido morreu
+        $stale = "status = 'running' AND ((kind NOT IN ('rv_proc','rv_wm') AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "') OR started_at < '" . date('Y-m-d H:i:s', time() - 14400) . "')";
+        $pdo->exec("UPDATE cc_jobs SET status = 'queued' WHERE $stale AND attempts < 3");
+        $pdo->exec("UPDATE cc_jobs SET status = 'error', error = 'Interrompido três vezes.' WHERE $stale");
+        // os vídeos do Review (ffmpeg) só pela linha de comandos: as páginas não podem correr programas
+        $cli = PHP_SAPI === 'cli' ? '' : " AND kind NOT IN ('rv_proc','rv_wm')";
+        $id = (int)$pdo->query("SELECT id FROM cc_jobs WHERE status = 'queued'$cli ORDER BY CASE WHEN kind = 'import' THEN 0 ELSE 1 END, id LIMIT 1")->fetchColumn();
         if (!$id) break;
         $up = $pdo->prepare("UPDATE cc_jobs SET status = 'running', started_at = ?, attempts = attempts + 1 WHERE id = ? AND status = 'queued'");
         $up->execute([cc_now(), $id]);
@@ -789,6 +793,12 @@ function cc_job_exec(PDO $pdo, array $job): void {
         case 'import':
             require_once __DIR__ . '/cc_import.php';
             cc_import_run($pdo, $job);
+            break;
+        case 'rv_proc':
+        case 'rv_wm':
+            // Review (§24): o ffmpeg corre só pela linha de comandos (cron)
+            require_once __DIR__ . '/cc_review.php';
+            cc_rv_job($pdo, $job);
             break;
         default:
             throw new RuntimeException('Trabalho desconhecido.');

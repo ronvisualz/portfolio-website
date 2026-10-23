@@ -536,6 +536,26 @@ if (cc_ready($pdo) && can('criativo')) {
         ]), $ccMain ? ['href' => '/admin/criativo.php?b=' . (int)$ccMain['id'], 'more' => 'Abrir no Centro Criativo'] : ['empty' => true]);
 }
 
+// ── Review e Portal do cliente (Centro Criativo, fase 2) ──
+require_once __DIR__ . '/inc/cc_review.php';
+if (cc_rv_ready($pdo) && can('criativo')) {
+    $rvItems = cc_rv_items_for_deal($pdo, $id);
+    $rvOpen = count(array_filter($rvItems, fn($i) => $i['status'] !== 'approved'));
+    $rvList = '';
+    foreach (array_slice($rvItems, 0, 5) as $i) {
+        $st = CC_RV_STATUS[$i['status']] ?? CC_RV_STATUS['prep'];
+        $rvList .= '<li><a href="/admin/criativo.php?rv=' . (int)$i['id'] . '">' . e($i['title']) . '</a> <span class="rv-st c-' . e($st[2]) . '">' . e($st[0]) . '</span>'
+                 . ($i['cur_num'] ? ' <span class="mono small muted">' . e(cc_rv_vlabel((int)$i['cur_num'])) . '</span>' : '') . '</li>';
+    }
+    echo deal_card('review', 'video', 'sky', 'Review', $rvItems
+        ? '<ul class="rv-mini">' . $rvList . '</ul>' . (count($rvItems) > 5 ? '<p class="dc-note">+ ' . (count($rvItems) - 5) . ' peças</p>' : '')
+        : '<p class="dc-empty">Ainda sem peças em review.</p>' . (can('criativo', PERM_EDIT) ? '<p class="dc-note"><a href="/admin/criativo.php?t=review&amp;deal=' . $id . '">Criar a primeira peça</a></p>' : ''),
+        ['count' => $rvItems ? ($rvOpen ? $rvOpen . ' por aprovar' : 'todas aprovadas') : '', 'href' => '/admin/criativo.php?t=review&deal=' . $id . '&f=all', 'more' => 'Abrir no Review', 'empty' => !$rvItems]);
+}
+if (cc_rv_ready($pdo) && (can('criativo') || can('negocios'))) {
+    echo deal_card('portal', 'link', 'sky', 'Portal do cliente', '<div class="rv-share" data-rv-share="' . $id . '"><p class="dc-empty"><span class="spin sm" aria-hidden="true"></span> A carregar…</p></div>', ['wide' => true]);
+}
+
 // ── Histórico (todas as fontes) ──
 $tl = deal_timeline_all($pdo, $deal, $money, 6);
 echo deal_card('hist', 'clock', 'ne', 'Histórico', '<div class="dtl">' . timeline_html($tl) . '</div>',
@@ -808,4 +828,6 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
 
 <?= flow_send_modal_html($pdo, $deal, $self) ?>
 <script src="<?= asset_url('deal.js') ?>" defer></script>
+<link rel="stylesheet" href="<?= asset_url('review.css') ?>">
+<script src="<?= asset_url('rv_share.js') ?>" defer></script>
 <?php render_footer();

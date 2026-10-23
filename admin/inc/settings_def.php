@@ -20,6 +20,7 @@ require_once __DIR__ . '/pipeline.php';
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/cc.php';
+require_once __DIR__ . '/cc_review.php';
 
 /** Os separadores (um por aba com campos editáveis). Nova aba com definições = novo separador aqui. */
 const SET_TABS = [
@@ -195,6 +196,21 @@ function settings_defs(): array {
                                'help' => 'Os tipos de luz. Um por linha.'],
         'cc_import'        => ['tab' => 'criativo', 'group' => 'Importação', 'label' => 'Importar do Milanote (ZIP, PDF, Markdown) ou imagens', 'type' => 'link', 'href' => '/admin/criativo.php?t=biblioteca', 'show' => 'Biblioteca › Importar',
                                'help' => 'Cria um quadro novo com os cartões em grelha; as imagens entram na biblioteca com a análise da IA.'],
+
+        // ── Review e Portal do cliente (§24) ──
+        'cc_portal_days'   => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Validade do link do portal', 'type' => 'int', 'min' => 1, 'max' => 365, 'unit' => 'dias depois da entrega', 'default' => 60,
+                               'help' => 'Um link por negócio. Deixa de funcionar este número de dias depois da data de entrega (ou de hoje, se a entrega já passou). Pode ser renovado ou revogado na ficha do negócio.'],
+        'cc_portal_wm'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Marca de água nas peças novas', 'type' => 'select', 'opts' => ['1' => 'Sim, com o nome do cliente', '0' => 'Não'], 'default' => '1',
+                               'help' => 'O que o portal mostra leva o nome do cliente e o ID do negócio. Muda-se peça a peça no Review.'],
+        'cc_portal_dl'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Download nas peças novas', 'type' => 'select', 'opts' => ['0' => 'Não', '1' => 'Sim, o original'], 'default' => '0',
+                               'help' => 'Se o cliente pode descarregar o original pelo portal. Muda-se peça a peça no Review.'],
+        'cc_portal_lang'   => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Idioma do portal', 'type' => 'select', 'opts' => ['pt' => 'Português', 'en' => 'English'], 'default' => 'pt',
+                               'help' => 'O idioma dos links novos. Muda-se negócio a negócio na ficha; o cliente também pode trocar no portal.'],
+        'cc_rv_rounds'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Rondas incluídas por etapa', 'type' => 'link', 'href' => '/admin/funis.php', 'show' => 'Funis › etapas',
+                               'help' => 'Cada envio consolidado do cliente conta uma ronda na etapa do negócio. As rondas incluídas são as de cada etapa do funil; acima disso, o comercial é avisado e nasce a tarefa «Pedido de alteração».'],
+        'cc_rv_map'        => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Etapa de review → tarefa de aprovação', 'type' => 'list',
+                               'default' => implode("\n", array_map(fn($k, $v) => $k . ' = ' . $v, array_keys(CC_RV_TASK_MAP), CC_RV_TASK_MAP)),
+                               'help' => 'Ao aprovar uma peça, fica feita a tarefa de aprovação do Pipeline cujo título tem um destes textos. Uma etapa por linha: «etapa = texto | texto». Etapas: styleframes, animatic, offline, lock, finais, lote.'],
 
         // ── Financeiro ──
         'fin_todo'         => ['tab' => 'financeiro', 'group' => 'Financeiro', 'label' => 'Definições do Financeiro', 'type' => 'info', 'show' => 'A definir quando a aba for desenhada.',

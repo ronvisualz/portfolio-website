@@ -1511,7 +1511,7 @@ Ficheiros novos: `inc/migrate_creative.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc
 
 ---
 
-### 10.15 Drive organizada: todos os ficheiros no sítio certo — §24 (23 out 2026)
+### 10.15 Drive organizada: todos os ficheiros no sítio certo — §25 (23 out 2026)
 
 Base de dados **v25** (`inc/migrate_files.php`, idempotente): `files` (o registo de ficheiros:
 chave atual no Drive, ETag, tamanho, origem, secção, negócio/lead, peça de marketing, referência do
@@ -1582,6 +1582,73 @@ Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_
 `inc/marketing.php`, `marketing_peca.php`, `contactos.php`, `deal_flow.php`, `negocio.php`,
 `inc/deal_file.php`, `inc/lead_view.php`, `inc/interactions.php`, `inc/cron_run.php`,
 `assets/app.js`, `assets/app.css`, `assets/cc.js`.
+
+### 10.16 Centro Criativo — fase 2: Review e Portal do cliente — §24 (23 out 2026)
+
+Base de dados **v27** (`inc/migrate_review.php`, idempotente): `cc_rv_items` (peças de review por
+negócio e frente, etapa de aprovação, estado, marca de água, download, aprovação com nome, e-mail, IP e
+data), `cc_rv_versions` (v001, v002… — nunca se apagam; original, proxy, poster, tira, páginas de PDF,
+marca de água, fps, frames, duração, timecode de início), `cc_rv_rounds` (uma ronda por envio ao cliente,
+fechada pelo envio consolidado), `cc_share_log` (acessos e ações no portal) e `cc_portal_hits` (limite
+por IP); `cc_comments` ganha peça, frame/intervalo, pino (x, y, página), visibilidade, ronda, rascunho do
+cliente e anexos; `cc_share` ganha o link cifrado (AES-256-GCM, para «Copiar link»), separadores e idioma.
+Modelo em `inc/cc_review.php`, pedidos da equipa em `rv_api.php`, leitor em `assets/review.js`.
+
+- **Versões e vídeo no servidor:** o original vai do browser direto para o Drive, em
+  `<pasta do negócio>/Review/<peça>/v00N_<nome>` (registado na secção Review). O cron (`cron_run.php cc`,
+  pela linha de comandos) lê-o com o `ffprobe` (fps, frames, duração, dimensões, timecode de início, drop
+  frame em 29,97/59,94) e faz com o `ffmpeg` o proxy H.264 (CFR, GOP de meio segundo para procurar ao
+  frame, até 1920 px, AAC, faststart), o poster e a tira de miniaturas; ao enviar ao cliente, o proxy com
+  a marca de água (nome do cliente e ID). O cron diz às páginas se há ffmpeg; sem ele, o browser faz o
+  poster e a tira e o original serve de proxy (fps e timecode por confirmar). Imagens: proxy e poster
+  no pedido (GD). PDF: as páginas são desenhadas no browser (pdf.js, `assets/vendor/pdfjs/`, Apache 2.0)
+  e guardadas em imagem.
+- **Leitor (sala da peça, `criativo.php?rv=<peça>`):** ← → um frame, Shift ±1 s, J/K/L (J anda para trás
+  frame a frame), velocidade, I/O e repetir o intervalo, timecode SMPTE (ou frames, num clique), tira de
+  miniaturas com os marcadores dos comentários (cliente amarelo, interno azul, para o cliente salmão,
+  resolvidos a cinzento), ecrã inteiro. Desenho vetorial por cima do frame (mão livre, seta, retângulo,
+  círculo, texto, 7 cores, anular o último traço); pinos numerados em imagens e páginas de PDF.
+  Comentários em fio, presos ao frame, ao intervalo, ao pino ou gerais, com @menções (avisam a pessoa),
+  anexos (vão para `Review/<peça>/Anexos/`), Resolver/Reabrir, Apagar com «Anular», «Internos» ou «Para o
+  cliente» (muda-se depois). Comparar duas versões lado a lado, em cortina ou sobreposição (opacidade
+  ou diferença), sempre no mesmo frame. Exportar os comentários de uma versão em PDF, CSV, EDL (marcadores
+  DaVinci Resolve), XML FCP7 (Premiere Pro, DaVinci) e lista de marcadores do Avid — todos ou só os do
+  cliente. Histórico da peça com ícones (versões, envios, rondas, aprovação, visitas do cliente).
+  Testado ao frame na bancada (frame 37 = 01:00:01:12 a 25 fps; 29,97 DF: 00:59:59;00 + 30 = 01:00:00;00).
+- **Rondas e aprovação:** «Enviar ao cliente» põe a versão no portal e abre uma ronda; o cliente escreve
+  em rascunho e «Enviar comentários» manda tudo de uma vez — uma ronda, que conta nas rondas da etapa do
+  negócio (ou da frente). A sala mostra «Ronda X de Y incluídas»; na última o aviso, acima do incluído o
+  Comercial é avisado e nasce a tarefa «Pedido de alteração · <peça>» (uma por peça). «Aprovar» (equipa,
+  ou cliente com o nome escrito e confirmação; fica a data, o IP e a versão) conclui a tarefa de
+  aprovação do Pipeline pelo mapa de Definições › Centro Criativo e guarda a versão na Biblioteca como
+  referência da casa (tags «aprovado» e a etapa). «Pedir alterações» devolve a peça à equipa.
+- **Portal do cliente (`portal.php?t=…`):** um link por negócio, token longo e aleatório (só o hash e
+  uma cópia cifrada na base), revogável, renovável e com validade (por defeito 60 dias depois da entrega).
+  Sem conta e sem sessão: nome e e-mail na primeira ação (guardados no browser), comentários como
+  «Nome», vários aprovadores. Separadores só os partilhados: Proposta (opções, condições e o pré-criativo),
+  Quadros (só leitura: tratamento e rotas dos quadros escolhidos) e Review (as peças enviadas, só versões
+  enviadas, só comentários «Para o cliente»). Nunca custos, margens, notas, tarefas, e-mails da equipa nem
+  comentários internos (verificado no JSON). GET nunca altera nada (até o registo de acesso vai por POST);
+  as ações levam um formulário assinado pelo servidor e a mesma origem. Ficheiros por URLs assinados de
+  curta duração (5 min imagens, 15 min vídeo), sempre revalidados; marca de água por peça (vídeo gravado
+  pelo ffmpeg, imagens e páginas pelo GD, e por cima no browser enquanto o vídeo não está pronto);
+  download do original por peça; noindex, limite de pedidos por IP, registo de acessos. PT/EN (por link,
+  e o cliente pode trocar), claro/escuro, telemóvel.
+- **Ficha do negócio:** cartões «Review» (peças e estado) e «Portal do cliente» (criar, copiar, abrir,
+  renovar, revogar, validade, idioma, separadores, quadros partilhados, acessos e ações com ícones,
+  nome, e-mail e IP). Notificações ao comercial e ao responsável de execução em cada envio de comentários
+  e aprovação do cliente; @menções do Review no sino.
+- **Definições › Centro Criativo › Review e Portal do cliente:** validade do link, marca de água e
+  download por defeito nas peças novas, idioma do portal, rondas incluídas (nos funis) e o mapa etapa de
+  review → tarefa de aprovação.
+- **Na publicação:** instalar o ffmpeg/ffprobe estático em `~/bin/` do alojamento (o cron encontra-o;
+  sem ele, o Review funciona com o original e o que o browser prepara).
+
+Ficheiros novos: `inc/migrate_review.php`, `inc/cc_review.php`, `rv_api.php`, `portal.php`,
+`assets/review.js`, `assets/review.css`, `assets/portal.js`, `assets/portal.css`, `assets/rv_share.js`,
+`assets/vendor/pdfjs/` (pdf.js 4.10.38). Alterados: `inc/migrate.php`, `inc/cc.php` (fila só pelo cron
+para o vídeo), `inc/cron_run.php`, `inc/files.php`, `inc/interactions.php`, `inc/alerts.php`,
+`inc/settings_def.php`, `criativo.php`, `negocio.php`.
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
@@ -2796,7 +2863,66 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
 
+<<<<<<< HEAD
 ## 24. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
+=======
+---
+
+## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
+
+Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
+
+### 24.1 Versões
+- Uma **peça de review** pertence a um negócio (e a uma frente, §22) e a uma etapa de
+  aprovação (styleframes, animatic, offline, picture lock, finais, lote…).
+- Carregar ficheiro (vídeo, imagem, PDF) → versão **v001, v002…**; nunca se apaga uma versão.
+- Vídeo: gerar no servidor um **proxy H.264** para o browser, **poster**, **tira de miniaturas**
+  e ler o **fps e o timecode de início**; o original fica no Drive (`<ID>_<NOME>/Review/`).
+- Estados da peça: Em preparação · Enviada ao cliente · Com comentários · Alterações pedidas ·
+  **Aprovada**.
+
+### 24.2 Leitor e comentários no frame exato
+- Leitor com **precisão ao frame**: avançar/recuar 1 frame (← →), J/K/L, velocidade, repetir
+  um intervalo, timecode SMPTE, tira de miniaturas.
+- Comentário preso a um **frame** (ou a um **intervalo**), com **desenho por cima** (seta,
+  retângulo, círculo, mão livre, texto) guardado como vetor; marcadores coloridos na barra do tempo.
+- Imagens e PDF: **pinos** no ponto clicado, com desenho.
+- Respostas em fio, @menções, anexos, **Resolver/Reabrir**.
+- Comentários **Internos** (só a equipa) ou **Para o cliente**; os internos nunca chegam ao portal.
+- Comparar versões: **lado a lado**, **cortina** (wipe) e **sobreposição**, sincronizadas.
+- Exportar comentários: PDF/CSV e **marcadores para Premiere/DaVinci/Avid** (EDL/XML).
+
+### 24.3 Rondas e aprovação
+- **Enviar ao cliente** abre uma ronda; o cliente envia os comentários **de uma vez** (botão
+  «Enviar comentários»): um envio consolidado = **uma ronda** (§19.6 D).
+- Contador «Ronda X de Y incluídas» por etapa (Y vem da proposta/Definições). Ao **passar do
+  incluído**: aviso ao Comercial e sugestão de **pedido de alteração** (§19.6 D).
+- **Aprovar** (equipa ou cliente pelo portal) → peça Aprovada, **conclui a tarefa de aprovação
+  correspondente no Pipeline** (mapa etapa de review ↔ tarefa em Definições › Centro Criativo)
+  e os frames/versão aprovados entram na Biblioteca como referência da casa (§23.1).
+- Aprovação do cliente pede **nome escrito** e confirmação; regista data, IP e versão.
+- Notificações ao responsável de execução e ao comercial em cada ação do cliente.
+
+### 24.4 Portal do cliente
+- **Um link por negócio**, longo e aleatório, **revogável** e com **validade** (por defeito até 60
+  dias após a entrega; Definições). Sem conta. Abrir (GET) **nunca altera nada**; ações por POST.
+- Primeira ação: o cliente indica **nome e email** (guardado nesse browser); os comentários
+  aparecem como «Cliente · Nome». Vários aprovadores do cliente podem usar o mesmo link.
+- Separadores visíveis só se a topper. partilhar: **Proposta** (com pré-criativo) · **Quadros**
+  partilhados (só leitura: tratamento, rotas) · **Review** (peças enviadas).
+- **Nunca** mostra custos, margens, notas, tarefas ou comentários internos.
+- Imagem topper., modo claro/escuro, funciona no telemóvel, **PT/EN** (clientes internacionais).
+- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** com o
+  nome do cliente (opção por peça); **download** só se ativado por peça.
+- Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
+- Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
+
+### 24.5 Definições › Centro Criativo
+Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
+etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
+
+## 25. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
+>>>>>>> origin/main
 
 Tudo o que entra na plataforma ou é gerado por ela fica guardado **uma vez** no Drive, organizado
 por negócio quando pertence a um negócio, por origem e por tipo de documento; o mais importante é
@@ -2818,6 +2944,7 @@ que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depress
   sítio à mão, e a regra da faturação.
 - **Fase 2 (decidido 23 out 2026):** «Reorganizar o Drive» para o que já existia, com pré-visualização
   do que vai mudar antes de executar e relatório no fim.
+<<<<<<< HEAD
 
 ---
 
@@ -2893,11 +3020,23 @@ Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25)
 - Comentários, reações e @menções em tempo real; notificação a quem é mencionado.
 - Permissões continuam no servidor: só entra quem tem acesso ao negócio (§9.3); o portal do
   cliente (§25.4) mostra quadros partilhados **só de leitura**, sem cursores da equipa.
-- **Servidor de tempo real:** o alojamento atual (PHP) não mantém ligações permanentes
-  (WebSocket). **Decisão técnica a tomar:** serviço gerido de colaboração (ex.: Liveblocks,
-  Y-Sweet/Jamsocket, PartyKit) **ou** pequeno servidor Node próprio (Hostinger Node.js) com
-  y-websocket e persistência na base. Autenticação por token curto emitido pelo PHP.
-  Recomendação: serviço gerido (menos manutenção, escala sozinho); confirmar custo.
+- **Servidor de tempo real (decidido):** **PartyServer / y-partyserver** (Yjs) em **Cloudflare
+  Workers + Durable Objects com SQLite**, na **conta Cloudflare da topper.** (a mesma do R2).
+  Um Durable Object por quadro, com a **API de hibernação** (quadros vazios não gastam).
+  Autenticação por token curto assinado pelo PHP (segredo partilhado gerado pelo agente e
+  guardado no servidor PHP e como secret do Worker). Endereço `rt.topperhub.xyz` se o domínio
+  estiver na Cloudflare; senão `*.workers.dev`.
+- **Plano: gratuito** (100 000 pedidos/dia — 20 mensagens WebSocket contam 1 —, 13 000 GB-s/dia,
+  5 GB; repõe às 00:00 UTC). Em **Definições › Integrações**: indicador do uso do dia e **aviso aos
+  80%** aos admins. Se o limite for atingido, o tempo real pausa até à reposição: o quadro
+  continua a funcionar localmente (y-indexeddb) e sincroniza depois, com aviso discreto. Passar
+  ao plano pago (Workers Paid, 5 $/mês) é decisão manual dos admins.
+- **Publicação:** com um API token Cloudflare («Edit Cloudflare Workers») e o Account ID nas
+  **variáveis secretas do ambiente** (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) — nunca no
+  código nem no chat; em alternativa, o agente entrega um único comando `wrangler deploy` para o
+  utilizador correr.
+- Reconexão automática do cliente; persistência local no browser; nada de imagens pelo WebSocket
+  (vão para o R2).
 
 ### 26.2 Extensão do browser «Guardar na topper.»
 - Chrome/Edge (e Brave/Arc) primeiro; Firefox a seguir; Safari mais tarde.
@@ -2923,3 +3062,5 @@ Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25)
 Centro Criativo: frequência das versões automáticas do quadro, número de versões guardadas,
 destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
 gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
+=======
+>>>>>>> origin/main

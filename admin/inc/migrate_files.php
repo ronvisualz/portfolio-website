@@ -56,7 +56,7 @@ function migrate_files(PDO $pdo): void {
         INDEX idx_fmoves_status (status, id),
         INDEX idx_fmoves_deal (deal_id)");
 
-    // passo 26 · «Reorganizar o Drive» (§24, fase 2): o que foi escolhido na pré-visualização, um por linha
+    // passo 26 · «Reorganizar o Drive» (§25, fase 2): o que foi escolhido na pré-visualização, um por linha
     db_create($pdo, 'file_jobs', "
         id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         run_id      INT UNSIGNED NOT NULL,

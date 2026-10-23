@@ -8,7 +8,7 @@
  *
  *   Leads/<NOME>_<AAAA-MM>/                  uma lead ainda não convertida
  *   Projetos/<ID>_<NOME>/                     negócios em curso e concluídos
- *     Propostas/ Faturação/ Criativo/ Marketing/ Produção/ Entregas/ Lead/
+ *     Propostas/ Faturação/ Criativo/ Marketing/ Produção/ Entregas/ Review/ Lead/
  *   Marketing/<AAAA-MM>/<peça>/               peças sem negócio
  *   Biblioteca criativa/<quadro>/             referências do Centro Criativo sem negócio
  *   Empresa/Importações/<AAAA-MM>/            os ficheiros importados (CSV, ZIP…)
@@ -47,6 +47,7 @@ const FILES_SECTIONS = [
     'marketing' => ['Marketing', 'Marketing'],
     'producao'  => ['Produção', 'Produção'],
     'entregas'  => ['Entregas', 'Entregas'],
+    'review'    => ['Review', 'Review'],
     'lead'      => ['Lead', 'Da lead'],
     ''          => ['', 'Outros'],
 ];
@@ -62,6 +63,7 @@ const FILES_ORIGINS = [
     'attach'    => 'Anexado',
     'marketing' => 'Marketing',
     'import'    => 'Importação',
+    'review'    => 'Versão de review',
     'drive'     => 'Posto no Drive',
 ];
 

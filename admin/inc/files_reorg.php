@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — «Reorganizar o Drive» (§24, fase 2)
+ * topper. admin — «Reorganizar o Drive» (§25, fase 2)
  *
  * O que já existia antes do registo de ficheiros passa para a estrutura nova, sem apagar
  * nada: só muda de sítio (ou passa a ficar registado). Primeiro o plano (pré-visualização,

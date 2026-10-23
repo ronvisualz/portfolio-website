@@ -99,6 +99,9 @@ const HISTORY_TYPES = [
     // Ficheiros (§10.15)
     'file'       => ['Ficheiro anexado', 'drive', 'sky'],
     'folder'     => ['Pasta no Drive', 'drive', 'neutral'],
+    // Review e Portal do cliente (§24)
+    'review'     => ['Review', 'criativo', 'yellow'],
+    'portal'     => ['Portal do cliente', 'link', 'sky'],
     // Marketing (§16)
     'm_create'   => ['Ideia criada', 'bulb', 'neutral'],
     'm_edit'     => ['Dados alterados', 'pencil', 'neutral'],

@@ -55,6 +55,14 @@ try {
                 $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
             }
         }
+        // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)
+        require_once __DIR__ . '/cc_review.php';
+        if (cc_rv_ready($pdo)) {
+            $ff = cc_rv_bin('ffmpeg') && cc_rv_bin('ffprobe') && function_exists('proc_open') ? (string)cc_rv_bin('ffmpeg') : '';
+            require_once __DIR__ . '/ai.php';
+            ai_setting_set($pdo, 'cc_ffmpeg', $ff);
+            $out .= 'Review: ' . ($ff !== '' ? 'ffmpeg em ' . $ff : 'sem ffmpeg (vídeos preparados no browser)') . "\n";
+        }
         $left = max(5.0, $sec - (microtime(true) - $t0));
         $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
     } elseif ($job === 'relations') {
