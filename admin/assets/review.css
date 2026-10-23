@@ -247,3 +247,11 @@
 .rv-pop .check, .rv-filt .check { display: flex; gap: 6px; align-items: center; }
 .rv-keys { margin: 0; }
 .rv-back { margin-bottom: 4px; align-items: center; }
+
+/* cartões da ficha do negócio */
+.rv-mini { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rv-mini li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13.5px; }
+.rv-sh-h { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); margin: 14px 0 4px; }
+.rv-share .row .check { display: inline-flex; gap: 5px; align-items: center; font-weight: 500; color: var(--fg); }
+.rv-share .row input[type=date], .rv-share .row select { width: auto; }
+@media (max-width: 640px), (pointer: coarse) { .rv-keys { display: none; } }

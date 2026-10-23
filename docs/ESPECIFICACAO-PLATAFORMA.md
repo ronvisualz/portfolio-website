@@ -1583,6 +1583,73 @@ Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_
 `inc/deal_file.php`, `inc/lead_view.php`, `inc/interactions.php`, `inc/cron_run.php`,
 `assets/app.js`, `assets/app.css`, `assets/cc.js`.
 
+### 10.16 Centro Criativo — fase 2: Review e Portal do cliente — §24 (23 out 2026)
+
+Base de dados **v27** (`inc/migrate_review.php`, idempotente): `cc_rv_items` (peças de review por
+negócio e frente, etapa de aprovação, estado, marca de água, download, aprovação com nome, e-mail, IP e
+data), `cc_rv_versions` (v001, v002… — nunca se apagam; original, proxy, poster, tira, páginas de PDF,
+marca de água, fps, frames, duração, timecode de início), `cc_rv_rounds` (uma ronda por envio ao cliente,
+fechada pelo envio consolidado), `cc_share_log` (acessos e ações no portal) e `cc_portal_hits` (limite
+por IP); `cc_comments` ganha peça, frame/intervalo, pino (x, y, página), visibilidade, ronda, rascunho do
+cliente e anexos; `cc_share` ganha o link cifrado (AES-256-GCM, para «Copiar link»), separadores e idioma.
+Modelo em `inc/cc_review.php`, pedidos da equipa em `rv_api.php`, leitor em `assets/review.js`.
+
+- **Versões e vídeo no servidor:** o original vai do browser direto para o Drive, em
+  `<pasta do negócio>/Review/<peça>/v00N_<nome>` (registado na secção Review). O cron (`cron_run.php cc`,
+  pela linha de comandos) lê-o com o `ffprobe` (fps, frames, duração, dimensões, timecode de início, drop
+  frame em 29,97/59,94) e faz com o `ffmpeg` o proxy H.264 (CFR, GOP de meio segundo para procurar ao
+  frame, até 1920 px, AAC, faststart), o poster e a tira de miniaturas; ao enviar ao cliente, o proxy com
+  a marca de água (nome do cliente e ID). O cron diz às páginas se há ffmpeg; sem ele, o browser faz o
+  poster e a tira e o original serve de proxy (fps e timecode por confirmar). Imagens: proxy e poster
+  no pedido (GD). PDF: as páginas são desenhadas no browser (pdf.js, `assets/vendor/pdfjs/`, Apache 2.0)
+  e guardadas em imagem.
+- **Leitor (sala da peça, `criativo.php?rv=<peça>`):** ← → um frame, Shift ±1 s, J/K/L (J anda para trás
+  frame a frame), velocidade, I/O e repetir o intervalo, timecode SMPTE (ou frames, num clique), tira de
+  miniaturas com os marcadores dos comentários (cliente amarelo, interno azul, para o cliente salmão,
+  resolvidos a cinzento), ecrã inteiro. Desenho vetorial por cima do frame (mão livre, seta, retângulo,
+  círculo, texto, 7 cores, anular o último traço); pinos numerados em imagens e páginas de PDF.
+  Comentários em fio, presos ao frame, ao intervalo, ao pino ou gerais, com @menções (avisam a pessoa),
+  anexos (vão para `Review/<peça>/Anexos/`), Resolver/Reabrir, Apagar com «Anular», «Internos» ou «Para o
+  cliente» (muda-se depois). Comparar duas versões lado a lado, em cortina ou sobreposição (opacidade
+  ou diferença), sempre no mesmo frame. Exportar os comentários de uma versão em PDF, CSV, EDL (marcadores
+  DaVinci Resolve), XML FCP7 (Premiere Pro, DaVinci) e lista de marcadores do Avid — todos ou só os do
+  cliente. Histórico da peça com ícones (versões, envios, rondas, aprovação, visitas do cliente).
+  Testado ao frame na bancada (frame 37 = 01:00:01:12 a 25 fps; 29,97 DF: 00:59:59;00 + 30 = 01:00:00;00).
+- **Rondas e aprovação:** «Enviar ao cliente» põe a versão no portal e abre uma ronda; o cliente escreve
+  em rascunho e «Enviar comentários» manda tudo de uma vez — uma ronda, que conta nas rondas da etapa do
+  negócio (ou da frente). A sala mostra «Ronda X de Y incluídas»; na última o aviso, acima do incluído o
+  Comercial é avisado e nasce a tarefa «Pedido de alteração · <peça>» (uma por peça). «Aprovar» (equipa,
+  ou cliente com o nome escrito e confirmação; fica a data, o IP e a versão) conclui a tarefa de
+  aprovação do Pipeline pelo mapa de Definições › Centro Criativo e guarda a versão na Biblioteca como
+  referência da casa (tags «aprovado» e a etapa). «Pedir alterações» devolve a peça à equipa.
+- **Portal do cliente (`portal.php?t=…`):** um link por negócio, token longo e aleatório (só o hash e
+  uma cópia cifrada na base), revogável, renovável e com validade (por defeito 60 dias depois da entrega).
+  Sem conta e sem sessão: nome e e-mail na primeira ação (guardados no browser), comentários como
+  «Nome», vários aprovadores. Separadores só os partilhados: Proposta (opções, condições e o pré-criativo),
+  Quadros (só leitura: tratamento e rotas dos quadros escolhidos) e Review (as peças enviadas, só versões
+  enviadas, só comentários «Para o cliente»). Nunca custos, margens, notas, tarefas, e-mails da equipa nem
+  comentários internos (verificado no JSON). GET nunca altera nada (até o registo de acesso vai por POST);
+  as ações levam um formulário assinado pelo servidor e a mesma origem. Ficheiros por URLs assinados de
+  curta duração (5 min imagens, 15 min vídeo), sempre revalidados; marca de água por peça (vídeo gravado
+  pelo ffmpeg, imagens e páginas pelo GD, e por cima no browser enquanto o vídeo não está pronto);
+  download do original por peça; noindex, limite de pedidos por IP, registo de acessos. PT/EN (por link,
+  e o cliente pode trocar), claro/escuro, telemóvel.
+- **Ficha do negócio:** cartões «Review» (peças e estado) e «Portal do cliente» (criar, copiar, abrir,
+  renovar, revogar, validade, idioma, separadores, quadros partilhados, acessos e ações com ícones,
+  nome, e-mail e IP). Notificações ao comercial e ao responsável de execução em cada envio de comentários
+  e aprovação do cliente; @menções do Review no sino.
+- **Definições › Centro Criativo › Review e Portal do cliente:** validade do link, marca de água e
+  download por defeito nas peças novas, idioma do portal, rondas incluídas (nos funis) e o mapa etapa de
+  review → tarefa de aprovação.
+- **Na publicação:** instalar o ffmpeg/ffprobe estático em `~/bin/` do alojamento (o cron encontra-o;
+  sem ele, o Review funciona com o original e o que o browser prepara).
+
+Ficheiros novos: `inc/migrate_review.php`, `inc/cc_review.php`, `rv_api.php`, `portal.php`,
+`assets/review.js`, `assets/review.css`, `assets/portal.js`, `assets/portal.css`, `assets/rv_share.js`,
+`assets/vendor/pdfjs/` (pdf.js 4.10.38). Alterados: `inc/migrate.php`, `inc/cc.php` (fila só pelo cron
+para o vídeo), `inc/cron_run.php`, `inc/files.php`, `inc/interactions.php`, `inc/alerts.php`,
+`inc/settings_def.php`, `criativo.php`, `negocio.php`.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

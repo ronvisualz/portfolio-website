@@ -215,6 +215,34 @@ function my_alerts(PDO $pdo): array {
         }
     }
 
+    // Portal do cliente (Centro Criativo, fase 2): comentários enviados e aprovações do cliente, para o
+    // responsável comercial e o de execução do negócio (dos últimos 7 dias).
+    if (db_has_table($pdo, 'cc_share_log') && (can('criativo') || can('negocios'))) {
+        $since = date('Y-m-d H:i:s', time() - 7 * 86400);
+        $st = $pdo->prepare("SELECT l.id, l.action, l.at, l.client_name, l.detail, l.item_id, i.title, d.id AS deal_id, d.code FROM cc_share_log l
+                               JOIN deals d ON d.id = l.deal_id LEFT JOIN cc_rv_items i ON i.id = l.item_id
+                              WHERE l.action IN ('submit', 'approve') AND l.at >= ? AND (d.owner_id = ? OR d.exec_owner_id = ?) ORDER BY l.id DESC LIMIT 30");
+        $st->execute([$since, $uid, $uid]);
+        foreach ($st->fetchAll() as $l) {
+            $ap = $l['action'] === 'approve';
+            $out['deal'][] = ['key' => 'rvc:' . $l['id'], 'kind' => 'deal', 'icon' => $ap ? 'check' : 'bubble', 'sev' => 'warn', 'date' => substr((string)$l['at'], 0, 10),
+                              'title' => ($ap ? 'O cliente aprovou' : 'Comentários do cliente') . ' · ' . $l['code'] . ($l['title'] ? ' · ' . $l['title'] : ''),
+                              'sub' => trim(($l['client_name'] ?: 'Cliente') . ($l['detail'] !== '' ? ' · ' . $l['detail'] : '') . ' · no portal'),
+                              'url' => $l['item_id'] && can('criativo') ? '/admin/criativo.php?rv=' . (int)$l['item_id'] : '/admin/negocio.php?id=' . (int)$l['deal_id'] . '#c-portal'];
+        }
+        // @menções nos comentários do Review
+        if (can('criativo')) {
+            $st = $pdo->prepare("SELECT c.id, c.item_id, c.body, c.created_at, i.title, u.name FROM cc_comments c JOIN cc_rv_items i ON i.id = c.item_id LEFT JOIN users u ON u.id = c.user_id
+                                  WHERE c.item_id IS NOT NULL AND c.mentions LIKE ? AND c.deleted_at IS NULL AND c.user_id <> ? AND c.created_at >= ? ORDER BY c.id DESC LIMIT 20");
+            $st->execute(['%,' . $uid . ',%', $uid, date('Y-m-d H:i:s', time() - 14 * 86400)]);
+            foreach ($st->fetchAll() as $c) {
+                $out['team'][] = ['key' => 'rvm:' . $c['id'], 'kind' => 'mention', 'icon' => 'criativo', 'sev' => 'warn', 'date' => substr((string)$c['created_at'], 0, 10),
+                                  'title' => ($c['name'] ?: 'Alguém') . ' mencionou-o no Review «' . $c['title'] . '»', 'sub' => mb_strimwidth((string)$c['body'], 0, 90, '…'),
+                                  'url' => '/admin/criativo.php?rv=' . (int)$c['item_id']];
+            }
+        }
+    }
+
     // Por receber em atraso (quem vê o Financeiro).
     foreach (receivables($pdo) as $r) {
         if ($r['age'] <= $lim['invoice']) continue;

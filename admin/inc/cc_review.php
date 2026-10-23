@@ -695,7 +695,10 @@ function cc_rv_client_submit(PDO $pdo, array $share, array $item, array $a): str
     $over = false; $dealRound = null;
     if ($deal && $stage) {
         rounds_add($pdo, $deal, $stage, $note, 0);
-        $dealRound = (int)$pdo->lastInsertId() ?: null;
+        // (rounds_add também escreve no histórico: o último id inserido já não é o da ronda)
+        $st = $pdo->prepare('SELECT MAX(id) FROM deal_rounds WHERE deal_id = ? AND stage_id = ?');
+        $st->execute([(int)$deal['id'], (int)$stage['id']]);
+        $dealRound = (int)$st->fetchColumn() ?: null;
         $n = rounds_count($pdo, (int)$deal['id'], (int)$stage['id']);
         $over = $stage['rounds_included'] !== null && $n > (int)$stage['rounds_included'];
     } elseif ($deal) {
@@ -751,10 +754,13 @@ function cc_rv_approval_tasks(PDO $pdo, array $item): array {
 /**
  * Aprovar a versão atual (equipa ou cliente pelo portal): a peça fica Aprovada, a tarefa de aprovação
  * correspondente no Pipeline fica feita e a versão entra na Biblioteca como referência da casa.
- * $a: ['kind' => team, 'user' => id] ou ['kind' => client, 'name', 'email', 'ip'].
+ * $a: ['kind' => team, 'user' => id] ou ['kind' => client, 'name', 'email', 'ip']. $versionId: a versão (por defeito, a atual).
  */
-function cc_rv_approve(PDO $pdo, array $item, array $a): string {
-    $v = $item['current_version_id'] ? cc_rv_version($pdo, (int)$item['current_version_id']) : null;
+function cc_rv_approve(PDO $pdo, array $item, array $a, ?int $versionId = null): string {
+    // o cliente aprova a última versão enviada (a equipa pode já estar a preparar outra)
+    $vid = $versionId ?: (int)$item['current_version_id'];
+    $v = $vid ? cc_rv_version($pdo, $vid) : null;
+    if ($v && (int)$v['item_id'] !== (int)$item['id']) $v = null;
     if (!$v || $v['proc_status'] !== 'ready') throw new RuntimeException('Não há uma versão pronta para aprovar.');
     if ($item['status'] === 'approved' && (int)$item['approved_version_id'] === (int)$v['id']) throw new RuntimeException('Esta versão já está aprovada.');
     $client = $a['kind'] === 'client';
