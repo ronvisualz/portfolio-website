@@ -2575,6 +2575,8 @@ negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a �
 Criado no **Kickoff**. Se existir pré-criativo (23.3), o quadro nasce a partir dele: a opção
 escolhida pelo cliente passa a ser o sub-quadro **Conceito**; a outra fica guardada dentro do
 quadro como «Rota não escolhida». O brief vem do X-Ray.
+Negócios com várias frentes (crosselling, §22): um quadro por negócio com **um sub-quadro
+por frente**; cada frente tem o seu responsável de execução e o seu Review.
 
 ### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
 - **Nasce sozinho** quando o X-Ray é validado: cria o quadro «Pré-criativo · <negócio>» com o
