@@ -147,17 +147,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'convert') {
         if ($lead['phase'] !== 'lead') { flash('Esta lead já não está ativa.', 'err'); redirect($back); }
         require_perm('pipeline', PERM_EDIT);
+        require_once __DIR__ . '/inc/xsell.php';
         $funnel = (int)($_POST['funnel_id'] ?? 0);
+        // Crosselling (§22): um pacote escolhe o serviço principal; ou serviços adicionais à mão.
+        $pkg = xsell_package_get($pdo, (int)($_POST['package'] ?? 0));
+        if ($pkg && ($pf = xsell_package_funnels($pkg))) $funnel = $pf[0];
         $st = $pdo->prepare('SELECT COUNT(*) FROM funnels WHERE id = ? AND is_active = 1');
         $st->execute([$funnel]);
         if (!(int)$st->fetchColumn()) { flash('Escolha o funil.', 'err'); redirect(leads_url($bf + ['conv' => $id]) . '#converter'); }
         try {
             $code = lead_convert($pdo, $lead, $funnel, (int)($_POST['contact_id'] ?? 0));
+            $deal = deal_get($pdo, $id);
+            $xs = '';
+            if ($pkg) $xs = ' ' . xsell_apply_package($pdo, $deal, (int)$pkg['id'], (int)$me['id']);
+            elseif ($extra = array_filter(array_map('intval', (array)($_POST['funnels'] ?? [])))) $xs = ' Crosselling: ' . xsell_set_services($pdo, $deal, $extra, (int)$me['id']);
         } catch (Throwable $e) {
             flash('Não foi possível converter: ' . ($e instanceof RuntimeException ? $e->getMessage() : 'erro na base de dados.'), 'err');
             redirect($back);
         }
-        flash("Lead convertida: $code entrou no Pipeline, na etapa X-Ray.");
+        flash("Lead convertida: $code entrou no Pipeline, na etapa X-Ray." . $xs);
         redirect(leads_url($bf));
     }
 
@@ -471,10 +479,28 @@ if ($convLead && $convLead['phase'] === 'lead' && can('pipeline', PERM_EDIT)):
     <input type="hidden" name="do" value="convert"><input type="hidden" name="id" value="<?= (int)$convLead['id'] ?>">
     <h3 id="converter">Converter «<?= e(lead_display_name($convLead)) ?>» em negócio</h3>
     <p class="muted">Recebe o ID do negócio (ex.: ID<?= date('ym') ?>-01), sai das Leads e entra no Pipeline na etapa X-Ray. O prazo da lead termina.</p>
-    <div class="field"><label for="cfunnel">Funil</label>
+    <div class="field"><label for="cfunnel">Funil <span class="muted">(serviço principal)</span></label>
       <select id="cfunnel" name="funnel_id" required><option value="">Escolher…</option>
         <?php foreach ($funnels as $f): ?><option value="<?= (int)$f['id'] ?>"><?= e($f['name']) ?></option><?php endforeach; ?>
       </select></div>
+    <?php // Crosselling (§22): serviços adicionais ou um pacote, já na conversão.
+    require_once __DIR__ . '/inc/xsell.php'; $pks = xsell_packages($pdo); ?>
+    <details class="fl-edit xs-conv"><summary><?= icon('merge') ?> Crosselling <span class="muted">(opcional)</span></summary>
+      <?php if ($pks): ?>
+        <div class="field"><label for="cpkg">Pacote</label><select id="cpkg" name="package"><option value="">Sem pacote</option>
+          <?php foreach ($pks as $p): ?><option value="<?= (int)$p['id'] ?>" data-main="<?= (int)(xsell_package_funnels($p)[0] ?? 0) ?>"><?= e($p['name']) ?></option><?php endforeach; ?></select>
+          <small class="muted">Escolhe o serviço principal, os adicionais e a sincronização do pacote.</small></div>
+      <?php endif; ?>
+      <div class="field"><span class="lbl">Serviços adicionais</span><div class="chips-check">
+        <?php foreach ($funnels as $f): ?><label class="rb"><input type="checkbox" name="funnels[]" value="<?= (int)$f['id'] ?>"><span><?= e($f['name']) ?></span></label><?php endforeach; ?>
+      </div><small class="muted">Uma só fase comercial e uma só proposta; no Kickoff cada serviço passa a uma frente.</small></div>
+    </details>
+    <script>
+      (function (f) {
+        var pk = f.querySelector('#cpkg'), fu = f.querySelector('#cfunnel');
+        if (pk) pk.addEventListener('change', function () { var m = pk.selectedOptions[0] && pk.selectedOptions[0].getAttribute('data-main'); if (m && m !== '0') fu.value = m; });
+      })(document.currentScript.closest('form'));
+    </script>
     <div class="field" style="margin-top:12px"><label>Cliente (contacto)</label>
       <?php $first = true; foreach ($opts as $c): ?>
         <label class="check"><input type="radio" name="contact_id" value="<?= (int)$c['id'] ?>" <?= $first ? 'checked' : '' ?>>

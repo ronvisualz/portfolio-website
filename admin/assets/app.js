@@ -979,7 +979,9 @@
       recount();
       var from = origin;
       var sel = $('.dmove select', card); if (sel) sel.value = col.getAttribute('data-stage');
-      api('deal_move', { id: card.getAttribute('data-id'), stage_id: col.getAttribute('data-stage') }).then(function (j) {
+      var req = { id: card.getAttribute('data-id'), stage_id: col.getAttribute('data-stage') };
+      if (card.getAttribute('data-line')) req.line = card.getAttribute('data-line');   // uma frente de crosselling
+      api('deal_move', req).then(function (j) {
         if (j.won) {
           var val = parseFloat(card.getAttribute('data-value') || '0') || 0;
           $$('[data-kpi="won-value"]').forEach(function (k) { countTo(k, (parseFloat(k.getAttribute('data-n') || '0') || 0) + val, true); });
@@ -1004,6 +1006,17 @@
     });
     board.addEventListener('submit', function (e) { if (e.target.closest('.dmove')) e.preventDefault(); });
   }
+
+  // ── crosselling (§22): o plano das frentes mostra arranques e entregas só nas timelines diferentes ──
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.matches && t.matches('[data-xs-mode]')) {
+      var box = t.form && t.form.querySelector('[data-xs-mode-box]');
+      if (box) box.setAttribute('data-xs-mode-box', t.value);
+    } else if (t.matches && t.matches('[data-xs-start]')) {
+      var fs = t.closest('.xs-line'); if (fs) fs.setAttribute('data-start', t.value);
+    }
+  });
 
   // ── menu do perfil (§20.1): avatar → Perfil · Definições · Sair ──
   var meBtn = $('[data-me]'), mePop = $('#me-pop');

@@ -29,8 +29,10 @@ function undo_push(string $kind, array $data): string {
 
 /** O estado de um negócio antes de mudar de etapa, para o poder repor. */
 function undo_deal_snapshot(array $d): array {
+    require_once __DIR__ . '/xsell.php';
+    $lines = xsell_snapshot($GLOBALS['pdo'], (int)$d['id']);   // as frentes de crosselling (§22)
     return ['id' => (int)$d['id'], 'stage_id' => $d['stage_id'], 'phase' => $d['phase'], 'done_at' => $d['done_at'],
-            'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']];
+            'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']] + ($lines ? ['lines' => $lines] : []);
 }
 
 /** Desfaz. Devolve a mensagem; RuntimeException quando já não dá. */
@@ -75,7 +77,23 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // As tarefas automáticas que a entrada na etapa criou (§19.7) saem, se ainda ninguém lhes mexeu.
             $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
             if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
+            // Crosselling (§22): as frentes voltam como estavam (antes do Kickoff ou do fecho).
+            require_once __DIR__ . '/xsell.php';
+            if (!empty($d['lines'])) xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
             return 'Etapa reposta.';
+
+        case 'line_stage':   // uma frente de crosselling mudou de etapa (§22)
+            $deal = record_get($pdo, (int)$d['id']);
+            if (!$deal || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            require_once __DIR__ . '/xsell.php';
+            $line = xsell_line_get($pdo, (int)$d['line']);
+            if (!$line || (int)$line['stage_id'] !== (int)$d['to_stage']) throw new RuntimeException($changed);
+            xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
+            deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $line['funnel_id'], 'from_stage' => $line['stage_id'], 'to_funnel' => $line['funnel_id'],
+                                                     'to_stage' => array_column((array)$d['lines'], 'stage_id', 'id')[(int)$line['id']] ?? null, 'note' => 'Anulado']);
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
+            return $line['funnel_name'] . ': etapa reposta.';
 
         case 'deal_lost':
             $deal = record_get($pdo, (int)$d['id']);

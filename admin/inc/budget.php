@@ -613,6 +613,17 @@ function budget_template_apply(PDO $pdo, array $sheet, array $tpl, ?int $by = nu
     return ['version_id' => $vid, 'skipped' => $skipped];
 }
 
+/** Num negócio sem folha de orçamento: cria-a e aplica o modelo. Devolve a mensagem. */
+function budget_apply_template_new(PDO $pdo, array $deal, int $tplId): string {
+    $st = $pdo->prepare('SELECT * FROM budget_templates WHERE id = ?');
+    $st->execute([$tplId]);
+    $tpl = $st->fetch();
+    if (!$tpl) return '';
+    $sheet = budget_sheet_ensure($pdo, $deal, current_user()['id'] ?? null);
+    $r = budget_template_apply($pdo, $sheet, $tpl, current_user()['id'] ?? null);
+    return 'Folha de orçamento criada com o modelo «' . $tpl['name'] . '»' . ($r['skipped'] ? ' (' . count($r['skipped']) . ' linha(s) de fora)' : '') . '.';
+}
+
 // ── resultado: orçado vs real (§14.5) ──────────────────────
 
 /** O dia em que o negócio passou a Kickoff (começo real da produção), se se souber. */

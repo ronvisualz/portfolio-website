@@ -86,14 +86,6 @@ function rule_insert(PDO $pdo, int $stageId, array $r, ?int $pos = null): int {
     return (int)$pdo->lastInsertId();
 }
 
-/** A etapa «igual» noutro funil: o mesmo papel/tipo fixo, ou uma de produção com o mesmo nome. */
-function stage_match(PDO $pdo, array $s, int $funnelId): ?array {
-    foreach (flow_order($pdo, $funnelId) as $o) {
-        if ($s['role'] !== '' ? $o['role'] === $s['role'] : ($s['kind'] !== 'commercial' && $s['kind'] !== 'production' ? $o['kind'] === $s['kind'] : ($o['kind'] === $s['kind'] && mb_strtolower(trim($o['name'])) === mb_strtolower(trim($s['name']))))) return $o;
-    }
-    return null;
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do  = (string)($_POST['do'] ?? '');

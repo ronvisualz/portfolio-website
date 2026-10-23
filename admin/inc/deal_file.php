@@ -75,6 +75,9 @@ function deal_steps(PDO $pdo, array $deal): array {
 function deal_step_label(PDO $pdo, array $deal): string {
     if ($deal['phase'] === 'done') return 'Concluído';
     if ($deal['phase'] !== 'production') return (string)($deal['stage_name'] ?? '—');
+    // Crosselling (§22): onde está cada frente.
+    require_once __DIR__ . '/xsell_view.php';
+    if (xsell_is_multi($pdo, $deal)) return xsell_lanes_short($pdo, $deal);
     return deal_steps($pdo, $deal)['now'];
 }
 

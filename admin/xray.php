@@ -12,6 +12,7 @@ require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/pipeline_view.php';
 require_once __DIR__ . '/inc/alerts.php';
+require_once __DIR__ . '/inc/xsell.php';
 $user = require_login();
 
 $deal = record_get($pdo, (int)($_GET['id'] ?? $_POST['id'] ?? 0));
@@ -28,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!$edit) throw new RuntimeException('Sem permissão para mudar este negócio.');
         $msg = xray_save($pdo, $deal, $_POST);
+        // Os serviços falados com o cliente e não incluídos ficam como oportunidade (§22.6).
+        if (isset($_POST['xs_opps_sent'])) xsell_xray_opps_save($pdo, $deal, (array)($_POST['xs_opp'] ?? []), trim((string)($_POST['xs_opp_note'] ?? '')));
         if (($_POST['do'] ?? '') === 'validate') {
             if (!flow_is_commercial($deal)) throw new RuntimeException('Guardado. Validar é do responsável comercial ou de um admin.');
             $msg = xray_validate($pdo, deal_get($pdo, $id), (int)$user['id']);
@@ -40,7 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $x = xray_data($deal);
-$qs = xray_questions($pdo, $deal['funnel_id'] ? (int)$deal['funnel_id'] : null);
+$qs = xray_questions_deal($pdo, $deal);
+$xsLabel = xsell_label($pdo, $deal);
+$xsIn = xsell_funnel_ids($pdo, $deal);
+$xsOpps = xsell_xray_opps($pdo, $id);
 $miss = xray_missing($pdo, $deal, $x);
 $score = xray_score($x);
 $funnel = $deal['funnel_id'] ? funnel_get($pdo, (int)$deal['funnel_id']) : null;
@@ -96,7 +102,7 @@ $dis = $edit ? '' : ' disabled';
   </section>
 
   <section class="lv-blk">
-    <h4>Perguntas do funil <span class="h-sub"><?= e($funnel['name'] ?? '—') ?> · editáveis em Definições › Funis e automações</span></h4>
+    <h4>Perguntas do funil <span class="h-sub"><?= e($xsLabel !== '' ? $xsLabel : ($funnel['name'] ?? '—')) ?> · editáveis em Definições › Funis e automações</span></h4>
     <?php if (!$qs): ?><p class="muted small">Este funil ainda não tem perguntas próprias.</p><?php endif; ?>
     <div class="grid">
       <?php foreach ($qs as $i => $q): ?>
@@ -104,6 +110,18 @@ $dis = $edit ? '' : ' disabled';
           <textarea id="xq-<?= $i ?>" name="q[<?= $i ?>]" rows="2" maxlength="2000"<?= $dis ?>><?= e((string)($x['funil'][$q] ?? '')) ?></textarea></div>
       <?php endforeach; ?>
     </div>
+  </section>
+
+  <section class="lv-blk xr-xs">
+    <h4>Oportunidades de crosselling <span class="h-sub">serviços falados com o cliente e não incluídos</span></h4>
+    <input type="hidden" name="xs_opps_sent" value="1">
+    <div class="chips-check">
+      <?php foreach (funnels_active($pdo) as $f): if (in_array((int)$f['id'], $xsIn, true)) continue; ?>
+        <label class="rb"><input type="checkbox" name="xs_opp[]" value="<?= (int)$f['id'] ?>"<?= isset($xsOpps[(int)$f['id']]) ? ' checked' : '' ?><?= $dis ?>><span><?= e($f['name']) ?></span></label>
+      <?php endforeach; ?>
+    </div>
+    <input type="text" name="xs_opp_note" maxlength="255" placeholder="Nota (opcional): o que o cliente disse" aria-label="Nota das oportunidades" value="<?= e((string)(reset($xsOpps) ?: '')) ?>"<?= $dis ?>>
+    <p class="muted small">Ficam registadas (contam nos Relatórios › Crosselling e aparecem na ficha do cliente). Para vender já, junte o serviço ao negócio em «Serviços».</p>
   </section>
 
   <div class="xr-final">

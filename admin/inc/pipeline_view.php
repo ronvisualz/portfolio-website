@@ -64,27 +64,30 @@ function flow_stages_html(PDO $pdo, array $deal, string $back): string {
     $active = in_array($deal['phase'], ['pipeline', 'production'], true);
     if (!$active || !isset($order[$i + 1])) return '';
     $next = $order[$i + 1];
-    $h = '<section class="lv-blk fl-stages"><h4>Para avançar <span class="h-sub">' . e($cur['name']) . ' → ' . e($next['name']) . '</span></h4>';
+    $h = '<section class="lv-blk fl-stages"><h4>Para avançar <span class="h-sub">' . (!empty($deal['_service']) ? e($deal['_service']) . ': ' : '') . e($cur['name']) . ' → ' . e($next['name']) . '</span></h4>';
     $items = deal_gate($pdo, $deal, $cur);
     $missing = array_filter($items, fn($x) => !$x['ok']);
     $h .= '<div class="fl-gate">';
     $canDo = flow_can_edit($pdo, $deal);
+    // Uma frente de crosselling (§22): os formulários levam a frente; as sincronizadas não concluem sozinhas.
+    $line = !empty($deal['_line']) ? '<input type="hidden" name="line" value="' . (int)$deal['_line'] . '">' : '';
+    $lineDone = $line !== '' && ($deal['sync_mode'] ?? '') === 'independent';
     $h .= $items ? '<ul class="fl-req">' . implode('', array_map(fn($x) => flow_req_html($x, $canDo ? $deal : null, $back), $items)) . '</ul>' : '<p class="muted small">Sem requisitos nesta etapa.</p>';
     if (flow_can_edit($pdo, $deal)) {
-        $go = '<input type="hidden" name="stage_id" value="' . (int)$next['id'] . '">';
+        $go = '<input type="hidden" name="stage_id" value="' . (int)$next['id'] . '">' . $line;
         if ($cur['role'] === 'feedback') {
             $h .= '<p class="muted small">Passa a Kickoff ao <b>validar</b> a aceitação do cliente (em «Proposta»). A recusa validada passa a Perdido.</p>';
         } elseif ($cur['role'] === 'proposal') {
             $h .= '<p class="muted small">Passa a «' . e($next['name']) . '» ao <b>enviar</b> a proposta ao cliente.</p>';
-        } elseif ($next['kind'] === 'done') {
-            $h .= '<p class="muted small">Conclui-se na ficha do negócio, com a checklist de fecho.</p>';
+        } elseif ($next['kind'] === 'done' && !$lineDone) {
+            $h .= '<p class="muted small">' . ($line !== '' ? 'Entrega conjunta: esta frente conclui com o negócio, na checklist de fecho.' : 'Conclui-se na ficha do negócio, com a checklist de fecho.') . '</p>';
         } else {
             $h .= flow_form('move', $deal, $back, $go . '<button class="btn sm" type="submit"' . ($missing ? ' disabled aria-disabled="true"' : '') . '>' . icon('arrow') . ' Avançar para ' . e($next['name']) . '</button>', ['class' => 'fl-go']);
         }
-        if ($missing && is_admin()) {
+        if ($missing && is_admin() && ($line === '' || $next['kind'] !== 'done' || $lineDone)) {
             $target = $cur['role'] === 'feedback' || $next['kind'] === 'done' ? $next : $next;
             $h .= '<details class="fl-force"><summary>Forçar passagem (admins)</summary>'
-                . flow_form('move', $deal, $back, '<input type="hidden" name="stage_id" value="' . (int)$target['id'] . '">'
+                . flow_form('move', $deal, $back, '<input type="hidden" name="stage_id" value="' . (int)$target['id'] . '">' . $line
                   . '<label class="sr-only" for="ff-' . (int)$deal['id'] . '">Motivo</label>'
                   . '<textarea id="ff-' . (int)$deal['id'] . '" name="force" rows="2" maxlength="200" required placeholder="Motivo (fica no histórico do negócio)"></textarea>'
                   . '<button class="btn danger sm" type="submit">' . icon('alert') . ' Forçar para ' . e($target['name']) . '</button>')
@@ -125,6 +128,16 @@ function flow_stepper_html(PDO $pdo, array $deal, array $o = []): string {
         $h .= '<li class="' . $st . ' z-' . e($s['kind']) . '"' . ($st === 'cur' || $st === 'lost' ? ' aria-current="step"' : '') . ($tip !== '' ? ' data-tip="' . e($tip) . '"' : '') . '>' . $inner . '</li>';
     }
     $funnel = (string)$pdo->query('SELECT name FROM funnels WHERE id = ' . (int)$deal['funnel_id'])->fetchColumn();
+    // Crosselling (§22): os serviços no topo; depois do Kickoff, onde está cada frente.
+    require_once __DIR__ . '/xsell.php';
+    $xs = empty($deal['_line']) ? xsell_label($pdo, $deal) : '';
+    if ($xs !== '') {
+        $funnel = $xs;
+        if (in_array($deal['phase'], ['production', 'done'], true)) {
+            require_once __DIR__ . '/xsell_view.php';
+            return '<div class="fl-steps"><span class="fl-fn">Crosselling · ' . e(XSELL_SYNC[$deal['sync_mode']] ?? '') . '</span><p class="xs-sum small">' . e(xsell_lanes_short($pdo, $deal)) . '</p></div>';
+        }
+    }
     return '<div class="fl-steps"><span class="fl-fn">' . e($funnel) . ' · etapa ' . ($i + 1) . ' de ' . count($order) . '</span>'
          . '<ol class="fl-step" aria-label="Etapas do funil ' . e($funnel) . '">' . $h . '</ol></div>';
 }
@@ -303,7 +316,7 @@ function flow_rounds_html(PDO $pdo, array $deal, string $back): string {
        . '<p class="fl-rc' . ($n > $inc ? ' over' : '') . '"><b class="mono">' . $n . '</b> de <b class="mono">' . $inc . '</b> incluídas'
        . ($n > $inc ? ' · <span>acima do incluído: pedido de alteração orçamentado</span>' : '') . '</p>';
     if (flow_can_edit($pdo, $deal)) {
-        $h .= flow_form('round', $deal, $back, '<input type="text" name="note" maxlength="200" placeholder="O que pediu o cliente (opcional)" aria-label="Nota da ronda">'
+        $h .= flow_form('round', $deal, $back, (!empty($deal['_line']) ? '<input type="hidden" name="line" value="' . (int)$deal['_line'] . '">' : '') . '<input type="text" name="note" maxlength="200" placeholder="O que pediu o cliente (opcional)" aria-label="Nota da ronda">'
             . '<button class="btn ghost sm" type="submit">' . icon('plus') . ' Registar ronda</button>', ['class' => 'fl-inline']);
     }
     return $h . '<p class="muted small">Uma ronda = um conjunto único e consolidado de comentários do cliente sobre uma versão.</p></section>';
@@ -441,8 +454,11 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     $left = '<div class="lv-l">' . $acts . '<div class="lv-read"><div class="kv">' . $kv . '</div>' . $peopleForm
           . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '') . '</div></div>';
-    $right = '<div class="lv-r">' . flow_stages_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back)
-           . flow_billing_html($pdo, $d, $back) . flow_rounds_html($pdo, $d, $back) . flow_focus_html($pdo, $d, $back)
+    // Crosselling (§22): «Serviços» e, a partir do Kickoff, as frentes no lugar das etapas do negócio.
+    require_once __DIR__ . '/xsell_view.php';
+    $lanes = xsell_is_multi($pdo, $d) && in_array($d['phase'], ['production', 'done'], true);
+    $right = '<div class="lv-r">' . ($lanes ? '' : flow_stages_html($pdo, $d, $back)) . xsell_services_html($pdo, $d, $back) . flow_new_action_html($pdo, $d, $back) . flow_proposal_html($pdo, $d, $back)
+           . flow_billing_html($pdo, $d, $back) . ($lanes ? '' : flow_rounds_html($pdo, $d, $back)) . flow_focus_html($pdo, $d, $back)
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, $back, '', ['note']) . '</section></div>';
     return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back) . flow_send_modal_html($pdo, $d, $back);
 }

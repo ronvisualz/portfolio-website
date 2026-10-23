@@ -80,6 +80,10 @@ function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): str
     if (!$to || (int)$to['funnel_id'] !== (int)$deal['funnel_id']) throw new RuntimeException('Etapa inválida.');
     if (!in_array($deal['phase'], ['pipeline', 'production', 'done'], true)) throw new RuntimeException('Este negócio não está ativo.');
     if ((int)$deal['stage_id'] === $stageId) return 'Sem alterações.';
+    require_once __DIR__ . '/xsell.php';
+    if (xsell_is_multi($pdo, $deal) && $deal['phase'] === 'production' && $to['kind'] === 'production') {
+        throw new RuntimeException('Neste negócio de crosselling a produção anda por frente (cada serviço tem a sua etapa).');
+    }
     // Os gates (§19.1): para a frente só com os requisitos cumpridos; forçar só admins, com motivo.
     $forced = flow_gate_check($pdo, $deal, $to, $force);
 
@@ -106,6 +110,8 @@ function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): str
     }
     // As automações da etapa nova (§19.7): as tarefas ficam ligadas ao negócio e à etapa.
     flow_on_enter($pdo, (int)$deal['id'], $stageId);
+    // Um negócio que nasceu de uma oportunidade de crosselling (§22) ganhou-se no Kickoff.
+    if ($phase === 'production' && $deal['phase'] === 'pipeline') xsell_opp_result($pdo, (int)$deal['id'], 'won');
     return match ($phase) {
         'production' => $to['kind'] === 'kickoff' && $deal['phase'] === 'pipeline'
             ? 'Negócio fechado! ' . $deal['code'] . ' passou para a aba Negócios.' : 'Etapa atualizada.',
@@ -122,6 +128,8 @@ function deal_mark_lost(PDO $pdo, array $deal, string $reason): void {
     $pdo->prepare('UPDATE deals SET phase = \'lost\', lost_reason = ?, lost_stage_id = stage_id, lost_at = ' . now_sql($pdo) . ' WHERE id = ?')
         ->execute([$reason, $deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'lost', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'], 'note' => $reason]);
+    require_once __DIR__ . '/xsell.php';
+    xsell_opp_result($pdo, (int)$deal['id'], 'lost');
 }
 
 /** Reabre um negócio perdido na etapa onde se perdeu (ou X-Ray, se essa etapa já não existir). */
@@ -157,6 +165,12 @@ function deal_change_funnel(PDO $pdo, array $deal, int $funnelId, int $stageId =
     $to = stage_get($pdo, $stageId);
     $phase = $deal['phase'] === 'lost' ? 'lost' : phase_for_kind($to['kind']);
     $pdo->prepare('UPDATE deals SET funnel_id = ?, stage_id = ?, phase = ? WHERE id = ?')->execute([$funnelId, $stageId, $phase, $deal['id']]);
+    // Crosselling (§22): o serviço principal acompanha o funil (se era um adicional, troca de lugar).
+    if (db_has_table($pdo, 'deal_lines')) {
+        $pdo->prepare('DELETE FROM deal_lines WHERE deal_id = ? AND funnel_id = ? AND is_main = 0')->execute([$deal['id'], $funnelId]);
+        $pdo->prepare('UPDATE deal_lines SET funnel_id = ? WHERE deal_id = ? AND is_main = 1')->execute([$funnelId, $deal['id']]);
+        $GLOBALS['XSELL_FRESH'] = true;
+    }
     deal_log($pdo, (int)$deal['id'], 'funnel', [
         'from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
         'to_funnel'   => $funnelId,          'to_stage'   => $stageId,

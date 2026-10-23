@@ -138,6 +138,14 @@ function flow_index(array $order, int $stageId): ?int {
     return null;
 }
 
+/** A etapa «igual» noutro funil: o mesmo papel/tipo fixo, ou uma de produção com o mesmo nome. */
+function stage_match(PDO $pdo, array $s, int $funnelId): ?array {
+    foreach (flow_order($pdo, $funnelId) as $o) {
+        if ($s['role'] !== '' ? $o['role'] === $s['role'] : ($s['kind'] !== 'commercial' && $s['kind'] !== 'production' ? $o['kind'] === $s['kind'] : ($o['kind'] === $s['kind'] && mb_strtolower(trim($o['name'])) === mb_strtolower(trim($s['name']))))) return $o;
+    }
+    return null;
+}
+
 /** A etapa do funil com um papel (proposal, feedback) ou de um tipo fixo (xray, kickoff, done). */
 function flow_stage_with(PDO $pdo, int $funnelId, string $roleOrKind): ?array {
     foreach (flow_order($pdo, $funnelId) as $s) {
@@ -279,6 +287,7 @@ function flow_task_from_rule(PDO $pdo, array $r, array $deal, ?array $stage, str
                    $r['checklist'] ? task_checklist_parse((string)$r['checklist']) : null, $parts, (int)$r['id'],
                    $stage ? (int)$stage['id'] : null, (int)$r['is_gate'], (string)$r['doc_kind']]);
     $id = (int)$pdo->lastInsertId();
+    if (!empty($deal['_line'])) $pdo->prepare('UPDATE tasks SET line_id = ? WHERE id = ?')->execute([(int)$deal['_line'], $id]);   // a frente (§22)
     flow_created([$id]);
     return $id;
 }
@@ -295,6 +304,16 @@ function flow_on_enter(PDO $pdo, int $dealId, int $stageId): int {
         if (flow_task_from_rule($pdo, $r, $deal, $stage, today_lisbon(), current_user()['id'] ?? null)) $n++;
     }
     if ($n) deal_log($pdo, $dealId, 'auto', ['note' => $n === 1 ? '1 tarefa automática criada (' . $stage['name'] . ')' : $n . ' tarefas automáticas criadas (' . $stage['name'] . ')']);
+    // Crosselling (§22): as etapas comerciais juntam as automações dos serviços adicionais; no
+    // Kickoff abrem-se as frentes; no fecho as frentes sincronizadas concluem com o negócio.
+    require_once __DIR__ . '/xsell.php';
+    if (xsell_is_multi($pdo, $deal)) {
+        if (in_array($stage['kind'], ['xray', 'commercial'], true)) $n += xsell_shared_rules($pdo, $deal, $stageId);
+        if ($stage['kind'] === 'kickoff') xsell_kickoff($pdo, $deal);
+        if ($stage['kind'] === 'done') xsell_close($pdo, $deal);
+    } elseif ($stage['kind'] === 'done') {
+        xsell_after_delivery($pdo, $deal, [(int)$deal['funnel_id']]);
+    }
     // Depois da entrega o cliente entra nas Relações com o comercial como dono (§19.10).
     if ($stage['kind'] === 'done') flow_relation_after_delivery($pdo, $deal);
     return $n;
@@ -321,6 +340,8 @@ function flow_on_event(PDO $pdo, int $dealId, string $event): int {
  */
 function flow_tick(PDO $pdo, ?string $today = null): int {
     $today ??= today_lisbon();
+    require_once __DIR__ . '/xsell.php';
+    xsell_tick($pdo, $today);   // as frentes que arrancam numa data
     $day = (int)substr($today, 8, 2);
     $last = (int)(new DateTimeImmutable($today))->format('t');
     $n = 0;
@@ -330,7 +351,14 @@ function flow_tick(PDO $pdo, ?string $today = null): int {
         $st = $pdo->prepare("SELECT * FROM deals WHERE stage_id = ? AND phase IN ('pipeline','production','done')");
         $st->execute([(int)$r['stage_id']]);
         $stage = stage_get($pdo, (int)$r['stage_id']);
-        foreach ($st->fetchAll() as $deal) {
+        $deals = $st->fetchAll();
+        // As frentes adicionais nesta etapa (§22), vistas como o negócio delas.
+        require_once __DIR__ . '/xsell.php';
+        foreach (xsell_lines_in_stage($pdo, (int)$r['stage_id']) as $l) {
+            if (in_array($r['doc_kind'], ['invoice', 'payment'], true)) continue;
+            if ($d = deal_get($pdo, (int)$l['deal_id'])) $deals[] = xsell_vdeal($d, $l);
+        }
+        foreach ($deals as $deal) {
             if ($r['trig'] === 'monthly') {
                 if ($day !== min($last, max(1, (int)$r['due_days']))) continue;
             } else {
@@ -349,12 +377,14 @@ function flow_tick(PDO $pdo, ?string $today = null): int {
 /** As datas do negócio mudaram: as tarefas automáticas abertas que contam a partir delas acompanham. */
 function flow_dates_changed(PDO $pdo, int $dealId): int {
     $deal = deal_get($pdo, $dealId);
-    $st = $pdo->prepare("SELECT t.id, a.* FROM tasks t JOIN stage_automations a ON a.id = t.auto_rule_id
+    $st = $pdo->prepare("SELECT t.id, t.line_id AS t_line, a.* FROM tasks t JOIN stage_automations a ON a.id = t.auto_rule_id
                           WHERE t.deal_id = ? AND t.status <> 'done' AND a.due_mode IN ('delivery','shoot','validity')");
     $st->execute([$dealId]);
     $n = 0;
+    require_once __DIR__ . '/xsell.php';
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        [$due] = flow_due($pdo, $row, $deal, today_lisbon());
+        $line = !empty($row['t_line']) ? xsell_line_get($pdo, (int)$row['t_line']) : null;   // a entrega da frente (§22)
+        [$due] = flow_due($pdo, $row, $line ? xsell_vdeal($deal, $line) : $deal, today_lisbon());
         $pdo->prepare('UPDATE tasks SET due_date = ? WHERE id = ?')->execute([$due, (int)$row['id']]);
         $n++;
     }
@@ -426,8 +456,14 @@ function flow_gate_check(PDO $pdo, array $deal, array $to, string $force = ''): 
     $i = flow_index($order, (int)$from['id']);
     $j = flow_index($order, (int)$to['id']);
     if ($i === null || $j === null || $j <= $i) return '';
-    $missing = deal_gate_missing($pdo, $deal, $from);
-    if ($j > $i + 1) $missing[] = 'avançar uma etapa de cada vez (salta ' . implode(', ', array_map(fn($s) => '«' . $s['name'] . '»', array_slice($order, $i + 1, $j - $i - 1))) . ')';
+    require_once __DIR__ . '/xsell.php';
+    if (empty($deal['_line']) && $to['kind'] === 'done' && xsell_is_multi($pdo, $deal)) {
+        // Crosselling (§22): o negócio conclui quando as frentes estão prontas (ou concluídas).
+        $missing = xsell_close_missing($pdo, $deal);
+    } else {
+        $missing = deal_gate_missing($pdo, $deal, $from);
+        if ($j > $i + 1) $missing[] = 'avançar uma etapa de cada vez (salta ' . implode(', ', array_map(fn($s) => '«' . $s['name'] . '»', array_slice($order, $i + 1, $j - $i - 1))) . ')';
+    }
     if (!$missing) return '';
     $force = trim($force);
     if ($force === '') throw new GateBlocked($missing, (string)$from['name']);
@@ -476,7 +512,8 @@ function xray_save(PDO $pdo, array $deal, array $in): string {
     }
     foreach (array_keys(XRAY_SCORES) as $k) { $v = (int)($in[$k] ?? 0); $x[$k] = in_array($v, [1, 2, 3], true) ? $v : 0; }
     $q = [];
-    foreach (xray_questions($pdo, (int)$deal['funnel_id']) as $i => $label) {
+    require_once __DIR__ . '/xsell.php';
+    foreach (xray_questions_deal($pdo, $deal) as $i => $label) {   // as de todos os serviços (§22)
         $q[$label] = mb_substr(trim((string)($in['q'][$i] ?? '')), 0, 2000);
     }
     $x['funil'] = $q;
@@ -573,11 +610,13 @@ function proposal_requirements(PDO $pdo, array $deal): array {
         foreach (budget_history($pdo, (int)$sheet['id']) as $h) if ($h['event'] === 'b_pdf' && str_starts_with((string)$h['note'], 'v' . (int)$v['num'] . ' ')) $pdf = true;
     }
     $validOk = $v && $v['valid_until'] && $v['valid_until'] >= today_lisbon();
+    require_once __DIR__ . '/xsell.php';
     return [
         ['label' => 'Opção A («Pedido») com linhas na folha de orçamento', 'ok' => (bool)$hasA, 'hint' => ''],
         ['label' => 'Prazo, condições de pagamento, revisões incluídas e direitos de uso', 'ok' => $f('term_text') && $f('payment_terms') && $f('revisions_text') && $f('rights_text'), 'hint' => 'Na folha de orçamento, em «Proposta».'],
         ['label' => 'Validade da proposta', 'ok' => (bool)$validOk, 'hint' => $v && $v['valid_until'] && !$validOk ? 'A validade já passou.' : ''],
         ['label' => 'PDF da proposta gerado (v' . ($v ? (int)$v['num'] : 1) . ')', 'ok' => $pdf, 'hint' => ''],
+        ...xsell_requirements($pdo, $deal),
     ];
 }
 

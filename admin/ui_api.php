@@ -1258,6 +1258,20 @@ try {
         // e as etapas de produção (record_reach pede então a aba Negócios); concluir faz-se na checklist de fecho.
         $to = stage_get($pdo, (int)($_POST['stage_id'] ?? 0));
         if (!$to) throw new RuntimeException('Etapa inválida.');
+        // Uma frente de crosselling (§22): o cartão é a frente, que anda no funil do seu serviço.
+        if (($lid = (int)($_POST['line'] ?? 0)) > 0) {
+            require_once __DIR__ . '/inc/xsell.php';
+            $line = xsell_line_get($pdo, $lid);
+            if (!$line || (int)$line['deal_id'] !== (int)$deal['id']) out(404, ['ok' => false, 'error' => 'Frente não encontrada. Recarregue a página.']);
+            $snap = ['id' => (int)$deal['id'], 'lines' => xsell_snapshot($pdo, (int)$deal['id']), 'line' => $lid, 'to_stage' => (int)$to['id']];
+            flow_created(null, true);
+            try {
+                $msg = xsell_line_move($pdo, $deal, $line, (int)$to['id'], (string)($_POST['force'] ?? ''));
+            } catch (GateBlocked $e) {
+                out(409, ['ok' => false, 'error' => $e->getMessage(), 'gate' => $e->missing, 'can_force' => is_admin()]);
+            }
+            out(200, ['ok' => true, 'msg' => $msg, 'phase' => 'production', 'undo' => undo_push('line_stage', $snap + ['auto_tasks' => flow_created()]), 'won' => false]);
+        }
         if ($to['kind'] === 'done') throw new RuntimeException('Para concluir, use a checklist de fecho na ficha do negócio (aba Negócios).');
         if ($deal['phase'] === 'production' && in_array($to['kind'], ['xray', 'commercial'], true)) throw new RuntimeException('Um negócio em produção não volta à fase comercial.');
         $snap = undo_deal_snapshot($deal);
