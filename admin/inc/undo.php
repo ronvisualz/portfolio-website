@@ -82,6 +82,13 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!empty($d['lines'])) xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
             return 'Etapa reposta.';
 
+        case 'row_restore':   // um pacote ou uma regra de crosselling apagados (§22)
+            if (!is_admin() || !in_array($d['table'] ?? '', ['packages', 'xsell_rules'], true)) throw new RuntimeException('Sem permissão.');
+            $row = (array)$d['row'];
+            $cols = array_keys($row);
+            $pdo->prepare('INSERT INTO ' . $d['table'] . ' (' . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')->execute(array_values($row));
+            return (string)$d['msg'];
+
         case 'line_stage':   // uma frente de crosselling mudou de etapa (§22)
             $deal = record_get($pdo, (int)$d['id']);
             if (!$deal || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');

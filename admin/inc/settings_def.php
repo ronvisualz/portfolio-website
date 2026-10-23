@@ -93,6 +93,8 @@ function settings_defs(): array {
         // ── Pipeline ──
         'flow_editor'        => ['tab' => 'pipeline', 'group' => 'Funis, etapas e automações', 'label' => 'Funis, etapas, gates, automações e X-Ray', 'type' => 'link', 'href' => '/admin/funis.php',
                                  'show' => 'Abrir o editor', 'help' => 'Os funis e as etapas, os requisitos para avançar (gates), as tarefas automáticas de cada etapa, as perguntas do X-Ray por funil e as rondas de revisão incluídas.'],
+        'xsell_editor'       => ['tab' => 'pipeline', 'group' => 'Crosselling', 'label' => 'Pacotes e crosselling depois da entrega', 'type' => 'link', 'href' => '/admin/funis.php?x=1',
+                                 'show' => 'Abrir', 'help' => 'Os pacotes pré-definidos (serviços, sincronização das frentes e modelo de orçamento) e as regras «depois de entregar X, propor Y ao fim de N dias».'],
         'lost_reasons'       => ['tab' => 'pipeline', 'group' => 'Propostas e perdas', 'label' => 'Motivos de perda', 'type' => 'list', 'default' => implode("\n", LOST_REASONS),
                                  'help' => 'Os motivos a escolher ao marcar um negócio como perdido. «Outro» deixa escrever o detalhe.'],
         'proposal_valid_days'=> ['tab' => 'pipeline', 'group' => 'Propostas e perdas', 'label' => 'Validade das propostas', 'type' => 'int', 'min' => 1, 'max' => 365, 'unit' => 'dias', 'default' => 30,

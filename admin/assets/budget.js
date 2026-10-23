@@ -242,6 +242,7 @@
     form.elements.qty.value = l.qty;
     if (l.qty_unit === 'hour' || l.qty_unit === 'day') form.elements.qty_unit.value = l.qty_unit;
     form.elements.note.value = l.note || '';
+    if (form.elements.funnel_id) form.elements.funnel_id.value = l.funnel_id || '';   // crosselling: o serviço da linha
     syncKind();
   }
   if (form) {

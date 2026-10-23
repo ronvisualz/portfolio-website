@@ -996,9 +996,10 @@ try {
         $a = budget_lines($pdo, (int)$v['id'], 'A');
         if (!$a) throw new RuntimeException('A Opção A ainda não tem linhas.');
         foreach ($a as $l) {
-            budget_line_save($pdo, $v, null, ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
+            $nid = budget_line_save($pdo, $v, null, ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
                 'label' => $l['label'], 'price_unit' => $l['price_unit'], 'unit_price' => (float)$l['unit_price'], 'qty' => (float)$l['qty'], 'qty_unit' => $l['qty_unit'],
                 'note' => $l['note'], 'opt' => 'B']);
+            if (!empty($l['funnel_id'])) $pdo->prepare('UPDATE budget_lines SET funnel_id = ? WHERE id = ?')->execute([$l['funnel_id'], $nid]);
         }
         if (trim((string)$v['scope_b']) === '' && trim((string)$v['description']) !== '') $pdo->prepare('UPDATE budget_versions SET scope_b = ? WHERE id = ?')->execute([$v['description'], $v['id']]);
         budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · Opção B criada a partir da A (' . count($a) . ' linhas)');
@@ -1045,6 +1046,13 @@ try {
         }
         if (!$lineId) $d['opt'] = ($_POST['opt'] ?? 'A') === 'B' ? 'B' : 'A';
         $lid = budget_line_save($pdo, $v, $lineId ?: null, $d);
+        // Crosselling (§22): o serviço da linha (vazio = o principal), só entre os serviços do negócio.
+        if (array_key_exists('funnel_id', $_POST) && db_has_column($pdo, 'budget_lines', 'funnel_id')) {
+            require_once __DIR__ . '/inc/xsell.php';
+            $fn = (int)$_POST['funnel_id'];
+            $ok = $fn && in_array($fn, array_map(fn($l) => (int)$l['funnel_id'], xsell_lines($pdo, (int)$sheet['deal_id'])), true);
+            $pdo->prepare('UPDATE budget_lines SET funnel_id = ? WHERE id = ?')->execute([$ok ? $fn : null, $lid]);
+        }
         $who = $kind === 'supplier' ? (string)$pdo->query('SELECT name FROM contacts WHERE id = ' . (int)$d['contact_id'])->fetchColumn()
              : ($kind === 'team' ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$d['user_id'])->fetchColumn() : 'interno');
         $ql = budget_qty_label($d);

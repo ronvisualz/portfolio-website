@@ -1365,6 +1365,65 @@ Ficheiros novos: `definicoes.php`, `assets/settings.js`, `inc/settings_def.php`,
 `calendar.php`, `funis.php`, `contactos.php`, `orcamentacao.php`, `negocios.php`, `marketing.php`,
 `pipeline.php`, `../contacto.php`, `assets/app.js`, `assets/tasks.js`, `assets/app.css`.
 
+### 10.13 Crosselling: um negócio, várias frentes — §22 (23 out 2026)
+
+Base de dados **v23** (`inc/migrate_xsell.php`, idempotente): `deal_lines` (os serviços de cada
+negócio; no Kickoff, as frentes com etapa, estado, execução, arranque, entrega e valor),
+`packages`, `xsell_opps`, `xsell_rules`; em `deals` `sync_mode`, `xsell_from_id` e `package_id`;
+`budget_lines.funnel_id` e `tasks.line_id`. Motor em `inc/xsell.php`, ecrãs em `inc/xsell_view.php`.
+
+- **Correção (Leads):** a chamada de uma lead só fica feita com o resultado do «Como correu?»;
+  fechar o formulário (clicar ao lado, Esc, «Fechar») deixa-a por fazer. O servidor recusa
+  concluir a chamada de uma lead sem resultado venha de onde vier (na aba Tarefas abre a ficha
+  da lead). «Arquivar» e «Converter» registam a chamada como atendida.
+- **Fase comercial:** no painel do negócio, **Serviços** (juntar/tirar serviços adicionais ou
+  aplicar um pacote) e o **Plano das frentes** (sincronizadas ou timelines diferentes, obrigatório
+  e requisito da proposta; arranque «no Kickoff / depois de outra frente / numa data», entrega por
+  frente e execução por frente, só admins). Na conversão da lead escolhe-se já um pacote ou os
+  serviços adicionais. O X-Ray junta as perguntas de todos os serviços (sem repetir) e tem as
+  **Oportunidades de crosselling** (serviços falados e não incluídos). As automações das etapas
+  comerciais dos serviços adicionais juntam-se às do principal, sem tarefas repetidas.
+- **Kickoff e produção:** cada serviço passa a uma **frente** com as etapas, gates e automações do
+  funil do seu serviço (lidos do funil, sem cópias); as frentes «à espera» arrancam quando a frente
+  anterior conclui ou na data (relógio diário). Na ficha e no painel, uma linha de etapas por
+  frente, os requisitos, «Avançar», «Forçar» (admins) e as rondas de revisão de cada frente; o topo
+  resume onde está cada frente e as listas mostram o mesmo. No quadro do Pipeline, cada frente
+  aparece como cartão no funil do seu serviço e arrasta-se (com os gates). As tarefas de fatura e
+  pagamento só vêm do funil principal (um plano de pagamento). **Concluir:** sincronizadas — todas
+  na última etapa de produção com os requisitos cumpridos e passam juntas a Concluído; timelines
+  diferentes — cada frente conclui sozinha e o negócio conclui quando todas terminaram (o Marketing
+  Buddy fica como avença ativa). A checklist de fecho mostra o que falta; admins podem forçar com
+  motivo. Tudo com «Anular» e no histórico (com o serviço).
+- **Medir:** as linhas da folha de orçamento podem ser marcadas com o serviço; o valor de cada
+  frente é o preço dividido pelo custo de cada serviço (guardado no Kickoff e no fecho).
+  **Relatórios › Crosselling:** % de ganhos com 2+ serviços, taxa de fecho com pacote vs. isoladas,
+  valor médio, crosselling posterior (e dias até lá), matriz serviço × serviço, % por serviço
+  principal, combinações e oportunidades.
+- **Sugerir:** Definições › Pipeline › **Pacotes e crosselling** (página dos funis, separador
+  Crosselling): pacotes (serviços, principal, sincronização, modelo de orçamento) e regras
+  «depois de entregar X, propor Y ao fim de N dias» — ao concluir, o comercial recebe «Propor Y a
+  {cliente}» e fica uma oportunidade (se o cliente ainda não tiver Y). Na ficha do contacto,
+  **Serviços comprados** (o que comprou, o que falta oferecer, oportunidades com «Criar negócio» —
+  negócio novo em X-Ray ligado ao anterior — e «Descartar»). «Combinar funis» saiu.
+- **Permissões no servidor:** serviços, plano e frentes pedem edição do negócio; pacotes e regras só
+  admins; oportunidades pedem edição do Pipeline.
+- **Testado na bancada:** timelines diferentes (frente à espera arranca depois da principal, sem
+  tarefas de fatura, conclusão e regra pós-entrega com oportunidade), sincronizadas (frente não
+  conclui sozinha, fecho bloqueado e forçado, todas concluem juntas), negócio de um só serviço sem
+  alterações, conversão com serviço adicional, plano, ficha, quadro, pacote, orçamento, relatório,
+  contacto e «Criar negócio», Colab recusado, claro/escuro e telemóvel sem deslocamento.
+- **A decidir mais tarde:** juntar um serviço depois do Kickoff (hoje faz-se como negócio novo
+  ligado); dependências entre frentes sincronizadas a meio da produção.
+
+Ficheiros novos: `inc/migrate_xsell.php`, `inc/xsell.php`, `inc/xsell_view.php`,
+`inc/xsell_settings.php`, `xsell_act.php`. Alterados: `inc/migrate.php`, `inc/pipeline.php`,
+`inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/deal_file.php`, `inc/undo.php`,
+`inc/interactions.php`, `inc/budget.php`, `inc/budget_view.php`, `inc/contact_view.php`,
+`inc/settings_def.php`, `inc/tasks.php`, `inc/lead_view.php`, `deal_flow.php`, `ui_api.php`,
+`tasks_api.php`, `pipeline.php`, `negocio.php`, `leads.php`, `xray.php`, `funis.php`,
+`relatorios.php`, `assets/app.js`, `assets/leads.js`, `assets/tasks.js`, `assets/budget.js`,
+`assets/app.css`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)

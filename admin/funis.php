@@ -3,6 +3,7 @@ require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/pipeline_flow.php';
 require __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/xsell.php';
 $user = require_login();
 require_perm('pipeline', PERM_MANAGE);
 
@@ -90,6 +91,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do  = (string)($_POST['do'] ?? '');
     $fid = (int)($_POST['funnel_id'] ?? 0);
+
+    // ── crosselling (§22): pacotes e regras depois da entrega (só admins) ──
+    if (in_array($do, ['pkg_save', 'pkg_del', 'xr_save', 'xr_del'], true)) {
+        $xback = funis_url(['x' => 1]) . ($do[0] === 'p' ? '#pacotes' : '#depois');
+        try {
+            if (!$canRules) throw new RuntimeException('Os pacotes e as regras de crosselling só mudam com superadmin ou admin.');
+            $active = array_map('intval', array_column(funnels_active($pdo), 'id'));
+            if ($do === 'pkg_save') {
+                $pid = (int)($_POST['pkg_id'] ?? 0);
+                $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 120);
+                $main = (int)($_POST['main'] ?? 0);
+                $fs = array_values(array_intersect(array_map('intval', (array)($_POST['funnels'] ?? [])), $active));
+                if ($name === '') throw new RuntimeException('Dê um nome ao pacote.');
+                if (!in_array($main, $fs, true)) $main = $fs[0] ?? 0;
+                if (count($fs) < 2) throw new RuntimeException('Um pacote junta pelo menos dois serviços.');
+                $fs = array_merge([$main], array_values(array_diff($fs, [$main])));   // o principal primeiro
+                $sync = isset(XSELL_SYNC[$_POST['sync_mode'] ?? '']) ? (string)$_POST['sync_mode'] : 'sync';
+                $tpl = (int)($_POST['template_id'] ?? 0) ?: null;
+                $vals = [$name, implode(',', $fs), $sync, $tpl, !empty($_POST['is_active']) || !$pid ? 1 : 0];
+                if ($pid) $pdo->prepare('UPDATE packages SET name = ?, funnels = ?, sync_mode = ?, template_id = ?, is_active = ? WHERE id = ?')->execute([...$vals, $pid]);
+                else $pdo->prepare('INSERT INTO packages (name, funnels, sync_mode, template_id, is_active, position, created_at) VALUES (?,?,?,?,?,?,?)')
+                         ->execute([...$vals, (int)$pdo->query('SELECT COALESCE(MAX(position),0)+1 FROM packages')->fetchColumn(), date('Y-m-d H:i:s')]);
+                setting_log_safe($pdo, 'packages', 'Pipeline · Pacote «' . $name . '» ' . ($pid ? 'alterado' : 'criado'), '', implode(' + ', array_map(fn($f) => funnel_get($pdo, $f)['name'] ?? '', $fs)));
+                flash('Pacote «' . $name . '» ' . ($pid ? 'guardado.' : 'criado.'));
+            } elseif ($do === 'pkg_del') {
+                $p = xsell_package_get($pdo, (int)($_POST['pkg_id'] ?? 0));
+                if (!$p) throw new RuntimeException('Pacote não encontrado.');
+                $pdo->prepare('DELETE FROM packages WHERE id = ?')->execute([$p['id']]);
+                setting_log_safe($pdo, 'packages', 'Pipeline · Pacote «' . $p['name'] . '» apagado', $p['name'], '');
+                flash('Pacote «' . $p['name'] . '» apagado.', 'ok', undo_push('row_restore', ['table' => 'packages', 'row' => $p, 'msg' => 'Pacote «' . $p['name'] . '» reposto.']));
+            } elseif ($do === 'xr_save') {
+                $from = (int)($_POST['from_funnel_id'] ?? 0); $to = (int)($_POST['to_funnel_id'] ?? 0);
+                $days = max(0, min(365, (int)($_POST['days'] ?? 30)));
+                if (!in_array($from, $active, true) || !in_array($to, $active, true)) throw new RuntimeException('Escolha os dois serviços.');
+                if ($from === $to) throw new RuntimeException('Escolha dois serviços diferentes.');
+                $rid = (int)($_POST['rule_id'] ?? 0);
+                if ($rid) $pdo->prepare('UPDATE xsell_rules SET from_funnel_id = ?, to_funnel_id = ?, days = ?, is_active = ? WHERE id = ?')->execute([$from, $to, $days, !empty($_POST['is_active']) ? 1 : 0, $rid]);
+                else $pdo->prepare('INSERT INTO xsell_rules (from_funnel_id, to_funnel_id, days, is_active, created_at) VALUES (?,?,?,1,?)')->execute([$from, $to, $days, date('Y-m-d H:i:s')]);
+                $label = (funnel_get($pdo, $from)['name'] ?? '') . ' → ' . (funnel_get($pdo, $to)['name'] ?? '') . ' · ' . $days . ' dias';
+                setting_log_safe($pdo, 'xsell_rules', 'Pipeline · Crosselling depois da entrega', '', $label);
+                flash('Regra guardada: ' . $label . '.');
+            } else {
+                $st = $pdo->prepare('SELECT * FROM xsell_rules WHERE id = ?');
+                $st->execute([(int)($_POST['rule_id'] ?? 0)]);
+                $r = $st->fetch();
+                if (!$r) throw new RuntimeException('Regra não encontrada.');
+                $pdo->prepare('DELETE FROM xsell_rules WHERE id = ?')->execute([$r['id']]);
+                flash('Regra apagada.', 'ok', undo_push('row_restore', ['table' => 'xsell_rules', 'row' => $r, 'msg' => 'Regra reposta.']));
+            }
+        } catch (RuntimeException $e) {
+            flash($e->getMessage(), 'err');
+        }
+        redirect($xback);
+    }
 
     if ($do === 'create') {
         $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 120);
@@ -308,9 +363,11 @@ render_flashes();
     <a href="<?= e(funis_url(['f' => $f['id']])) ?>" class="<?= (int)$f['id'] === $fid ? 'on' : '' ?><?= (int)$f['is_active'] ? '' : ' muted' ?>"><?= e($f['name']) ?><?= (int)$f['active_deals'] ? ' <span class="mono small">' . (int)$f['active_deals'] . '</span>' : '' ?></a>
   <?php endforeach; ?>
   <a href="<?= e(funis_url(['novo' => 1])) ?>#novo" class="<?= !empty($_GET['novo']) ? 'on' : '' ?>">+ Novo funil</a>
+  <a href="<?= e(funis_url(['x' => 1])) ?>" class="<?= !empty($_GET['x']) ? 'on' : '' ?>"><?= icon('merge') ?> Crosselling</a>
 </nav>
 
-<?php if ($ef && empty($_GET['novo'])): $stages = funnel_stages($pdo, (int)$ef['id']); ?>
+<?php if (!empty($_GET['x'])): require __DIR__ . '/inc/xsell_settings.php'; ?>
+<?php elseif ($ef && empty($_GET['novo'])): $stages = funnel_stages($pdo, (int)$ef['id']); ?>
 <section class="panel ar-funnel">
   <form method="post" class="ar-fhead">
     <?= csrf_field() ?><input type="hidden" name="do" value="rename"><input type="hidden" name="funnel_id" value="<?= (int)$ef['id'] ?>">
@@ -411,32 +468,16 @@ render_flashes();
 </form>
 <?php endif; ?>
 
-<?php if (!empty($_GET['novo']) || !$ef):
-$combine = array_map('intval', (array)($_GET['from'] ?? []));
-$preset  = $combine ? funnels_combined_stages($pdo, $combine) : [];
-$preset  = array_values(array_filter($preset, fn($p) => !in_array(mb_strtolower($p[0]), ['proposta', 'aguardar feedback'], true)));
-$activeF = array_filter($all, fn($f) => (int)$f['is_active']);
+<?php if (empty($_GET['x']) && (!empty($_GET['novo']) || !$ef)):
+$preset = [];   // os funis de crosselling deram lugar aos negócios com várias frentes (§22)
 ?>
 <h2 id="novo">Novo funil</h2>
-<form method="get" action="/admin/funis.php#novo"><input type="hidden" name="novo" value="1">
-  <div class="field wide"><label>Combinar funis existentes (opcional, cross-selling)</label>
-    <div class="actions" style="margin-top:0.2rem">
-      <?php foreach ($activeF as $f): ?>
-        <label class="check"><input type="checkbox" name="from[]" value="<?= (int)$f['id'] ?>" <?= in_array((int)$f['id'], $combine, true) ? 'checked' : '' ?>> <?= e($f['name']) ?></label>
-      <?php endforeach; ?>
-    </div>
-  </div>
-  <div class="actions"><button class="btn ghost sm" type="submit">Juntar as etapas destes funis</button></div>
-</form>
-
+<p class="muted small" style="max-width:760px">Um funil por serviço. Para vender vários serviços juntos não se cria um funil: num negócio, em «Serviços», juntam-se os serviços (ou escolhe-se um pacote, no separador Crosselling).</p>
 <form method="post">
   <?= csrf_field() ?><input type="hidden" name="do" value="create">
-  <?php foreach ($combine as $id): ?><input type="hidden" name="from[]" value="<?= $id ?>"><?php endforeach; ?>
   <div class="grid">
     <div class="field wide"><label for="fname">Nome do funil</label>
-      <input type="text" id="fname" name="name" required maxlength="120"
-             value="<?= e(implode(' + ', array_map(fn($id) => funnel_get($pdo, $id)['name'] ?? '', $combine))) ?>"
-             placeholder="ex.: Campanhas + Marketing Buddy"></div>
+      <input type="text" id="fname" name="name" required maxlength="120" placeholder="ex.: Fotografia"></div>
   </div>
   <p class="muted" style="font-size:0.75rem">Etapas fixas: X-Ray → Proposta → Aguardar feedback → … → Kickoff → … → Concluído. As etapas abaixo entram entre elas; edite, retire ou acrescente antes de criar.</p>
   <div class="tablewrap"><table>

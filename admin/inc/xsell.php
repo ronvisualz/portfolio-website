@@ -464,6 +464,12 @@ function xsell_store_values(PDO $pdo, array $deal): void {
 
 // ── pacotes ─────────────────────────────────────────────────
 
+/** Fica no registo de alterações das Definições. */
+function setting_log_safe(PDO $pdo, string $key, string $label, string $old, string $new): void {
+    require_once __DIR__ . '/settings_def.php';
+    if (db_has_table($pdo, 'settings_log')) setting_log($pdo, $key, $label, $old, $new);
+}
+
 function xsell_packages(PDO $pdo, bool $activeOnly = true): array {
     if (!db_has_table($pdo, 'packages')) return [];
     return $pdo->query('SELECT * FROM packages' . ($activeOnly ? ' WHERE is_active = 1' : '') . ' ORDER BY position, name')->fetchAll();
@@ -610,6 +616,31 @@ function xsell_opp_get(PDO $pdo, int $id): ?array {
     return $st->fetch() ?: null;
 }
 
+/**
+ * «Criar negócio» a partir de uma oportunidade (crosselling posterior): um negócio novo do
+ * cliente no funil do serviço, em X-Ray, ligado ao negócio anterior. Devolve [id, código].
+ */
+function xsell_opp_to_deal(PDO $pdo, array $opp, int $by): array {
+    if ($opp['status'] !== 'open') throw new RuntimeException('Esta oportunidade já não está aberta.');
+    if ($opp['result_deal_id']) throw new RuntimeException('Esta oportunidade já tem um negócio.');
+    $contact = $opp['contact_id'] ? $pdo->query('SELECT * FROM contacts WHERE id = ' . (int)$opp['contact_id'])->fetch() : null;
+    if (!$contact) throw new RuntimeException('A oportunidade não tem cliente: crie o negócio a partir de uma lead.');
+    $from = $opp['deal_id'] ? deal_get($pdo, (int)$opp['deal_id']) : null;
+    $owner = flow_user_ok($pdo, $from['owner_id'] ?? null) ?? flow_user_ok($pdo, $by);
+    require_once __DIR__ . '/leads.php';
+    $isCo = $contact['kind'] === 'company';
+    $v = ['company' => $isCo ? $contact['name'] : '', 'person' => $isCo ? '' : $contact['name'], 'types' => '', 'links' => '', 'phone' => (string)$contact['phone'],
+          'email' => (string)$contact['email'], 'service' => '', 'priority' => 'media', 'detail' => '', 'why' => 'Crosselling: ' . $opp['funnel_name'] . ($from ? ' (depois de ' . $from['code'] . ')' : ''),
+          'notes' => (string)$opp['note'], 'origin' => 'manual', 'campaign' => ''];
+    // Nasce como registo sem a chamada de lead (já é cliente) e passa logo a negócio, em X-Ray.
+    $id = lead_create($pdo, $v, $owner, $by, true);
+    $code = lead_convert($pdo, lead_get($pdo, $id), (int)$opp['funnel_id'], (int)$contact['id']);
+    $pdo->prepare('UPDATE deals SET xsell_from_id = ? WHERE id = ?')->execute([$from['id'] ?? null, $id]);
+    $pdo->prepare('UPDATE xsell_opps SET result_deal_id = ? WHERE id = ?')->execute([$id, $opp['id']]);
+    deal_log($pdo, $id, 'xsell', ['note' => 'Crosselling posterior' . ($from ? ' · depois de ' . $from['code'] : '') . ' · ' . $opp['funnel_name'], 'user_id' => $by]);
+    return [$id, $code];
+}
+
 /** As oportunidades de um cliente (abertas primeiro). */
 function xsell_opps_for_contact(PDO $pdo, int $contactId): array {
     if (!db_has_table($pdo, 'xsell_opps')) return [];
@@ -619,4 +650,65 @@ function xsell_opps_for_contact(PDO $pdo, int $contactId): array {
                           WHERE o.contact_id = ? ORDER BY o.status = 'open' DESC, o.created_at DESC LIMIT 30");
     $st->execute([$contactId]);
     return $st->fetchAll();
+}
+
+// ── relatórios (§22.5) ──────────────────────────────────────
+
+/**
+ * Os números do crosselling num período [$from, $to): ganhos = chegaram a Kickoff no período;
+ * perdidos = marcados como perdidos no período. Devolve um array com os totais, a matriz
+ * serviço × serviço, o «attach rate» por serviço principal, as combinações e as oportunidades.
+ */
+function xsell_report(PDO $pdo, string $from, string $to): array {
+    $wonAt = $pdo->query("SELECT h.deal_id, MIN(h.created_at) FROM deal_history h JOIN funnel_stages s ON s.id = h.to_stage_id
+                           WHERE h.event = 'stage' AND s.kind = 'kickoff' GROUP BY h.deal_id")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $in = fn(?string $d) => $d !== null && $d !== '' && substr($d, 0, 10) >= $from && substr($d, 0, 10) < $to;
+    $funnels = $pdo->query('SELECT id, name FROM funnels ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
+    $lines = [];
+    if (xsell_ready($pdo)) foreach ($pdo->query('SELECT deal_id, funnel_id, value FROM deal_lines ORDER BY is_main DESC, position, id') as $l) $lines[(int)$l['deal_id']][(int)$l['funnel_id']] = $l['value'];
+    $deals = $pdo->query("SELECT id, code, phase, funnel_id, contact_id, budget, value_estimate, converted_at, done_at, lost_at, xsell_from_id FROM deals WHERE code IS NOT NULL")->fetchAll();
+    $byId = array_column($deals, null, 'id');
+    $r = ['won' => 0, 'won_multi' => 0, 'value_multi' => 0.0, 'value_single' => 0.0, 'n_single' => 0, 'dec_multi' => [0, 0], 'dec_single' => [0, 0],
+          'later' => 0, 'later_value' => 0.0, 'later_days' => [], 'pairs' => [], 'later_pairs' => [], 'anchor' => [], 'combos' => [], 'funnels' => $funnels, 'opps' => []];
+    foreach ($deals as $d) {
+        $id = (int)$d['id'];
+        $set = isset($lines[$id]) && count($lines[$id]) >= 2 ? array_keys($lines[$id]) : [(int)$d['funnel_id']];
+        $multi = count($set) >= 2;
+        $value = (float)($d['budget'] ?: $d['value_estimate']);
+        $won = isset($wonAt[$id]) && $in($wonAt[$id]);
+        $lost = $d['phase'] === 'lost' && $in($d['lost_at']);
+        if ($won || $lost) $r[$multi ? 'dec_multi' : 'dec_single'][$won ? 0 : 1]++;
+        $key = implode('+', array_map(fn($f) => (string)$f, $set));
+        if ($multi && ($won || $lost)) {
+            $r['combos'][$key] ??= ['set' => $set, 'won' => 0, 'lost' => 0, 'value' => 0.0];
+            $r['combos'][$key][$won ? 'won' : 'lost']++;
+            if ($won) $r['combos'][$key]['value'] += $value;
+        }
+        if (!$won) continue;
+        $r['won']++;
+        $main = (int)$d['funnel_id'];
+        $r['anchor'][$main] ??= ['won' => 0, 'multi' => 0];
+        $r['anchor'][$main]['won']++;
+        if ($multi) {
+            $r['won_multi']++; $r['value_multi'] += $value; $r['anchor'][$main]['multi']++;
+            foreach ($set as $a) foreach ($set as $b) if ($a !== $b) { $r['pairs'][$a][$b] ??= [0, 0.0]; $r['pairs'][$a][$b][0]++; $r['pairs'][$a][$b][1] += (float)($lines[$id][$b] ?? 0); }
+        } else {
+            $r['n_single']++; $r['value_single'] += $value;
+        }
+        if ($d['xsell_from_id'] && isset($byId[(int)$d['xsell_from_id']])) {
+            $prev = $byId[(int)$d['xsell_from_id']];
+            $r['later']++; $r['later_value'] += $value;
+            $start = $prev['done_at'] ?: ($wonAt[(int)$prev['id']] ?? $prev['converted_at']);
+            if ($start && $d['converted_at']) $r['later_days'][] = max(0, (int)round((strtotime((string)$d['converted_at']) - strtotime((string)$start)) / 86400));
+            $pf = (int)$prev['funnel_id'];
+            foreach ($set as $b) { $r['later_pairs'][$pf][$b] ??= 0; $r['later_pairs'][$pf][$b]++; }
+        }
+    }
+    uasort($r['combos'], fn($a, $b) => [$b['won'], $b['value']] <=> [$a['won'], $a['value']]);
+    if (db_has_table($pdo, 'xsell_opps')) {
+        $st = $pdo->prepare('SELECT funnel_id, source, status, COUNT(*) n FROM xsell_opps WHERE created_at >= ? AND created_at < ? GROUP BY funnel_id, source, status');
+        $st->execute([$from . ' 00:00:00', $to . ' 00:00:00']);
+        $r['opps'] = $st->fetchAll();
+    }
+    return $r;
 }

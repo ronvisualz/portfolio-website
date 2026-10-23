@@ -142,6 +142,63 @@ render_flashes();
 </section>
 <?php endforeach; ?>
 
+<?php // ── crosselling (§22.5) ──
+require_once __DIR__ . '/inc/xsell.php';
+$xr = xsell_report($pdo, $from, $to);
+$xf = $xr['funnels'];
+$rate = fn(array $p) => $p[0] + $p[1] ? round($p[0] / ($p[0] + $p[1]) * 100) . '%' : '—';
+$avg = fn(float $v, int $n) => $n ? eur0($v / $n) : '—';
+$oppTot = ['open' => 0, 'won' => 0, 'lost' => 0, 'dropped' => 0, 'bundled' => 0];
+foreach ($xr['opps'] as $o) $oppTot[$o['status']] = ($oppTot[$o['status']] ?? 0) + (int)$o['n'];
+$oppAll = array_sum($oppTot);
+?>
+<h2 id="crosselling">Crosselling <span class="muted small">· negócios com vários serviços (pacote) e serviços vendidos depois a clientes</span></h2>
+<div class="stats">
+  <div class="stat hero"><div class="k">Ganhos com 2+ serviços</div><div class="v"><?= $pct($xr['won_multi'], $xr['won']) ?></div><div class="n"><?= $xr['won_multi'] ?> de <?= $xr['won'] ?> negócios ganhos</div></div>
+  <div class="stat"><div class="k">Taxa de fecho</div><div class="v"><?= $rate($xr['dec_multi']) ?></div><div class="n">com pacote · isoladas <?= $rate($xr['dec_single']) ?></div></div>
+  <?php if ($money): ?><div class="stat"><div class="k">Valor médio</div><div class="v"><?= $avg($xr['value_multi'], $xr['won_multi']) ?></div><div class="n">com pacote · isolado <?= $avg($xr['value_single'], $xr['n_single']) ?></div></div><?php endif; ?>
+  <div class="stat"><div class="k">Crosselling posterior</div><div class="v"><?= $xr['later'] ?></div><div class="n"><?= $xr['later_days'] ? 'em média ' . (int)round(array_sum($xr['later_days']) / count($xr['later_days'])) . ' dias depois' : 'clientes que voltaram para outro serviço' ?><?= $money && $xr['later'] ? ' · ' . eur0($xr['later_value']) : '' ?></div></div>
+  <div class="stat"><div class="k">Oportunidades</div><div class="v"><?= $oppAll ?></div><div class="n"><?= $oppTot['won'] + $oppTot['bundled'] ?> vendidas · <?= $oppTot['open'] ?> abertas · <?= $oppTot['lost'] + $oppTot['dropped'] ?> não</div></div>
+</div>
+<?php $used = array_keys(array_filter($xf, fn($n, $id) => isset($xr['pairs'][$id]) || isset($xr['later_pairs'][$id]) || array_filter($xr['pairs'], fn($row) => isset($row[$id])) || array_filter($xr['later_pairs'], fn($row) => isset($row[$id])), ARRAY_FILTER_USE_BOTH)); ?>
+<div class="flow-grid">
+  <div class="tablewrap">
+    <?php if (!$used): ?><p class="empty">Ainda não há negócios de crosselling ganhos neste período.</p>
+    <?php else: ?>
+    <table class="xs-matrix"><caption class="muted small" style="text-align:left">Serviço × serviço: negócios ganhos em pacote<?= $xr['later_pairs'] ? ' (+ posteriores: comprou a linha, depois a coluna)' : '' ?></caption>
+      <thead><tr><th></th><?php foreach ($used as $b): ?><th class="num"><?= e($xf[$b]) ?></th><?php endforeach; ?></tr></thead>
+      <tbody><?php foreach ($used as $a): ?><tr><th><?= e($xf[$a]) ?></th>
+        <?php foreach ($used as $b): $n = $xr['pairs'][$a][$b][0] ?? 0; $l = $xr['later_pairs'][$a][$b] ?? 0; ?>
+          <td class="num<?= $a === $b ? ' muted' : '' ?>"><?= $a === $b ? '·' : ($n || $l ? '<b>' . $n . '</b>' . ($l ? ' <small class="muted">+' . $l . '</small>' : '') : '<span class="muted">0</span>') ?></td>
+        <?php endforeach; ?></tr><?php endforeach; ?></tbody>
+    </table>
+    <?php endif; ?>
+  </div>
+  <div class="tablewrap">
+    <table><thead><tr><th>Serviço principal</th><th class="num">Ganhos</th><th class="num">Com outro serviço</th></tr></thead><tbody>
+    <?php if (!$xr['anchor']): ?><tr><td colspan="3" class="empty">Sem negócios ganhos neste período.</td></tr><?php endif; ?>
+    <?php foreach ($xr['anchor'] as $fid => $a): ?><tr><td><?= e($xf[$fid] ?? '—') ?></td><td class="num"><?= $a['won'] ?></td><td class="num"><?= $pct($a['multi'], $a['won']) ?> <small class="muted">(<?= $a['multi'] ?>)</small></td></tr><?php endforeach; ?>
+    </tbody></table>
+  </div>
+</div>
+<div class="tablewrap" style="margin-top:12px">
+  <table><thead><tr><th>Combinações</th><th class="num">Ganhos</th><th class="num">Perdidos</th><th class="num">Taxa de fecho</th><?= $money ? '<th class="num">Valor ganho</th>' : '' ?></tr></thead><tbody>
+  <?php if (!$xr['combos']): ?><tr><td colspan="5" class="empty">Ainda não há propostas com vários serviços decididas neste período.</td></tr><?php endif; ?>
+  <?php foreach (array_slice($xr['combos'], 0, 10) as $c): ?>
+    <tr><td><?= e(implode(' + ', array_map(fn($f) => $xf[$f] ?? '?', $c['set']))) ?></td><td class="num"><?= $c['won'] ?></td><td class="num"><?= $c['lost'] ?></td><td class="num"><?= $rate([$c['won'], $c['lost']]) ?></td><?= $money ? '<td class="num">' . eur0($c['value']) . '</td>' : '' ?></tr>
+  <?php endforeach; ?>
+  </tbody></table>
+</div>
+<?php if ($xr['opps']):
+    $op = [];
+    foreach ($xr['opps'] as $o) { $op[(int)$o['funnel_id']] ??= ['open' => 0, 'won' => 0, 'lost' => 0, 'dropped' => 0, 'bundled' => 0]; $op[(int)$o['funnel_id']][$o['status']] += (int)$o['n']; } ?>
+<div class="tablewrap" style="margin-top:12px">
+  <table><thead><tr><th>Oportunidades (serviço proposto)</th><th class="num">Abertas</th><th class="num">No pacote</th><th class="num">Ganhas depois</th><th class="num">Perdidas / descartadas</th></tr></thead><tbody>
+  <?php foreach ($op as $fid => $o): ?><tr><td><?= e($xf[$fid] ?? '—') ?></td><td class="num"><?= $o['open'] ?></td><td class="num"><?= $o['bundled'] ?></td><td class="num"><?= $o['won'] ?></td><td class="num"><?= $o['lost'] + $o['dropped'] ?></td></tr><?php endforeach; ?>
+  </tbody></table>
+</div>
+<?php endif; ?>
+
 <?php if ($money && can('orcamentacao')):
     require_once __DIR__ . '/inc/budget_view.php';
     $br = budget_reports($pdo, $year);

@@ -277,6 +277,7 @@ $prodPhase = in_array($deal['phase'], ['production', 'done'], true);
 require_once __DIR__ . '/inc/xsell_view.php';
 $xsLanes   = xsell_is_multi($pdo, $deal) && $prodPhase;
 $steps     = $prodPhase ? deal_steps($pdo, $file) : null;
+if ($xsLanes && $steps && $deal['phase'] === 'production') $steps['now'] = xsell_lanes_short($pdo, $deal);   // onde está cada frente
 $tasks     = deal_task_stats($pdo, $id);
 $check     = deal_checklist($pdo, $deal);
 $delivery  = $prodPhase ? deal_delivery_date($pdo, $deal) : null;

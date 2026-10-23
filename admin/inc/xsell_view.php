@@ -83,7 +83,7 @@ function xsell_plan_html(PDO $pdo, array $deal, array $lines, string $back, bool
     $radios = '';
     foreach (XSELL_SYNC as $k => $label) {
         $lock = $started && $mode !== '' && $k !== $mode;
-        $radios .= '<label class="opt xs-mode' . ($lock ? ' off' : '') . '"><input type="radio" name="sync_mode" value="' . $k . '" required' . ($mode === $k ? ' checked' : '') . ($lock ? ' disabled' : '') . ' data-xs-mode>'
+        $radios .= '<label class="xs-mode' . ($lock ? ' off' : '') . '"><input type="radio" name="sync_mode" value="' . $k . '" required' . ($mode === $k ? ' checked' : '') . ($lock ? ' disabled' : '') . ' data-xs-mode>'
                  . '<b>' . e($label) . '</b><small>' . e(XSELL_SYNC_HINT[$k]) . '</small></label>';
     }
     $rows = '';
@@ -116,7 +116,7 @@ function xsell_plan_html(PDO $pdo, array $deal, array $lines, string $back, bool
     }
     return '<details class="fl-edit xs-plan"' . ($mode === '' ? ' open' : '') . '><summary>' . icon('stage') . ' Plano das frentes'
          . ($mode === '' ? ' <span class="chip no">por escolher</span>' : ' <span class="chip">' . e(XSELL_SYNC[$mode]) . '</span>') . '</summary>'
-         . flow_form('plan', $deal, $back, '<div class="opts xs-modes" role="radiogroup" aria-label="Sincronização das frentes">' . $radios . '</div>'
+         . flow_form('plan', $deal, $back, '<div class="xs-modes" role="radiogroup" aria-label="Sincronização das frentes">' . $radios . '</div>'
              . '<div class="xs-lines" data-xs-mode-box="' . e($mode) . '">' . $rows . '</div>'
              . '<button class="btn sm" type="submit">Guardar o plano</button>'
              . '<p class="muted small">Obrigatório num negócio de crosselling: é requisito para enviar a proposta. A data de entrega das frentes sincronizadas é a do negócio.</p>', ['class' => 'fl-form xs-planf'])
@@ -187,4 +187,55 @@ function xsell_lanes_short(PDO $pdo, array $deal): string {
         $out[] = $l['funnel_name'] . ': ' . match ($l['status']) { 'done' => 'concluída', 'waiting' => 'à espera', 'planned' => 'planeada', default => (string)($l['stage_name'] ?? '—') };
     }
     return implode(' · ', $out);
+}
+
+/**
+ * «Serviços comprados» na ficha do contacto (§22.6): o que já comprou, o que falta oferecer e as
+ * oportunidades (abertas com «Criar negócio» e «Descartar»).
+ */
+function xsell_contact_html(PDO $pdo, array $c, string $back): string {
+    if (!xsell_ready($pdo) || !(can('pipeline') || can('negocios'))) return '';
+    $bought = xsell_bought($pdo, (int)$c['id']);
+    $opps = xsell_opps_for_contact($pdo, (int)$c['id']);
+    if (!$bought && !$opps && !(int)($c['is_client'] ?? 0)) return '';
+    $money = can('financeiro');
+    $edit = can('pipeline', PERM_EDIT);
+    $h = '<section class="lv-blk xs-bought"><h4>Serviços comprados <span class="h-sub">crosselling</span></h4><ul class="xs-bl">';
+    $open = [];
+    foreach ($opps as $o) if ($o['status'] === 'open') $open[(int)$o['funnel_id']] = $o;
+    foreach (funnels_active($pdo) as $f) {
+        $fid = (int)$f['id'];
+        if (isset($bought[$fid])) {
+            $b = $bought[$fid];
+            $links = implode(', ', array_map(fn($d) => '<a href="/admin/negocio.php?id=' . $d['id'] . '">' . e($d['code']) . '</a>', array_slice($b['deals'], 0, 3)));
+            $h .= '<li class="ok">' . icon('check') . '<b>' . e($f['name']) . '</b><small>' . $b['n'] . ' negócio' . ($b['n'] === 1 ? '' : 's') . ($money ? ' · ' . e(eur0($b['value'])) : '')
+                . ($b['last'] ? ' · ' . e(date('m/Y', strtotime($b['last']))) : '') . ' · ' . $links . '</small></li>';
+        } else {
+            $o = $open[$fid] ?? null;
+            $h .= '<li class="todo"><span class="xs-dot" aria-hidden="true"></span><b>' . e($f['name']) . '</b><small>' . ($o ? 'oportunidade aberta (' . e(XSELL_OPP_SOURCE[$o['source']] ?? '') . ')' : 'por oferecer') . '</small>'
+                . ($edit && !$o ? '<form method="post" action="/admin/xsell_act.php" class="inl">' . csrf_field() . '<input type="hidden" name="do" value="opp_add"><input type="hidden" name="contact" value="' . (int)$c['id'] . '">'
+                    . '<input type="hidden" name="funnel" value="' . $fid . '"><input type="hidden" name="back" value="' . e($back) . '" data-back-here><button class="lnk small" type="submit" data-tip="Registar como oportunidade">+ oportunidade</button></form>' : '')
+                . '</li>';
+        }
+    }
+    $h .= '</ul>';
+    if ($opps) {
+        $h .= '<h5 class="xs-h5">Oportunidades</h5><ul class="xs-opps">';
+        foreach ($opps as $o) {
+            $acts = '';
+            if ($o['status'] === 'open' && $edit) {
+                $acts = $o['result_deal_id']
+                    ? '<a class="lnk small" href="/admin/pipeline.php?deal=' . (int)$o['result_deal_id'] . '#negocio">' . e((string)$o['result_code']) . ' em curso</a>'
+                    : '<form method="post" action="/admin/xsell_act.php" class="inl">' . csrf_field() . '<input type="hidden" name="do" value="opp_deal"><input type="hidden" name="opp" value="' . (int)$o['id'] . '"><input type="hidden" name="back" value="' . e($back) . '" data-back-here>'
+                      . '<button class="btn sm" type="submit">' . icon('plus') . ' Criar negócio</button></form>'
+                      . '<form method="post" action="/admin/xsell_act.php" class="inl">' . csrf_field() . '<input type="hidden" name="do" value="opp_drop"><input type="hidden" name="opp" value="' . (int)$o['id'] . '"><input type="hidden" name="back" value="' . e($back) . '" data-back-here>'
+                      . '<button class="btn ghost sm" type="submit">Descartar</button></form>';
+            }
+            $h .= '<li class="st-' . e($o['status']) . '"><b>' . e($o['funnel_name']) . '</b> <span class="chip' . ($o['status'] === 'won' || $o['status'] === 'bundled' ? ' ok' : ($o['status'] === 'open' ? ' info' : '')) . '">' . e(XSELL_OPP_STATUS[$o['status']] ?? $o['status']) . '</span>'
+                . '<small>' . e(XSELL_OPP_SOURCE[$o['source']] ?? '') . ($o['deal_code'] ? ' · ' . e($o['deal_code']) : '') . ' · ' . e(date('d/m/Y', strtotime((string)$o['created_at']))) . ($o['note'] !== '' ? ' · ' . e($o['note']) : '') . '</small>'
+                . ($acts !== '' ? '<div class="xs-oa">' . $acts . '</div>' : '') . '</li>';
+        }
+        $h .= '</ul>';
+    }
+    return $h . '</section>';
 }

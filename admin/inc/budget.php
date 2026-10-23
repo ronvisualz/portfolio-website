@@ -441,6 +441,7 @@ function budget_version_new(PDO $pdo, array $sheet, array $from, ?int $by = null
     budget_default_validity($pdo, $vid);
     $lc = ['line_key', 'position', 'kind', 'service_id', 'contact_id', 'user_id', 'label', 'price_unit', 'unit_price', 'qty', 'qty_unit', 'cost', 'note'];
     if (budget_has_options($pdo)) $lc[] = 'opt';
+    if (db_has_column($pdo, 'budget_lines', 'funnel_id')) $lc[] = 'funnel_id';   // o serviço da linha (crosselling)
     $ins = $pdo->prepare('INSERT INTO budget_lines (version_id, ' . implode(',', $lc) . ') VALUES (?, ' . implode(',', array_fill(0, count($lc), '?')) . ')');
     foreach (budget_lines($pdo, (int)$from['id'], '*') as $l) $ins->execute([$vid, ...array_map(fn($c) => $l[$c], $lc)]);
     budget_log($pdo, (int)$sheet['id'], 'b_version', 'v' . $num . ' criada a partir da v' . $from['num'] . ($why !== '' ? ' · ' . $why : ''), $by);
