@@ -31,6 +31,8 @@ final class BudgetPdf {
     public const W = 595.28, H = 841.89;
     private array $pages = [];
     private string $ops = '';
+    /** Imagens JPEG (DCTDecode): nome => [largura, altura, bytes]. */
+    private array $images = [];
 
     public function page(): void {
         if ($this->ops !== '') $this->pages[] = $this->ops;
@@ -89,6 +91,15 @@ final class BudgetPdf {
         $this->ops .= sprintf("%s RG %.2F w %.2F %.2F m %.2F %.2F l S\n", self::rgb($color), $w, $x1, self::H - $y1, $x2, self::H - $y2);
     }
 
+    /** Uma imagem JPEG (bytes) no retângulo (x, y a partir do topo, w × h). Imagens que não são JPEG RGB ficam de fora. */
+    public function image(string $jpeg, float $x, float $y, float $w, float $h): void {
+        $info = @getimagesizefromstring($jpeg);
+        if (!$info || ($info[2] ?? 0) !== IMAGETYPE_JPEG || ($info['channels'] ?? 3) !== 3) return;
+        $name = 'Im' . (count($this->images) + 1);
+        $this->images[$name] = [(int)$info[0], (int)$info[1], $jpeg];
+        $this->ops .= sprintf("q %.2F 0 0 %.2F %.2F %.2F cm /%s Do Q\n", $w, $h, $x, self::H - $y - $h, $name);
+    }
+
     /** O logótipo topper. (o mesmo desenho do menu), com $h pontos de altura, canto superior esquerdo em (x, y). */
     public function wordmark(float $x, float $y, float $h, string $color = '#111111'): void {
         if (!preg_match('/ d="([^"]+)"/', wordmark_svg(), $m)) return;
@@ -113,9 +124,17 @@ final class BudgetPdf {
         $objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
         $objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
         $kids = [];
+        // as imagens primeiro (números a seguir às fontes), depois as páginas
         $n = 5;
+        $xo = '';
+        foreach ($this->images as $name => [$iw, $ih, $bytes]) {
+            $objs[$n] = '<< /Type /XObject /Subtype /Image /Width ' . $iw . ' /Height ' . $ih . ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' . strlen($bytes) . " >>\nstream\n" . $bytes . "\nendstream";
+            $xo .= '/' . $name . ' ' . $n . ' 0 R ';
+            $n++;
+        }
+        $res = '/Font << /F1 3 0 R /F2 4 0 R >>' . ($xo !== '' ? ' /XObject << ' . $xo . '>>' : '');
         foreach ($this->pages as $ops) {
-            $objs[$n] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' . self::W . ' ' . self::H . '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' . ($n + 1) . ' 0 R >>';
+            $objs[$n] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' . self::W . ' ' . self::H . '] /Resources << ' . $res . ' >> /Contents ' . ($n + 1) . ' 0 R >>';
             $body = function_exists('gzcompress') ? gzcompress($ops) : $ops;
             $objs[$n + 1] = '<< /Length ' . strlen($body) . (function_exists('gzcompress') ? ' /Filter /FlateDecode' : '') . " >>\nstream\n" . $body . "\nendstream";
             $kids[] = $n . ' 0 R';
@@ -219,6 +238,49 @@ function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
         $y += $hBox + 8;
     } elseif ($desc !== '') { $section('O trabalho'); $para($desc); }
 
+    // o pré-criativo (§23.3): uma página por opção, com as referências, a paleta e a técnica
+    require_once __DIR__ . '/cc_flow.php';
+    $ccPages = cc_pages_for_version($pdo, (int)$v['id']);
+    if ($ccPages) {
+        foreach ($ccPages as $pg) {
+            if ($pg['opt'] === 'B' && !$calcB) continue;
+            $footer($page);
+            $pdf->page();
+            $page++;
+            $y = 64;
+            $label = ($pg['opt'] === 'AB' ? ($calcB ? 'OPÇÕES A E B' : 'OPÇÃO A · PEDIDO') : ($pg['opt'] === 'A' ? 'OPÇÃO A · PEDIDO' : 'OPÇÃO B · PROPOSTA DE VALOR'))
+                   . ' · PRÉ-CRIATIVO' . ($pg['front'] !== '' ? ' · ' . mb_strtoupper($pg['front']) : '');
+            $pdf->rect($L, $y - 10, 3, 14, $pg['opt'] === 'B' ? '#FFC718' : '#81CFE3');
+            $pdf->text($L + 10, $y, $label, 8.5, true, '#5C5C5C');
+            $y += 26;
+            foreach (BudgetPdf::wrap($pg['title'] !== '' ? $pg['title'] : 'Pré-criativo', 'F2', 22, $max) as $ln) { $pdf->text($L, $y, $ln, 22, true); $y += 26; }
+            if ($pg['concept'] !== '') { foreach (BudgetPdf::wrap($pg['concept'], 'F2', 12.5, $max) as $ln) { $pdf->text($L, $y, $ln, 12.5, true, '#333333'); $y += 17; } $y += 4; }
+            if ($pg['approach'] !== '') $para($pg['approach'], 10.5);
+            // as referências: 3 × 2, recortadas a 4:3
+            $refs = cc_pdf_refs($pdo, $pg['refs']);
+            if ($refs) {
+                $gap = 10; $cw = ($max - 2 * $gap) / 3; $ch = $cw * 0.75;
+                foreach (array_values($refs) as $i => $jpg) {
+                    $pdf->image($jpg, $L + ($i % 3) * ($cw + $gap), $y + intdiv($i, 3) * ($ch + $gap), $cw, $ch);
+                }
+                $y += (int)ceil(count($refs) / 3) * ($ch + $gap) + 8;
+            }
+            if ($pg['palette']) {
+                foreach ($pg['palette'] as $i => $hex) {
+                    $pdf->rect($L + $i * 74, $y, 64, 26, $hex);
+                    $pdf->text($L + $i * 74, $y + 38, $hex, 7.5, false, '#767676');
+                }
+                $y += 54;
+            }
+            $meta = array_filter([$pg['technique'] !== '' ? 'Técnica: ' . $pg['technique'] : '', $pg['complexity'] !== '' ? 'Complexidade: ' . mb_strtolower($pg['complexity']) : '']);
+            if ($meta) { $pdf->text($L, $y, implode('   ·   ', $meta), 10, false, '#5C5C5C'); $y += 18; }
+        }
+        $footer($page);
+        $pdf->page();
+        $page++;
+        $y = 64;
+    }
+
     // fases e prazos
     $section('Fases e prazos');
     $days = $calc['days'];
@@ -301,3 +363,24 @@ function budget_pdf_publish(PDO $pdo, array $sheet, array $v): array {
     return ['msg' => $saved ? 'Proposta guardada no Drive (' . preg_replace('~^Projetos/~', '', $saved) . ') e a descarregar.' : 'Proposta gerada e a descarregar' . (r2_config() ? ' (não foi possível guardar no Drive).' : ' (o Drive não está ligado neste servidor).'),
             'key' => $saved];
 }
+
+/** As referências de uma página do pré-criativo em JPEG 4:3 (o PDF só desenha JPEG). */
+function cc_pdf_refs(PDO $pdo, array $ids): array {
+    $out = [];
+    foreach (array_slice($ids, 0, 6) as $id) {
+        $a = cc_asset_get($pdo, (int)$id);
+        $key = $a ? cc_thumb_pick($a['thumbs'], 768) : null;
+        if (!$key) continue;
+        try { $img = cc_gd_open(cc_store_get($key, 8388608)); } catch (Throwable $e) { $img = null; }
+        if (!$img) continue;
+        $w = imagesx($img); $h = imagesy($img);
+        $tw = $w; $th = (int)round($w * 0.75);
+        if ($th > $h) { $th = $h; $tw = (int)round($h / 0.75); }
+        $crop = imagecreatetruecolor(640, 480);
+        imagefill($crop, 0, 0, imagecolorallocate($crop, 255, 255, 255));
+        imagecopyresampled($crop, $img, 0, 0, (int)(($w - $tw) / 2), (int)(($h - $th) / 2), 640, 480, $tw, $th);
+        $out[] = cc_gd_jpeg($crop, 82);
+    }
+    return $out;
+}
+

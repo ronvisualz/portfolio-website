@@ -1424,6 +1424,90 @@ Ficheiros novos: `inc/migrate_xsell.php`, `inc/xsell.php`, `inc/xsell_view.php`,
 `relatorios.php`, `assets/app.js`, `assets/leads.js`, `assets/tasks.js`, `assets/budget.js`,
 `assets/app.css`.
 
+### 10.14 Centro Criativo — fase 1 — §23 (23 out 2026)
+
+Base de dados **v24** (`inc/migrate_creative.php`, idempotente): `cc_boards` (quadros e sub-quadros),
+`cc_assets` (biblioteca: uma referência existe uma vez, os quadros apontam para ela), `cc_frames`
+(frames-chave dos vídeos), `cc_cards`, `cc_comments`, `cc_pages` (páginas do pré-criativo e o
+tratamento), `cc_jobs` (fila da IA e das importações), `cc_ai_usage` (gasto à parte do assistente do
+Drive); preparadas para as fases 2 e 3: `cc_versions` (Review v001…), `cc_share` (portal do cliente,
+um link por negócio) e `cc_capture` (extensão do browser / captura do telemóvel); em `funnels`
+`cc_pre_mode` e `cc_stages`. Modelo em `inc/cc.php`, IA em `inc/cc_ai.php`, ligação ao negócio em
+`inc/cc_flow.php`, importação em `inc/cc_import.php`; página `criativo.php`, pedidos `cc_api.php`,
+ficheiros `cc_file.php`, interface `assets/cc.js` e `assets/cc.css`.
+
+- **Separadores:** Projetos (pré-criativos, projetos e quadros livres, com capa; «Negócios sem quadro»
+  com «Criar quadro»), Biblioteca, Caixa de entrada e Review (fase 2, já com o lugar).
+- **Quadro (tela infinita):** colunas com encaixe, grelha suave (snap de 20 px; Alt larga sem
+  encaixar), cartões de imagem, vídeo, link (pré-visualização trazida pelo servidor), nota, lista,
+  amostra de cor, desenho, ficheiro, seta e sub-quadro; seleção em caixa, redimensionar, duplicar,
+  apagar com «Anular», ⌘Z/⇧⌘Z; comentários e @menções por cartão (avisam no sino); modo
+  apresentação; etapas do projeto em cima (Brief · Referências · Conceito · Tratamento · Styleframes ·
+  Storyboard · Lista de planos · Review); painel IA · Detalhe · Comentários; outros separadores
+  abertos atualizam-se sozinhos (a edição em tempo real é da fase 3).
+- **Fluidez:** colar ou arrastar imagens/ficheiros/links/texto/código de cor; atalhos N, C, L, /,
+  espaço, ⌘/Ctrl+roda, 0, 1, F, V, D, A (em Conhecimento › Navegação); só o que está à vista é
+  desenhado; miniaturas 256/768/1600 px escolhidas pela largura no ecrã; vídeo só toca ao passar
+  o cursor; mover e zoom mexem só num transform (60 fps); iPad e telemóvel com arrastar, pan e pinça.
+- **Biblioteca:** pesquisa por texto, **por cor** (paleta extraída por k-means em Lab, determinística;
+  ΔE2000), **«Mais como este»** (embeddings multimodais; sem chave, por etiquetas, facetas e paleta) e
+  filtros de estilo, técnica, câmara, ambiente, luz, origem (externas · topper.) e tipo. Detalhe com
+  análise editável (a edição humana prevalece), paleta, frames, quadros onde está e «Pode ser divulgado?»
+  das referências da casa. **Caixa de entrada:** captura (carregar, colar, arrastar, «Capturar» no
+  telemóvel) já analisada; triagem = enviar para um quadro ou arrumar na biblioteca (com «Anular»).
+- **Envios:** o browser calcula a impressão digital (duplicados reaproveitados), faz a
+  pré-visualização (HEIC/AVIF no Safari) e, nos vídeos, os **6–12 frames-chave por deteção de corte**
+  (sem precisar de ffmpeg no servidor). Com o R2 ligado, o original vai diretamente para
+  `.topper/cc/` (invisível no Drive); sem R2, pasta privada.
+- **IA de qualidade máxima:** o modelo Claude mais capaz (`cc_config.php › model`, por defeito
+  Claude Fable 5.1; se a conta não tiver acesso, Claude Opus 5.5), esforço «high», saídas
+  estruturadas (JSON Schema) e **fallbacks do servidor** ligados; embeddings multimodais Voyage
+  (API paga). Análise por referência (legenda, estilo, técnica, ambiente, luz, composição, câmara,
+  cor, «porque funciona», etiquetas, confiança; vídeo plano a plano) com o vocabulário da casa
+  (Definições). Ações «/»: Analisar · Ângulos para este projeto · Referências para o brief · Mais
+  como este · Arrumar o quadro · Quadro → tratamento (página para imprimir/PDF) · Storyboard → lista
+  de planos (→ tarefas no negócio). A fila corre pelo browser e pelo cron (`cron_run.php cc`). Chaves
+  só no servidor (`admin/inc/cc_config.php`, fora do Git); uso, custo e limite mensal em Definições ›
+  Integrações. Transcrição dos vídeos preparada, por ligar (falta escolher o serviço).
+- **Pré-criativo:** nasce ao validar o X-Ray — quadro «Pré-criativo · <negócio>» com o brief e as
+  faixas **Opção A · Pedido** e **Opção B · Proposta de valor**, e a tarefa «Pré-criativo · <cliente>»
+  para a execução (+2 d.u., Definições). «Preparar com IA» (3 ângulos por opção e até 9 referências
+  da biblioteca por faixa) → manter / tirar / trocar → «Gerar página» (título, conceito, abordagem, 6
+  referências, paleta, técnica, complexidade; sem IA, a partir das notas) → «Serve as duas» →
+  «Enviar para a Orçamentação» (liga à versão atual ainda não enviada; conclui a tarefa). As páginas
+  entram no **PDF da proposta** (uma página por opção, com as imagens) e na **página do cliente**, ao
+  lado de cada opção (imagens servidas só por token da proposta). Gerar outra vez não muda uma
+  proposta já enviada. Na etapa Proposta é **recomendado** (aparece, não trava) ou **obrigatório**,
+  por funil. Perdido → arquivado; reaberto → volta. **Kickoff** → quadro do projeto com os
+  sub-quadros do modelo do funil; a opção escolhida pelo cliente entra em «Conceito» e a outra fica
+  como «Rota não escolhida». **Crosselling:** um sub-quadro por frente (no pré-criativo e no projeto),
+  cada um com o seu responsável de execução.
+- **Importação:** ZIP, PDF ou Markdown (exportações do Milanote) ou imagem → quadro novo em grelha,
+  notas como notas, imagens para a biblioteca com análise; pela fila, em pedaços. Mecanismo pronto,
+  nada importado.
+- **Definições › Centro Criativo:** prazo do pré-criativo, por funil (recomendado · obrigatório ·
+  desligado e sub-quadros do projeto), vocabulário da casa e atalho para a importação. A ficha do
+  negócio tem o cartão **Criativos** com o pré-criativo, as páginas e o quadro do projeto.
+- **Permissões no servidor:** ver (quadros, biblioteca, ficheiros), editar (tudo o que grava) e
+  gerir (apagar quadros, «Analisar o que falta»); sem acesso, nem os ficheiros abrem.
+- **Testado na bancada (MariaDB, IA simulada):** migração v24; paleta e ΔE; duplicados; fila da
+  IA, análise e embeddings; pré-criativo completo até ao PDF e à página do cliente; perdido/reaberto;
+  Kickoff com Conceito e «Rota não escolhida»; crosselling; importação; quadro no browser (atalhos,
+  colunas, «/», rotas a partir de ângulos, páginas, enviar, manter/trocar, comentários com @menção,
+  apresentação, apagar com «Anular», carregar com frames de vídeo), iPad (pan e pinça), telemóvel,
+  claro/escuro, permissões (editar, só ver, sem acesso).
+- **Fase 2 (preparada):** Review (versões lado a lado, comentários no frame com desenho, Aprovar ·
+  Pedir alterações, rondas) e portal do cliente. **Fase 3 (preparada):** edição em tempo real por
+  várias pessoas e extensão do browser.
+
+Ficheiros novos: `inc/migrate_creative.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc/cc_flow.php`,
+`inc/cc_import.php`, `inc/cc_config.example.php`, `criativo.php`, `cc_api.php`, `cc_file.php`,
+`assets/cc.js`, `assets/cc.css`. Alterados: `inc/migrate.php`, `inc/pipeline.php`,
+`inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget_pdf.php`, `inc/alerts.php`,
+`inc/interactions.php`, `inc/settings_def.php`, `inc/undo.php`, `inc/ui.php`, `inc/perm.php`,
+`inc/cron_run.php`, `proposta.php`, `negocio.php`, `definicoes.php`, `ui_api.php`, `brevemente.php`,
+`assets/app.css`, `.gitignore`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -2545,7 +2629,11 @@ opção «Combinar funis» sai das Definições › Funis.
 
 ---
 
+<<<<<<< HEAD
 ## 23. Centro Criativo (decidido 23 out 2026; 23.3 a confirmar)
+=======
+## 23. Centro Criativo (decidido 23 out 2026)
+>>>>>>> origin/main
 
 Espaço de trabalho criativo da equipa de execução — «Milanote com esteroides» ligado ao
 negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a §11.
@@ -2578,7 +2666,11 @@ quadro como «Rota não escolhida». O brief vem do X-Ray.
 Negócios com várias frentes (crosselling, §22): um quadro por negócio com **um sub-quadro
 por frente**; cada frente tem o seu responsável de execução e o seu Review.
 
+<<<<<<< HEAD
 ### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
+=======
+### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta)
+>>>>>>> origin/main
 - **Nasce sozinho** quando o X-Ray é validado: cria o quadro «Pré-criativo · <negócio>» com o
   brief do X-Ray e **duas faixas: Opção A (Pedido) e Opção B (Proposta de valor)**; cria a
   tarefa «Pré-criativo · <cliente>» para o responsável de execução (prazo por defeito +2 d.u.,
@@ -2638,3 +2730,58 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 1. Quadros, Biblioteca, Caixa de entrada, IA de análise e ângulos, **pré-criativo**.
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
+
+---
+
+## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
+
+Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
+
+### 24.1 Versões
+- Uma **peça de review** pertence a um negócio (e a uma frente, §22) e a uma etapa de
+  aprovação (styleframes, animatic, offline, picture lock, finais, lote…).
+- Carregar ficheiro (vídeo, imagem, PDF) → versão **v001, v002…**; nunca se apaga uma versão.
+- Vídeo: gerar no servidor um **proxy H.264** para o browser, **poster**, **tira de miniaturas**
+  e ler o **fps e o timecode de início**; o original fica no Drive (`<ID>_<NOME>/Review/`).
+- Estados da peça: Em preparação · Enviada ao cliente · Com comentários · Alterações pedidas ·
+  **Aprovada**.
+
+### 24.2 Leitor e comentários no frame exato
+- Leitor com **precisão ao frame**: avançar/recuar 1 frame (← →), J/K/L, velocidade, repetir
+  um intervalo, timecode SMPTE, tira de miniaturas.
+- Comentário preso a um **frame** (ou a um **intervalo**), com **desenho por cima** (seta,
+  retângulo, círculo, mão livre, texto) guardado como vetor; marcadores coloridos na barra do tempo.
+- Imagens e PDF: **pinos** no ponto clicado, com desenho.
+- Respostas em fio, @menções, anexos, **Resolver/Reabrir**.
+- Comentários **Internos** (só a equipa) ou **Para o cliente**; os internos nunca chegam ao portal.
+- Comparar versões: **lado a lado**, **cortina** (wipe) e **sobreposição**, sincronizadas.
+- Exportar comentários: PDF/CSV e **marcadores para Premiere/DaVinci/Avid** (EDL/XML).
+
+### 24.3 Rondas e aprovação
+- **Enviar ao cliente** abre uma ronda; o cliente envia os comentários **de uma vez** (botão
+  «Enviar comentários»): um envio consolidado = **uma ronda** (§19.6 D).
+- Contador «Ronda X de Y incluídas» por etapa (Y vem da proposta/Definições). Ao **passar do
+  incluído**: aviso ao Comercial e sugestão de **pedido de alteração** (§19.6 D).
+- **Aprovar** (equipa ou cliente pelo portal) → peça Aprovada, **conclui a tarefa de aprovação
+  correspondente no Pipeline** (mapa etapa de review ↔ tarefa em Definições › Centro Criativo)
+  e os frames/versão aprovados entram na Biblioteca como referência da casa (§23.1).
+- Aprovação do cliente pede **nome escrito** e confirmação; regista data, IP e versão.
+- Notificações ao responsável de execução e ao comercial em cada ação do cliente.
+
+### 24.4 Portal do cliente
+- **Um link por negócio**, longo e aleatório, **revogável** e com **validade** (por defeito até 60
+  dias após a entrega; Definições). Sem conta. Abrir (GET) **nunca altera nada**; ações por POST.
+- Primeira ação: o cliente indica **nome e email** (guardado nesse browser); os comentários
+  aparecem como «Cliente · Nome». Vários aprovadores do cliente podem usar o mesmo link.
+- Separadores visíveis só se a topper. partilhar: **Proposta** (com pré-criativo) · **Quadros**
+  partilhados (só leitura: tratamento, rotas) · **Review** (peças enviadas).
+- **Nunca** mostra custos, margens, notas, tarefas ou comentários internos.
+- Imagem topper., modo claro/escuro, funciona no telemóvel, **PT/EN** (clientes internacionais).
+- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** com o
+  nome do cliente (opção por peça); **download** só se ativado por peça.
+- Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
+- Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
+
+### 24.5 Definições › Centro Criativo
+Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
+etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.

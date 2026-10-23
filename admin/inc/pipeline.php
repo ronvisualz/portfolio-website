@@ -130,6 +130,8 @@ function deal_mark_lost(PDO $pdo, array $deal, string $reason): void {
     deal_log($pdo, (int)$deal['id'], 'lost', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'], 'note' => $reason]);
     require_once __DIR__ . '/xsell.php';
     xsell_opp_result($pdo, (int)$deal['id'], 'lost');
+    require_once __DIR__ . '/cc_flow.php';
+    cc_on_lost($pdo, (int)$deal['id']);   // o pré-criativo fica arquivado com o negócio (§23.3)
 }
 
 /** Reabre um negócio perdido na etapa onde se perdeu (ou X-Ray, se essa etapa já não existir). */
@@ -144,6 +146,8 @@ function deal_reopen(PDO $pdo, array $deal): void {
     $pdo->prepare('UPDATE deals SET phase = \'pipeline\', stage_id = ?, lost_reason = \'\', lost_stage_id = NULL, lost_at = NULL, last_touch = ? WHERE id = ?')
         ->execute([$stageId, today_lisbon(), $deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'reopen', ['to_funnel' => $deal['funnel_id'], 'to_stage' => $stageId]);
+    require_once __DIR__ . '/cc_flow.php';
+    cc_on_reopen($pdo, (int)$deal['id']);
 }
 
 /**

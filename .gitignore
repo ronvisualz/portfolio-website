@@ -18,3 +18,7 @@ admin/inc/meet_config.php
 # Fotos de perfil (Equipa): ficam só no servidor.
 admin/inc/avatars/
 admin/inc/billing/
+# Centro Criativo (IA de qualidade máxima e embeddings) — copie cc_config.example.php para cc_config.php no servidor.
+admin/inc/cc_config.php
+# Ficheiros do Centro Criativo quando o Drive (R2) não está ligado.
+admin/inc/cc_files/

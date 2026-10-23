@@ -316,6 +316,11 @@ function flow_on_enter(PDO $pdo, int $dealId, int $stageId): int {
     }
     // Depois da entrega o cliente entra nas Relações com o comercial como dono (§19.10).
     if ($stage['kind'] === 'done') flow_relation_after_delivery($pdo, $deal);
+    // Kickoff: o quadro do projeto no Centro Criativo (a partir do pré-criativo, se houver).
+    if ($stage['kind'] === 'kickoff') {
+        require_once __DIR__ . '/cc_flow.php';
+        try { cc_on_kickoff($pdo, $deal, current_user()['id'] ?? null); } catch (Throwable $e) { error_log('cc_on_kickoff: ' . $e->getMessage()); }
+    }
     return $n;
 }
 
@@ -534,7 +539,15 @@ function xray_validate(PDO $pdo, array $deal, int $by): string {
     $pdo->prepare('UPDATE deals SET xray_validated_at = ?, xray_validated_by = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $by, $deal['id']]);
     $done = flow_complete_doc_tasks($pdo, (int)$deal['id'], 'xray');
     deal_log($pdo, (int)$deal['id'], 'xray', ['note' => 'X-Ray validado' . ($done ? ' · tarefa concluída' : '')]);
-    return 'X-Ray validado.';
+    // O pré-criativo nasce aqui (§23.3): quadro com as faixas A/B e a tarefa para a execução.
+    require_once __DIR__ . '/cc_flow.php';
+    try {
+        $pre = cc_on_xray_validated($pdo, $deal, $by);
+    } catch (Throwable $e) {
+        error_log('cc_on_xray_validated: ' . $e->getMessage());
+        $pre = null;
+    }
+    return 'X-Ray validado.' . ($pre ? ' O pré-criativo está no Centro Criativo.' : '');
 }
 
 /** Conclui as tarefas abertas de um negócio que esperam por um documento/evento. Devolve quantas. */
@@ -617,6 +630,7 @@ function proposal_requirements(PDO $pdo, array $deal): array {
         ['label' => 'Validade da proposta', 'ok' => (bool)$validOk, 'hint' => $v && $v['valid_until'] && !$validOk ? 'A validade já passou.' : ''],
         ['label' => 'PDF da proposta gerado (v' . ($v ? (int)$v['num'] : 1) . ')', 'ok' => $pdf, 'hint' => ''],
         ...xsell_requirements($pdo, $deal),
+        ...(function () use ($pdo, $deal) { require_once __DIR__ . '/cc_flow.php'; return cc_requirements($pdo, $deal); })(),
     ];
 }
 
@@ -629,12 +643,16 @@ function proposal_public_content(PDO $pdo, array $deal, array $v): array {
         'scope' => $scope, 'price' => round($price, 2), 'vat' => round($price * $rate / 100, 2), 'total' => round($price * (1 + $rate / 100), 2)];
     $opts = [$opt('A', (float)$v['price'], trim((string)$v['description']))];
     if ($b) $opts[] = $opt('B', (float)$v['price_b'], trim((string)$v['scope_b']));
-    return [
+    $out = [
         'code' => (string)$deal['code'], 'name' => (string)$deal['name'], 'version' => (int)$v['num'], 'vat_rate' => $rate,
         'options' => $opts, 'term' => (string)$v['term_text'], 'payment' => (string)$v['payment_terms'],
         'revisions' => (string)$v['revisions_text'], 'rights' => (string)$v['rights_text'], 'conditions' => trim((string)$v['conditions']),
         'valid_until' => (string)$v['valid_until'],
     ];
+    // O pré-criativo (§23.3), quando foi enviado para esta versão: uma página por opção.
+    require_once __DIR__ . '/cc_flow.php';
+    if ($cc = cc_pages_for_version($pdo, (int)$v['id'])) $out['creative'] = $cc;
+    return $out;
 }
 
 function proposal_hash(array $content): string {

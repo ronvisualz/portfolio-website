@@ -518,9 +518,21 @@ if (!$drive) {
         ]), ['panel' => 'ddocs:' . $id, 'href' => $drive['folder'] ? drive_page($drive['folder']) : '/admin/drive.php', 'more' => 'Ver documentos']);
 }
 
-// ── Criativos (Centro Criativo, ainda por desenhar) ──
-echo deal_card('creative', 'criativo', 'yel', 'Criativos', deal_kv([['Versões', '<span class="muted">—</span>'], ['Aprovação do cliente', '<span class="muted">—</span>']])
-     . '<p class="dc-note">Vem do Centro Criativo quando a aba existir: versões e aprovações do cliente, por este ID.</p>', ['empty' => true]);
+// ── Criativos (Centro Criativo, §23): o pré-criativo e o quadro do projeto deste negócio ──
+require_once __DIR__ . '/inc/cc_flow.php';
+if (cc_ready($pdo) && can('criativo')) {
+    $ccPre = cc_deal_board($pdo, $id, 'precreative');
+    $ccProj = cc_deal_board($pdo, $id, 'project');
+    $ccMain = $ccProj ?: $ccPre;
+    $ccCount = $ccMain ? (int)$pdo->query('SELECT COUNT(*) FROM cc_cards c JOIN cc_boards b ON b.id = c.board_id WHERE c.deleted_at IS NULL AND (b.id = ' . (int)$ccMain['id'] . ' OR b.parent_id = ' . (int)$ccMain['id'] . ')')->fetchColumn() : 0;
+    $ccPages = $ccPre ? $pdo->query("SELECT lane, sent_at FROM cc_pages WHERE board_id = " . (int)$ccPre['id'] . " AND lane IN ('A','B')")->fetchAll() : [];
+    $ccPageTxt = $ccPages ? implode(' · ', array_map(fn($p) => 'Opção ' . $p['lane'] . ($p['sent_at'] ? ' na proposta' : ' gerada'), $ccPages)) : '<span class="muted">—</span>';
+    echo deal_card('creative', 'criativo', 'yel', 'Criativos', deal_kv([
+            ['Pré-criativo', $ccPre ? '<a href="/admin/criativo.php?b=' . (int)$ccPre['id'] . '">' . ($ccPre['status'] === 'archived' ? 'arquivado' : 'aberto') . '</a>' : '<span class="muted">' . (cc_pre_mode($pdo, $deal['funnel_id'] ? (int)$deal['funnel_id'] : null) === 'off' ? 'desligado neste funil' : 'nasce ao validar o X-Ray') . '</span>'],
+            ['Páginas', $ccPageTxt],
+            ['Quadro do projeto', $ccProj ? '<a href="/admin/criativo.php?b=' . (int)$ccProj['id'] . '">' . $ccCount . ' cartões</a>' : '<span class="muted">nasce no Kickoff</span>'],
+        ]), $ccMain ? ['href' => '/admin/criativo.php?b=' . (int)$ccMain['id'], 'more' => 'Abrir no Centro Criativo'] : ['empty' => true]);
+}
 
 // ── Histórico (todas as fontes) ──
 $tl = deal_timeline_all($pdo, $deal, $money, 6);

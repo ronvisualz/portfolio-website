@@ -49,9 +49,11 @@ function flow_req_html(array $i, ?array $deal = null, string $back = ''): string
     if ($deal && !$i['ok'] && !empty($i['task']) && ($t = task_by_id($GLOBALS['pdo'], (int)$i['task'])) && flow_task_needs_doc($t) === '') {
         $task .= ' ' . flow_form('task_done', $deal, $back, '<input type="hidden" name="task" value="' . (int)$i['task'] . '"><button class="lnk small" type="submit">' . icon('check') . ' feita</button>', ['class' => 'inl']);
     }
-    return '<li class="' . ($i['ok'] ? 'ok' : 'no') . '"><span class="fl-ck" aria-hidden="true">' . ($i['ok'] ? icon('check') : '') . '</span>'
-         . '<span><span class="sr-only">' . ($i['ok'] ? 'Cumprido: ' : 'Em falta: ') . '</span>' . e($i['label']) . $task
-         . (!$i['ok'] && ($i['hint'] ?? '') !== '' ? '<small>' . e($i['hint']) . '</small>' : '') . '</span></li>';
+    // Um requisito recomendado (ex.: pré-criativo, §23.3) aparece mas nunca trava.
+    $done = !empty($i['soft']) ? !empty($i['done']) : $i['ok'];
+    return '<li class="' . ($done ? 'ok' : (!empty($i['soft']) ? 'soft' : 'no')) . '"><span class="fl-ck" aria-hidden="true">' . ($done ? icon('check') : '') . '</span>'
+         . '<span><span class="sr-only">' . ($done ? 'Cumprido: ' : (!empty($i['soft']) ? 'Recomendado: ' : 'Em falta: ')) . '</span>' . e($i['label']) . $task
+         . (!$done && ($i['hint'] ?? '') !== '' ? '<small>' . e($i['hint']) . '</small>' : '') . '</span></li>';
 }
 
 /** A barra de etapas e os requisitos para sair da atual (com «Avançar» e, para admins, «Forçar»). */

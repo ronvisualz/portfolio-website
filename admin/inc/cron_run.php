@@ -7,6 +7,8 @@
  *   php …/admin/inc/cron_run.php relations só os follow-ups de relação (§13.5)
  *   php …/admin/inc/cron_run.php pipeline  só as automações de data e mensais do Pipeline (§19.7);
  *                                          também correm todas as noites, com a cópia
+ *   php …/admin/inc/cron_run.php cc [seg]  a fila da IA do Centro Criativo (análises, embeddings,
+ *                                          importações) durante [seg] segundos (por omissão 240)
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -32,6 +34,11 @@ try {
         $out .= 'Tarefas automáticas (datas e avenças): ' . flow_tick($pdo) . "\n";
     } elseif ($job === 'pipeline') {
         $out = 'Tarefas automáticas (datas e avenças): ' . flow_tick($pdo) . "\n";
+    } elseif ($job === 'cc') {
+        require_once __DIR__ . '/cc.php';
+        $sec = max(10, min(3000, (int)($argv[2] ?? 240)));
+        @set_time_limit($sec + 600);
+        $out = cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, (float)$sec) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {
@@ -50,7 +57,7 @@ try {
             }
         }
     } else {
-        fwrite(STDERR, "Uso: php cron_run.php backup|relations|pipeline|plan|migrate\n");
+        fwrite(STDERR, "Uso: php cron_run.php backup|relations|pipeline|cc|plan|migrate\n");
         exit(2);
     }
 } catch (Throwable $e) {

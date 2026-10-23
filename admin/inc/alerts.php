@@ -256,6 +256,18 @@ function my_alerts(PDO $pdo): array {
                                       'url' => '/admin/calendar.php?t=quadro'];
                 }
             }
+            // @menções no Centro Criativo (§23), dos últimos 14 dias.
+            if (db_has_table($pdo, 'cc_comments') && can('criativo')) {
+                $st = $pdo->prepare("SELECT c.id, c.board_id, c.card_id, c.body, c.created_at, b.title, u.name FROM cc_comments c
+                                       JOIN cc_boards b ON b.id = c.board_id LEFT JOIN users u ON u.id = c.user_id
+                                      WHERE c.mentions LIKE ? AND c.deleted_at IS NULL AND c.user_id <> ? AND c.created_at >= ? ORDER BY c.id DESC LIMIT 20");
+                $st->execute(['%,' . $uid . ',%', $uid, date('Y-m-d H:i:s', time() - 14 * 86400)]);
+                foreach ($st->fetchAll() as $c) {
+                    $out['team'][] = ['key' => 'ccm:' . $c['id'], 'kind' => 'mention', 'icon' => 'criativo', 'sev' => 'warn', 'date' => substr((string)$c['created_at'], 0, 10),
+                                      'title' => ($c['name'] ?: 'Alguém') . ' mencionou-o em «' . $c['title'] . '»', 'sub' => mb_strimwidth((string)$c['body'], 0, 90, '…'),
+                                      'url' => '/admin/criativo.php?b=' . (int)$c['board_id'] . ($c['card_id'] ? '&card=' . (int)$c['card_id'] : '')];
+                }
+            }
             if (role_is_admin((string)$meRow['role'])) {
                 foreach ($pdo->query("SELECT a.id, a.kind, a.start_date, a.end_date, u.name FROM absences a JOIN users u ON u.id = a.user_id WHERE a.status = 'pending' ORDER BY a.start_date")->fetchAll() as $a) {
                     $out['team'][] = ['key' => 'abs:' . $a['id'], 'kind' => 'absence', 'icon' => 'plane', 'sev' => 'warn', 'date' => $a['start_date'],

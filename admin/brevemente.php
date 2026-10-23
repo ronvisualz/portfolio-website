@@ -14,6 +14,7 @@ const SOON = [
 $tab = (string)($_GET['t'] ?? '');
 if ($tab === 'relatorios') redirect('/admin/relatorios.php');   // já têm página própria
 if ($tab === 'conhecimento') redirect('/admin/conhecimento.php');
+if ($tab === 'criativo') redirect('/admin/criativo.php');
 if (!isset(SOON[$tab])) redirect(home_url());
 require_page($tab);
 [$title, $what] = SOON[$tab];

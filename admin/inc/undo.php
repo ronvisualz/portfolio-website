@@ -208,7 +208,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
         case 'setting_row':
             // Uma célula das listas com tabela (serviços, pilares) volta ao que era.
             if (!is_admin()) throw new RuntimeException('Sem permissão.');
-            if (!in_array($d['table'], ['services', 'mkt_pillars'], true) || !preg_match('/^[a-z_]+$/', (string)$d['field'])) throw new RuntimeException($changed);
+            if (!in_array($d['table'], ['services', 'mkt_pillars', 'funnels'], true) || ($d['table'] === 'funnels' && !in_array($d['field'], ['cc_pre_mode', 'cc_stages'], true)) || !preg_match('/^[a-z_]+$/', (string)$d['field'])) throw new RuntimeException($changed);
             $st = $pdo->prepare('SELECT ' . $d['field'] . ' FROM ' . $d['table'] . ' WHERE id = ?');
             $st->execute([(int)$d['id']]);
             $cur = $st->fetchColumn();

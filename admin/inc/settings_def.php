@@ -19,6 +19,7 @@ require_once __DIR__ . '/leads.php';
 require_once __DIR__ . '/pipeline.php';
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/tasks.php';
+require_once __DIR__ . '/cc.php';
 
 /** Os separadores (um por aba com campos editáveis). Nova aba com definições = novo separador aqui. */
 const SET_TABS = [
@@ -28,6 +29,7 @@ const SET_TABS = [
     'contactos'    => ['Contactos', 'contactos'],
     'orcamentacao' => ['Orçamentação', 'orcamentacao'],
     'negocios'     => ['Negócios', 'negocios'],
+    'criativo'     => ['Centro Criativo', 'criativo'],
     'tarefas'      => ['Tarefas', 'tarefas'],
     'marketing'    => ['Marketing', 'marketing'],
     'financeiro'   => ['Financeiro', 'financeiro'],
@@ -176,6 +178,24 @@ function settings_defs(): array {
         'mkt_templates'    => ['tab' => 'marketing', 'group' => 'Modelos de formato', 'label' => 'Modelos de formato', 'type' => 'info', 'show' => '',
                                'help' => 'As estruturas de cada formato (reel, carrossel, post, thread, vídeo) que o Estúdio propõe.'],
 
+        // ── Centro Criativo (§23) ──
+        'cc_pre_days'      => ['tab' => 'criativo', 'group' => 'Pré-criativo', 'label' => 'Prazo da tarefa «Pré-criativo»', 'type' => 'int', 'min' => 0, 'max' => 30, 'unit' => 'dias úteis', 'default' => 2,
+                               'help' => 'Ao validar o X-Ray nasce o quadro do pré-criativo e uma tarefa para o responsável de execução, com este prazo.'],
+        'cc_funnels'       => ['tab' => 'criativo', 'group' => 'Por funil', 'label' => 'Pré-criativo e sub-quadros do projeto', 'type' => 'cc_funnels',
+                               'help' => 'Por funil: se o pré-criativo é recomendado (não trava a proposta), obrigatório ou desligado, e que sub-quadros nascem no quadro do projeto no Kickoff.'],
+        'cc_vocab_style'   => ['tab' => 'criativo', 'group' => 'Vocabulário da casa (a IA classifica com estes termos)', 'label' => 'Estilo', 'type' => 'list', 'default' => implode("\n", CC_VOCAB['style'][1]),
+                               'help' => 'Os estilos que a IA usa para classificar as referências e que aparecem nos filtros da Biblioteca. Um por linha.'],
+        'cc_vocab_technique' => ['tab' => 'criativo', 'group' => 'Vocabulário da casa (a IA classifica com estes termos)', 'label' => 'Técnica', 'type' => 'list', 'default' => implode("\n", CC_VOCAB['technique'][1]),
+                               'help' => 'As técnicas de produção (CG, tabletop, stop motion…). Um por linha.'],
+        'cc_vocab_camera'  => ['tab' => 'criativo', 'group' => 'Vocabulário da casa (a IA classifica com estes termos)', 'label' => 'Câmara', 'type' => 'list', 'default' => implode("\n", CC_VOCAB['camera'][1]),
+                               'help' => 'Os movimentos e posições de câmara. Um por linha.'],
+        'cc_vocab_environment' => ['tab' => 'criativo', 'group' => 'Vocabulário da casa (a IA classifica com estes termos)', 'label' => 'Ambiente', 'type' => 'list', 'default' => implode("\n", CC_VOCAB['environment'][1]),
+                               'help' => 'Os ambientes (estúdio, exterior urbano, natureza…). Um por linha.'],
+        'cc_vocab_light'   => ['tab' => 'criativo', 'group' => 'Vocabulário da casa (a IA classifica com estes termos)', 'label' => 'Luz', 'type' => 'list', 'default' => implode("\n", CC_VOCAB['light'][1]),
+                               'help' => 'Os tipos de luz. Um por linha.'],
+        'cc_import'        => ['tab' => 'criativo', 'group' => 'Importação', 'label' => 'Importar do Milanote (ZIP, PDF, Markdown) ou imagens', 'type' => 'link', 'href' => '/admin/criativo.php?t=biblioteca', 'show' => 'Biblioteca › Importar',
+                               'help' => 'Cria um quadro novo com os cartões em grelha; as imagens entram na biblioteca com a análise da IA.'],
+
         // ── Financeiro ──
         'fin_todo'         => ['tab' => 'financeiro', 'group' => 'Financeiro', 'label' => 'Definições do Financeiro', 'type' => 'info', 'show' => 'A definir quando a aba for desenhada.',
                                'help' => 'O IVA está em Geral. A faturação legal será ligada a um software certificado pela AT.'],
@@ -197,6 +217,8 @@ function settings_defs(): array {
                                'help' => 'Tem de ser um endereço @topperdigital.xyz (o servidor só envia em nome do domínio).'],
         'int_ai'           => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Claude (Anthropic)', 'type' => 'ai',
                                'help' => 'O estado, o uso e o custo da IA do Estúdio e do assistente do Drive. A chave fica só no servidor.'],
+        'int_cc_ai'        => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Centro Criativo (Claude + embeddings)', 'type' => 'cc_ai',
+                               'help' => 'A IA de qualidade máxima do Centro Criativo: o modelo Claude mais capaz e embeddings multimodais pagos. Chaves só no servidor (admin/inc/cc_config.php); gasto e limite à parte do assistente.'],
         'int_future'       => ['tab' => 'integracoes', 'group' => 'Futuras', 'label' => 'Por ligar', 'type' => 'info', 'show' => 'Meta (Instagram) · LinkedIn · software de faturação certificado',
                                'help' => 'Ligam-se aqui quando existirem.'],
 
