@@ -63,6 +63,10 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <head>
 <?php render_head($title); ?>
 <meta name="csrf" content="<?= e(csrf_token()) ?>">
+<link rel="manifest" href="/admin/manifest.php">
+<meta name="theme-color" content="#111111">
+<link rel="apple-touch-icon" href="<?= asset_url('pwa/apple-touch-icon.png') ?>">
+<meta name="apple-mobile-web-app-title" content="topper.">
 </head>
 <body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
 <a class="skip" href="#conteudo">Saltar para o conteúdo</a>
@@ -200,6 +204,7 @@ function render_footer(): void {
 <?php if (team_ready()) { require_once __DIR__ . '/team_view.php'; echo team_global_html(); } ?>
 <script src="<?= asset_url('app.js') ?>" defer></script>
 <?php if (team_ready()): ?><script src="<?= asset_url('chat.js') ?>" defer></script><?php endif; ?>
+<script>if ('serviceWorker' in navigator) addEventListener('load', function () { navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(function () {}); });</script>
 </body>
 </html>
 <?php

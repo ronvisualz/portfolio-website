@@ -9,6 +9,7 @@
  *   GET  portal.php?t=<token>[&tab=proposal|boards|review][&p=<peça>][&lang=pt|en]   a página
  *   GET  portal.php?t=…&j=room&p=<peça>&ck=<browser>                                os dados da sala (JSON)
  *   GET  portal.php?t=…&j=poll&p=<peça>&rev=<n>                                     mudou?
+ *   GET  portal.php?t=…&j=rt&b=<quadro>                                             token do tempo real (só leitura, sem presença)
  *   GET  portal.php?t=…&m=<versão>&k=proxy|poster|strip|page[&n=<página>]           um ficheiro (URL curto)
  *   GET  portal.php?t=…&ref=<referência>                                            uma imagem do pré-criativo/quadros
  *   POST portal.php?t=…  a=seen|ident|comment_add|comment_del|comment_restore|submit|approve|download
@@ -29,7 +30,7 @@ const PORTAL_FORM_TTL = 43200;   // o formulário assinado vale 12 h (a página 
 const PT_STR = [
     'pt' => ['proposal' => 'Proposta', 'boards' => 'Quadros', 'review' => 'Review', 'gone' => 'Este link expirou ou não existe.',
              'goneSub' => 'Peça um link novo à equipa da topper.', 'private' => 'Esta página é privada: não a partilhe.', 'until' => 'Disponível até',
-             'noProposal' => 'Ainda não há uma proposta para mostrar aqui.', 'noBoards' => 'Ainda não há quadros partilhados.', 'noReview' => 'Ainda não há peças para rever.',
+             'noProposal' => 'Ainda não há uma proposta para mostrar aqui.', 'noBoards' => 'Ainda não há quadros partilhados.', 'live' => 'A equipa atualizou este quadro.', 'refresh' => 'Atualizar', 'noReview' => 'Ainda não há peças para rever.',
              'sentOn' => 'Enviada a', 'accepted' => 'Aceite', 'refused' => 'Recusada', 'validated' => 'Confirmada pela topper.', 'waiting' => 'A aguardar a sua resposta',
              'answerHint' => 'Para responder à proposta use o link do e-mail em que a recebeu.', 'vat' => 'IVA', 'total' => 'total', 'noVat' => 's/ IVA',
              'term' => 'Prazo', 'payment' => 'Pagamento', 'revisions' => 'Revisões incluídas', 'rights' => 'Direitos de utilização', 'conditions' => 'Outras condições',
@@ -38,7 +39,7 @@ const PT_STR = [
              'theme' => 'Mudar entre claro e escuro', 'download' => 'Descarregar', 'complexity' => 'Complexidade'],
     'en' => ['proposal' => 'Proposal', 'boards' => 'Boards', 'review' => 'Review', 'gone' => 'This link has expired or does not exist.',
              'goneSub' => 'Ask the topper. team for a new link.', 'private' => 'This page is private: please do not share it.', 'until' => 'Available until',
-             'noProposal' => 'There is no proposal to show here yet.', 'noBoards' => 'No boards shared yet.', 'noReview' => 'Nothing to review yet.',
+             'noProposal' => 'There is no proposal to show here yet.', 'noBoards' => 'No boards shared yet.', 'live' => 'The team has updated this board.', 'refresh' => 'Refresh', 'noReview' => 'Nothing to review yet.',
              'sentOn' => 'Sent on', 'accepted' => 'Accepted', 'refused' => 'Declined', 'validated' => 'Confirmed by topper.', 'waiting' => 'Waiting for your answer',
              'answerHint' => 'To answer the proposal, use the link in the email you received it with.', 'vat' => 'VAT', 'total' => 'total', 'noVat' => 'excl. VAT',
              'term' => 'Timeline', 'payment' => 'Payment', 'revisions' => 'Included revisions', 'rights' => 'Usage rights', 'conditions' => 'Other terms',
@@ -244,6 +245,13 @@ function portal_room(PDO $pdo, array $share, array $item, string $ck, string $la
     return ['item' => $out, 'versions' => $vers, 'comments' => portal_comments($pdo, $item, $ck)];
 }
 $j = (string)($_GET['j'] ?? '');
+if ($j === 'rt') {
+    // os quadros partilhados em tempo real: só leitura e sem a presença da equipa (§26)
+    require_once __DIR__ . '/inc/cc_rt.php';
+    $bid = (int)($_GET['b'] ?? 0);
+    $tok = in_array('boards', $tabs, true) && in_array($bid, cc_share_boards($share), true) && cc_rt_url($pdo) !== '' ? cc_rt_token($pdo, $bid, 0, 'portal') : null;
+    portal_json($tok ? 200 : 404, $tok ? ['ok' => true, 'token' => $tok] : ['ok' => false, 'error' => $T['gone']]);
+}
 if ($j !== '') {
     $item = portal_item($pdo, $share, (int)($_GET['p'] ?? 0));
     if (!$item || !in_array('review', $tabs, true)) portal_json(404, ['ok' => false, 'error' => $T['gone']]);
@@ -400,6 +408,22 @@ if ($tab === 'proposal') {
         }
         if (!$tr && !$routes) $body .= '<p class="muted">—</p>';
         $body .= '</section>';
+    }
+    // tempo real (só leitura): quando a equipa refaz as páginas, o cliente vê o aviso «Atualizar»
+    require_once __DIR__ . '/inc/cc_rt.php';
+    if ($boards && ($rtCsp = cc_rt_csp($pdo)) !== '' && setting($pdo, 'rt_enabled', '1') !== '0' && cc_rt_usage_today($pdo)['pct'] < 100) {
+        csp_send($rtCsp);
+        $url = cc_rt_url($pdo);
+        $cfg = ['host' => preg_replace('~^https?://~', '', $url), 'secure' => str_starts_with($url, 'https://'), 'tok' => $self(['j' => 'rt']),
+                'rooms' => array_map(fn($x) => (int)$x[0]['id'], $boards), 'msg' => $T['live'], 'btn' => $T['refresh']];
+        $body .= '<div class="pt-live" data-pt-live hidden role="status"><span></span><button type="button"></button></div>'
+               . '<script src="' . asset_url('vendor/rt/topper-rt.js') . '"></script>'
+               . '<script>(function(c){if(!window.TopperRT)return;var R=TopperRT,box=document.querySelector("[data-pt-live]");'
+               . 'box.querySelector("span").textContent=c.msg;var b=box.querySelector("button");b.textContent=c.btn;b.onclick=function(){location.reload();};'
+               . 'c.rooms.forEach(function(id){var d=new R.Y.Doc(),ready=false,first=true;'
+               . 'new R.YProvider(c.host,"b"+id,d,{party:"board",protocol:c.secure?"wss":"ws",disableBc:true,params:function(){return fetch(c.tok+"&b="+id,{cache:"no-store"}).then(function(r){return r.json();}).then(function(j){return {t:j.token};});}})'
+               . '.on("sync",function(ok){if(ok)ready=true;});'
+               . 'd.getMap("meta").observe(function(){if(ready)box.hidden=false;});});})(' . json_encode($cfg, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) . ');</script>';
     }
 } elseif ($roomItem) {
     $body .= '<p class="pt-back"><a href="' . ph($self(['tab' => 'review'])) . '">' . icon('chev-left') . ' ' . ph($T['back']) . '</a></p><div id="rv-room"></div>';

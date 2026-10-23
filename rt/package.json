@@ -1,0 +1,23 @@
+{
+  "name": "topper-rt",
+  "private": true,
+  "description": "topper. — tempo real dos quadros do Centro Criativo (PartyServer / y-partyserver em Cloudflare Workers + Durable Objects)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "client": "esbuild client/entry.js --bundle --minify --format=iife --global-name=TopperRT --outfile=../admin/assets/vendor/rt/topper-rt.js --legal-comments=eof"
+  },
+  "dependencies": {
+    "lib0": "0.2.119",
+    "partyserver": "0.5.10",
+    "y-indexeddb": "9.0.12",
+    "y-partyserver": "2.2.0",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "wrangler": "4.152.0"
+  }
+}

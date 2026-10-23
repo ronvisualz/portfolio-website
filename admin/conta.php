@@ -72,6 +72,26 @@ if ($teamOn && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ??
     }
 }
 
+// Ligações (§26): tokens pessoais para a extensão «Guardar na topper.» e o Atalho do iOS.
+// O token só se mostra uma vez; na base fica o hash. Revogáveis aqui (e pelos admins em Definições).
+require_once __DIR__ . '/inc/cc_rt.php';
+$linksOn = cc_rt_ready($pdo) && can('criativo', PERM_EDIT);
+if ($linksOn && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['ut_create', 'ut_revoke'], true)) {
+    csrf_check();
+    try {
+        if ($_POST['do'] === 'ut_create') {
+            $_SESSION['ut_new'] = ut_create($pdo, (int)$user['id'], (string)($_POST['name'] ?? ''));
+            flash('Token criado. Copie-o agora: não volta a aparecer.');
+        } else {
+            ut_revoke($pdo, (int)($_POST['id'] ?? 0), $user);
+            flash('Token revogado: deixa de funcionar já.');
+        }
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'err');
+    }
+    redirect('/admin/conta.php#ligacoes');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -226,6 +246,65 @@ render_flashes();
   <p class="muted" style="margin:0"><?= icon('cog') ?> As definições da empresa (prazos das leads, funis, orçamentação, marketing, integrações, segurança…) estão em
     <a href="/admin/definicoes.php">Definições</a>. Utilizadores e permissões continuam na aba <a href="/admin/equipa.php?t=acessos">Equipa</a>.</p>
 </div>
+<?php endif; ?>
+
+<?php if ($linksOn):
+    $newTok = (string)($_SESSION['ut_new'] ?? '');
+    unset($_SESSION['ut_new']);
+    $myTokens = ut_list($pdo, (int)$user['id']);
+    $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . preg_replace('/[^a-z0-9.:-]/i', '', (string)($_SERVER['HTTP_HOST'] ?? 'topperhub.xyz'));
+    $iosUrl = (string)setting($pdo, 'ios_shortcut_url', ''); ?>
+<h2 id="ligacoes">Ligações</h2>
+<p class="sub" style="max-width:760px">Guardar referências de fora no Centro Criativo: tudo entra na Caixa de entrada (ou num quadro) e a IA analisa. A extensão e o Atalho entram com um token pessoal, nunca com a sua palavra-passe.</p>
+<?php if ($newTok !== ''): ?>
+<div class="lg-new" role="status"><b>O seu token novo — copie-o agora, não volta a aparecer:</b><code id="ut-new"><?= e($newTok) ?></code>
+  <div><button type="button" class="btn sm" data-copy="#ut-new">Copiar</button></div></div>
+<?php endif; ?>
+<div class="lg-grid" style="margin-top:12px">
+  <div class="panel lg-card"><h3><?= icon('link') ?> Extensão para Chrome e Edge</h3>
+    <ol><li><a href="/admin/ext.php">Descarregue a extensão</a> e descompacte o ZIP.</li>
+      <li>Abra <b>chrome://extensions</b> (Edge: edge://extensions) e ligue o <b>Modo de programador</b>.</li>
+      <li>«<b>Carregar sem compactação</b>» e escolha a pasta <i>guardar-na-topper</i>.</li>
+      <li>Nas opções da extensão, cole um token (crie abaixo).</li></ol>
+    <p class="small muted">Botão direito numa imagem, vídeo, link ou texto › «Guardar na topper.». Atalhos: <span class="kbd">Alt</span>+<span class="kbd">Shift</span>+<span class="kbd">S</span> abre · <span class="kbd">Alt</span>+<span class="kbd">Shift</span>+<span class="kbd">A</span> captura uma área. Funciona também no Brave e no Arc.</p></div>
+  <div class="panel lg-card"><h3><?= icon('phone') ?> Android</h3>
+    <ol><li>Abra a topper. no Chrome do telemóvel ou tablet.</li>
+      <li>Menu ⋮ › <b>Instalar aplicação</b>.</li>
+      <li>Em qualquer app, Partilhar › <b>topper.</b></li></ol>
+    <p class="small muted">Usa a sua sessão normal; não precisa de token. Também pode <a href="/admin/partilhar.php">guardar um link à mão</a>.</p></div>
+  <div class="panel lg-card"><h3><?= icon('phone') ?> iPhone e iPad</h3>
+    <?php if ($iosUrl !== ''): ?>
+      <ol><li><a class="btn sm" href="<?= e($iosUrl) ?>" target="_blank" rel="noopener">Instalar o Atalho «Guardar na topper.»</a></li>
+        <li>Quando pedir, cole um token (crie abaixo).</li>
+        <li>Em qualquer app, Partilhar › <b>Guardar na topper.</b></li></ol>
+    <?php else: ?>
+      <ol><li>Na app <b>Atalhos</b>, «+» e dê o nome <b>Guardar na topper.</b></li>
+        <li>Em ⓘ, ligue <b>Mostrar na folha de partilha</b> (imagens, URLs, texto, multimédia).</li>
+        <li>Ação <b>Obter conteúdo do URL</b>: <code class="small"><?= e($origin) ?>/admin/capture_api.php?a=save</code>, método <b>POST</b>, cabeçalho <b>X-Topper-Token</b> = o seu token, corpo <b>Formulário</b> com o campo <b>file</b> (Ficheiro) = <i>Entrada do atalho</i> e <b>via</b> = <i>ios</i>.</li>
+        <li>Ação <b>Mostrar notificação</b> com o resultado.</li></ol>
+      <p class="small muted">Depois de feito uma vez, um admin pode partilhar o Atalho (Definições › Integrações) e os outros instalam com um toque.</p>
+    <?php endif; ?></div>
+</div>
+
+<div class="panel lg-tokens" style="margin-top:12px">
+  <h3 style="margin-top:0">Os seus tokens</h3>
+  <?php if ($myTokens): ?>
+  <div class="tablewrap"><table class="prefs-t"><thead><tr><th>Nome</th><th class="hide-sm">Criado</th><th>Último uso</th><th class="num hide-sm">Usos</th><th></th></tr></thead><tbody>
+  <?php foreach ($myTokens as $t): ?>
+    <tr><td><b><?= e($t['name']) ?></b> <span class="mono muted small">…<?= e($t['last4']) ?></span></td>
+      <td class="hide-sm small"><?= e(lisbon_fmt(strtotime((string)$t['created_at']), 'd/m/Y')) ?></td>
+      <td class="small"><?= $t['last_used_at'] ? e(lisbon_fmt(strtotime((string)$t['last_used_at']), 'd/m H:i')) . ($t['last_ua'] !== '' ? '<div class="muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' . e($t['last_ua']) . '">' . e($t['last_ua']) . '</div>' : '') : '<span class="muted">nunca</span>' ?></td>
+      <td class="num hide-sm"><?= (int)$t['uses'] ?></td>
+      <td><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="ut_revoke"><input type="hidden" name="id" value="<?= (int)$t['id'] ?>"><button class="btn ghost sm" type="submit">Revogar</button></form></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+  <?php else: ?><p class="muted small">Ainda não tem tokens.</p><?php endif; ?>
+  <form method="post" class="inl" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:10px"><?= csrf_field() ?><input type="hidden" name="do" value="ut_create">
+    <div class="field" style="margin:0"><label for="ut-name">Nome do token</label><input id="ut-name" name="name" maxlength="80" placeholder="ex.: Chrome do portátil" required></div>
+    <button class="btn" type="submit">Criar token</button></form>
+  <p class="small muted" style="margin-bottom:0">Um token por aparelho é o mais prático: se perder um, revoga só esse.</p>
+</div>
+<script>document.addEventListener('click', function (e) { var b = e.target.closest('[data-copy]'); if (!b) return; var t = document.querySelector(b.getAttribute('data-copy')).textContent; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copiado'; }, function () { b.textContent = 'Selecione e copie'; }); });</script>
 <?php endif; ?>
 
 <h2>Mudar palavra-passe</h2>

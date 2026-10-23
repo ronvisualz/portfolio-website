@@ -22,6 +22,12 @@ if (!is_admin()) {
 // Modelos de orçamento: apagar (com «Anular»).
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
+    if (isset($_POST['ut_revoke'])) {   // tokens pessoais (§26): um admin pode revogar o de qualquer pessoa
+        require_once __DIR__ . '/inc/cc_rt.php';
+        try { ut_revoke($pdo, (int)$_POST['ut_revoke'], $user); flash('Token revogado: deixa de funcionar já.'); }
+        catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect('/admin/definicoes.php?t=integracoes#set-int_tokens');
+    }
     if (isset($_POST['tpl_del'])) {
         $st = $pdo->prepare('SELECT * FROM budget_templates WHERE id = ?');
         $st->execute([(int)$_POST['tpl_del']]);
@@ -80,7 +86,7 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
     }
     $editable = in_array($d['type'], ['int', 'num', 'text', 'email', 'url', 'time', 'textarea', 'list', 'select'], true);
     $reset = $editable ? '<button type="button" class="set-reset" data-reset="' . e($key) . '" data-def="' . e($def) . '"' . ($v === $def ? ' hidden' : '') . ' data-tip="Repor o valor de origem">Repor (' . e(setting_show($d, $def)) . ')</button>' : '';
-    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels'], true);
+    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens'], true);
     return '<div class="set-row' . ($wide ? ' wide' : '') . '" id="' . $id . '" data-row="' . e($key) . '">' . $label . '<div class="set-f">' . $field . '</div>' . $reset
          . '<div class="set-warn" hidden role="alert"><p></p><div class="actions"><button type="button" class="btn sm" data-impact-ok>Confirmar</button><button type="button" class="btn ghost sm" data-impact-no>Cancelar</button></div></div></div>';
 }
@@ -177,6 +183,43 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                 $h .= '</tbody></table></div>';
             }
             return $h;
+        case 'rt':
+            require_once __DIR__ . '/inc/cc_rt.php';
+            if (!cc_rt_ready($pdo)) return '<span class="set-info">Disponível depois do passo 28 da base de dados.</span>';
+            $url = cc_rt_url($pdo);
+            $u = cc_rt_usage_today($pdo);
+            $keys = cc_rt_keys($pdo);
+            $on = $url !== '' && setting($pdo, 'rt_enabled', '1') !== '0';
+            $lvl = $u['pct'] >= 100 ? 'bad' : ($u['pct'] >= 80 ? 'warn' : 'ok');
+            $h = '<div class="set-ai"><span class="chip ' . ($on ? 'ok' : 'wait') . '">' . ($on ? 'Ligado · ' . e(preg_replace('~^https://~', '', $url)) : ($url === '' ? 'Por publicar: os quadros atualizam a cada 8 s' : 'Desligado')) . '</span>'
+               . ' <span class="chip">Plano gratuito · 0 €</span></div>'
+               . '<div class="rt-meter ' . $lvl . '" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' . min(100, $u['pct']) . '" aria-label="Uso do dia">'
+               . '<i style="width:' . min(100, $u['pct']) . '%"></i></div>'
+               . '<p class="small"><b>' . $u['pct'] . '%</b> do plano gratuito hoje <span class="muted">· ' . number_format($u['requests'], 0, ',', ' ') . ' de 100 000 pedidos · '
+               . number_format($u['gbs'], 0, ',', ' ') . ' de 13 000 GB-s · ' . $u['boards'] . ($u['boards'] === 1 ? ' quadro' : ' quadros') . ' · repõe às 00:00 UTC (estimativa contada pelos browsers)</span></p>'
+               . ($u['pct'] >= 80 ? '<p class="small"><b>' . ($u['pct'] >= 100 ? 'Limite atingido: o tempo real está em pausa até às 00:00 UTC; os quadros continuam e sincronizam depois.' : 'Acima de 80% do limite diário.') . '</b> <span class="muted">Passar ao plano pago (5 US$/mês) é uma decisão manual, na conta Cloudflare da topper.</span></p>' : '');
+            if ($keys) {
+                $cmd = 'cd rt && npm ci && npx wrangler deploy';
+                $h .= '<details class="rt-deploy"><summary>Publicar ou atualizar o serviço</summary>'
+                    . '<p class="small muted">Na pasta do repositório, numa máquina com sessão iniciada na conta Cloudflare da topper. (o wrangler pede-a no browser) ou com as variáveis CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID. O serviço lê daqui a chave pública (<span class="mono">/admin/rt_key.php</span>, não é segredo) para confirmar os tokens que este servidor assina; a privada nunca sai do servidor.</p>'
+                    . '<pre class="mono small rt-cmd" tabindex="0">' . e($cmd) . '</pre>'
+                    . '<p class="small muted">No fim, o wrangler mostra o endereço (…workers.dev): cole-o em «Endereço do serviço».</p></details>';
+            }
+            return $h;
+        case 'tokens':
+            require_once __DIR__ . '/inc/cc_rt.php';
+            if (!cc_rt_ready($pdo)) return '<span class="set-info">Disponível depois do passo 28 da base de dados.</span>';
+            $rows = ut_list($pdo, null);
+            if (!$rows) return '<span class="set-info">Ninguém criou ainda um token. Cada pessoa cria o seu em Perfil › Ligações.</span>';
+            $h = '<div class="tablewrap"><table class="set-t"><thead><tr><th>Pessoa</th><th>Nome</th><th class="hide-sm">Último uso</th><th class="num hide-sm">Usos</th><th></th></tr></thead><tbody>';
+            foreach ($rows as $t) {
+                $h .= '<tr><td>' . e($t['who']) . '</td><td>' . e($t['name']) . ' <span class="mono muted small">…' . e($t['last4']) . '</span></td>'
+                    . '<td class="hide-sm small">' . ($t['last_used_at'] ? e(lisbon_fmt(strtotime((string)$t['last_used_at']), 'd/m H:i')) : '<span class="muted">nunca</span>') . '</td>'
+                    . '<td class="num hide-sm">' . (int)$t['uses'] . '</td>'
+                    . '<td><form method="post" class="inl">' . csrf_field() . '<input type="hidden" name="ut_revoke" value="' . (int)$t['id'] . '">'
+                    . '<button type="submit" class="btn ghost sm" aria-label="Revogar o token «' . e($t['name']) . '» de ' . e($t['who']) . '">Revogar</button></form></td></tr>';
+            }
+            return $h . '</tbody></table></div>';
         case 'ai':
             require_once __DIR__ . '/inc/ai.php';
             [$ma, $mb, $mLabel] = ai_month_bounds();

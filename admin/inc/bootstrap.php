@@ -62,19 +62,24 @@ header('Cache-Control: no-store, no-cache, must-revalidate, private');
 header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
 // O Drive envia/lê ficheiros diretamente do Cloudflare R2 (origem tirada do r2_config.php).
 require_once __DIR__ . '/r2.php';
-$__r2 = r2_origin();
-$__r2 = $__r2 !== '' ? ' ' . $__r2 : '';
-header(
-    "Content-Security-Policy: default-src 'self'; "
-  . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-  . "font-src 'self' https://fonts.gstatic.com; "
-  . "script-src 'self' 'unsafe-inline'; "
-  . "connect-src 'self'$__r2; "
-  . "media-src 'self' blob:$__r2; "
-  . "img-src 'self' data: blob:$__r2; "
-  . "frame-src 'self'$__r2; "
-  . "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
-);
+/** A política de conteúdo; $connect junta origens a connect-src (ex.: o serviço de tempo real dos quadros). */
+function csp_send(string $connect = ''): void {
+    $r2 = r2_origin();
+    $r2 = $r2 !== '' ? ' ' . $r2 : '';
+    $connect = $connect !== '' ? ' ' . $connect : '';
+    header(
+        "Content-Security-Policy: default-src 'self'; "
+      . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+      . "font-src 'self' https://fonts.gstatic.com; "
+      . "script-src 'self' 'unsafe-inline'; "
+      . "connect-src 'self'$r2$connect; "
+      . "media-src 'self' blob:$r2; "
+      . "img-src 'self' data: blob:$r2; "
+      . "frame-src 'self'$r2; "
+      . "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+    );
+}
+csp_send();
 
 // ── session ─────────────────────────────────────────────────
 // Páginas públicas sem sessão (ex.: a proposta ao cliente, §19.4): não criam cookie nem tocam na sessão de quem esteja ligado.

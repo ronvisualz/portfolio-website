@@ -64,6 +64,12 @@ try {
             $out .= 'Review: ' . ($ff !== '' ? 'ffmpeg em ' . $ff : 'sem ffmpeg (vídeos preparados no browser)') . "\n";
         }
         $left = max(5.0, $sec - (microtime(true) - $t0));
+        require_once __DIR__ . '/cc_rt.php';
+        cc_rt_usage_prune($pdo);
+        if (cc_rt_ready($pdo) && ($k = cc_rt_keys($pdo))) {
+            $u = cc_rt_usage_today($pdo);
+            $out .= 'Tempo real: ' . (cc_rt_url($pdo) ?: 'por publicar') . ' · ' . $u['pct'] . '% do plano gratuito hoje · chave pública ' . $k[1] . "\n";
+        }
         $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";

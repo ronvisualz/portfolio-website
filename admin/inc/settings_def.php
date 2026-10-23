@@ -212,6 +212,14 @@ function settings_defs(): array {
                                'default' => implode("\n", array_map(fn($k, $v) => $k . ' = ' . $v, array_keys(CC_RV_TASK_MAP), CC_RV_TASK_MAP)),
                                'help' => 'Ao aprovar uma peça, fica feita a tarefa de aprovação do Pipeline cujo título tem um destes textos. Uma etapa por linha: «etapa = texto | texto». Etapas: styleframes, animatic, offline, lock, finais, lote.'],
 
+        // ── Tempo real, histórico e captura (§26) ──
+        'cc_ver_minutes'   => ['tab' => 'criativo', 'group' => 'Histórico dos quadros', 'label' => 'Versão automática a cada', 'type' => 'int', 'min' => 5, 'max' => 1440, 'unit' => 'min de trabalho', 'default' => 30,
+                               'help' => 'Uma versão por sessão de trabalho: o quadro fica guardado antes da primeira alteração, se a última versão tem mais do que este tempo. Também se guarda antes das ações grandes (Arrumar o quadro, Preparar com IA, apagar muitos cartões).'],
+        'cc_ver_keep'      => ['tab' => 'criativo', 'group' => 'Histórico dos quadros', 'label' => 'Versões guardadas por quadro', 'type' => 'int', 'min' => 5, 'max' => 500, 'default' => 50,
+                               'help' => 'As mais antigas saem quando o quadro passa este número. Cada versão pode ser vista e restaurada no Histórico do quadro.'],
+        'cap_default'      => ['tab' => 'criativo', 'group' => 'Captura (extensão e telemóvel)', 'label' => 'Destino por defeito', 'type' => 'select', 'opts' => ['inbox' => 'Caixa de entrada', 'last' => 'O último quadro usado (e a Caixa de entrada)'], 'default' => 'inbox',
+                               'help' => 'Onde fica o que se guarda com a extensão «Guardar na topper.», o menu Partilhar do Android ou o Atalho do iOS. Tudo passa pela análise da IA e entra na Caixa de entrada; com um quadro, também fica lá como cartão.'],
+
         // ── Financeiro ──
         'fin_todo'         => ['tab' => 'financeiro', 'group' => 'Financeiro', 'label' => 'Definições do Financeiro', 'type' => 'info', 'show' => 'A definir quando a aba for desenhada.',
                                'help' => 'O IVA está em Geral. A faturação legal será ligada a um software certificado pela AT.'],
@@ -237,6 +245,16 @@ function settings_defs(): array {
                                'help' => 'O estado, o uso e o custo da IA do Estúdio e do assistente do Drive. A chave fica só no servidor.'],
         'int_cc_ai'        => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Centro Criativo (Claude + embeddings)', 'type' => 'cc_ai',
                                'help' => 'A IA de qualidade máxima do Centro Criativo: o modelo Claude mais capaz e embeddings multimodais pagos. Chaves só no servidor (admin/inc/cc_config.php); gasto e limite à parte do assistente.'],
+        'int_rt'           => ['tab' => 'integracoes', 'group' => 'Tempo real (quadros do Centro Criativo)', 'label' => 'Serviço de tempo real', 'type' => 'rt',
+                               'help' => 'Cloudflare Workers + Durable Objects, no plano gratuito (100 000 pedidos e 13 000 GB-s por dia, repõe às 00:00 UTC). Os admins são avisados aos 80%. Se o limite for atingido, o quadro continua a funcionar no browser e sincroniza depois.'],
+        'rt_url'           => ['tab' => 'integracoes', 'group' => 'Tempo real (quadros do Centro Criativo)', 'label' => 'Endereço do serviço', 'type' => 'url', 'max' => 200, 'default' => '', 'pattern' => '~^https://[a-z0-9.-]+/?$~i',
+                               'help' => 'O endereço do Worker depois de publicado: https://rt.topperhub.xyz (se o domínio estiver na Cloudflare) ou https://topper-rt.<conta>.workers.dev. Vazio: os quadros atualizam-se como antes (a cada 8 s).'],
+        'rt_enabled'       => ['tab' => 'integracoes', 'group' => 'Tempo real (quadros do Centro Criativo)', 'label' => 'Tempo real nos quadros', 'type' => 'select', 'opts' => ['1' => 'Ligado', '0' => 'Desligado (atualiza a cada 8 s)'], 'default' => '1',
+                               'help' => 'Desligar não apaga nada: os quadros voltam a atualizar-se a cada 8 s.'],
+        'int_tokens'       => ['tab' => 'integracoes', 'group' => 'Captura (extensão e telemóvel)', 'label' => 'Tokens pessoais', 'type' => 'tokens',
+                               'help' => 'Os tokens que cada pessoa criou em Perfil › Ligações para a extensão «Guardar na topper.» e o Atalho do iOS. Os admins podem revogar qualquer um; a pessoa cria outro quando precisar. Nunca se guarda a palavra-passe.'],
+        'ios_shortcut_url' => ['tab' => 'integracoes', 'group' => 'Captura (extensão e telemóvel)', 'label' => 'Atalho do iOS (link do iCloud)', 'type' => 'url', 'max' => 300, 'default' => '', 'pattern' => '~^https://(www\.)?icloud\.com/shortcuts/\S+$~',
+                               'help' => 'Opcional: o link de partilha do Atalho «Guardar na topper.» depois de criado uma vez num iPhone (Perfil › Ligações explica os passos). Com o link, as outras pessoas instalam-no com um toque.'],
         'int_future'       => ['tab' => 'integracoes', 'group' => 'Futuras', 'label' => 'Por ligar', 'type' => 'info', 'show' => 'Meta (Instagram) · LinkedIn · software de faturação certificado',
                                'help' => 'Ligam-se aqui quando existirem.'],
 

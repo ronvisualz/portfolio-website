@@ -75,7 +75,7 @@
     }
     return fetch(url, opt).then(function (r) {
       return r.json().catch(function () { return { ok: false, error: r.status === 401 ? 'A sessão terminou. Recarregue a página.' : 'Não foi possível concluir (' + r.status + '). Tente outra vez.' }; });
-    }, function () { throw new Error('Sem ligação. Tente outra vez.'); }).then(function (j) {
+    }, function () { var er = new Error('Sem ligação. Tente outra vez.'); er.offline = true; throw er; }).then(function (j) {
       if (!j || !j.ok) throw new Error((j && j.error) || 'Não foi possível concluir.');
       return j;
     });
@@ -319,6 +319,7 @@
   }
 
   // ── detalhe de uma referência (gaveta na Biblioteca, painel no quadro) ──
+  function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
   function assetDetailHtml(a) {
     var media;
     if (a.kind === 'video' && a.orig) media = '<video controls playsinline preload="metadata" src="' + esc(a.orig) + '" poster="' + esc(thumbUrl(a, 768)) + '"></video>';
@@ -360,6 +361,12 @@
       + (a.kind === 'video' ? '<label><span>Movimento</span><textarea name="movement"' + ro + '>' + esc(an.movement || '') + '</textarea></label>' : '')
       + '</div>';
     if (a.deal) h += '<p class="small muted">Projeto topper.: ' + esc(a.deal.code + ' · ' + a.deal.name) + (a.deal.disclose ? ' · Pode ser divulgado? ' + esc(a.deal.disclose) : '') + '</p>';
+    if (a.cap) {   // guardado de fora (extensão, Partilhar no Android, Atalho do iOS)
+      var cp = a.cap, via = { extension: 'com a extensão', android: 'pelo Partilhar (Android)', ios: 'pelo Atalho (iOS)', web: 'na plataforma' }[cp.via] || '';
+      h += '<div class="ccd-cap"><h4>Guardado de fora</h4><p class="small">' + esc(via ? 'Guardado ' + via : 'Guardado') + (cp.at ? ' · ' + esc(String(cp.at).slice(8, 10) + '/' + String(cp.at).slice(5, 7)) : '') + '</p>'
+        + (cp.page ? '<p class="small"><a href="' + esc(cp.page) + '" target="_blank" rel="noopener">' + esc(hostOfUrl(cp.page)) + (cp.t ? ' · ' + fmtDur(cp.t) : '') + '</a>' + (cp.author ? ' · ' + esc(cp.author) : '') + '</p>' : (cp.author ? '<p class="small">' + esc(cp.author) + '</p>' : ''))
+        + (cp.quote ? '<blockquote class="small">' + esc(cp.quote) + '</blockquote>' : '') + (cp.note ? '<p class="small"><b>Nota:</b> ' + esc(cp.note) + '</p>' : '') + '</div>';
+    }
     if (a.boards && a.boards.length) h += '<div><h4>Nos quadros</h4><div class="ccd-boards">' + a.boards.map(function (b) { return '<a class="chip" href="/admin/criativo.php?b=' + b.id + '">' + esc(b.title) + '</a>'; }).join('') + '</div></div>';
     h += '<div class="actions">' + (EDIT ? '<button type="button" class="btn sm" data-d="save">Guardar</button><button type="button" class="btn ghost sm" data-d="analyze">' + ico('spark') + ' Analisar outra vez</button>' : '')
       + '<button type="button" class="btn ghost sm" data-d="similar">Mais como este</button>'
@@ -722,14 +729,16 @@
   function viewBoard() {
     var B = {
       id: +root.getAttribute('data-board'), data: null, cards: new Map(), els: new Map(), sel: new Set(), view: { x: 60, y: 60, s: 1 },
-      tool: 'select', color: '#111111', rev: 0, lanes: false, undo: [], redo: [], editing: null, side: 'ia', arrowFrom: null
+      tool: 'select', color: '#111111', rev: 0, lanes: false, undo: [], redo: [], editing: null, side: 'ia', arrowFrom: null, loadedAt: 0
     };
     var vp, world, layer, svg, lanesEl, zoomOut, sideEl, sideBody, emptyEl, ptr = { x: 0, y: 0 }, spaceDown = false;
+    var RT = null;   // tempo real (cc_rt.js): presença, cursores, alterações dos outros logo
 
     function load() {
       return api('board', { id: B.id }, 'GET').then(function (j) {
         B.data = j;
         B.rev = j.board.rev;
+        B.loadedAt = j.now || Date.now();
         EDIT = !!j.edit;
         B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
         B.cards.clear();
@@ -768,7 +777,7 @@
         + '<div class="ccb-hint" aria-hidden="true"><span class="kbd">Espaço</span> mover · <span class="kbd">Ctrl</span>+roda zoom · <span class="kbd">/</span> IA</div>'
         + '<div class="ccb-zoom"><button type="button" data-z="-1" aria-label="Afastar ( - )">' + ico('minus') + '</button><output data-zo>100%</output><button type="button" data-z="1" aria-label="Aproximar ( + )">' + ico('plus') + '</button><button type="button" data-z="0" aria-label="Ver tudo ( 0 )">' + ico('fit') + '</button></div>'
         + '</div>'
-        + '<aside class="ccb-side" data-side aria-label="Painel lateral"><div class="ccb-side-h" role="tablist"><button type="button" class="tab" data-tab="ia" role="tab">IA</button><button type="button" class="tab" data-tab="det" role="tab">Detalhe</button><button type="button" class="tab" data-tab="com" role="tab">Comentários</button>'
+        + '<aside class="ccb-side" data-side aria-label="Painel lateral"><div class="ccb-side-h" role="tablist"><button type="button" class="tab" data-tab="ia" role="tab">IA</button><button type="button" class="tab" data-tab="det" role="tab">Detalhe</button><button type="button" class="tab" data-tab="com" role="tab">Comentários</button><button type="button" class="tab" data-tab="hist" role="tab">Histórico</button>'
         + '<button type="button" class="ibtn" data-a="side" aria-label="Fechar o painel">' + ico('x') + '</button></div><div class="ccb-side-b" data-side-b></div></aside>'
         + '</div>';
       vp = $('[data-vp]', root); world = $('.ccb-world', root); layer = $('[data-layer]', root); svg = $('.ccb-arrows', root); lanesEl = $('[data-lanes]', root);
@@ -806,6 +815,7 @@
         vp.style.backgroundPosition = v.x + 'px ' + v.y + 'px';
         zoomOut.textContent = Math.round(v.s * 100) + '%';
         cull();
+        if (RT) RT.view();
         clearTimeout(thumbTimer);
         thumbTimer = setTimeout(updateThumbs, 160);
       });
@@ -1002,6 +1012,7 @@
       }
       emptyEl.hidden = B.cards.size > 0;
       drawArrows();
+      if (RT) RT.decorate();
     }
     function rerender(c) {
       var el = B.els.get(c.id);
@@ -1064,12 +1075,14 @@
         if (c && el && !c.col && c.type !== 'arrow') { var rh = document.createElement('span'); rh.className = 'ccc-res'; rh.setAttribute('aria-hidden', 'true'); el.appendChild(rh); }
       }
       drawArrows();
+      if (RT) RT.decorate();
     }
     function select(ids, add) {
       if (!add) B.sel.clear();
       ids.forEach(function (id) { if (add && B.sel.has(id)) B.sel.delete(id); else B.sel.add(id); });
       decorateSel();
       sideSync();
+      if (RT) RT.selection();
     }
 
     // ── gravar (com «Anular») ──
@@ -1077,7 +1090,11 @@
     function push(entry) { B.undo.push(entry); if (B.undo.length > 80) B.undo.shift(); B.redo.length = 0; }
     function save(items) {
       if (!items.length) return Promise.resolve();
-      return api('cards_update', { board: B.id, items: JSON.stringify(items) }).then(function (j) { B.rev = j.rev; }).catch(function (e) { fail(e); reload(); });
+      if (RT) RT.publish(items);
+      return api('cards_update', { board: B.id, items: JSON.stringify(items) }).then(function (j) { B.rev = j.rev; }).catch(function (e) {
+        if (e.offline && RT) { RT.queue(items); return; }   // sem ligação: grava quando voltar
+        fail(e); reload();
+      });
     }
     function applyStates(states) {
       var touched = new Set();
@@ -1099,7 +1116,7 @@
       if (e.t === 'move') applyStates(e.items.map(function (i) { return redo ? i.after : i.before; }));
       else if (e.t === 'add' || e.t === 'del') {
         var restore = (e.t === 'add') === !!redo;
-        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: e.ids }).then(function () { reload(); }).catch(fail);
+        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: e.ids }).then(function () { if (RT) RT.signal(); reload(); }).catch(fail);
       } else if (e.t === 'content') {
         var c = B.cards.get(e.id);
         if (c) { c.c = redo ? e.after : e.before; rerender(c); save([{ id: c.id, content: c.c }]); }
@@ -1122,6 +1139,7 @@
         B.rev = j.rev;
         var c = j.card;
         B.cards.set(c.id, c);
+        if (RT) { if (type === 'board') RT.signal(); else RT.added([c]); }
         if (type === 'board') return reload().then(function () { return c; });
         if (c.col) rerender(B.cards.get(c.col)); else cull();
         var el = B.els.get(c.id);
@@ -1146,6 +1164,7 @@
       var p = at || spot(300), row = Up.add(url);
       return api('link_add', { board: B.id, url: url, x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
         row.done(); B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); kickWorker();
+        if (RT) RT.added([j.card]);
       }).catch(function (e) { row.fail(e.message); });
     }
     function addFiles(files, at) {
@@ -1154,7 +1173,7 @@
         var q = { x: p.x + (i % 4) * 300, y: p.y + Math.floor(i / 4) * 320 }; i++;
         return prom.then(function () {
           return uploadFile(file, { board: B.id, x: q.x, y: q.y, lane: laneAt(q.y), cw: 280 }).then(function (j) {
-            if (j && j.card) { B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); }
+            if (j && j.card) { B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); if (RT) RT.added([j.card]); }
           }).catch(function () {});
         });
       }, Promise.resolve()).then(function () { reload(); });
@@ -1177,6 +1196,7 @@
       if (c.type === 'swatch') { pickColor(c); return; }
       if (!target) return;
       B.editing = c.id;
+      if (RT) RT.typing(c.id);
       var before = JSON.parse(JSON.stringify(c.c || {}));
       target.contentEditable = 'true';
       target.focus();
@@ -1189,6 +1209,7 @@
         target.removeEventListener('keydown', key);
         target.contentEditable = 'false';
         B.editing = null;
+        if (RT) RT.typing(null);
         var txt = target.innerText.replace(/ /g, ' ').replace(/\n$/, '');
         var nc = JSON.parse(JSON.stringify(c.c || {}));
         if (c.type === 'note') nc.text = txt;
@@ -1240,11 +1261,12 @@
       api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); });
+        if (RT) RT.removed(j.ids);
         B.cards.forEach(function (c) { if (c.col && j.ids.indexOf(c.col) >= 0) { /* a coluna foi apagada: os cartões ficam onde a coluna estava */ } });
         B.sel.clear();
         push({ t: 'del', ids: j.ids });
         reload();
-        toast(j.msg, { undo: function () { api('cards_restore', { board: B.id, ids: j.ids }).then(function () { reload(); toast('Reposto.'); }).catch(fail); } });
+        toast(j.msg, { undo: function () { api('cards_restore', { board: B.id, ids: j.ids }).then(function () { if (RT) RT.signal(); reload(); toast('Reposto.'); }).catch(fail); } });
       }).catch(fail);
     }
     function dupSel() {
@@ -1252,6 +1274,7 @@
       api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
+        if (RT) RT.added(j.cards);
         push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
         renderAll();
         select(j.cards.map(function (c) { return c.id; }));
@@ -1304,7 +1327,7 @@
         var pv = e.target.closest('[data-page-view]');
         if (pv) { pageView(pv.getAttribute('data-page-view')); return; }
         var pb = e.target.closest('[data-page-both]');
-        if (pb) { var on = !pb.classList.contains('on'); api('page_both', { board: B.id, lane: pb.getAttribute('data-page-both'), on: on ? 1 : '' }).then(function (j) { toast(j.msg); reload(); }).catch(fail); return; }
+        if (pb) { var on = !pb.classList.contains('on'); api('page_both', { board: B.id, lane: pb.getAttribute('data-page-both'), on: on ? 1 : '' }).then(function (j) { toast(j.msg); if (RT) RT.signal(); reload(); }).catch(fail); return; }
       });
       var up = $('[data-up]', root);
       if (up) up.addEventListener('change', function () { addFiles(up.files); up.value = ''; });
@@ -1323,8 +1346,8 @@
         title.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); if (e.key === 'Escape') title.textContent = before; title.blur(); } e.stopPropagation(); });
       });
 
-      vp.addEventListener('pointermove', function (e) { var p = vpPoint(e); ptr.x = p.x; ptr.y = p.y; ptr.inside = true; }, { passive: true });
-      vp.addEventListener('pointerleave', function () { ptr.inside = false; });
+      vp.addEventListener('pointermove', function (e) { var p = vpPoint(e); ptr.x = p.x; ptr.y = p.y; ptr.inside = true; if (RT && e.pointerType === 'mouse') RT.cursor(toWorld(p.x, p.y)); }, { passive: true });
+      vp.addEventListener('pointerleave', function () { ptr.inside = false; if (RT) RT.cursor(null); });
       vp.addEventListener('pointerdown', down);
       vp.addEventListener('pointermove', move);
       vp.addEventListener('pointerup', upEv);
@@ -1332,6 +1355,7 @@
       vp.addEventListener('dblclick', dbl);
       vp.addEventListener('wheel', function (e) {
         e.preventDefault();
+        if (RT) RT.userMoved();
         var k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
         if (e.ctrlKey || e.metaKey) zoomAt(vpPoint(e), Math.exp(-clamp(e.deltaY * k, -60, 60) * 0.006));   // roda: ~1,4× por clique; pinça: suave
         else { B.view.x -= (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k; if (!(e.shiftKey && !e.deltaX)) B.view.y -= e.deltaY * k; applyView(); }
@@ -1364,7 +1388,7 @@
         }
         if (act === 'swap') {
           b.disabled = true;
-          api('card_swap', { board: B.id, card: c.id }).then(function (j) { B.rev = j.rev; B.cards.set(j.card.id, j.card); rerender(j.card); toast('Trocada por outra parecida.'); }).catch(fail).then(function () { b.disabled = false; });
+          api('card_swap', { board: B.id, card: c.id }).then(function (j) { B.rev = j.rev; B.cards.set(j.card.id, j.card); rerender(j.card); if (RT) RT.added([j.card]); toast('Trocada por outra parecida.'); }).catch(fail).then(function () { b.disabled = false; });
           return;
         }
         if (act === 'li-add') {
@@ -1408,6 +1432,7 @@
       if (t.closest('.ccb-zoom') || t.closest('[data-cact]') || t.closest('input,textarea,select,button,a') || (t.isContentEditable && t.contentEditable === 'true')) return;
       pointers.set(e.pointerId, vpPoint(e));
       vp.setPointerCapture(e.pointerId);
+      if (RT) RT.userMoved();
       if (pointers.size === 2) {
         if (drag && drag.kind === 'drag' && drag.moved) finishDrag(e);
         drag = null;
@@ -1468,6 +1493,7 @@
         var dx = w.x - drag.w0.x, dy = w.y - drag.w0.y;
         drag.before.forEach(function (b) { var c = B.cards.get(b.id); c.x = b.x + dx; c.y = b.y + dy; place(c); });
         if (drag.from) { var cc = drag.c; cc.x = drag.fx + dx; cc.y = drag.fy + dy; place(cc); }
+        if (RT && !drag.from) RT.live(drag.ids);
         hoverColumn(w);
         if (B.lanes) $$('.ccb-lane', lanesEl).forEach(function (l, i) { l.classList.toggle('drop', laneAt(w.y) === (i ? 'B' : 'A')); });
         drawArrows();
@@ -1476,6 +1502,7 @@
         if (c.type === 'drawing') c.h = Math.round(drag.h0 * nw / drag.w0);
         c.w = Math.round(nw);
         place(c); drawArrows();
+        if (RT) RT.live([c.id]);
       } else if (drag.kind === 'marq') {
         if (!drag.el) { drag.el = document.createElement('div'); drag.el.className = 'ccb-marq'; vp.appendChild(drag.el); }
         var x = Math.min(p.x, drag.p0.x), y = Math.min(p.y, drag.p0.y);
@@ -1658,7 +1685,7 @@
       else if (!mod && (k === 'a' || k === 'A') && EDIT) runTool('arrow');
       else if (k === '/' && !mod) openSlash();
       else if ((k === 'Delete' || k === 'Backspace') && B.sel.size) delSel();
-      else if (k === 'Escape') { if (slash) closeSlash(); else if (B.tool !== 'select') setTool('select'); else if (B.sel.size) select([]); else handled = false; }
+      else if (k === 'Escape') { if (slash) closeSlash(); else if (RT && RT.escape()) { /* deixou de seguir */ } else if (B.tool !== 'select') setTool('select'); else if (B.sel.size) select([]); else handled = false; }
       else if (mod && (k === 'z' || k === 'Z')) undo(e.shiftKey);
       else if (mod && (k === 'y' || k === 'Y')) undo(true);
       else if (mod && (k === 'd' || k === 'D')) dupSel();
@@ -1672,6 +1699,7 @@
         var st = e.shiftKey ? GRID : 1, dx = k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0, dy = k === 'ArrowUp' ? -st : k === 'ArrowDown' ? st : 0, ch = [];
         B.sel.forEach(function (id) { var c = B.cards.get(id); if (!c || c.col || c.type === 'arrow') return; c.x += dx; c.y += dy; place(c); ch.push({ id: c.id, x: c.x, y: c.y }); });
         drawArrows();
+        if (RT) RT.live(ch.map(function (x) { return x.id; }));
         clearTimeout(keys.t); keys.t = setTimeout(function () { save(ch); }, 400);
       }
       else handled = false;
@@ -1751,7 +1779,7 @@
       if (k === 'angles') return angles(false);
       if (k === 'tidy') {
         aiBusy('A arrumar o quadro em colunas…');
-        return api('ai', { board: B.id, act: 'tidy' }).then(function (j) { aiDone(); toast(j.msg); reload().then(function () { fitAll(true); }); }).catch(function (e) { aiDone(); fail(e); });
+        return api('ai', { board: B.id, act: 'tidy' }).then(function (j) { aiDone(); toast(j.msg); if (RT) RT.signal(); reload().then(function () { fitAll(true); }); }).catch(function (e) { aiDone(); fail(e); });
       }
       if (k === 'treatment') {
         aiBusy('A escrever o tratamento… (pode demorar um minuto)');
@@ -1764,6 +1792,7 @@
         aiBusy('A transformar o storyboard em lista de planos…');
         return api('ai', { board: B.id, act: 'shots' }).then(function (j) {
           B.cards.set(j.card.id, j.card); cull(); select([j.card.id]);
+          if (RT) RT.added([j.card]);
           aiDone('<h4>Lista de planos</h4><p>' + j.shots.length + ' planos numa lista no quadro.</p>' + (B.data.board.deal ? '<button type="button" class="btn sm" data-shots-tasks="' + j.card.id + '">Criar as tarefas no negócio</button>' : ''));
         }).catch(function (e) { aiDone(); fail(e); });
       }
@@ -1790,7 +1819,7 @@
       addCard('column', { title: 'Rota · ' + a.title }, at).then(function (col) {
         if (!col) return;
         return api('card_add', { board: B.id, type: 'note', column: col.id, x: 0, y: 0, lane: col.lane, content: JSON.stringify({ text: a.title + '\n' + a.idea + '\n\n' + a.technique + ' · complexidade ' + a.complexity + '\n\nPorque funciona: ' + a.why }) })
-          .then(function (j) { B.rev = j.rev; B.cards.set(j.card.id, j.card); rerender(col); toast('Rota criada.'); });
+          .then(function (j) { B.rev = j.rev; B.cards.set(j.card.id, j.card); rerender(col); if (RT) RT.added([j.card]); toast('Rota criada.'); });
       }).catch(fail);
     }
 
@@ -1825,11 +1854,24 @@
         }).catch(fail);
         return;
       }
+      if (B.side === 'hist') { historyPanel(); return; }
       // comentários: do cartão selecionado ou do quadro
       var card = sel.length === 1 ? sel[0] : null;
       sideBody.innerHTML = '<h4>' + (card ? 'Comentários do cartão' : 'Comentários do quadro') + '</h4><div class="cc-cmts" data-cmts><span class="spin"></span></div>'
         + '<form class="cc-cmt-f" data-cmt-f><textarea placeholder="Escreva… @ para mencionar alguém" aria-label="Comentário"></textarea><div class="cc-ment" hidden></div><button type="submit" class="btn sm">Comentar</button></form>';
       loadComments(card);
+    }
+    function curCard() { var sel = Array.from(B.sel); return sel.length === 1 ? sel[0] : 0; }
+    function reactHtml(m) {
+      var r = m.react || {}, me = B.data.me, keys = Object.keys(r);
+      var chips = keys.map(function (k) {
+        var who = r[k] || [], mine = who.indexOf(me) >= 0;
+        var names = who.map(function (id) { var u = (B.data.users || []).filter(function (x) { return x.id === id; })[0]; return u ? u.name.split(' ')[0] : ''; }).filter(Boolean).join(', ');
+        return '<button type="button" class="cc-rx' + (mine ? ' on' : '') + '" data-react="' + m.id + '" data-emoji="' + esc(k) + '" aria-pressed="' + (mine ? 'true' : 'false') + '" title="' + esc(names) + '">' + esc(k) + ' <b>' + who.length + '</b></button>';
+      }).join('');
+      if (!EDIT) return chips ? '<div class="cc-rxs">' + chips + '</div>' : '';
+      return '<div class="cc-rxs">' + chips + '<button type="button" class="cc-rx add" data-react-pick aria-label="Reagir">☺+</button><span class="cc-rxp" hidden>'
+        + (B.data.reactions || []).map(function (k) { return '<button type="button" data-react="' + m.id + '" data-emoji="' + esc(k) + '" aria-label="Reagir com ' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</span></div>';
     }
     function cmtHtml(list) {
       if (!list.length) return '<p class="muted small">Sem comentários.</p>';
@@ -1837,7 +1879,7 @@
         var body = esc(m.body).replace(/@([\p{L}][\p{L}.\-]*(?:\s[\p{L}][\p{L}.\-]*)?)/gu, '<span class="m">@$1</span>');
         return '<div class="cc-cmt' + (m.resolved ? ' res' : '') + '"><span class="w"><b>' + esc(m.who) + '</b>' + (m.client ? '<span class="cl">CLIENTE</span>' : '') + '<span>' + esc(m.when) + '</span>'
           + (EDIT ? '<button type="button" class="lnk small" data-cres="' + m.id + '">' + (m.resolved ? 'Reabrir' : 'Resolver') + '</button>' : '')
-          + (m.uid === B.data.me || MANAGE ? '<button type="button" class="lnk small del" data-cdel="' + m.id + '" aria-label="Apagar comentário">' + ico('trash') + '</button>' : '') + '</span><p>' + body + '</p></div>';
+          + (m.uid === B.data.me || MANAGE ? '<button type="button" class="lnk small del" data-cdel="' + m.id + '" aria-label="Apagar comentário">' + ico('trash') + '</button>' : '') + '</span><p>' + body + '</p>' + reactHtml(m) + '</div>';
       }).join('');
     }
     function loadComments(card) {
@@ -1860,8 +1902,18 @@
       }
       var cres = e.target.closest('[data-cres]'), cdel = e.target.closest('[data-cdel]');
       if (cres || cdel) {
-        api(cres ? 'comment_resolve' : 'comment_del', { id: (cres || cdel).getAttribute(cres ? 'data-cres' : 'data-cdel') }).then(function (j) { $('[data-cmts]', sideBody).innerHTML = cmtHtml(j.comments); }).catch(fail);
+        api(cres ? 'comment_resolve' : 'comment_del', { id: (cres || cdel).getAttribute(cres ? 'data-cres' : 'data-cdel') }).then(function (j) { $('[data-cmts]', sideBody).innerHTML = cmtHtml(j.comments); if (RT) RT.comments(curCard()); }).catch(fail);
+        return;
       }
+      var rx = e.target.closest('[data-react]');
+      if (rx) {
+        api('react', { id: rx.getAttribute('data-react'), emoji: rx.getAttribute('data-emoji') }).then(function (j) { $('[data-cmts]', sideBody).innerHTML = cmtHtml(j.comments); if (RT) RT.comments(curCard()); }).catch(fail);
+        return;
+      }
+      var rp = e.target.closest('[data-react-pick]');
+      if (rp) { var pk = rp.nextElementSibling; if (pk) pk.hidden = !pk.hidden; return; }
+      var hv = e.target.closest('[data-ver]');
+      if (hv) { versionAct(hv.getAttribute('data-ver'), +hv.getAttribute('data-id'), hv); return; }
     }
     // comentários: enviar e @menções
     root.addEventListener('submit', function (e) {
@@ -1875,6 +1927,7 @@
         $('[data-cmts]', sideBody).innerHTML = cmtHtml(j.comments);
         var c = B.cards.get(card);
         if (c) { c.nc = j.comments.length; rerender(c); }
+        if (RT) RT.comments(card || 0, j.mentioned);
       }).catch(fail);
     });
     root.addEventListener('keydown', function (e) {
@@ -1912,6 +1965,70 @@
       };
     });
 
+    // ── histórico do quadro: versões com «Ver» e «Restaurar» ──
+    function historyPanel() {
+      sideBody.innerHTML = '<h4>Histórico do quadro</h4><p class="small muted">Uma versão por sessão de trabalho e antes das ações grandes (Arrumar o quadro, Preparar com IA, apagar muitos cartões). Restaurar guarda primeiro o estado de agora.</p>'
+        + (EDIT ? '<div class="actions" style="margin:6px 0 10px"><button type="button" class="btn sm ghost" data-ver="mark" data-id="0">Guardar esta versão</button></div>' : '')
+        + '<div class="cc-vers" data-vers><span class="spin"></span></div>';
+      api('versions', { board: B.id }, 'GET').then(function (j) {
+        var el = $('[data-vers]', sideBody);
+        if (!el || B.side !== 'hist') return;
+        el.innerHTML = j.versions.length ? '<ol>' + j.versions.map(function (v) {
+          return '<li><div><b>' + esc(v.label || j.kinds[v.kind] || 'Versão') + '</b><small>' + esc(v.when) + (v.who ? ' · ' + esc(v.who) : '') + ' · ' + v.n + (v.n === 1 ? ' cartão' : ' cartões') + '</small></div>'
+            + '<span><button type="button" class="lnk small" data-ver="view" data-id="' + v.id + '">Ver</button>'
+            + (EDIT ? '<button type="button" class="lnk small" data-ver="restore" data-id="' + v.id + '" data-when="' + esc(v.when) + '">Restaurar</button>' : '') + '</span></li>';
+        }).join('') + '</ol>' : '<p class="muted small">Ainda não há versões. A primeira guarda-se na próxima alteração.</p>';
+      }).catch(fail);
+    }
+    function versionAct(k, id, btn) {
+      if (k === 'mark') {
+        ask('Guardar esta versão', 'Nome (opcional)', { ok: 'Guardar', from: btn }).then(function (v) {
+          if (v === null) return;
+          api('version_mark', { board: B.id, label: v || '' }).then(function (j) { toast(j.msg); historyPanel(); }).catch(fail);
+        });
+        return;
+      }
+      if (k === 'view') {
+        api('version_view', { board: B.id, id: id }, 'GET').then(function (j) {
+          var m = modal('<h3>Versão de ' + esc(j.when) + '</h3>' + versionPreview(j.cards)
+            + '<div class="actions">' + (EDIT ? '<button type="button" class="btn" data-vr="' + id + '">Restaurar esta versão</button>' : '') + '<button type="button" class="btn ghost" data-mdl-close>Fechar</button></div>', 'cc-vmodal');
+          m.addEventListener('click', function (e) { var r = e.target.closest('[data-vr]'); if (r) { if (T.closeMdl) T.closeMdl(m); versionAct('restore', id, null); } });
+        }).catch(fail);
+        return;
+      }
+      if (k === 'restore') {
+        var when = btn ? btn.getAttribute('data-when') : '';
+        var m = modal('<h3>Restaurar a versão' + (when ? ' de ' + esc(when) : '') + '?</h3><p>Os cartões voltam a como estavam. O estado de agora fica guardado no histórico, para poder voltar atrás.</p>'
+          + '<div class="actions"><button type="button" class="btn" data-ok>Restaurar</button><button type="button" class="btn ghost" data-mdl-close>Cancelar</button></div>');
+        m.addEventListener('click', function (e) {
+          if (!e.target.closest('[data-ok]')) return;
+          if (T.closeMdl) T.closeMdl(m);
+          api('version_restore', { board: B.id, id: id }).then(function (j) {
+            toast(j.msg);
+            if (RT) RT.signal();
+            reload().then(function () { if (B.side === 'hist') historyPanel(); });
+          }).catch(fail);
+        });
+      }
+    }
+    /** Uma miniatura estática da versão (posições, imagens e textos). */
+    function versionPreview(list) {
+      var top = list.filter(function (c) { return !c.col && c.type !== 'arrow'; });
+      if (!top.length) return '<p class="muted">Quadro vazio nesta versão.</p>';
+      var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      top.forEach(function (c) { var h = c.asset && c.asset.w && c.asset.h ? c.w * c.asset.h / c.asset.w : (c.h || 160); x1 = Math.min(x1, c.x); y1 = Math.min(y1, c.y); x2 = Math.max(x2, c.x + c.w); y2 = Math.max(y2, c.y + h); c.__h = h; });
+      var W = Math.min(860, window.innerWidth - 80), s = Math.min(W / Math.max(1, x2 - x1), 520 / Math.max(1, y2 - y1), 1), H = Math.round((y2 - y1) * s);
+      return '<div class="cc-vprev" style="height:' + H + 'px;width:' + Math.round((x2 - x1) * s) + 'px">' + top.map(function (c) {
+        var st = 'left:' + Math.round((c.x - x1) * s) + 'px;top:' + Math.round((c.y - y1) * s) + 'px;width:' + Math.round(c.w * s) + 'px;height:' + Math.max(8, Math.round(c.__h * s)) + 'px';
+        var x = c.c || {}, inner = '';
+        if (c.asset && c.asset.thumb) inner = '<img src="' + esc(thumbUrl(c.asset, c.w * s * 2)) + '" alt="">';
+        else if (c.type === 'note') inner = '<span>' + esc((x.text || '').slice(0, 120)) + '</span>';
+        else if (c.type === 'column' || c.type === 'list' || c.type === 'board') inner = '<span><b>' + esc(x.title || '') + '</b></span>';
+        else if (c.type === 'swatch') inner = '<i style="background:' + esc(x.hex || '#ccc') + '"></i>';
+        return '<div class="vp-c t-' + c.type + '" style="' + st + '">' + inner + '</div>';
+      }).join('') + '</div>';
+    }
+
     // ── ações do topo ──
     function topAction(k, btn) {
       if (k === 'side') { sideEl.hidden = !sideEl.hidden; sideSync(); return; }
@@ -1919,12 +2036,12 @@
       if (k === 'prepare') {
         if (btn) btn.disabled = true;
         aiBusy('A preparar as duas faixas: ângulos e referências da biblioteca… (pode demorar um minuto)');
-        api('prepare', { board: B.id }).then(function (j) { aiDone(); toast(j.msg); reload().then(function () { fitAll(true); }); }).catch(function (e) { aiDone(); fail(e); }).then(function () { if (btn) btn.disabled = false; });
+        api('prepare', { board: B.id }).then(function (j) { aiDone(); toast(j.msg); if (RT) RT.signal(); reload().then(function () { fitAll(true); }); }).catch(function (e) { aiDone(); fail(e); }).then(function () { if (btn) btn.disabled = false; });
         return;
       }
       if (k === 'send') {
         if (btn) btn.disabled = true;
-        api('send_budget', { board: B.id }).then(function (j) { toast(j.msg); reload(); }).catch(fail).then(function () { if (btn) btn.disabled = false; });
+        api('send_budget', { board: B.id }).then(function (j) { toast(j.msg); if (RT) RT.signal(); reload(); }).catch(fail).then(function () { if (btn) btn.disabled = false; });
         return;
       }
       if (k === 'more') {
@@ -1950,6 +2067,7 @@
       btn.textContent = 'A gerar…';
       api('page_gen', { board: B.id, lane: lane }).then(function (j) {
         toast(j.msg);
+        if (RT) RT.signal();
         return reload().then(function () { pageView(lane); });
       }).catch(fail).then(function () { lanebar(); });
     }
@@ -2005,17 +2123,55 @@
       setTimeout(go, 80);
     }
 
+    // ── tempo real (cc_rt.js) ──
+    function startRT() {
+      if (!window.ccRealtime) return;
+      RT = window.ccRealtime({
+        B: B, api: api, toast: toast, csrf: CSRF, apiUrl: API,
+        vp: function () { return vp; },
+        elOf: function (id) { return B.els.get(+id); },
+        busy: function (id) { return B.editing === id || !!(drag && ((drag.ids && drag.ids.indexOf(id) >= 0) || (drag.c && drag.c.id === id))); },
+        drop: function (id) { B.cards.delete(id); B.sel.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); },
+        renderAll: function () { renderAll(); sideSync(); },
+        rerender: rerender, drawArrows: drawArrows, reload: reload,
+        glide: function (c) {
+          var el = B.els.get(c.id);
+          if (!el) { if (!c.col) cull(); return; }
+          if (!reduced.matches) { el.classList.add('glide'); clearTimeout(el.__g); el.__g = setTimeout(function () { el.classList.remove('glide'); }, 160); }
+          place(c, el);
+        },
+        visibleRect: function () {
+          var r = vp.getBoundingClientRect(), a = toWorld(0, 0), b = toWorld(r.width, r.height);
+          return { x: Math.round(a.x), y: Math.round(a.y), w: Math.round(b.x - a.x), h: Math.round(b.y - a.y) };
+        },
+        showRect: function (r) { animateView(function () { fitTo(r, 0, 4); }); },
+        onComments: function (card) {
+          var sel = Array.from(B.sel), cur = sel.length === 1 ? sel[0] : 0;
+          if (sideEl && !sideEl.hidden && B.side === 'com' && cur === card) loadComments(card ? B.cards.get(card) : null);
+          var c = card ? B.cards.get(card) : null;
+          if (c) api('comments', { board: B.id, card: card }, 'GET').then(function (j) { c.nc = j.comments.length; rerender(c); }).catch(function () {});
+        },
+        openComments: function (card) { select(card && B.cards.has(card) ? [card] : []); B.side = 'com'; sideEl.hidden = false; sideSync(); }
+      });
+      var acts = $('.ccb-acts', root);
+      if (acts) RT.mount(acts);
+    }
+
     // ── recarregar (outro separador mudou) ──
     function reload() {
       var keepSel = Array.from(B.sel);
       return load().then(function () {
         B.sel = new Set(keepSel.filter(function (id) { return B.cards.has(id); }));
+        if (RT) RT.reconcile();
         renderAll();
         sideSync();
-      }).catch(fail);
+      }).catch(function (e) { if (!e.offline) fail(e); });
     }
+    var lastPoll = 0;
     setInterval(function () {
       if (document.hidden || drag || B.editing || !B.data) return;
+      if (RT && RT.connected && Date.now() - lastPoll < 30000) return;   // em tempo real, a sondagem é só a rede de segurança
+      lastPoll = Date.now();
       api('poll', { id: B.id, rev: B.rev }, 'GET').then(function (j) {
         if (j.changed && !drag && !B.editing) { B.rev = j.rev; reload(); }
         if (j.jobs && EDIT) kickWorker();
@@ -2030,6 +2186,7 @@
     // ── arranque ──
     load().then(function () {
       frame();
+      startRT();
       renderAll();
       var deep = +root.getAttribute('data-card');
       if (deep && B.cards.has(deep)) {

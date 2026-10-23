@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Guardar na topper.",
+  "short_name": "topper.",
+  "version": "1.0.0",
+  "description": "Guarda imagens, vídeos, links, texto, áreas do ecrã e frames de vídeo no Centro Criativo da topper. (Caixa de entrada ou um quadro).",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_title": "Guardar na topper.",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Abrir «Guardar na topper.»"
+    },
+    "capture-area": {
+      "suggested_key": {
+        "default": "Alt+Shift+A"
+      },
+      "description": "Capturar uma área do ecrã"
+    }
+  }
+}

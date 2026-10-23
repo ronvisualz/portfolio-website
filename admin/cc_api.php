@@ -18,10 +18,15 @@
  *   upload_init, upload_done, link_add, asset_save, asset_delete, asset_restore, inbox_done
  *   analyze, analyze_all (gerir), work
  *   ai (angles | refs | similar | tidy | treatment | shots | shots_tasks), prepare, page_gen, page_both, send_budget
- *   comment_add, comment_del, comment_resolve, import
+ *   comment_add, comment_del, comment_resolve, react, import
+ * Tempo real e histórico (§26):
+ *   a=rt_token          board — um token novo para o serviço de tempo real (ler)
+ *   a=versions          board — as versões do quadro (ler) · a=version_view  board, id — os cartões de uma versão (ler)
+ *   version_restore, version_mark (editar) · rt_usage (o que o browser enviou; só pede o token CSRF)
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/cc.php';
+require_once __DIR__ . '/inc/cc_rt.php';
 require_once __DIR__ . '/inc/ui.php';
 
 function cout(int $code, array $body): void {
@@ -42,12 +47,12 @@ if (!cc_ready($pdo)) cfail('O Centro Criativo ainda não está pronto (a base de
 $a = (string)($_REQUEST['a'] ?? '');
 $by = (int)$user['id'];
 $post = $_SERVER['REQUEST_METHOD'] === 'POST';
-$reads = ['boards', 'board', 'poll', 'library', 'asset', 'similar', 'comments', 'jobs', 'deals'];
+$reads = ['boards', 'board', 'poll', 'library', 'asset', 'similar', 'comments', 'jobs', 'deals', 'rt_token', 'versions', 'version_view'];
 if (!in_array($a, $reads, true)) {
     if (!$post) cfail('Pedido inválido.', 405);
     $sent = $_POST['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
     if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) cfail('Pedido inválido. Recarregue a página e tente outra vez.');
-    if (!can('criativo', PERM_EDIT)) cfail('A sua conta vê o Centro Criativo mas não o edita.', 403);
+    if ($a !== 'rt_usage' && !can('criativo', PERM_EDIT)) cfail('A sua conta vê o Centro Criativo mas não o edita.', 403);
 }
 
 function rq(string $k, $d = '') { return $_REQUEST[$k] ?? $d; }
@@ -57,11 +62,15 @@ function rint(string $k): int { return (int)($_REQUEST[$k] ?? 0); }
 function board_req(PDO $pdo, string $k = 'board'): array {
     $b = cc_board_get($pdo, (int)($_REQUEST[$k] ?? $_REQUEST['id'] ?? 0));
     if (!$b || $b['status'] === 'deleted') cfail('Quadro não encontrado.', 404);
+    if (!cc_board_access($pdo, $b)) cfail('Este quadro é de um negócio a que a sua conta não tem acesso.', 403);
     return $b;
 }
 
+/** Pode mudar-se? Na primeira mudança de uma sessão de trabalho, o quadro fica guardado no histórico. */
 function board_editable(array $b): void {
+    global $pdo, $by;
     if ($b['status'] === 'archived') cfail('Este quadro está arquivado. Reabra-o para mudar.');
+    cc_board_version_session($pdo, $b, $by);
 }
 
 /** Os cartões de um pedido em lote, só deste quadro. */
@@ -103,7 +112,7 @@ case 'boards': {
                            FROM cc_boards b LEFT JOIN deals d ON d.id = b.deal_id LEFT JOIN users u ON u.id = b.exec_owner_id
                           WHERE $where ORDER BY b.updated_at DESC LIMIT 300");
     $st->execute($args);
-    $rows = $st->fetchAll();
+    $rows = array_values(array_filter($st->fetchAll(), fn($r) => cc_board_access($pdo, $r)));
     $covers = [];
     if ($rows) {
         $ids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
@@ -175,7 +184,51 @@ case 'board': {
                'pages' => $pages ?: new stdClass(), 'treatment' => $treat ? json_decode((string)$treat, true) : null,
                'edit' => can('criativo', PERM_EDIT) && $b['status'] === 'active', 'manage' => can('criativo', PERM_MANAGE),
                'users' => users_light($pdo), 'ai' => (bool)cc_ai_config(), 'embed' => (bool)cc_embed_config(), 'me' => $by,
-               'brief' => cc_brief_text($pdo, $b)]);
+               'brief' => cc_brief_text($pdo, $b), 'reactions' => CC_REACTIONS, 'now' => (int)round(microtime(true) * 1000),
+               'rt' => cc_rt_connect_info($pdo, $b, $user, can('criativo', PERM_EDIT) && $b['status'] === 'active')]);
+}
+
+case 'rt_token': {
+    $b = board_req($pdo);
+    release_session();
+    $rt = cc_rt_connect_info($pdo, $b, $user, can('criativo', PERM_EDIT) && $b['status'] === 'active');
+    if (!$rt) cfail('O tempo real está desligado.', 503);
+    cout(200, ['ok' => true, 'token' => $rt['token'], 'ttl' => $rt['ttl']]);
+}
+
+case 'rt_usage': {
+    $b = board_req($pdo);
+    release_session();
+    $wins = array_map('intval', array_slice(explode(',', (string)rq('wins')), 0, 400));
+    cc_rt_usage_add($pdo, (int)$b['id'], rint('conns'), rint('msgs'), $wins);
+    cout(200, ['ok' => true]);
+}
+
+case 'versions': {
+    $b = board_req($pdo);
+    cout(200, ['ok' => true, 'versions' => cc_board_versions($pdo, (int)$b['id']), 'kinds' => CC_VERSION_KINDS]);
+}
+
+case 'version_view': {
+    $b = board_req($pdo);
+    $v = cc_board_version_get($pdo, (int)$b['id'], rint('id'));
+    if (!$v) cfail('Esta versão já não existe.', 404);
+    cout(200, ['ok' => true, 'cards' => cc_board_version_cards_public($pdo, $v), 'when' => lisbon_fmt(strtotime((string)$v['created_at']), 'd/m H:i')]);
+}
+
+case 'version_restore': {
+    $b = board_req($pdo);
+    board_editable($b);
+    [$back, $gone] = cc_board_version_restore($pdo, $b, rint('id'), $by);
+    cout(200, ['ok' => true, 'rev' => (int)cc_board_get($pdo, (int)$b['id'])['rev'],
+               'msg' => 'Versão restaurada' . ($gone ? ' (' . $gone . ($gone === 1 ? ' cartão saiu' : ' cartões saíram') . '; o estado anterior ficou no histórico)' : '') . '.']);
+}
+
+case 'version_mark': {
+    $b = board_req($pdo);
+    board_editable($b);
+    $id = cc_board_version_save($pdo, $b, 'manual', mb_substr(trim((string)rq('label')), 0, 120) ?: 'Guardada à mão', $by);
+    cout(200, ['ok' => true, 'msg' => $id ? 'Versão guardada no histórico.' : 'Nada mudou desde a última versão.']);
 }
 
 case 'poll': {
@@ -387,6 +440,7 @@ case 'cards_restore': {
     $ids = card_ids($pdo, (int)$b['id'], rq('ids', []));
     if (!$ids) cfail('Nada selecionado.');
     $del = $a === 'cards_delete';
+    if ($del && count($ids) >= 5) cc_board_version_save($pdo, $b, 'before', 'Antes de apagar ' . count($ids) . ' cartões', $by);
     // apagar uma coluna solta os cartões dela (ficam onde estavam); repor volta a pô-los
     $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')')
         ->execute($del ? [cc_now(), (int)$b['id']] : [(int)$b['id']]);
@@ -635,6 +689,7 @@ case 'ai': {
             $rows = cc_refs_for_text($pdo, $text, 18, $have);
             cout(200, ['ok' => true, 'items' => array_map(fn($r) => cc_asset_public($r), $rows), 'by' => cc_embed_config() ? 'vetores' : 'texto']);
         case 'tidy':
+            cc_board_version_save($pdo, $b, 'before', 'Antes de «Arrumar o quadro»', $by);
             $n = cc_ai_tidy($pdo, $b, $by);
             cout(200, ['ok' => true, 'msg' => $n . ' cartões arrumados em colunas.']);
         case 'treatment':
@@ -674,6 +729,7 @@ case 'prepare': {
     $b = board_req($pdo);
     board_editable($b);
     if (!in_array($b['kind'], ['precreative', 'front'], true)) cfail('«Preparar com IA» é do pré-criativo.');
+    cc_board_version_save($pdo, $b, 'before', 'Antes de «Preparar com IA»', $by);
     release_session();
     $r = cc_ai_prepare($pdo, $b, $by);
     cout(200, ['ok' => true, 'msg' => $r['angles'] . ' ângulos e ' . ($r['refs']['A'] + $r['refs']['B']) . ' referências nas duas faixas. Mantenha, tire ou troque.']);
@@ -722,9 +778,10 @@ case 'comment_add': {
     $b = board_req($pdo);
     $c = rint('card') ? cc_card_get($pdo, rint('card')) : null;
     if ($c && (int)$c['board_id'] !== (int)$b['id']) cfail('Pedido inválido.');
-    cc_comment_add($pdo, $b, $c, (string)rq('body'), $user);
+    $cid = cc_comment_add($pdo, $b, $c, (string)rq('body'), $user);
     cc_board_touch($pdo, (int)$b['id']);
-    cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$b['id'], $c ? (int)$c['id'] : null)]);
+    $ment = array_values(array_filter(array_map('intval', explode(',', (string)$pdo->query('SELECT mentions FROM cc_comments WHERE id = ' . $cid)->fetchColumn()))));
+    cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$b['id'], $c ? (int)$c['id'] : null), 'mentioned' => $ment]);
 }
 
 case 'comment_del':
@@ -736,6 +793,15 @@ case 'comment_resolve': {
     if ($a === 'comment_del' && (int)$cm['user_id'] !== $by && !can('criativo', PERM_MANAGE)) cfail('Só quem escreveu (ou quem gere) apaga.', 403);
     if ($a === 'comment_del') $pdo->prepare('UPDATE cc_comments SET deleted_at = ? WHERE id = ?')->execute([cc_now(), (int)$cm['id']]);
     else $pdo->prepare('UPDATE cc_comments SET resolved_at = ' . ($cm['resolved_at'] ? 'NULL' : '?') . ' WHERE id = ?')->execute($cm['resolved_at'] ? [(int)$cm['id']] : [cc_now(), (int)$cm['id']]);
+    cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$cm['board_id'], $cm['card_id'] ? (int)$cm['card_id'] : null)]);
+}
+
+case 'react': {
+    $st = $pdo->prepare('SELECT * FROM cc_comments WHERE id = ? AND deleted_at IS NULL');
+    $st->execute([rint('id')]);
+    $cm = $st->fetch();
+    if (!$cm || !($b = cc_board_get($pdo, (int)$cm['board_id'])) || !cc_board_access($pdo, $b)) cfail('Comentário não encontrado.', 404);
+    cc_comment_react($pdo, (int)$cm['id'], (string)rq('emoji'), $by);
     cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$cm['board_id'], $cm['card_id'] ? (int)$cm['card_id'] : null)]);
 }
 

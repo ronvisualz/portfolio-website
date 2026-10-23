@@ -1650,6 +1650,84 @@ Ficheiros novos: `inc/migrate_review.php`, `inc/cc_review.php`, `rv_api.php`, `p
 para o vídeo), `inc/cron_run.php`, `inc/files.php`, `inc/interactions.php`, `inc/alerts.php`,
 `inc/settings_def.php`, `criativo.php`, `negocio.php`.
 
+### 10.17 Centro Criativo — fase 3: Tempo real e captura — §26 (23 out 2026)
+
+Base de dados **v28** (`inc/migrate_rt.php`, idempotente): `cc_board_versions` (histórico do quadro:
+estado dos cartões por versão, tipo e autor), `user_tokens` (tokens pessoais: só o hash, os últimos 4
+caracteres, último uso, IP e browser, revogação), `rt_usage` e `rt_usage_win` (uso do tempo real por
+dia e quadro); `cc_comments.reactions` e `cc_assets.capture` (de onde veio o que se guardou de fora).
+Modelo em `inc/cc_rt.php` e `inc/capture.php`.
+
+- **Serviço de tempo real (`rt/`):** Worker da Cloudflare com PartyServer / y-partyserver e um Durable
+  Object por quadro (sala `b<id>`), SQLite do próprio objeto e API de hibernação (um quadro sem ninguém
+  não gasta). Entra-se só com um token curto (10 min) que o PHP assina com Ed25519: a chave privada fica
+  em `settings` no servidor; a pública (não é segredo) o Worker lê-a de `/admin/rt_key.php` e guarda-a
+  10 min (ou fixa-se em `RT_PUBLIC_KEY`) — não há segredo nenhum no Worker nem no código. O token diz o quadro, a pessoa e o papel: `edit` escreve,
+  `view` só lê (o servidor ignora as alterações), `portal` só lê e não envia nem recebe presença (o
+  servidor filtra). Origens permitidas: topperhub.xyz e topperdigital.xyz. Testado com `wrangler dev`:
+  token de outro quadro recusado, leitor sem escrita, portal sem cursores, ~13 ms entre dois browsers.
+- **Quadro em tempo real (`assets/cc_rt.js`, ligado pelo `cc.js`):** a base de dados continua a ser o
+  registo — cada pessoa grava o que muda (como antes) e o Yjs leva logo aos outros: mover (também durante
+  o arrasto), redimensionar, editar, cartões novos e apagados; ações feitas no servidor (Arrumar,
+  Preparar com IA, restaurar, páginas) avisam os outros para recarregar. Ao entrar, ganha o mais recente
+  (a base ou o documento), com a hora do servidor. Presença: avatares no topo (iniciais e a cor da
+  Equipa), cursores com nome, seleções dos outros contornadas na cor da pessoa, «Ana está a escrever…»
+  nas notas. **Seguir**: clique no avatar; sai com Esc ou ao mexer na tela. **Sem ligação**: continua a
+  trabalhar, as alterações ficam numa fila (no browser) e gravam-se ao voltar, com aviso discreto
+  (ponto verde/âmbar e texto ao lado dos avatares). «Anular» continua a ser de cada pessoa.
+  **Histórico** (separador do painel lateral): uma versão por sessão de trabalho (antes da primeira
+  alteração, se a última tem mais de 30 min) e antes de Arrumar o quadro, Preparar com IA e apagar 5 ou
+  mais cartões; «Guardar esta versão», **Ver** (miniatura da versão) e **Restaurar** (guarda primeiro o
+  estado de agora). **Comentários** em tempo real: os outros veem logo os novos, resolvidos e apagados;
+  @menção avisa a pessoa no momento (e no sino, como antes); **reações** 👍 ❤️ 🔥 ✅ 👀 😂.
+- **Permissões no servidor:** um quadro de um negócio só abre (página, API e token) para quem tem
+  acesso ao negócio — no âmbito em Negócios, responsável de execução (do negócio ou de uma frente),
+  com tarefas no negócio, ou quem criou o quadro; a lista de Projetos mostra só esses.
+- **Portal do cliente:** nos Quadros partilhados liga-se só de leitura e sem presença; quando a equipa
+  refaz as páginas aparece «A equipa atualizou este quadro · Atualizar».
+- **Plano gratuito e uso:** os browsers contam o que enviam (ligações, mensagens, janelas de 10 s com
+  atividade) e o PHP soma por dia (UTC): pedidos ≈ ligações × 2 + mensagens ÷ 20; GB-s ≈ janelas × 10 s ×
+  128 MB. Definições › Integrações mostra o uso do dia (barra e números); aos 80% os admins são avisados
+  no sino; aos 100% o tempo real fica em pausa até às 00:00 UTC e os quadros continuam como antes
+  (gravam e atualizam a cada 8 s). Com o tempo real ligado, a sondagem passa a 30 s (rede de segurança).
+- **Extensão «Guardar na topper.» (`ext/chrome/`, Chrome, Edge, Brave, Arc):** descarrega-se em
+  Perfil › Ligações (ZIP já com o endereço; «Carregar sem compactação» no modo de programador — não está
+  na Chrome Web Store). Botão direito numa imagem, vídeo, link ou texto selecionado › «Guardar na
+  topper.» › Caixa de entrada ou um dos quadros recentes. O botão abre o popup: destino (recentes ou
+  procurar), nota, «Guardar esta página», «Capturar uma área» e «Frame do vídeo (m:ss)» (YouTube, Vimeo,
+  Instagram e qualquer `<video>`: o frame à vista, com o link no tempo certo — `&t=83s` no YouTube).
+  Guarda a página de origem e o autor/créditos quando a página os diz. Atalhos Alt+Shift+S (abrir) e
+  Alt+Shift+A (área), configuráveis. Entra com um **token pessoal** (Perfil › Ligações, revogável pela
+  pessoa e por qualquer admin em Definições › Integrações); nunca pede nem guarda a palavra-passe.
+  Testado num Chromium com a extensão carregada (ligar, quadros no menu, área cortada e guardada,
+  token inválido recusado).
+- **Telemóvel e tablet:** a plataforma é instalável (PWA: `manifest.php`, `sw.js`, ícones em
+  `assets/pwa/`). No Android, «topper.» aparece no menu Partilhar (Web Share Target): o service worker
+  guarda o que chega e `partilhar.php` mostra-o, com destino e nota (sessão normal, sem token). No
+  iPhone/iPad, o Atalho do iOS «Guardar na topper.» com os passos em Perfil › Ligações (o mesmo token);
+  um admin pode pôr o link de partilha do Atalho em Definições para os outros instalarem com um toque.
+- **Tudo o que é capturado** entra na Caixa de entrada (mesmo o que já existia) e vai para a análise da
+  IA (§23.5); com um quadro, fica também lá como cartão (o texto selecionado vira nota ao lado).
+  O detalhe da referência mostra «Guardado de fora»: por onde, a página (com o tempo), o autor, o texto
+  e a nota.
+- **Definições:** Centro Criativo › Histórico dos quadros (versão a cada N min de trabalho, versões
+  guardadas por quadro) e Captura (destino por defeito: Caixa de entrada ou o último quadro usado);
+  Integrações › Tempo real (estado, custo 0 €, uso do dia, endereço do serviço, ligar/desligar e o
+  comando para publicar) e Captura (tokens de todos, com Revogar; link do Atalho do iOS).
+- **Para pôr em produção:** publicar o Worker uma vez na conta Cloudflare da topper. —
+  `cd rt && npm ci && npx wrangler deploy` (também em Definições › Integrações › Tempo real) — e colar o
+  endereço que o wrangler mostra (…workers.dev, ou rt.topperhub.xyz se o domínio passar para a
+  Cloudflare) em «Endereço do serviço». Sem isso, tudo o resto funciona e os quadros atualizam como antes.
+
+Ficheiros novos: `rt/` (Worker: `src/index.js`, `wrangler.toml`, `client/entry.js`, `package.json`),
+`admin/assets/vendor/rt/topper-rt.js` (Yjs + y-partyserver + y-indexeddb, MIT), `inc/migrate_rt.php`,
+`inc/cc_rt.php`, `inc/capture.php`, `capture_api.php`, `partilhar.php`, `manifest.php`, `sw.js`, `rt_key.php`,
+`ext.php`, `ext/chrome/` (extensão), `assets/cc_rt.js`, `assets/share.js`, `assets/pwa/`. Alterados:
+`inc/migrate.php`, `inc/bootstrap.php` (`csp_send()`: o quadro e o portal juntam o serviço ao
+connect-src), `inc/cc.php`, `inc/alerts.php`, `inc/cron_run.php`, `inc/settings_def.php`, `inc/layout.php`
+(manifest e service worker), `inc/ui.php`, `cc_api.php`, `criativo.php`, `portal.php`, `conta.php`,
+`definicoes.php`, `assets/cc.js`, `assets/app.js` (avisos com botão), CSS.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
@@ -2940,3 +3018,65 @@ que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depress
   sítio à mão, e a regra da faturação.
 - **Fase 2 (decidido 23 out 2026):** «Reorganizar o Drive» para o que já existia, com pré-visualização
   do que vai mudar antes de executar e relatório no fim.
+
+---
+
+## 26. Centro Criativo — Fase 3: Tempo real e captura (23 out 2026)
+
+Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§24).
+
+### 26.1 Edição em tempo real
+- Várias pessoas no **mesmo quadro ao mesmo tempo**, sem conflitos e sem «recarregar»:
+  sincronização por **CRDT (Yjs)**; cada alteração aparece aos outros em < 200 ms.
+- **Presença:** avatares de quem está no quadro (no topo), **cursores com nome e cor** da pessoa
+  (cor da aba Equipa), seleção dos outros com contorno da cor deles, «está a escrever…» em notas.
+- **Seguir** uma pessoa (clicar no avatar → a vista acompanha o que ela vê; útil em reuniões e
+  apresentações). Sair com Esc ou ao mexer.
+- **Sem ligação:** continua a trabalhar; sincroniza ao voltar a ligação (aviso discreto).
+- **Histórico do quadro:** versões automáticas (a cada sessão de trabalho e antes de ações
+  grandes, ex.: «Arrumar o quadro» da IA) com «Ver» e «Restaurar»; «Anular» por pessoa.
+- Comentários, reações e @menções em tempo real; notificação a quem é mencionado.
+- Permissões continuam no servidor: só entra quem tem acesso ao negócio (§9.3); o portal do
+  cliente (§24.4) mostra quadros partilhados **só de leitura**, sem cursores da equipa.
+- **Servidor de tempo real (decidido):** **PartyServer / y-partyserver** (Yjs) em **Cloudflare
+  Workers + Durable Objects com SQLite**, na **conta Cloudflare da topper.** (a mesma do R2).
+  Um Durable Object por quadro, com a **API de hibernação** (quadros vazios não gastam).
+  Autenticação por token curto assinado pelo PHP (segredo partilhado gerado pelo agente e
+  guardado no servidor PHP e como secret do Worker). Endereço `rt.topperhub.xyz` se o domínio
+  estiver na Cloudflare; senão `*.workers.dev`.
+- **Plano: gratuito** (100 000 pedidos/dia — 20 mensagens WebSocket contam 1 —, 13 000 GB-s/dia,
+  5 GB; repõe às 00:00 UTC). Em **Definições › Integrações**: indicador do uso do dia e **aviso aos
+  80%** aos admins. Se o limite for atingido, o tempo real pausa até à reposição: o quadro
+  continua a funcionar localmente (y-indexeddb) e sincroniza depois, com aviso discreto. Passar
+  ao plano pago (Workers Paid, 5 $/mês) é decisão manual dos admins.
+- **Publicação:** com um API token Cloudflare («Edit Cloudflare Workers») e o Account ID nas
+  **variáveis secretas do ambiente** (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) — nunca no
+  código nem no chat; em alternativa, o agente entrega um único comando `wrangler deploy` para o
+  utilizador correr.
+- Reconexão automática do cliente; persistência local no browser; nada de imagens pelo WebSocket
+  (vão para o R2).
+
+### 26.2 Extensão do browser «Guardar na topper.»
+- Chrome/Edge (e Brave/Arc) primeiro; Firefox a seguir; Safari mais tarde.
+- **Clique direito** numa imagem, vídeo, link ou texto selecionado → «Guardar na topper.».
+  **Botão da extensão:** guardar a página inteira, **captura de uma área do ecrã** ou do
+  frame atual de um vídeo (YouTube/Vimeo/Instagram) com o link e o tempo.
+- Escolher destino: **Caixa de entrada** (por defeito) ou um quadro recente/pesquisado;
+  nota opcional; etiquetas sugeridas pela IA depois.
+- Guarda o URL de origem e o autor/créditos quando a página os indicar.
+- **Autenticação:** token pessoal gerado em **Perfil › Ligações** (revogável); a extensão
+  nunca guarda a palavra-passe.
+- Atalho de teclado configurável (ex.: Alt+Shift+S).
+
+### 26.3 Captura no telemóvel e tablet
+- **Instalar a plataforma como app** (PWA) no iPhone/iPad/Android.
+- Android: aparece no menu **Partilhar** do sistema (Web Share Target) → envia imagem, vídeo ou
+  link para a Caixa de entrada.
+- iPhone/iPad: **Atalho do iOS** «Guardar na topper.» (fornecido pela plataforma em Perfil ›
+  Ligações) no menu Partilhar, usando o mesmo token pessoal.
+- Tudo o que chega passa pela análise da IA (§23.5) e fica na Caixa de entrada para triagem.
+
+### 26.4 Definições
+Centro Criativo: frequência das versões automáticas do quadro, número de versões guardadas,
+destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
+gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
