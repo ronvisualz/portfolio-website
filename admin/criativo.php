@@ -123,6 +123,10 @@ $boardId = (int)($_GET['b'] ?? 0);
 if ($boardId) {
     $b = cc_board_get($pdo, $boardId);
     if (!$b || $b['status'] === 'deleted') { flash('Este quadro já não existe.', 'err'); redirect('/admin/criativo.php'); }
+    require_once __DIR__ . '/inc/cc_rt.php';
+    if (!cc_board_access($pdo, $b)) { flash('Este quadro é de um negócio a que a sua conta não tem acesso.', 'err'); redirect('/admin/criativo.php'); }
+    $rtCsp = cc_rt_csp($pdo);
+    if ($rtCsp !== '') csp_send($rtCsp);   // o browser liga-se ao serviço de tempo real (§26)
     $path = cc_board_path($pdo, $b);
     $crumbs = array_map(fn($x) => (string)$x['title'], $path);
     render_header($b['title'], 'criativo', 'cc-full', $crumbs);
@@ -134,6 +138,10 @@ if ($boardId) {
   <div class="ccb-loading" role="status"><span class="spin" aria-hidden="true"></span> A abrir o quadro…</div>
 </div>
 <noscript><div class="panel">O quadro precisa de JavaScript.</div></noscript>
+<?php if ($rtCsp !== ''): ?>
+<script src="<?= asset_url('vendor/rt/topper-rt.js') ?>" defer></script>
+<?php endif; ?>
+<script src="<?= asset_url('cc_rt.js') ?>" defer></script>
 <script src="<?= asset_url('cc.js') ?>" defer></script>
 <?php
     render_footer();

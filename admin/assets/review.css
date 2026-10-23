@@ -49,7 +49,8 @@
 .rv-proc { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: #fff; background: rgba(0,0,0,.55); text-align: center; padding: 16px; font-size: 14px; }
 .rv-proc span { opacity: .8; font-size: 12.5px; max-width: 50ch; }
 .rv-media > img + .rv-proc { position: absolute; }
-.rv-wm { position: absolute; right: 2.5%; bottom: 3.5%; font: 600 clamp(10px, 1.4vw, 15px) var(--body); color: rgba(255,255,255,.62); text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; letter-spacing: .02em; }
+.rv-wm { position: absolute; right: 2.5%; bottom: 3.5%; display: flex; align-items: center; gap: .55em; font: 600 clamp(10px, 1.25vw, 15px) var(--body); color: rgba(255,255,255,.8); text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; }
+.rv-wm img { height: 2.6em; width: auto; display: block; }
 .rv-txt { position: absolute; z-index: 5; transform: translate(-4px, -50%); font: 600 14px var(--body); padding: 4px 8px; border-radius: 6px; border: 2px solid var(--hi); background: rgba(0,0,0,.75); color: #fff; min-width: 140px; }
 
 /* controlos */

@@ -297,6 +297,18 @@ function my_alerts(PDO $pdo): array {
                 }
             }
             if (role_is_admin((string)$meRow['role'])) {
+                // o serviço de tempo real dos quadros perto do limite do plano gratuito (§26)
+                if (db_has_table($pdo, 'rt_usage')) {
+                    require_once __DIR__ . '/cc_rt.php';
+                    $ru = cc_rt_usage_today($pdo);
+                    if ($ru['pct'] >= 80) {
+                        $full = $ru['pct'] >= 100;
+                        $out['team'][] = ['key' => 'rtu:' . $ru['day'] . ':' . ($full ? 100 : 80), 'kind' => 'help', 'icon' => 'alert', 'sev' => $full ? 'bad' : 'warn', 'date' => today_lisbon(),
+                                          'title' => $full ? 'Tempo real dos quadros em pausa até às 00:00 UTC' : 'Tempo real dos quadros a ' . $ru['pct'] . '% do limite de hoje',
+                                          'sub' => $full ? 'Os quadros continuam e sincronizam depois. Passar ao plano pago é uma decisão manual.' : 'Plano gratuito da Cloudflare: repõe às 00:00 UTC.',
+                                          'url' => '/admin/definicoes.php?t=integracoes#set-int_rt'];
+                    }
+                }
                 foreach ($pdo->query("SELECT a.id, a.kind, a.start_date, a.end_date, u.name FROM absences a JOIN users u ON u.id = a.user_id WHERE a.status = 'pending' ORDER BY a.start_date")->fetchAll() as $a) {
                     $out['team'][] = ['key' => 'abs:' . $a['id'], 'kind' => 'absence', 'icon' => 'plane', 'sev' => 'warn', 'date' => $a['start_date'],
                                       'title' => (ABSENCE_KINDS[$a['kind']] ?? 'Ausência') . ' por aprovar: ' . $a['name'],

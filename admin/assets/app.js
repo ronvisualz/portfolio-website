@@ -89,6 +89,12 @@
         if (typeof opt.undo === 'function') opt.undo(); else undo(opt.undo, opt.afterUndo);
       });
       t.appendChild(b); t.appendChild(left);
+    } else if (opt.action && typeof opt.action.fn === 'function') {
+      var ab = document.createElement('button');
+      ab.type = 'button'; ab.className = 'undo'; ab.textContent = opt.action.label || 'Ver';
+      ab.addEventListener('click', function () { close(); opt.action.fn(); });
+      t.appendChild(ab);
+      ms = 9000;
     }
     var x = document.createElement('button');
     x.type = 'button'; x.className = 'x'; x.setAttribute('aria-label', 'Fechar aviso'); x.setAttribute('data-tip', '');

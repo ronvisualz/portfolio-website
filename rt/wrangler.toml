@@ -1,0 +1,24 @@
+# topper. — tempo real dos quadros do Centro Criativo (§26.1)
+# Cloudflare Workers + Durable Objects (SQLite, hibernação), plano gratuito.
+# Publicar (uma vez, e de novo só se este código mudar): cd rt && npm ci && npx wrangler deploy
+# Depois, o endereço que o wrangler mostra (…workers.dev) vai para Definições › Integrações › Tempo real.
+name = "topper-rt"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# a chave pública (ECDSA P-256) que verifica os tokens curtos emitidos pelo PHP (não é segredo):
+# lida do servidor em RT_KEY_URL; RT_PUBLIC_KEY só se se quiser fixá-la aqui
+RT_KEY_URL = "https://topperhub.xyz/admin/rt_key.php"
+RT_PUBLIC_KEY = ""
+# de onde se pode ligar (o portal e a plataforma); separados por vírgulas
+ALLOWED_ORIGINS = "https://topperhub.xyz,https://www.topperhub.xyz,https://topperdigital.xyz,https://www.topperdigital.xyz"
+
+[[durable_objects.bindings]]
+name = "Board"
+class_name = "Board"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Board"]

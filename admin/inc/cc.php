@@ -480,6 +480,8 @@ function cc_search_text(array $a): string {
     $an = json_decode((string)($a['analysis'] ?? ''), true);
     $parts = [$a['title'] ?? '', $a['file_name'] ?? '', $a['source_url'] ?? '', $a['tags'] ?? '', $a['style'] ?? '', $a['technique'] ?? '',
               $a['camera'] ?? '', $a['environment'] ?? '', $a['light'] ?? '', $a['transcript'] ?? ''];
+    $cap = json_decode((string)($a['capture'] ?? ''), true);
+    if (is_array($cap)) foreach (['note', 'quote', 'author', 'site'] as $k) $parts[] = is_string($cap[$k] ?? null) ? $cap[$k] : '';
     if (is_array($an)) {
         foreach (['caption', 'composition', 'color', 'why', 'movement', 'notes'] as $k) $parts[] = is_string($an[$k] ?? null) ? $an[$k] : '';
         foreach (['tags', 'subjects', 'moods'] as $k) if (is_array($an[$k] ?? null)) $parts[] = implode(' ', array_filter($an[$k], 'is_string'));
@@ -587,6 +589,7 @@ function cc_asset_public(array $a, bool $full = false): array {
         'facets' => array_filter(['style' => $a['style'], 'technique' => $a['technique'], 'camera' => $a['camera'], 'environment' => $a['environment'], 'light' => $a['light']]),
         'tags' => array_values(array_filter(array_map('trim', explode(',', (string)$a['tags'])))),
         'file' => (string)$a['file_name'], 'mime' => (string)$a['mime'],
+        'cap' => json_decode((string)($a['capture'] ?? ''), true) ?: null,   // guardado com a extensão / Partilhar / Atalho (§26)
     ];
     if ($full) {
         $out['analysis'] = is_array($an) ? $an : null;
@@ -924,6 +927,7 @@ function cc_card_public(array $c, ?array $asset = null, array $comments = []): a
         'z' => (int)$c['z'], 'col' => $c['column_id'] ? (int)$c['column_id'] : null, 'ord' => (int)$c['ord'], 'lane' => (string)$c['lane'],
         'c' => cc_card_content((string)$c['type'], $c['content']), 'ref' => $c['ref_board_id'] ? (int)$c['ref_board_id'] : null,
         'asset' => $asset ? cc_asset_public($asset) : null, 'nc' => (int)($comments[(int)$c['id']] ?? 0),
+        'ut' => !empty($c['updated_at']) ? strtotime((string)$c['updated_at']) * 1000 : 0,   // para o tempo real saber o que é mais recente
     ];
     return $out;
 }
@@ -1003,7 +1007,7 @@ function cc_comments(PDO $pdo, int $boardId, ?int $cardId): array {
         'id' => (int)$c['id'], 'body' => (string)$c['body'], 'who' => $c['author_kind'] === 'client' ? ($c['client_name'] ?: 'Cliente') : (string)$c['user_name'],
         'client' => $c['author_kind'] === 'client', 'color' => (string)($c['user_color'] ?? ''), 'uid' => $c['user_id'] ? (int)$c['user_id'] : null,
         'when' => date('d/m H:i', strtotime((string)$c['created_at'])), 't' => $c['t'] !== null ? (float)$c['t'] : null,
-        'resolved' => $c['resolved_at'] !== null,
+        'resolved' => $c['resolved_at'] !== null, 'react' => json_decode((string)($c['reactions'] ?? ''), true) ?: new stdClass(),
     ], $st->fetchAll());
 }
 

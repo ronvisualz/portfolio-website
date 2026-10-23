@@ -52,3 +52,9 @@ body.pt .rv-side { top: 78px; }
   .pt-terms { grid-template-columns: 1fr; }
   .pt-terms dt { margin-top: 6px; }
 }
+
+/* quadros em tempo real (só leitura): a equipa mudou alguma coisa */
+.pt-live { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 12px;
+  background: var(--fg); color: var(--bg); padding: 8px 8px 8px 16px; border-radius: 100px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 13.5px; }
+.pt-live[hidden] { display: none; }
+.pt-live button { border: 0; border-radius: 100px; padding: 6px 14px; font: 600 13px var(--body); background: var(--hi, #FFC718); color: #111; cursor: pointer; }

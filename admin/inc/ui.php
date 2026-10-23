@@ -150,6 +150,9 @@ const SHORTCUTS = [
     ['⌘ V / Ctrl+V',  'Colar: imagem ou ficheiro → cartão · link → pré-visualização · texto → nota · código de cor → amostra', 'Quadro, Biblioteca e Caixa de entrada'],
     ['← / → · Esc',   'Navegar e sair do modo apresentação', 'Quadro do Centro Criativo'],
     ['@nome',         'Mencionar alguém num comentário (avisa no sino)', 'Quadro do Centro Criativo'],
+    ['Clique num avatar · Esc', 'Seguir uma pessoa no quadro · deixar de seguir', 'Quadro do Centro Criativo'],
+    ['Alt+Shift+S',   'Abrir a extensão «Guardar na topper.» (mudar em chrome://extensions/shortcuts)', 'Chrome, Edge, Brave, Arc'],
+    ['Alt+Shift+A',   'Capturar uma área do ecrã com a extensão', 'Chrome, Edge, Brave, Arc'],
     ['Toque longo',   'Ver o nome de um ícone', 'Ecrãs de toque'],
     ['Passar o cursor', 'Ver o nome de um ícone (~0,3 s)', 'Rato, touchpad, trackpad'],
 ];

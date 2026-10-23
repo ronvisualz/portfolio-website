@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-PT">
+<head><meta charset="utf-8"><title>Guardar na topper. · Opções</title><link rel="stylesheet" href="ui.css">
+<style>body{max-width:560px;margin:32px auto;padding:0 16px}.row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}p{margin:8px 0}</style></head>
+<body>
+  <h1>Guardar na topper<b>.</b></h1>
+  <p class="muted">A extensão guarda o que escolher no Centro Criativo da topper. — Caixa de entrada ou um quadro — e a IA analisa.</p>
+  <label for="server">Endereço da plataforma</label>
+  <input id="server" type="url" placeholder="https://topperhub.xyz" autocomplete="off">
+  <label for="token">Token pessoal</label>
+  <input id="token" type="password" placeholder="tpk_…" autocomplete="off" spellcheck="false">
+  <p class="muted small">Crie-o na plataforma em <b>Perfil › Ligações</b> e cole-o aqui. Pode revogá-lo lá a qualquer momento. A extensão nunca pede nem guarda a sua palavra-passe; o token fica só neste browser.</p>
+  <div class="row"><button type="button" class="main" id="save">Guardar e testar</button><button type="button" id="clear">Desligar</button></div>
+  <div class="st" id="st" role="status"></div>
+  <p class="muted small">Atalhos: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> abre a extensão · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> captura uma área. Mude-os em <a href="#" id="keys">chrome://extensions/shortcuts</a> (Edge: edge://extensions/shortcuts).</p>
+  <script src="config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

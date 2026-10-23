@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-PT">
+<head><meta charset="utf-8"><title>Guardar na topper.</title><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><h1>Guardar na topper<b>.</b></h1><span class="muted small" id="me"></span></header>
+  <section id="setup" hidden>
+    <p>Ligue a extensão à sua conta: em <b>Perfil › Ligações</b> crie um token e cole-o nas opções.</p>
+    <button type="button" class="main" id="opt">Abrir as opções</button>
+  </section>
+  <section id="main" hidden>
+    <label for="dest">Destino</label>
+    <select id="dest"><option value="0">Caixa de entrada</option></select>
+    <input type="search" id="q" placeholder="Procurar outro quadro…" aria-label="Procurar quadro">
+    <label for="note">Nota (opcional)</label>
+    <textarea id="note" placeholder="Porque guardo isto…"></textarea>
+    <div class="acts">
+      <button type="button" class="main" data-k="page">Guardar esta página</button>
+      <button type="button" data-k="area">Capturar uma área</button>
+      <button type="button" data-k="frame" id="frame" hidden>Frame do vídeo</button>
+    </div>
+    <div class="st" id="st" role="status"></div>
+    <p class="muted small foot">Tudo entra na Caixa de entrada e a IA analisa. Botão direito numa imagem, vídeo, link ou texto: «Guardar na topper.». Atalho <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · área <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> (<a href="#" id="keys">mudar</a>).</p>
+  </section>
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

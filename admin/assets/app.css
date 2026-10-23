@@ -2776,3 +2776,35 @@ div.xs-ind:empty { display: none; }
 /* Definições › Centro Criativo: sub-quadros por funil */
 .set-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .set-checks .check { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
+
+/* Definições › Integrações: o serviço de tempo real dos quadros (§26) */
+.rt-meter { height: 8px; border-radius: 100px; background: var(--chip); overflow: hidden; margin: 10px 0 4px; max-width: 420px; outline: 1px solid var(--line); }
+.rt-meter i { display: block; height: 100%; border-radius: inherit; background: var(--ok-fg); transition: width .4s ease; }
+.rt-meter.warn i { background: var(--warn-fg); }
+.rt-meter.bad i { background: var(--danger); }
+.rt-deploy { margin-top: 8px; }
+.rt-deploy summary { cursor: pointer; font-size: 12.5px; color: var(--mute); }
+.rt-cmd { white-space: pre-wrap; word-break: break-all; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; user-select: all; }
+
+/* Partilhar para a topper. (§26.3) */
+.share-pg { max-width: 760px; display: grid; gap: 14px; }
+.share-items { display: flex; flex-wrap: wrap; gap: 10px; }
+.share-it { margin: 0; width: 160px; display: grid; gap: 4px; }
+.share-it img, .share-it video { width: 160px; height: 120px; object-fit: cover; border-radius: 10px; background: var(--chip); outline: 1px solid var(--line); }
+.share-it figcaption { font-size: 11.5px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-file { display: grid; place-items: center; width: 160px; height: 120px; border-radius: 10px; background: var(--chip); font-size: 12px; padding: 8px; text-align: center; word-break: break-all; }
+.share-link { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--g-card); min-width: 0; max-width: 100%; }
+.share-link a { font-size: 12.5px; word-break: break-all; }
+.share-link p { margin: 4px 0 0; font-size: 13px; }
+.share-help { max-width: 760px; margin-top: 14px; }
+.share-help summary { cursor: pointer; }
+.share-help ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+
+/* Perfil › Ligações (§26) */
+.lg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; max-width: 920px; }
+.lg-card { display: grid; gap: 8px; align-content: start; }
+.lg-card h3 { margin: 0; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+.lg-card ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
+.lg-new { border: 1px solid var(--ok-fg); background: var(--ok-bg); color: var(--ok-fg); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; max-width: 920px; }
+.lg-new code { font: 600 13px var(--mono); background: var(--panel); color: var(--fg); padding: 6px 8px; border-radius: 6px; word-break: break-all; user-select: all; }
+.lg-tokens { max-width: 920px; }

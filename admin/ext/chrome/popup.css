@@ -1,0 +1,5 @@
+body { width: 330px; padding: 14px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+#q { margin-top: 6px; }
+.acts { display: grid; gap: 6px; margin-top: 12px; }
+.foot { margin: 10px 0 0; }
