@@ -2629,11 +2629,7 @@ opção «Combinar funis» sai das Definições › Funis.
 
 ---
 
-<<<<<<< HEAD
-## 23. Centro Criativo (decidido 23 out 2026; 23.3 a confirmar)
-=======
 ## 23. Centro Criativo (decidido 23 out 2026)
->>>>>>> origin/main
 
 Espaço de trabalho criativo da equipa de execução — «Milanote com esteroides» ligado ao
 negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a §11.
@@ -2666,11 +2662,7 @@ quadro como «Rota não escolhida». O brief vem do X-Ray.
 Negócios com várias frentes (crosselling, §22): um quadro por negócio com **um sub-quadro
 por frente**; cada frente tem o seu responsável de execução e o seu Review.
 
-<<<<<<< HEAD
-### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
-=======
 ### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta)
->>>>>>> origin/main
 - **Nasce sozinho** quando o X-Ray é validado: cria o quadro «Pré-criativo · <negócio>» com o
   brief do X-Ray e **duas faixas: Opção A (Pedido) e Opção B (Proposta de valor)**; cria a
   tarefa «Pré-criativo · <cliente>» para o responsável de execução (prazo por defeito +2 d.u.,
