@@ -22,3 +22,7 @@ admin/inc/billing/
 admin/inc/cc_config.php
 # Ficheiros do Centro Criativo quando o Drive (R2) não está ligado.
 admin/inc/cc_files/
+# Caixa das faturas do Financeiro (IMAP/SMTP) — copie fin_mail_config.example.php para fin_mail_config.php no servidor.
+admin/inc/fin_mail_config.php
+# Documentos do Financeiro quando o Drive (R2) não está ligado.
+admin/inc/fin_files/

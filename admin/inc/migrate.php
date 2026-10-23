@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -311,6 +311,10 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 29 · Centro Criativo: áudio (§27) — tipo próprio, categoria, forma de onda; os áudios antigos convertidos ──
     require_once __DIR__ . '/migrate_audio.php';
     migrate_audio($pdo);
+    // ── 30 · Financeiro (§28): parâmetros com fonte legal, tabelas do IRS, documentos, pagamentos, custos fixos,
+    //        tesouraria, salários, simulador e caixa das faturas; os custos da empresa passam para os lançamentos ──
+    require_once __DIR__ . '/migrate_finance.php';
+    migrate_finance($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

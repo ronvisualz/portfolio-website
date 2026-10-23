@@ -897,6 +897,11 @@ function billing_submit_invoice(PDO $pdo, array $deal, ?array $task, array $in, 
     $pdo->prepare('INSERT INTO deal_billing (deal_id, task_id, kind, number, doc_date, net, vat, total, file_key, file_name, note, created_by, created_at)
                    VALUES (?,?,\'invoice\',?,?,?,?,?,?,?,\'\',?,?)')
         ->execute([$deal['id'], $task ? (int)$task['id'] : null, $number, $date, $net, $vat, $total, $key, $fname, $by, date('Y-m-d H:i:s')]);
+    // o mesmo PDF é o lançamento «A receber» do Financeiro (§28.3): um só (o pedido ao contabilista, se havia)
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        fin_from_billing($pdo, $deal, (int)$pdo->lastInsertId(), $number, $date, $net, $vat, $total, $key, $fname, $by);
+    }
     if ($task) flow_complete_doc_tasks($pdo, (int)$deal['id'], 'invoice', (int)$task['id']);
     deal_log($pdo, (int)$deal['id'], 'billing', ['note' => 'Fatura ' . $number . ' submetida · ' . number_format($total, 2, ',', ' ') . ' € c/ IVA', 'user_id' => $by]);
     return 'Fatura ' . $number . ' submetida' . ($task ? ': a tarefa ficou feita.' : '.');
@@ -918,7 +923,13 @@ function billing_validate_payment(PDO $pdo, array $deal, ?array $task, array $in
     if ($final) $pdo->prepare('UPDATE deals SET is_paid = 1 WHERE id = ?')->execute([$deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'billing', ['note' => 'Pagamento recebido a ' . date('d/m/Y', strtotime($date)) . ($amount > 0 ? ' · ' . number_format($amount, 2, ',', ' ') . ' €' : '') . ($final ? ' · negócio pago' : ''), 'user_id' => $by]);
     flow_on_event($pdo, (int)$deal['id'], 'paid');
-    return 'Pagamento validado' . ($task ? ': a tarefa ficou feita.' : '.');
+    // no Financeiro (§28.3): com comprovativo, fica o pagamento na fatura em aberto
+    $fin = '';
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        $fin = fin_from_billing_payment($pdo, $deal, $date, $amount, $key, $fname, $by);
+    }
+    return 'Pagamento validado' . ($task ? ': a tarefa ficou feita.' : '.') . $fin;
 }
 
 // ── rondas de revisão (§19.6 D) ─────────────────────────────

@@ -85,7 +85,8 @@ function perm_defaults(string $role): array {
     $out = [];
     foreach (array_keys(TABS) as $t) {
         if ($role === 'lead') {
-            $lvl = in_array($t, $work, true) ? PERM_EDIT : PERM_VIEW; // Dashboard, Financeiro, Relatórios, Equipa: ver
+            // Dashboard, Relatórios, Equipa: ver. Financeiro: só com a permissão dada (§28 — salários e contas)
+            $lvl = in_array($t, $work, true) ? PERM_EDIT : ($t === 'financeiro' ? PERM_NONE : PERM_VIEW);
         } else {
             $lvl = in_array($t, $work, true) ? PERM_EDIT : PERM_NONE; // sem Dashboard, Financeiro, Relatórios, Equipa
         }

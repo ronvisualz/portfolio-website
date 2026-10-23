@@ -190,8 +190,7 @@ function deal_attention(PDO $pdo, array $deal, ?array $fig, array $tasks, array 
         }
         if (!(int)$deal['is_paid'] && $fig['value'] > 0) {
             $rec = array_values(array_filter(receivables($pdo), fn($r) => (int)$r['id'] === (int)$deal['id']));
-            $lim = alert_limits($pdo)['invoice'];
-            if ($rec && $rec[0]['age'] > $lim) $out[] = ['Fatura em atraso há ' . $rec[0]['age'] . ' dias', 'r', 'Por receber ' . budget_eur($rec[0]['gross']) . ' · limite ' . $lim . ' dias (Definições)'];
+            if ($rec && $rec[0]['age'] > 0) $out[] = ['Fatura em atraso há ' . $rec[0]['age'] . ' dias', 'r', 'Por receber ' . budget_eur($rec[0]['gross']) . ($rec[0]['legacy'] ? ' · sem fatura registada' : ' · ' . $rec[0]['number'])];
         }
         if ($fig['open_costs']) $out[] = [$fig['open_costs'] . ($fig['open_costs'] === 1 ? ' custo por pagar' : ' custos por pagar'), 'o', budget_eur($fig['open_costs_value']) . ' s/ IVA'];
         if ((int)$deal['is_paid'] && !$fig['open_costs'] && $fig['costs']) $out[] = ['Tudo pago e recebido', 'g', 'O cliente pagou e todos os custos estão fechados'];

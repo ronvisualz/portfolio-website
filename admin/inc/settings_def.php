@@ -39,6 +39,20 @@ const SET_TABS = [
     'seguranca'    => ['Segurança', 'eye'],
 ];
 
+/** As categorias do Financeiro por omissão (a mesma lista de inc/fin.php, sem o carregar aqui). */
+const FIN_CATS_DEFAULT_LIST = ['Software', 'Equipamento', 'Renda', 'Telecomunicações', 'Contabilidade', 'Seguros', 'Viaturas', 'Deslocações',
+                               'Freelancers', 'Fornecedores de produção', 'Marketing', 'Formação', 'Impostos', 'Salários', 'Outros'];
+
+/** As pessoas ativas como opções de uma definição ('' = o valor por omissão, com o rótulo dado). */
+function settings_user_opts(string $none): array {
+    global $pdo;
+    $o = ['' => $none];
+    if ($pdo instanceof PDO) {
+        try { foreach ($pdo->query('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name')->fetchAll() as $u) $o[(string)$u['id']] = (string)$u['name']; } catch (Throwable $e) {}
+    }
+    return $o;
+}
+
 /** O impacto de uma alteração que mexe em dados existentes: texto do aviso, ou '' se não há. */
 class SettingImpact extends RuntimeException {}
 
@@ -221,8 +235,20 @@ function settings_defs(): array {
                                'help' => 'Onde fica o que se guarda com a extensão «Guardar na topper.», o menu Partilhar do Android ou o Atalho do iOS. Tudo passa pela análise da IA e entra na Caixa de entrada; com um quadro, também fica lá como cartão.'],
 
         // ── Financeiro ──
-        'fin_todo'         => ['tab' => 'financeiro', 'group' => 'Financeiro', 'label' => 'Definições do Financeiro', 'type' => 'info', 'show' => 'A definir quando a aba for desenhada.',
-                               'help' => 'O IVA está em Geral. A faturação legal será ligada a um software certificado pela AT.'],
+        'fin_accountant_email' => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Email do contabilista', 'type' => 'email', 'max' => 190, 'default' => '',
+                               'help' => 'Para onde vão os pedidos de fatura e de recibo («Pedir fatura»), com o código de referência no assunto. A resposta volta à caixa das faturas e liga-se sozinha ao pedido.'],
+        'fin_iban'         => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'IBAN para os clientes', 'type' => 'text', 'max' => 40, 'default' => '',
+                               'help' => 'Vai nos emails das faturas enviadas ao cliente e nos lembretes de pagamento.'],
+        'fin_terms_days'   => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Prazo de pagamento por omissão', 'type' => 'int', 'min' => 0, 'max' => 180, 'unit' => 'dias', 'default' => 30,
+                               'help' => 'O vencimento proposto nas faturas novas e nos pedidos ao contabilista (data da fatura + este prazo).'],
+        'fin_owner'        => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Responsável financeiro', 'type' => 'select', 'opts' => settings_user_opts('O primeiro superadmin'), 'default' => '',
+                               'help' => 'Recebe as tarefas do calendário fiscal (DMR, Segurança Social, IVA, IRC, IES, Modelo 10), 10 dias antes de cada prazo.'],
+        'fin_categories'   => ['tab' => 'financeiro', 'group' => 'Categorias', 'label' => 'Categorias de despesa', 'type' => 'list', 'default' => implode("\n", FIN_CATS_DEFAULT_LIST),
+                               'help' => 'As categorias dos lançamentos e dos custos fixos (os já lançados guardam a sua). Os custos fixos aparecem agrupados por elas na Visão geral.'],
+        'fin_params'       => ['tab' => 'financeiro', 'group' => 'Taxas, limites e prazos', 'label' => 'Parâmetros legais e da empresa', 'type' => 'fin_params',
+                               'help' => 'Todas as taxas e limites que os cálculos usam (Segurança Social, IRS, IVA, IRC, viaturas, amortizações, runway, calendário fiscal), cada um com a fonte legal, o ano e a data da última verificação. O contabilista confirma-os no início de cada ano. Mudam só superadmin e admins, com registo.'],
+        'fin_irs'          => ['tab' => 'financeiro', 'group' => 'Tabelas de retenção do IRS', 'label' => 'Tabelas em uso', 'type' => 'fin_irs',
+                               'help' => 'As tabelas de retenção na fonte do trabalho dependente, guardadas como dados (escalão, taxa, parcela a abater, parcela por dependente). Importam-se de novo a cada ano ou quando sair um despacho novo.'],
 
         // ── Drive ──
         'drive_base'       => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Pastas base', 'type' => 'info', 'show' => 'Empresa/ · Leads/ · Projetos/ · Marketing/ · Biblioteca criativa/ · Showreel e Portfolio/ · Arquivo/',
@@ -241,6 +267,8 @@ function settings_defs(): array {
                                'help' => 'O nome que aparece nos emails enviados pela plataforma (propostas, convites, reuniões).'],
         'mail_from'        => ['tab' => 'integracoes', 'group' => 'Email de envio', 'label' => 'Endereço do remetente', 'type' => 'email', 'max' => 190, 'default' => 'no-reply@topperdigital.xyz', 'domain' => 'topperdigital.xyz',
                                'help' => 'Tem de ser um endereço @topperdigital.xyz (o servidor só envia em nome do domínio).'],
+        'int_fin_mail'     => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Caixa das faturas (IMAP e SMTP)', 'type' => 'fin_mail',
+                               'help' => 'A caixa dedicada (ex.: faturas@) que envia os pedidos ao contabilista e é lida a cada 5 minutos pelo cron: liga as faturas aos pedidos, junta os recibos e põe as faturas de fornecedores em «A pagar». As credenciais ficam só no servidor (inc/fin_mail_config.php).'],
         'int_ai'           => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Claude (Anthropic)', 'type' => 'ai',
                                'help' => 'O estado, o uso e o custo da IA do Estúdio e do assistente do Drive. A chave fica só no servidor.'],
         'int_cc_ai'        => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Centro Criativo (Claude + embeddings + transcrição)', 'type' => 'cc_ai',
@@ -404,7 +432,7 @@ function setting_impact(PDO $pdo, string $key, string $old, string $new): string
 function setting_save(PDO $pdo, string $key, string $raw, bool $confirm = false, string $why = ''): array {
     if (!is_admin()) throw new RuntimeException('Só superadmin e admins mudam as Definições.');
     $d = setting_def($key);
-    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
+    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai', 'fin_params', 'fin_irs', 'fin_mail'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
     $old = setting_get($pdo, $key);
     $new = setting_clean($d, $raw);
     if ($new === $old) return ['Sem alterações.', setting_show($d, $new), ''];

@@ -48,9 +48,9 @@ if (can('pipeline')) {
     }
 }
 if (can('financeiro')) {
-    foreach (array_slice(array_filter(receivables($pdo), fn($r) => $r['age'] > $lim['invoice']), 0, 2) as $r) {
-        $hot[$r['id']] = ['d' => $r + ['stage' => 'Por receber', 'funnel' => $r['contact_name'] ?? ''], 'risk' => true,
-                          'why' => 'Por receber há ' . $r['age'] . ' dias', 'val' => $r['net'], 'url' => '/admin/financeiro.php?tab=receber&doc=' . (int)$r['id']];
+    foreach (array_slice(array_filter(receivables($pdo), fn($r) => $r['age'] > 0), 0, 2) as $r) {
+        $hot[$r['id'] ?: 'f' . $r['doc_id']] = ['d' => $r + ['stage' => 'Por receber', 'funnel' => $r['contact_name'] ?? ''], 'risk' => true,
+                          'why' => 'Em atraso há ' . $r['age'] . ' dias', 'val' => $r['net'], 'url' => $r['url']];
     }
 }
 if (!empty($open)) {

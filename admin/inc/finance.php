@@ -60,6 +60,12 @@ function deal_costs(PDO $pdo, int $dealId, float $rate): array {
         $c['vat']   = cost_vat($c, $rate);
         $c['total'] = round($c['net'] + $c['vat'], 2);
     }
+    unset($c);
+    // as despesas lançadas no Financeiro com âmbito neste negócio (§28.2) contam como custos reais
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        $rows = array_merge($rows, fin_deal_cost_rows($pdo, $dealId));
+    }
     return $rows;
 }
 
@@ -128,6 +134,11 @@ function cost_input(array $src): array {
 
 /** Os custos da empresa (sem negócio), já com valor limpo e IVA. $year null = todos. */
 function company_cost_rows(PDO $pdo, float $rate, ?int $year = null): array {
+    // depois do passo 30, os custos da empresa são os lançamentos do Financeiro (§28); os antigos passaram para lá
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        return fin_company_costs($pdo, $year);
+    }
     $st = $pdo->prepare('SELECT * FROM costs WHERE deal_id IS NULL' . ($year ? ' AND year = ?' : '') . ' ORDER BY year DESC, COALESCE(month, 13) DESC, id DESC');
     $st->execute($year ? [$year] : []);
     $rows = $st->fetchAll();
@@ -178,6 +189,9 @@ function finance_years(PDO $pdo): array {
     $y = [(int)date('Y')];
     foreach ($pdo->query("SELECT DISTINCT year FROM deals WHERE year IS NOT NULL AND code IS NOT NULL
                           UNION SELECT DISTINCT year FROM costs WHERE year IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $v) $y[] = (int)$v;
+    if (db_has_table($pdo, 'fin_docs')) {
+        foreach ($pdo->query('SELECT DISTINCT YEAR(issue_date) FROM fin_docs WHERE issue_date IS NOT NULL AND deleted_at IS NULL')->fetchAll(PDO::FETCH_COLUMN) as $v) $y[] = (int)$v;
+    }
     $y = array_values(array_unique(array_filter($y)));
     rsort($y);
     return $y;

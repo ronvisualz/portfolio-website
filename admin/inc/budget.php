@@ -134,12 +134,18 @@ function budget_fixed_average(PDO $pdo, ?string $ref = null): array {
     $months = [];
     for ($i = 1; $i <= 3; $i++) $months[] = $m->modify("-$i month");
     $total = 0.0; $detail = [];
+    $fin = db_has_table($pdo, 'fin_docs');
     foreach ($months as $d) {
         $y = (int)$d->format('Y'); $mo = (int)$d->format('n');
-        $st = $pdo->prepare('SELECT * FROM costs WHERE deal_id IS NULL AND year = ? AND (month = ? OR month IS NULL)');
-        $st->execute([$y, $mo]);
         $sum = 0.0;
-        foreach ($st->fetchAll() as $c) $sum += $c['month'] === null ? cost_net($c, $rate) / 12 : cost_net($c, $rate);
+        if ($fin) {
+            // os custos da empresa estão no Financeiro (§28): as despesas de âmbito Empresa desse mês
+            foreach (company_cost_rows($pdo, $rate, $y) as $c) if ((int)$c['month'] === $mo) $sum += $c['net'];
+        } else {
+            $st = $pdo->prepare('SELECT * FROM costs WHERE deal_id IS NULL AND year = ? AND (month = ? OR month IS NULL)');
+            $st->execute([$y, $mo]);
+            foreach ($st->fetchAll() as $c) $sum += $c['month'] === null ? cost_net($c, $rate) / 12 : cost_net($c, $rate);
+        }
         $detail[] = ['y' => $y, 'm' => $mo, 'label' => sprintf('%02d/%d', $mo, $y), 'total' => round($sum, 2)];
         $total += $sum;
     }
