@@ -200,8 +200,8 @@ function settings_defs(): array {
         // ── Review e Portal do cliente (§24) ──
         'cc_portal_days'   => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Validade do link do portal', 'type' => 'int', 'min' => 1, 'max' => 365, 'unit' => 'dias depois da entrega', 'default' => 60,
                                'help' => 'Um link por negócio. Deixa de funcionar este número de dias depois da data de entrega (ou de hoje, se a entrega já passou). Pode ser renovado ou revogado na ficha do negócio.'],
-        'cc_portal_wm'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Marca de água nas peças novas', 'type' => 'select', 'opts' => ['1' => 'Sim, com o nome do cliente', '0' => 'Não'], 'default' => '1',
-                               'help' => 'O que o portal mostra leva o nome do cliente e o ID do negócio. Muda-se peça a peça no Review.'],
+        'cc_portal_wm'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Marca de água nas peças novas', 'type' => 'select', 'opts' => ['1' => 'Sim: logótipo topper. e nome do cliente', '0' => 'Não'], 'default' => '1',
+                               'help' => 'O que o portal mostra leva o logótipo topper. e o nome do cliente (gravados no vídeo e nas imagens). Muda-se peça a peça no Review.'],
         'cc_portal_dl'     => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Download nas peças novas', 'type' => 'select', 'opts' => ['0' => 'Não', '1' => 'Sim, o original'], 'default' => '0',
                                'help' => 'Se o cliente pode descarregar o original pelo portal. Muda-se peça a peça no Review.'],
         'cc_portal_lang'   => ['tab' => 'criativo', 'group' => 'Review e Portal do cliente', 'label' => 'Idioma do portal', 'type' => 'select', 'opts' => ['pt' => 'Português', 'en' => 'English'], 'default' => 'pt',

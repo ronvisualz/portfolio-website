@@ -361,21 +361,54 @@ function cc_rv_process_video(PDO $pdo, array $v): void {
     }
 }
 
-/** A imagem da marca de água (PNG transparente com o texto, sem depender de fontes no servidor). */
+/**
+ * A imagem da marca de água: o logótipo topper. e o nome do cliente, em branco semitransparente com
+ * sombra (PNG transparente). O logótipo vem de assets/wm-logo.png; o nome é escrito com a Inter
+ * (inc/fonts/) — sem FreeType no servidor, com a letra do próprio GD.
+ */
 function cc_rv_wm_png(string $label, int $videoW): string {
-    $label = mb_strimwidth(trim(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $label) ?: $label), 0, 60, '…');
-    $font = 5; $cw = imagefontwidth($font); $ch = imagefontheight($font);
-    $small = imagecreatetruecolor(strlen($label) * $cw + 8, $ch + 6);
-    imagesavealpha($small, true);
-    imagefill($small, 0, 0, imagecolorallocatealpha($small, 0, 0, 0, 127));
-    imagestring($small, $font, 5, 4, $label, imagecolorallocatealpha($small, 0, 0, 0, 80));
-    imagestring($small, $font, 4, 3, $label, imagecolorallocatealpha($small, 255, 255, 255, 45));
-    $scale = max(2, (int)round($videoW / 640));
-    $big = imagecreatetruecolor(imagesx($small) * $scale, imagesy($small) * $scale);
-    imagesavealpha($big, true); imagealphablending($big, false);
-    imagefill($big, 0, 0, imagecolorallocatealpha($big, 0, 0, 0, 127));
-    imagecopyresized($big, $small, 0, 0, 0, 0, imagesx($big), imagesy($big), imagesx($small), imagesy($small));
-    ob_start(); imagepng($big); return (string)ob_get_clean();
+    $H = max(18, (int)round($videoW / 34));                       // altura do logótipo (1920 px → 56 px)
+    $logo = @imagecreatefrompng(dirname(__DIR__) . '/assets/wm-logo.png');
+    $lw = $logo ? (int)round(imagesx($logo) * $H / imagesy($logo)) : 0;
+    $label = mb_strimwidth(trim(preg_replace('/\s+/u', ' ', $label)), 0, 48, '…');
+    $font = __DIR__ . '/fonts/Inter-SemiBold.otf';
+    $ttf = $label !== '' && function_exists('imagettftext') && is_file($font);
+    $size = $H * 0.33;                                            // pontos (o GD conta a 96 ppp)
+    $gap = $label !== '' ? (int)round($H * 0.32) : 0;
+    $pad = (int)ceil($H * 0.12);
+    $base = (int)round($H * 0.70);                                // a linha de base das letras do logótipo
+    if ($ttf) {
+        $bb = imagettfbbox($size, 0, $font, $label);
+        $tw = abs($bb[2] - $bb[0]) + 4;
+    } else {
+        $label = mb_strimwidth(trim(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $label) ?: $label), 0, 48, '…');
+        $scale = max(1, (int)round($H / 26));
+        $tw = $label !== '' ? strlen($label) * imagefontwidth(5) * $scale + 4 : 0;
+    }
+    $W = $pad * 2 + $lw + $gap + ($label !== '' ? $tw : 0);
+    $img = imagecreatetruecolor(max(1, $W), $H + $pad * 2);
+    imagesavealpha($img, true); imagealphablending($img, false);
+    imagefill($img, 0, 0, imagecolorallocatealpha($img, 0, 0, 0, 127));
+    imagealphablending($img, true);
+    if ($logo) imagecopyresampled($img, $logo, $pad, $pad, 0, 0, $lw, $H, imagesx($logo), imagesy($logo));
+    if ($label !== '') {
+        $x = $pad + $lw + $gap; $y = $pad + $base;
+        if ($ttf) {
+            $sh = max(1, (int)round($H / 30));
+            imagettftext($img, $size, 0, $x + $sh, $y + $sh, imagecolorallocatealpha($img, 0, 0, 0, 82), $font, $label);
+            imagettftext($img, $size, 0, $x, $y, imagecolorallocatealpha($img, 255, 255, 255, 22), $font, $label);
+        } else {
+            $sm = imagecreatetruecolor(strlen($label) * imagefontwidth(5) + 4, imagefontheight(5) + 4);
+            imagesavealpha($sm, true); imagealphablending($sm, false);
+            imagefill($sm, 0, 0, imagecolorallocatealpha($sm, 0, 0, 0, 127));
+            imagealphablending($sm, true);
+            imagestring($sm, 5, 2, 2, $label, imagecolorallocatealpha($sm, 0, 0, 0, 80));
+            imagestring($sm, 5, 1, 1, $label, imagecolorallocatealpha($sm, 255, 255, 255, 25));
+            $th = imagesy($sm) * $scale;
+            imagecopyresized($img, $sm, $x, $y - (int)round($th * 0.8), 0, 0, imagesx($sm) * $scale, $th, imagesx($sm), imagesy($sm));
+        }
+    }
+    ob_start(); imagepng($img); return (string)ob_get_clean();
 }
 
 /** O proxy com a marca de água do cliente (cron). */
@@ -428,12 +461,11 @@ function cc_rv_queue_video(PDO $pdo, array $v, ?int $by): void {
     cc_job_add($pdo, 'rv_proc', null, null, ['version' => (int)$v['id']], $by);
 }
 
-/** O texto da marca de água: o cliente e o ID do negócio. */
+/** O texto da marca de água: o nome do cliente (vai ao lado do logótipo topper.). */
 function cc_rv_wm_label(PDO $pdo, array $item): string {
-    $st = $pdo->prepare('SELECT d.code, d.name, COALESCE(co.name, NULLIF(d.company, \'\'), d.name) AS client FROM deals d LEFT JOIN contacts co ON co.id = d.company_id WHERE d.id = ?');
+    $st = $pdo->prepare('SELECT COALESCE(co.name, NULLIF(d.company, \'\'), d.name) AS client FROM deals d LEFT JOIN contacts co ON co.id = d.company_id WHERE d.id = ?');
     $st->execute([(int)$item['deal_id']]);
-    $d = $st->fetch() ?: ['code' => '', 'client' => ''];
-    return trim($d['client'] . ' · review · ' . $d['code'], ' ·');
+    return trim((string)$st->fetchColumn());
 }
 
 // ── timecode SMPTE ──────────────────────────────────────────

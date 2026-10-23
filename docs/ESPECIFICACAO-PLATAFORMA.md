@@ -1599,7 +1599,7 @@ Modelo em `inc/cc_review.php`, pedidos da equipa em `rv_api.php`, leitor em `ass
   pela linha de comandos) lê-o com o `ffprobe` (fps, frames, duração, dimensões, timecode de início, drop
   frame em 29,97/59,94) e faz com o `ffmpeg` o proxy H.264 (CFR, GOP de meio segundo para procurar ao
   frame, até 1920 px, AAC, faststart), o poster e a tira de miniaturas; ao enviar ao cliente, o proxy com
-  a marca de água (nome do cliente e ID). O cron diz às páginas se há ffmpeg; sem ele, o browser faz o
+  a marca de água (logótipo topper. e nome do cliente). O cron diz às páginas se há ffmpeg; sem ele, o browser faz o
   poster e a tira e o original serve de proxy (fps e timecode por confirmar). Imagens: proxy e poster
   no pedido (GD). PDF: as páginas são desenhadas no browser (pdf.js, `assets/vendor/pdfjs/`, Apache 2.0)
   e guardadas em imagem.
@@ -1630,8 +1630,8 @@ Modelo em `inc/cc_review.php`, pedidos da equipa em `rv_api.php`, leitor em `ass
   enviadas, só comentários «Para o cliente»). Nunca custos, margens, notas, tarefas, e-mails da equipa nem
   comentários internos (verificado no JSON). GET nunca altera nada (até o registo de acesso vai por POST);
   as ações levam um formulário assinado pelo servidor e a mesma origem. Ficheiros por URLs assinados de
-  curta duração (5 min imagens, 15 min vídeo), sempre revalidados; marca de água por peça (vídeo gravado
-  pelo ffmpeg, imagens e páginas pelo GD, e por cima no browser enquanto o vídeo não está pronto);
+  curta duração (5 min imagens, 15 min vídeo), sempre revalidados; marca de água por peça — logótipo topper. e nome do
+  cliente (no vídeo pelo ffmpeg, nas imagens e páginas pelo GD, e por cima no browser enquanto o vídeo não está pronto);
   download do original por peça; noindex, limite de pedidos por IP, registo de acessos. PT/EN (por link,
   e o cliente pode trocar), claro/escuro, telemóvel.
 - **Ficha do negócio:** cartões «Review» (peças e estado) e «Portal do cliente» (criar, copiar, abrir,
@@ -2909,8 +2909,8 @@ Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Apli
   partilhados (só leitura: tratamento, rotas) · **Review** (peças enviadas).
 - **Nunca** mostra custos, margens, notas, tarefas ou comentários internos.
 - Imagem topper., modo claro/escuro, funciona no telemóvel, **PT/EN** (clientes internacionais).
-- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** com o
-  nome do cliente (opção por peça); **download** só se ativado por peça.
+- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** (logótipo topper. e
+  nome do cliente; opção por peça); **download** só se ativado por peça.
 - Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
 - Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
 

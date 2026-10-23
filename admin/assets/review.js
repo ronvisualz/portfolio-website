@@ -277,7 +277,7 @@
         + d.deal.lines.map(function (l) { return '<option value="' + l.id + '"' + (l.id === it.line ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') + '</select></label>' : '';
       return '<label class="field"><span>Nome</span><input type="text" maxlength="200" value="' + esc(it.title) + '" data-rv-set="title"></label>'
         + '<label class="field"><span>Etapa de aprovação</span><select data-rv-set="stage">' + stages + '</select></label>' + lines
-        + '<label class="check"><input type="checkbox" data-rv-set="watermark"' + (it.watermark ? ' checked' : '') + '> Marca de água no portal <span class="muted small">(nome do cliente)</span></label>'
+        + '<label class="check"><input type="checkbox" data-rv-set="watermark"' + (it.watermark ? ' checked' : '') + '> Marca de água no portal <span class="muted small">(logótipo topper. e nome do cliente)</span></label>'
         + '<label class="check"><input type="checkbox" data-rv-set="download"' + (it.download ? ' checked' : '') + '> O cliente pode descarregar o original</label>'
         + '<p class="muted small">Muda já, para as próximas visitas ao portal.</p>';
     }
@@ -363,7 +363,8 @@
         media.addEventListener('load', function () { if (media.naturalWidth) S.aspect = media.naturalHeight / media.naturalWidth; fit(); });
         inner.appendChild(media);
       }
-      if (cfg.wmText) inner.appendChild(h('div', 'rv-wm', esc(cfg.wmText)));
+      // a marca de água por cima (só enquanto a gravada no vídeo não está pronta): logótipo topper. e o cliente
+      if (cfg.wmText) inner.appendChild(h('div', 'rv-wm', '<img src="/admin/assets/wm-logo.png" alt="">' + '<span>' + esc(cfg.wmText) + '</span>'));
       var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('class', 'rv-ov'); inner.appendChild(svg);
       S.el.svg = svg; S.el.inner = inner;
