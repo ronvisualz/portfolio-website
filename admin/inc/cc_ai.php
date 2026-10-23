@@ -40,7 +40,7 @@ const CC_AI_PRICES = [
 const CC_AI_PURPOSES = [
     'cc-analyze' => 'Análise de referências', 'cc-embed' => 'Embeddings (semelhança)', 'cc-angles' => 'Ângulos',
     'cc-prepare' => 'Preparar com IA (pré-criativo)', 'cc-page' => 'Páginas do pré-criativo', 'cc-tidy' => 'Arrumar o quadro',
-    'cc-treat' => 'Tratamentos', 'cc-shots' => 'Listas de planos',
+    'cc-treat' => 'Tratamentos', 'cc-shots' => 'Listas de planos', 'cc-stt' => 'Transcrição (fala)',
 ];
 
 class CcAiException extends RuntimeException {
@@ -299,7 +299,8 @@ function cc_ai_image_block(string $key): ?array {
 function cc_ai_asset_line(array $a): string {
     $an = json_decode((string)$a['analysis'], true);
     $bits = array_filter([
-        '#' . (int)$a['id'], $a['kind'] === 'video' ? 'vídeo' : ($a['kind'] === 'link' ? 'link' : 'imagem'),
+        '#' . (int)$a['id'], $a['kind'] === 'video' ? 'vídeo' : ($a['kind'] === 'link' ? 'link' : ($a['kind'] === 'audio' ? 'áudio' : 'imagem')),
+        $a['kind'] === 'audio' && is_array($an['audio'] ?? null) ? trim(implode(' · ', array_filter([CC_AUDIO_CATS[$an['audio']['category'] ?? ''] ?? '', $an['audio']['genre'] ?? '', $an['audio']['mood'] ?? '', !empty($an['audio']['bpm']) ? $an['audio']['bpm'] . ' bpm' : '']))) : '',
         $a['title'] !== '' ? '«' . mb_substr((string)$a['title'], 0, 80) . '»' : '',
         is_array($an) && !empty($an['caption']) ? mb_substr((string)$an['caption'], 0, 220) : '',
         $a['style'], $a['technique'], $a['camera'], $a['environment'], $a['light'],
@@ -341,6 +342,8 @@ function cc_ai_analyze_asset(PDO $pdo, int $id): void {
     if (!$a || $a['deleted_at']) return;
     $thumb = cc_thumb_pick($a['thumbs'], 1600);
     $frames = $a['kind'] === 'video' ? array_slice(cc_frames($pdo, $id), 0, 12) : [];
+    // áudio (§27) — também um link de um leitor de música (SoundCloud, Spotify…): a análise do som
+    if ($a['kind'] === 'audio' || ($a['kind'] === 'link' && ((json_decode((string)$a['analysis'], true) ?: [])['embed']['audio'] ?? false))) { cc_ai_analyze_audio($pdo, $a); return; }
     if (!$thumb && !$frames && $a['kind'] !== 'link') { $pdo->prepare("UPDATE cc_assets SET ai_status = '' WHERE id = ?")->execute([$id]); return; }
     $pdo->prepare("UPDATE cc_assets SET ai_status = 'running', ai_error = '' WHERE id = ?")->execute([$id]);
     $content = [];
@@ -389,6 +392,96 @@ function cc_ai_analyze_asset(PDO $pdo, int $id): void {
     }
     cc_asset_reindex($pdo, $id);
     if (cc_embed_config()) cc_job_add($pdo, 'embed', $id, null, null, null);
+}
+
+// ── áudio (§27.4) ──────────────────────────────────────────
+
+/** O esquema da análise de um áudio. */
+function cc_ai_audio_schema(): array {
+    $str = fn(string $d) => ['type' => 'string', 'description' => $d];
+    $props = [
+        'caption' => $str('O que se ouve, em 1–2 frases.'),
+        'category' => ['type' => 'string', 'enum' => array_keys(CC_AUDIO_CATS), 'description' => 'musica · voz (voz-off, locução, entrevista) · sfx (efeito sonoro curto) · ambiente (som de um lugar) · outro'],
+        'mood' => $str('Ambiente/emoção numa expressão curta (ex.: «calmo e esperançoso»).'),
+        'moods' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => '2 a 5 palavras de emoção.'],
+        'genre' => $str('Estilo musical (vazio se não for música).'),
+        'instruments' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Instrumentos ou fontes sonoras prováveis (vazio se não der para dizer).'],
+        'bpm' => ['type' => 'number', 'description' => 'Ritmo em BPM (0 se não for música com pulsação clara).'],
+        'energy' => ['type' => 'string', 'enum' => ['baixa', 'média', 'alta']],
+        'use' => $str('Uso sugerido num filme ou peça (ex.: «reveal de produto», «abertura institucional»).'),
+        'why' => $str('O que tem de útil para a topper. (1–2 frases).'),
+        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => '5 a 12 etiquetas livres.'],
+        'confidence' => ['type' => 'number', 'description' => 'Confiança de 0 a 1 (baixa se só houver espectrograma e medidas).'],
+    ];
+    return ['type' => 'object', 'additionalProperties' => false, 'required' => array_keys($props), 'properties' => $props];
+}
+
+/**
+ * Analisa um áudio: o Claude não ouve, por isso recebe o espectrograma (imagem feita no browser),
+ * as medidas calculadas no browser (BPM estimado, energia, dinâmica, brilho, silêncio), a transcrição
+ * (se houver serviço de fala) e o contexto (nome, origem, autor). Respeita o que foi editado à mão.
+ */
+function cc_ai_analyze_audio(PDO $pdo, array $a): void {
+    $id = (int)$a['id'];
+    $pdo->prepare("UPDATE cc_assets SET ai_status = 'running', ai_error = '' WHERE id = ?")->execute([$id]);
+    $an0 = json_decode((string)$a['analysis'], true) ?: [];
+    $f = is_array($an0['feats'] ?? null) ? $an0['feats'] : [];
+    $cap = json_decode((string)($a['capture'] ?? ''), true) ?: [];
+    $content = [];
+    $thumb = cc_thumb_pick($a['thumbs'], 1600);
+    $embed = $a['kind'] === 'link' ? ($an0['embed'] ?? null) : null;   // um leitor de um serviço: só a capa e a página
+    if ($thumb && ($b = cc_ai_image_block($thumb))) {
+        $content[] = ['type' => 'text', 'text' => $embed ? 'A capa / imagem da página (' . ($embed['provider'] ?? 'serviço de música') . '):'
+                                                         : 'Espectrograma do áudio (tempo da esquerda para a direita, frequência de baixo para cima em escala logarítmica, cor = intensidade) com a forma de onda em cima:'];
+        $content[] = $b;
+    }
+    $num = fn($k, $d = 1) => isset($f[$k]) && is_numeric($f[$k]) ? number_format((float)$f[$k], $d, ',', '') : null;
+    $meas = array_filter([
+        $a['duration'] ? 'duração ' . number_format((float)$a['duration'], 1, ',', '') . ' s' : null,
+        $num('bpm', 0) !== null ? 'BPM estimado ' . $num('bpm', 0) . ' (confiança ' . ($num('bpm_conf', 2) ?? '?') . ')' : null,
+        $num('rms_db') !== null ? 'energia média ' . $num('rms_db') . ' dBFS' : null,
+        $num('peak_db') !== null ? 'pico ' . $num('peak_db') . ' dBFS' : null,
+        $num('dyn_db') !== null ? 'dinâmica ' . $num('dyn_db') . ' dB' : null,
+        $num('centroid') !== null ? 'brilho (centróide espectral) ' . $num('centroid', 0) . ' Hz' : null,
+        $num('zcr', 3) !== null ? 'taxa de passagens por zero ' . $num('zcr', 3) : null,
+        $num('silence', 2) !== null ? 'silêncio ' . round((float)$f['silence'] * 100) . '%' : null,
+        !empty($f['channels']) ? (int)$f['channels'] . ' canais' : null,
+    ]);
+    $ctx = 'Analisa este áudio para a biblioteca de referências da topper. (produtora de vídeo).'
+         . ($a['title'] !== '' ? "\nNome: " . mb_substr((string)$a['title'], 0, 200) : '')
+         . ($a['file_name'] !== '' ? "\nFicheiro: " . mb_substr((string)$a['file_name'], 0, 200) : '')
+         . ($a['source_url'] !== '' ? "\nOrigem: " . mb_substr((string)$a['source_url'], 0, 300) : '')
+         . (!empty($cap['author']) ? "\nAutor/créditos: " . mb_substr((string)$cap['author'], 0, 160) : '')
+         . ($meas ? "\nMedidas (calculadas no browser): " . implode(' · ', $meas) : '')
+         . ($a['transcript'] ? "\nTranscrição (com tempos):\n" . mb_substr((string)$a['transcript'], 0, 6000) : "\nSem transcrição.")
+         . "\nDiz a categoria, o ambiente/emoção, o estilo, os instrumentos prováveis, o BPM (usa o estimado se fizer sentido), a energia e um uso sugerido."
+         . ($embed ? "\nÉ um link para o leitor de " . ($embed['provider'] ?? 'um serviço de música') . (!empty($an0['caption']) ? '. Descrição da página: ' . mb_substr((string)$an0['caption'], 0, 600) : '') . '.' : '')
+         . ' Não tens o som: baseia-te ' . ($embed ? 'na página, no título, nos créditos' : 'no espectrograma, nas medidas, na transcrição') . ' e no contexto, e sê honesto na confiança.';
+    $content[] = ['type' => 'text', 'text' => $ctx];
+    $res = cc_claude($pdo, 'cc-analyze', $content, cc_ai_audio_schema(), ['max' => 8000, 'ctx' => ['asset' => $id]]);
+    $d = $res['data'];
+    $bpmM = isset($f['bpm']) && (float)($f['bpm_conf'] ?? 0) >= 0.35 ? (int)round((float)$f['bpm']) : 0;
+    $audio = [
+        'category' => isset(CC_AUDIO_CATS[$d['category'] ?? '']) ? (string)$d['category'] : 'outro',
+        'mood' => mb_substr((string)($d['mood'] ?? ''), 0, 120), 'genre' => mb_substr((string)($d['genre'] ?? ''), 0, 80),
+        'instruments' => array_slice(array_map(fn($x) => mb_substr((string)$x, 0, 40), (array)($d['instruments'] ?? [])), 0, 10),
+        'bpm' => ($d['category'] ?? '') === 'musica' ? ($bpmM ?: max(0, min(300, (int)round((float)($d['bpm'] ?? 0))))) : 0,
+        'energy' => in_array($d['energy'] ?? '', ['baixa', 'média', 'alta'], true) ? (string)$d['energy'] : '',
+        'use' => mb_substr((string)($d['use'] ?? ''), 0, 200),
+    ];
+    $human = $a['edited_at'] !== null;
+    $an = $an0;
+    foreach (['caption', 'why'] as $k) if (!($human && !empty($an0['human']) && !empty($an0[$k]))) $an[$k] = mb_substr((string)($d[$k] ?? ''), 0, 600);
+    $an['moods'] = array_slice(array_map('strval', (array)($d['moods'] ?? [])), 0, 8);
+    $an['audio'] = $audio;
+    $an['confidence'] = max(0, min(1, (float)($d['confidence'] ?? 0)));
+    $an['model'] = $res['model'];
+    $set = ['analysis' => json_encode($an, JSON_UNESCAPED_UNICODE), 'ai_status' => 'done', 'ai_error' => '', 'ai_model' => $res['model'], 'analyzed_at' => cc_now()];
+    if ((string)$a['audio_cat'] === '' || !$human) $set['audio_cat'] = $audio['category'];
+    if (!$human || trim((string)$a['tags']) === '') $set['tags'] = cc_tags_clean(implode(',', array_map('strval', (array)($d['tags'] ?? []))));
+    $sql = implode(', ', array_map(fn($k) => $k . ' = ?', array_keys($set)));
+    $pdo->prepare("UPDATE cc_assets SET $sql WHERE id = ?")->execute([...array_values($set), $id]);
+    cc_asset_reindex($pdo, $id);
 }
 
 // ── embeddings multimodais (Voyage) ─────────────────────────
@@ -587,8 +680,9 @@ function cc_ai_prepare(PDO $pdo, array $board, int $by): array {
         foreach (array_values($refs) as $i => $a) {
             $have[] = (int)$a['id'];
             $ratio = ($a['width'] && $a['height']) ? (float)$a['height'] / (float)$a['width'] : 0.62;
-            cc_card_add($pdo, (int)$board['id'], ['type' => $a['kind'] === 'video' ? 'video' : ($a['kind'] === 'link' ? 'link' : 'image'), 'asset_id' => (int)$a['id'], 'lane' => $lane,
-                'x' => $x0 + ($i % 3) * 300, 'y' => $y0 + 260 + intdiv($i, 3) * 230, 'w' => 280, 'h' => round(280 * min(1.4, $ratio)), 'content' => []], $by);
+            $ct = cc_card_type_for($a);
+            cc_card_add($pdo, (int)$board['id'], ['type' => $ct, 'asset_id' => (int)$a['id'], 'lane' => $lane,
+                'x' => $x0 + ($i % 3) * 300, 'y' => $y0 + 260 + intdiv($i, 3) * 230, 'w' => 280, 'h' => in_array($ct, ['file', 'audio'], true) ? 0 : round(280 * min(1.4, $ratio)), 'content' => []], $by);
             $made[$lane]++;
         }
     }

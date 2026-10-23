@@ -163,17 +163,22 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             return $h . '</tbody></table></div>';
         case 'cc_ai':
             if (!db_has_table($pdo, 'cc_ai_usage')) return '<span class="set-info">Disponível depois do passo 24 da base de dados.</span>';
-            require_once __DIR__ . '/inc/cc_ai.php';
+            require_once __DIR__ . '/inc/cc_stt.php';
             $cfg = cc_ai_config();
             $emb = cc_embed_config();
+            $stt = cc_stt_config();
             $sum = cc_ai_usage_summary($pdo);
             $usd = fn($v) => number_format((float)$v, 2, ',', ' ') . ' US$';
             $h = '<div class="set-ai"><span class="chip ' . ($cfg ? 'ok' : 'wait') . '">' . ($cfg ? 'Claude ligado · ' . e($cfg['model']) . ' · esforço ' . e($cfg['effort']) : 'Claude sem chave neste servidor') . '</span> '
                . '<span class="chip ' . ($emb ? 'ok' : 'wait') . '">' . ($emb ? 'Embeddings ligados · ' . e($emb['model']) : 'Embeddings por ligar (semelhança por etiquetas e paleta)') . '</span> '
-               . '<span class="chip">Transcrição dos vídeos: por ligar</span></div>'
+               . '<span class="chip ' . ($stt ? 'ok' : 'wait') . '">' . ($stt ? 'Transcrição ligada · ' . e($stt['model']) . ' · ' . e(number_format($stt['usd_min'], 3, ',', ' ')) . ' US$/min' : 'Transcrição (áudio e vídeo): por ligar') . '</span></div>'
+               . ($stt ? '<p class="small muted">A fala do áudio e dos vídeos passa a texto com o tempo de cada frase (pesquisável e clicável). O custo conta no mesmo limite mensal.'
+                       . (cc_ffmpeg_ok($pdo) ? '' : ' <b>Sem ffmpeg no servidor:</b> só os áudios até 25 MB em MP3, M4A, WAV, OGG ou FLAC; os vídeos e os AIFF esperam pelo ffmpeg.') . '</p>'
+                      : '<p class="small">Proposta: <b>OpenAI Whisper</b> (whisper-1, cerca de 0,006 US$ por minuto, com marcas de tempo por frase), ou o <b>Groq</b> (whisper-large-v3, mais barato, a mesma API). '
+                       . '<span class="muted">Para ligar: criar a chave na conta do serviço e pô-la no servidor, em admin/inc/cc_config.php (transcribe_key; o modelo, o endereço e o preço por minuto ao lado, como no cc_config.example.php). Nunca no código nem nesta página.</span></p>')
                . '<p><span class="mono">' . e($usd($sum['spend'])) . '</span> <span class="muted small">este mês · limite ' . e(number_format($sum['cap'], 0, ',', ' ')) . ' € (contado como US$)'
                . ($cfg ? ' · fallbacks do servidor ligados' . ($cfg['auto'] ? ' · análise automática de cada referência nova' : ' · análise só a pedido') : '') . '</span></p>'
-               . '<p class="small muted">' . $sum['analyzed'] . ' referências analisadas · ' . $sum['embedded'] . ' com embedding · ' . $sum['queued'] . ' na fila' . ($sum['errors'] ? ' · <b>' . $sum['errors'] . ' erros nos últimos 7 dias</b>' : '') . '</p>';
+               . '<p class="small muted">' . $sum['analyzed'] . ' referências analisadas · ' . $sum['embedded'] . ' com embedding · ' . $sum['queued'] . ' na fila' . ($sum['errors'] ? ' · <b>' . $sum['errors'] . ($sum['errors'] === 1 ? ' erro' : ' erros') . ' nos últimos 7 dias</b>' : '') . '</p>';
             if ($sum['rows']) {
                 $h .= '<div class="tablewrap"><table class="set-t"><thead><tr><th>Uso</th><th>Modelo</th><th class="num">Pedidos</th><th class="num hide-sm">Tokens (entrada / saída)</th><th class="num">Custo</th></tr></thead><tbody>';
                 foreach ($sum['rows'] as $r) {

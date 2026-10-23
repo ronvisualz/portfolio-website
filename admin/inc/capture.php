@@ -149,9 +149,9 @@ function cap_save(PDO $pdo, array $user, array $in, ?array $file): array {
         [$cx, $cy] = cc_board_free_spot($pdo, (int)$board['id']);
         $w = 280.0;
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
-        $type = in_array($x['kind'], ['image', 'video', 'link'], true) ? (string)$x['kind'] : 'file';
+        $type = cc_card_type_for($x);
         $cardId = cc_card_add($pdo, (int)$board['id'], ['type' => $type, 'asset_id' => (int)$x['id'], 'x' => $cx, 'y' => $cy, 'w' => $w,
-                                                       'h' => $type === 'file' ? 0 : round($w * min(2.5, $ratio)), 'content' => $note !== '' ? ['caption' => mb_substr($note, 0, 300)] : []], $uid);
+                                                       'h' => in_array($type, ['file', 'audio'], true) ? 0 : round($w * min(2.5, $ratio)), 'content' => $note !== '' ? ['caption' => mb_substr($note, 0, 300)] : []], $uid);
         if ($text !== '') {
             cc_card_add($pdo, (int)$board['id'], ['type' => 'note', 'x' => $cx + $w + 20, 'y' => $cy, 'w' => 260,
                                                  'content' => ['text' => '«' . $text . '»' . ($page !== '' ? "\n— " . (string)parse_url($page, PHP_URL_HOST) : '')]], $uid);
