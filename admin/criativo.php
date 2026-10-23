@@ -9,10 +9,12 @@
  *   ?t=projetos|biblioteca|entrada|review     os separadores
  *   ?b=<quadro>[&card=<cartão>]                um quadro (ecrã inteiro)
  *   ?print=treatment&b=<quadro>                o tratamento para imprimir / guardar em PDF
+ *   ?rv=<peça>                                 a sala de review de uma peça (leitor, comentários, versões)
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/cc.php';
+require_once __DIR__ . '/inc/cc_review.php';
 $user = require_login();
 require_page('criativo');
 
@@ -69,6 +71,53 @@ if (($_GET['print'] ?? '') === 'treatment') {
     exit;
 }
 
+// ── a sala de review de uma peça ────────────────────────────
+$rvId = (int)($_GET['rv'] ?? 0);
+if ($rvId && cc_rv_ready($pdo)) {
+    $it = cc_rv_item($pdo, $rvId);
+    if (!$it) { flash('Esta peça já não existe.', 'err'); redirect('/admin/criativo.php?t=review'); }
+    $deal = files_deal_row($pdo, (int)$it['deal_id']);
+    render_header($it['title'], 'criativo', '', ['Review', (string)($deal['code'] ?? ''), (string)$it['title']]);
+    render_flashes();
+    ?>
+<link rel="stylesheet" href="<?= asset_url('review.css') ?>">
+<div class="page-head rv-back">
+  <div class="actions" style="margin:0">
+    <a class="btn ghost sm" href="/admin/criativo.php?t=review<?= $deal ? '&amp;deal=' . (int)$deal['id'] : '' ?>"><?= icon('chev-left') ?> Review</a>
+    <?php if ($deal && can('negocios')): ?><a class="btn ghost sm" href="/admin/negocio.php?id=<?= (int)$deal['id'] ?>#c-review"><?= icon('negocios') ?> <?= e($deal['code'] . ' · ' . $deal['name']) ?></a><?php endif; ?>
+  </div>
+  <p class="muted small rv-keys">← → um frame · Shift ±1 s · Espaço · J K L · I O intervalo · C comentar · Esc</p>
+</div>
+<div id="rv-room" data-item="<?= (int)$it['id'] ?>" data-edit="<?= $canEdit ? 1 : 0 ?>"></div>
+<script src="<?= asset_url('review.js') ?>"></script>
+<script>
+(function () {
+  var el = document.getElementById('rv-room'), id = el.dataset.item, API = '/admin/rv_api.php';
+  var CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || '';
+  function get(a, q) {
+    return fetch(API + '?a=' + a + '&' + new URLSearchParams(q || {}), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || 'Não foi possível abrir.'); return j; });
+  }
+  function call(a, p) {
+    var body = p instanceof FormData ? p : new URLSearchParams(p || {});
+    return fetch(API + '?a=' + a, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'X-CSRF-Token': CSRF }, body: body })
+      .then(function (r) { return r.json().catch(function () { throw new Error('Não foi possível concluir. Tente outra vez.'); }); }, function () { throw new Error('Sem ligação. Tente outra vez.'); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || 'Não foi possível concluir.'); return j; });
+  }
+  TopperReview.mount(el, {
+    mode: 'team', lang: 'pt', edit: el.dataset.edit === '1', stages: <?= json_encode(CC_RV_STAGES, JSON_UNESCAPED_UNICODE) ?>,
+    load: function () { return get('room', { item: id }); },
+    poll: function (rev) { return get('poll', { item: id, rev: rev }); },
+    call: call,
+    exportUrl: function (v, fmt, client) { return API + '?a=export&v=' + v + '&fmt=' + fmt + (client ? '&client=1' : ''); }
+  });
+})();
+</script>
+<?php
+    render_footer();
+    exit;
+}
+
 // ── um quadro ───────────────────────────────────────────────
 $boardId = (int)($_GET['b'] ?? 0);
 if ($boardId) {
@@ -104,6 +153,7 @@ render_flashes();
   <?php if ($canEdit): ?>
     <div class="actions" style="margin:0">
       <?php if ($tab === 'projetos'): ?><button type="button" class="btn" data-cc-new-board><?= icon('plus') ?> Quadro</button><?php endif; ?>
+      <?php if ($tab === 'review' && cc_rv_ready($pdo)): ?><a class="btn" href="#" data-new="#mdl-rv-new"><?= icon('plus') ?> Peça</a><?php endif; ?>
       <?php if (in_array($tab, ['biblioteca', 'entrada'], true)): ?>
         <button type="button" class="btn ghost" data-cc-link><?= icon('link') ?> Link</button>
         <label class="btn"><?= icon('upload') ?> Carregar<input type="file" multiple accept="image/*,video/*,.pdf" data-cc-upload hidden></label>
@@ -119,17 +169,104 @@ render_flashes();
 </nav>
 <div class="cc" id="cc" data-view="<?= e($tab) ?>" data-edit="<?= $canEdit ? 1 : 0 ?>" data-manage="<?= $canManage ? 1 : 0 ?>">
 <?php if ($tab === 'review'): ?>
-  <div class="panel cc-soon">
-    <h2>Review</h2>
-    <p>Versões v001, v002… lado a lado, comentários no frame exato (com desenho), <b>Aprovar</b> · <b>Pedir alterações</b>, rondas contadas
-       e aviso ao Comercial quando passam das incluídas — e o portal do cliente, sem conta, para dar feedback.</p>
-    <p class="muted">Chega na fase seguinte do Centro Criativo. A base de dados já guarda versões, comentários com timecode e o link por negócio.</p>
-  </div>
+  <?php
+  if (!cc_rv_ready($pdo)) {
+      echo '<div class="panel"><p>A base de dados está a atualizar. Recarregue a página daqui a pouco.</p></div>';
+  } else {
+      $rvQ = trim((string)($_GET['q'] ?? ''));
+      $rvF = (string)($_GET['f'] ?? 'open');
+      $rvDeal = (int)($_GET['deal'] ?? 0);
+      $rows = cc_rv_overview($pdo, ['q' => $rvQ, 'deal' => $rvDeal, 'open' => $rvF === 'open', 'status' => in_array($rvF, ['comments', 'approved', 'sent', 'changes', 'prep'], true) ? $rvF : '']);
+      $flt = ['open' => 'Por aprovar', 'comments' => 'Com comentários', 'sent' => 'Enviadas', 'approved' => 'Aprovadas', 'all' => 'Todas'];
+      $qs = fn(array $x) => '/admin/criativo.php?' . http_build_query(array_filter(['t' => 'review', 'q' => $rvQ, 'f' => $rvF, 'deal' => $rvDeal ?: null] + $x, fn($v) => $v !== null && $v !== ''));
+      ?>
+  <link rel="stylesheet" href="<?= asset_url('review.css') ?>">
+  <form class="rv-toolbar" method="get" role="search">
+    <input type="hidden" name="t" value="review"><input type="hidden" name="f" value="<?= e($rvF) ?>"><?php if ($rvDeal): ?><input type="hidden" name="deal" value="<?= $rvDeal ?>"><?php endif; ?>
+    <input type="search" name="q" value="<?= e($rvQ) ?>" placeholder="Peça, ID ou negócio" aria-label="Procurar peças">
+    <?php foreach ($flt as $k => $label): ?><a class="chip-btn<?= $rvF === $k ? ' on' : '' ?>" href="<?= e($qs(['f' => $k])) ?>"<?= $rvF === $k ? ' aria-current="true"' : '' ?>><?= e($label) ?></a><?php endforeach; ?>
+    <?php if ($rvDeal): ?><a class="chip-btn" href="<?= e($qs(['deal' => null])) ?>"><?= icon('x') ?> Só este negócio</a><?php endif; ?>
+  </form>
+  <?php if (!$rows): ?>
+    <div class="panel"><p><?= $rvQ !== '' || $rvF !== 'open' ? 'Nenhuma peça com este filtro.' : 'Ainda não há peças em review.' ?></p>
+      <p class="muted">Uma peça é o que se mostra ao cliente para aprovar (styleframes, animatic, offline, picture lock, finais, lote): v001, v002…, comentários no frame e o portal do cliente.<?= $canEdit ? ' Crie a primeira em «+ Peça».' : '' ?></p></div>
+  <?php else:
+      $byDeal = [];
+      foreach ($rows as $r) $byDeal[(int)$r['deal_id']][] = $r;
+      foreach ($byDeal as $did => $list): $f0 = $list[0]; ?>
+    <h3 class="rv-group"><a href="<?= e($qs(['deal' => $did])) ?>"><?= e($f0['code']) ?></a> · <?= e($f0['deal_name']) ?><?= $f0['client'] !== $f0['deal_name'] ? ' · ' . e($f0['client']) : '' ?></h3>
+    <div class="rv-grid">
+      <?php foreach ($list as $r): $st = CC_RV_STATUS[$r['status']] ?? CC_RV_STATUS['prep']; ?>
+        <a class="rv-card" href="/admin/criativo.php?rv=<?= (int)$r['id'] ?>">
+          <span class="rv-poster"<?= $r['cur_poster'] ? ' style="background-image:url(\'/admin/rv_api.php?a=media&amp;v=' . (int)$r['cur_id'] . '&amp;k=poster\')"' : '' ?>>
+            <span class="rv-st c-<?= e($st[2]) ?>"><?= e($st[0]) ?></span><?php if ($r['cur_num']): ?><span class="rv-v"><?= e(cc_rv_vlabel((int)$r['cur_num'])) ?></span><?php endif; ?></span>
+          <span class="rv-cb"><b><?= e($r['title']) ?></b>
+            <span class="small"><?= e(CC_RV_STAGES[$r['stage_key']] ?? '') ?> · <?= e(date('d/m H:i', strtotime((string)$r['updated_at']))) ?><?= (int)$r['shared'] ? ' · no portal' : '' ?></span>
+            <?php if ((int)$r['open_n']): ?><span class="rv-n"><?= icon('bubble') ?> <?= (int)$r['open_n'] ?> por resolver</span><?php endif; ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  <?php endforeach; endif; } ?>
 <?php else: ?>
   <div class="ccb-loading" role="status"><span class="spin" aria-hidden="true"></span> A carregar…</div>
 <?php endif; ?>
 </div>
 
+<?php if ($tab === 'review' && cc_rv_ready($pdo) && $canEdit):
+    $preDeal = (int)($_GET['deal'] ?? 0) ? files_deal_row($pdo, (int)$_GET['deal']) : null; ?>
+<div class="mdl" id="mdl-rv-new" role="dialog" aria-modal="true" aria-labelledby="mdl-rv-new-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form class="mdl-card" data-rv-new autocomplete="off">
+    <h3 id="mdl-rv-new-t">Nova peça de review</h3>
+    <p class="muted">O que se vai mostrar ao cliente para aprovar. As versões (v001, v002…) carregam-se na peça; os originais ficam no Drive, na pasta do negócio.</p>
+    <label class="field"><span>Negócio</span><input type="search" name="dq" placeholder="ID ou nome do negócio" value="<?= $preDeal ? e($preDeal['code'] . ' · ' . $preDeal['name']) : '' ?>" data-rv-deal-q required>
+      <input type="hidden" name="deal" value="<?= $preDeal ? (int)$preDeal['id'] : '' ?>"><span class="cc-deal-res" data-rv-deal-res></span></label>
+    <label class="field" data-rv-line hidden><span>Frente</span><select name="line"></select></label>
+    <label class="field"><span>Nome da peça</span><input type="text" name="title" required maxlength="200" placeholder="Ex.: Filme 30s"></label>
+    <label class="field"><span>Etapa de aprovação</span><select name="stage"><?php foreach (CC_RV_STAGES as $k => $label): ?><option value="<?= e($k) ?>"><?= e($label) ?></option><?php endforeach; ?></select></label>
+    <div class="actions"><button class="btn" type="submit">Criar peça</button><button class="btn ghost" type="button" data-mdl-close>Cancelar</button></div>
+  </form>
+</div>
+<script>
+(function () {
+  var f = document.querySelector('[data-rv-new]'); if (!f) return;
+  var CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || '', res = f.querySelector('[data-rv-deal-res]'), q = f.querySelector('[data-rv-deal-q]'), t;
+  function lines(id) {
+    var box = f.querySelector('[data-rv-line]'), sel = box.querySelector('select');
+    box.hidden = true; sel.innerHTML = '';
+    if (!id) return;
+    fetch('/admin/rv_api.php?a=lines&deal=' + id, { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok || !j.lines.length) return;
+      sel.innerHTML = '<option value="0">Todo o negócio</option>' + j.lines.map(function (l) { var o = document.createElement('option'); o.value = l.id; o.textContent = l.name; return o.outerHTML; }).join('');
+      box.hidden = false;
+    });
+  }
+  q.addEventListener('input', function () {
+    f.deal.value = ''; clearTimeout(t);
+    t = setTimeout(function () {
+      fetch('/admin/rv_api.php?a=deals&q=' + encodeURIComponent(q.value), { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
+        res.innerHTML = '';
+        (j.deals || []).slice(0, 8).forEach(function (d) {
+          var b = document.createElement('button'); b.type = 'button'; b.className = 'chip-btn'; b.textContent = d.label;
+          b.addEventListener('click', function () { f.deal.value = d.id; q.value = d.label; res.innerHTML = ''; lines(d.id); f.title.focus(); });
+          res.appendChild(b);
+        });
+      });
+    }, 200);
+  });
+  if (f.deal.value) lines(f.deal.value);
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!f.deal.value) { q.focus(); window.topper && window.topper.toast('Escolha o negócio na lista.', { err: true }); return; }
+    var b = f.querySelector('button[type=submit]'); b.disabled = true;
+    fetch('/admin/rv_api.php?a=item_new', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': CSRF, Accept: 'application/json' },
+      body: new URLSearchParams({ deal: f.deal.value, line: f.line ? f.line.value : '', title: f.title.value, stage: f.stage.value }) })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error); location.href = j.url; })
+      .catch(function (er) { b.disabled = false; window.topper && window.topper.toast(er.message || 'Não foi possível criar.', { err: true }); });
+  });
+})();
+</script>
+<?php endif; ?>
 <div class="mdl" id="mdl-cc-board" role="dialog" aria-modal="true" aria-labelledby="mdl-cc-board-t" hidden>
   <div class="mdl-back" data-mdl-close></div>
   <form class="mdl-card" data-cc-board-form autocomplete="off">

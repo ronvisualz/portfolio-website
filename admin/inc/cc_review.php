@@ -1018,3 +1018,185 @@ function cc_portal_hit(PDO $pdo, int $limit): bool {
 function cc_portal_sig(PDO $pdo, array $s, int $ts): string {
     return hash_hmac('sha256', 'portal|' . $s['token_hash'] . '|' . $ts, (string)setting($pdo, 'proposal_secret', ''));
 }
+
+// ── o que a sala de review e o portal recebem ───────────────
+
+/** O nome da frente (o funil da linha) de uma peça, ou ''. */
+function cc_rv_line_label(PDO $pdo, ?int $lineId): string {
+    if (!$lineId || !db_has_table($pdo, 'deal_lines')) return '';
+    $st = $pdo->prepare('SELECT f.name FROM deal_lines l LEFT JOIN funnels f ON f.id = l.funnel_id WHERE l.id = ?');
+    $st->execute([$lineId]);
+    return (string)$st->fetchColumn();
+}
+
+/**
+ * Uma versão para fora. $url($v, $k, $page) devolve o endereço de um ficheiro (proxy, poster, strip,
+ * page) — a equipa e o portal têm cada um o seu (os dois revalidam e redirecionam para um URL curto).
+ */
+function cc_rv_version_out(array $v, callable $url, bool $client): array {
+    $kind = cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']);
+    $ready = $v['proc_status'] === 'ready';
+    $pages = [];
+    foreach ((json_decode((string)$v['pages'], true) ?: []) as $i => $p) $pages[] = ['url' => $url($v, 'page', $i + 1), 'w' => (int)$p['w'], 'h' => (int)$p['h']];
+    $o = [
+        'id' => (int)$v['id'], 'num' => (int)$v['num'], 'label' => cc_rv_vlabel((int)$v['num']), 'kind' => $kind, 'proc' => (string)$v['proc_status'],
+        'fn' => max(1, (int)$v['fps_num']), 'fd' => max(1, (int)$v['fps_den']), 'frames' => (int)$v['frames'], 'dur' => (float)$v['duration'], 'tc' => (string)$v['tc_start'],
+        'w' => (int)$v['width'], 'h' => (int)$v['height'],
+        'src' => $ready && $kind !== 'pdf' ? $url($v, 'proxy', 0) : '',
+        'poster' => (string)$v['poster_key'] !== '' ? $url($v, 'poster', 0) : '',
+        'strip' => (string)$v['strip_key'] !== '' ? ['url' => $url($v, 'strip', 0), 'n' => (int)$v['strip_n'], 'w' => (int)$v['strip_w'], 'h' => (int)$v['strip_h']] : null,
+        'pages' => $pages, 'sent' => $v['sent_at'] !== null, 'at' => date('d/m/Y H:i', strtotime((string)$v['created_at'])),
+    ];
+    if (!$client) {
+        $o += ['err' => (string)$v['proc_error'], 'name' => (string)$v['file_name'], 'bytes' => (int)$v['bytes'], 'note' => (string)$v['note'],
+               'wm' => (string)$v['wm_status'], 'key' => (string)$v['file_key'], 'by' => (int)$v['created_by']];
+    }
+    return $o;
+}
+
+/** A peça para fora (a equipa vê tudo; o cliente só o necessário). */
+function cc_rv_item_out(PDO $pdo, array $i, bool $client, string $lang = 'pt'): array {
+    $st = CC_RV_STATUS[$i['status']] ?? CC_RV_STATUS['prep'];
+    $o = ['id' => (int)$i['id'], 'title' => (string)$i['title'], 'stage' => (string)$i['stage_key'], 'stageLabel' => CC_RV_STAGES[$i['stage_key']] ?? '',
+          'kind' => (string)$i['kind'], 'status' => (string)$i['status'], 'statusLabel' => $lang === 'en' ? $st[1] : $st[0], 'color' => $st[2],
+          'download' => (int)$i['download'] === 1, 'current' => $i['current_version_id'] ? (int)$i['current_version_id'] : null,
+          'approved' => $i['status'] === 'approved' ? ['version' => (int)$i['approved_version_id'], 'name' => (string)$i['approved_name'],
+                         'at' => $i['approved_at'] ? date('d/m/Y H:i', strtotime((string)$i['approved_at'])) : '', 'client' => $i['approved_kind'] === 'client'] : null,
+          'rev' => (int)$i['rev']];
+    if (!$client) {
+        $o += ['watermark' => (int)$i['watermark'] === 1, 'shared' => (int)$i['shared'] === 1, 'line' => $i['line_id'] ? (int)$i['line_id'] : null,
+               'lineLabel' => cc_rv_line_label($pdo, $i['line_id'] ? (int)$i['line_id'] : null), 'deal' => (int)$i['deal_id'],
+               'approvedIp' => (string)$i['approved_ip'], 'approvedEmail' => (string)$i['approved_email'], 'library' => $i['library_asset_id'] ? (int)$i['library_asset_id'] : null];
+    }
+    return $o;
+}
+
+/** O histórico da peça (versões, envios, rondas, aprovação), com ícones — o mais recente primeiro. */
+function cc_rv_item_log(PDO $pdo, array $item): array {
+    $log = [];
+    $st = $pdo->prepare('SELECT v.num, v.created_at, v.sent_at, u.name FROM cc_rv_versions v LEFT JOIN users u ON u.id = v.created_by WHERE v.item_id = ?');
+    $st->execute([(int)$item['id']]);
+    foreach ($st->fetchAll() as $v) {
+        $log[] = ['at' => (string)$v['created_at'], 'icon' => 'upload', 'c' => 'neutral', 'tip' => 'Versão nova', 'txt' => cc_rv_vlabel((int)$v['num']) . ' carregada' . ($v['name'] ? ' por ' . $v['name'] : '')];
+        if ($v['sent_at']) $log[] = ['at' => (string)$v['sent_at'], 'icon' => 'send', 'c' => 'sky', 'tip' => 'Enviada ao cliente', 'txt' => cc_rv_vlabel((int)$v['num']) . ' enviada ao cliente'];
+    }
+    $st = $pdo->prepare('SELECT * FROM cc_rv_rounds WHERE item_id = ? AND submitted_at IS NOT NULL AND comments_n > 0');
+    $st->execute([(int)$item['id']]);
+    foreach ($st->fetchAll() as $r) {
+        $log[] = ['at' => (string)$r['submitted_at'], 'icon' => 'bubble', 'c' => (int)$r['over_included'] ? 'orange' : 'yellow', 'tip' => 'Comentários do cliente',
+                  'txt' => $r['client_name'] . ' enviou ' . $r['comments_n'] . ((int)$r['comments_n'] === 1 ? ' comentário' : ' comentários') . ' (ronda ' . $r['num'] . ($r['over_included'] ? ', acima do incluído' : '') . ')'];
+    }
+    if ($item['approved_at']) {
+        $log[] = ['at' => (string)$item['approved_at'], 'icon' => 'check', 'c' => 'green', 'tip' => 'Aprovada',
+                  'txt' => 'Aprovada por ' . $item['approved_name'] . ($item['approved_kind'] === 'client' ? ' (cliente · IP ' . $item['approved_ip'] . ')' : '')];
+    }
+    if (db_has_table($pdo, 'cc_share_log')) {
+        $st = $pdo->prepare("SELECT at, client_name, action FROM cc_share_log WHERE item_id = ? AND action IN ('view', 'download') ORDER BY id DESC LIMIT 30");
+        $st->execute([(int)$item['id']]);
+        foreach ($st->fetchAll() as $l) {
+            $log[] = ['at' => (string)$l['at'], 'icon' => $l['action'] === 'download' ? 'download' : 'eye', 'c' => 'neutral', 'tip' => $l['action'] === 'download' ? 'Descarregou' : 'Viu no portal',
+                      'txt' => ($l['client_name'] !== '' ? $l['client_name'] : 'O cliente') . ($l['action'] === 'download' ? ' descarregou o original' : ' abriu no portal')];
+        }
+    }
+    usort($log, fn($a, $b) => strcmp($b['at'], $a['at']));
+    foreach ($log as &$l) $l['when'] = date('d/m H:i', strtotime($l['at']));
+    unset($l);
+    return array_slice($log, 0, 60);
+}
+
+/** As peças (todas, ou de um negócio) para a lista do separador Review. */
+function cc_rv_overview(PDO $pdo, array $f = []): array {
+    $w = []; $args = [];
+    if (!empty($f['deal'])) { $w[] = 'i.deal_id = ?'; $args[] = (int)$f['deal']; }
+    if (!empty($f['status']) && isset(CC_RV_STATUS[$f['status']])) { $w[] = 'i.status = ?'; $args[] = $f['status']; }
+    if (!empty($f['open'])) $w[] = "i.status <> 'approved'";
+    if (($q = trim((string)($f['q'] ?? ''))) !== '') { $w[] = '(i.title LIKE ? OR d.code LIKE ? OR d.name LIKE ?)'; array_push($args, "%$q%", "%$q%", "%$q%"); }
+    $st = $pdo->prepare("SELECT i.*, d.code, d.name AS deal_name, d.phase, COALESCE(co.name, NULLIF(d.company, ''), d.name) AS client,
+                                v.num AS cur_num, v.proc_status AS cur_proc, v.poster_key AS cur_poster, v.id AS cur_id,
+                                (SELECT COUNT(*) FROM cc_comments c WHERE c.item_id = i.id AND c.deleted_at IS NULL AND c.draft = 0 AND c.resolved_at IS NULL AND c.parent_id IS NULL) AS open_n
+                           FROM cc_rv_items i JOIN deals d ON d.id = i.deal_id LEFT JOIN contacts co ON co.id = d.company_id
+                           LEFT JOIN cc_rv_versions v ON v.id = i.current_version_id"
+                       . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . ' ORDER BY i.updated_at DESC LIMIT 300');
+    $st->execute($args);
+    return $st->fetchAll();
+}
+
+/** Mudar o nome, a etapa, a frente, a marca de água ou o download de uma peça. */
+function cc_rv_item_save(PDO $pdo, array $item, array $in, int $by): array {
+    $set = [];
+    if (isset($in['title'])) { $t = mb_substr(trim((string)$in['title']), 0, 200); if ($t === '') throw new RuntimeException('Dê um nome à peça.'); $set['title'] = $t; }
+    if (isset($in['stage']) && isset(CC_RV_STAGES[$in['stage']])) $set['stage_key'] = (string)$in['stage'];
+    foreach (['watermark', 'download'] as $k) if (isset($in[$k])) $set[$k] = (int)$in[$k] ? 1 : 0;
+    if (array_key_exists('line', $in)) {
+        $line = (int)$in['line'] ?: null;
+        if ($line) {
+            $st = $pdo->prepare('SELECT 1 FROM deal_lines WHERE id = ? AND deal_id = ?');
+            $st->execute([$line, (int)$item['deal_id']]);
+            if (!$st->fetchColumn()) $line = null;
+        }
+        $set['line_id'] = $line;
+        $deal = files_deal_row($pdo, (int)$item['deal_id']);
+        if ($deal) $set['stage_id'] = cc_rv_stage_for($pdo, $deal, $line);
+    }
+    if (!$set) return $item;
+    $set['updated_at'] = cc_rv_now();
+    $pdo->prepare('UPDATE cc_rv_items SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($set))) . ' WHERE id = ?')
+        ->execute([...array_values($set), (int)$item['id']]);
+    cc_rv_touch($pdo, (int)$item['id']);
+    return cc_rv_item($pdo, (int)$item['id']);
+}
+
+/**
+ * Imagem com a marca de água do cliente (portal): feita uma vez por versão e por texto e guardada
+ * no sistema. Devolve a chave.
+ */
+function cc_rv_wm_image(array $v, string $srcKey, string $label): string {
+    $key = CC_RV_SYS . (int)$v['id'] . '/wm_' . substr(sha1($label . '|' . $srcKey), 0, 10) . '.jpg';
+    if (r2_head($key) !== null) return $key;
+    $img = cc_gd_open(r2_get($srcKey, null, 62914560), 60000000);
+    if (!$img) return $srcKey;
+    $w = imagesx($img); $h = imagesy($img);
+    $mark = imagecreatefromstring(cc_rv_wm_png($label, $w));
+    if ($mark) {
+        imagealphablending($img, true);
+        $mw = imagesx($mark); $mh = imagesy($mark);
+        imagecopy($img, $mark, max(0, $w - $mw - (int)($w / 40)), max(0, $h - $mh - (int)($h / 30)), 0, 0, $mw, $mh);
+        // e uma faixa diagonal leve, a meio (difícil de recortar)
+        $small = imagecreatetruecolor(max(1, (int)($mw * 0.8)), max(1, (int)($mh * 0.8)));
+        imagesavealpha($small, true); imagealphablending($small, false);
+        imagefill($small, 0, 0, imagecolorallocatealpha($small, 0, 0, 0, 127));
+        imagecopyresampled($small, $mark, 0, 0, 0, 0, imagesx($small), imagesy($small), $mw, $mh);
+        $rot = imagerotate($small, 25, imagecolorallocatealpha($small, 0, 0, 0, 127));
+        if ($rot) { imagealphablending($img, true); imagecopymerge_alpha($img, $rot, (int)(($w - imagesx($rot)) / 2), (int)(($h - imagesy($rot)) / 2), 45); }
+    }
+    r2_put($key, cc_gd_jpeg($img, 84), 'image/jpeg');
+    return $key;
+}
+
+/** imagecopymerge com transparência (o do GD ignora o canal alfa). */
+function imagecopymerge_alpha($dst, $src, int $x, int $y, int $pct): void {
+    $w = imagesx($src); $h = imagesy($src);
+    $cut = imagecreatetruecolor($w, $h);
+    imagecopy($cut, $dst, 0, 0, max(0, $x), max(0, $y), $w, $h);
+    imagecopy($cut, $src, 0, 0, 0, 0, $w, $h);
+    imagecopymerge($dst, $cut, max(0, $x), max(0, $y), 0, 0, $w, $h, $pct);
+}
+
+/** Os acessos e ações do cliente no portal de um negócio (ficha do negócio). */
+function cc_share_log_rows(PDO $pdo, int $dealId, int $limit = 30): array {
+    $st = $pdo->prepare('SELECT l.*, i.title FROM cc_share_log l LEFT JOIN cc_rv_items i ON i.id = l.item_id WHERE l.deal_id = ? ORDER BY l.id DESC LIMIT ' . max(1, $limit));
+    $st->execute([$dealId]);
+    return $st->fetchAll();
+}
+
+/** O texto e o ícone de uma linha do registo do portal. */
+const CC_SHARE_ACTIONS = [
+    'open'     => ['eye', 'sky', 'Abriu o portal'],
+    'ident'    => ['user', 'neutral', 'Identificou-se'],
+    'view'     => ['eye', 'neutral', 'Abriu uma peça'],
+    'comment'  => ['bubble', 'yellow', 'Escreveu um comentário'],
+    'submit'   => ['send', 'orange', 'Enviou comentários'],
+    'approve'  => ['check', 'green', 'Aprovou'],
+    'download' => ['download', 'neutral', 'Descarregou'],
+    'limit'    => ['alert', 'red', 'Pedidos a mais (limite por IP)'],
+];
