@@ -406,7 +406,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 /* ── Áudio (forma de onda, leitor único) ─────────────────── */
 .au-wave { position: relative; display: block; width: 100%; height: 100%; }
 .au-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
-.au-wave path { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.au-wave path { fill: none; stroke-linecap: butt; }
 .au-wave .b path { stroke: var(--mute-2); opacity: .55; }
 .au-wave .f { clip-path: inset(0 calc(100% - var(--p, 0%)) 0 0); }
 .au-wave .f path { stroke: var(--fg); }

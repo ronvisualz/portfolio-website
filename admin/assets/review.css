@@ -256,3 +256,23 @@
 .rv-share .row .check { display: inline-flex; gap: 5px; align-items: center; font-weight: 500; color: var(--fg); }
 .rv-share .row input[type=date], .rv-share .row select { width: auto; }
 @media (max-width: 640px), (pointer: coarse) { .rv-keys { display: none; } }
+
+/* áudio (§27): a forma de onda no lugar da imagem e da tira; comparar = ouvir A ou B */
+.au-wave { position: relative; display: block; width: 100%; height: 100%; }
+.au-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.au-wave path { fill: none; stroke-linecap: butt; }
+.au-wave .b path { stroke: rgba(255,255,255,.32); }
+.au-wave .f { clip-path: inset(0 calc(100% - var(--p, 0%)) 0 0); }
+.au-wave .f path { stroke: var(--hi); }
+.au-ph { position: absolute; top: -4px; bottom: -4px; left: var(--p, 0%); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+.rv-media.rv-au { width: 100% !important; height: 100% !important; display: grid; align-items: center; padding: 6% 4%; background: radial-gradient(120% 90% at 50% 0%, #1d1e22, #0b0b0c 70%); }
+.rv-auw { position: relative; height: min(46%, 220px); cursor: pointer; touch-action: none; }
+.rv-tl.au .rv-strip { background: var(--chip); padding: 4px 6px; }
+.rv-tl.au .au-wave .b path { stroke: var(--mute-2); opacity: .6; }
+.rv-tl.au .au-wave .f path { stroke: var(--fg); }
+.rv-tl.au .au-ph { display: none; }
+.rv-cmp-stage.m-au { grid-template-rows: 1fr 1fr; }
+.rv-cmp-stage.m-au > .rv-box { opacity: .5; transition: opacity var(--t); }
+.rv-cmp-stage.m-au > .rv-box.on { opacity: 1; }
+.rv-cmp-stage.m-au .rv-media.rv-au { padding: 3% 4%; }
+.rv-cmp-stage.m-au .rv-auw { height: 70%; }

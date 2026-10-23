@@ -117,7 +117,7 @@ function cc_rv_item_create(PDO $pdo, array $deal, string $title, string $stageKe
     $title = mb_substr(trim($title), 0, 200);
     if ($title === '') throw new RuntimeException('Dê um nome à peça.');
     if (!isset(CC_RV_STAGES[$stageKey])) $stageKey = 'outro';
-    if (!in_array($kind, ['video', 'image', 'pdf'], true)) $kind = 'video';
+    if (!in_array($kind, ['video', 'image', 'pdf', 'audio'], true)) $kind = 'video';
     $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) + 1 FROM cc_rv_items WHERE deal_id = ' . (int)$deal['id'])->fetchColumn();
     $now = cc_rv_now();
     $pdo->prepare('INSERT INTO cc_rv_items (deal_id, line_id, title, stage_key, stage_id, kind, watermark, download, position, created_by, created_at, updated_at)
@@ -146,8 +146,12 @@ function cc_rv_kind_of(string $mime, string $name): string {
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     if ($mime === 'application/pdf' || $ext === 'pdf') return 'pdf';
     if (str_starts_with($mime, 'image/') || in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff'], true)) return 'image';
+    if (str_starts_with($mime, 'audio/') || in_array($ext, CC_AUDIO_EXT, true)) return 'audio';
     return 'video';
 }
+
+/** Os formatos de áudio que os browsers tocam sem conversão (AIFF só o Safari: passa a MP3 no cron). */
+const CC_RV_AUDIO_PLAYS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'];
 
 /** Uma versão nova a partir de um original que já chegou ao Drive. Devolve o id. */
 function cc_rv_version_create(PDO $pdo, array $item, string $key, array $meta, int $by): int {
@@ -160,7 +164,7 @@ function cc_rv_version_create(PDO $pdo, array $item, string $key, array $meta, i
     $now = cc_rv_now();
     $pdo->prepare('INSERT INTO cc_rv_versions (item_id, num, file_key, file_name, mime, bytes, proc_status, fps_num, fps_den, duration, width, height, note, created_by, created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        ->execute([(int)$item['id'], $num, $key, mb_substr((string)($meta['name'] ?? $name), 0, 255), $mime, (int)$h['size'], $kind === 'video' ? 'queued' : 'running',
+        ->execute([(int)$item['id'], $num, $key, mb_substr((string)($meta['name'] ?? $name), 0, 255), $mime, (int)$h['size'], $kind === 'video' || $kind === 'audio' ? 'queued' : 'running',
                    max(1, (int)($meta['fps_num'] ?? 25)), max(1, (int)($meta['fps_den'] ?? 1)), round((float)($meta['dur'] ?? 0), 3),
                    (int)($meta['w'] ?? 0), (int)($meta['h'] ?? 0), mb_substr(trim((string)($meta['note'] ?? '')), 0, 255), $by, $now]);
     $vid = (int)$pdo->lastInsertId();
@@ -246,6 +250,29 @@ function cc_rv_store_preview(PDO $pdo, array $v, ?string $posterTmp, ?string $st
     if (!$set) return;
     $pdo->prepare('UPDATE cc_rv_versions SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($set))) . ' WHERE id = ?')
         ->execute([...array_values($set), (int)$v['id']]);
+}
+
+/**
+ * Áudio (§27): a forma de onda (picos) e a imagem (forma de onda + espectrograma) vêm do browser.
+ * MP3, WAV, M4A, AAC, FLAC e OGG tocam como estão; AIFF passa a MP3 no cron (com ffmpeg).
+ * Devolve true se a versão ainda precisa do servidor.
+ */
+function cc_rv_store_audio(PDO $pdo, array $v, string $peaks, ?string $posterTmp): bool {
+    $set = [];
+    if ($peaks !== '') $set['peaks'] = $peaks;
+    if ($posterTmp && is_uploaded_file($posterTmp) && ($img = cc_gd_open((string)file_get_contents($posterTmp)))) {
+        $set['poster_key'] = cc_rv_put((int)$v['id'], 'poster.jpg', cc_gd_jpeg(cc_gd_fit($img, min(1280, imagesx($img))), 84), 'image/jpeg');
+        $set['width'] = imagesx($img); $set['height'] = imagesy($img);
+    }
+    $plays = in_array(strtolower(pathinfo((string)$v['file_name'], PATHINFO_EXTENSION)), CC_RV_AUDIO_PLAYS, true);
+    $server = !$plays && cc_rv_ffmpeg_known();
+    if (!$server) {
+        $set += ['proxy_key' => (string)$v['file_key'], 'proc_status' => 'ready',
+                 'proc_error' => $plays ? '' : 'O servidor ainda não tem ffmpeg: este formato só toca em alguns browsers (Safari).'];
+    }
+    if ($set) $pdo->prepare('UPDATE cc_rv_versions SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($set))) . ' WHERE id = ?')
+        ->execute([...array_values($set), (int)$v['id']]);
+    return $server;
 }
 
 // ── ffmpeg (pela linha de comandos, no cron) ────────────────
@@ -361,6 +388,31 @@ function cc_rv_process_video(PDO $pdo, array $v): void {
     }
 }
 
+/** Um áudio que o browser não toca (AIFF…): passa a MP3 192 kbps estéreo (cron). */
+function cc_rv_process_audio(PDO $pdo, array $v): void {
+    $ff = cc_rv_bin('ffmpeg');
+    if (!$ff) throw new RuntimeException('Falta o ffmpeg no servidor.');
+    $tmp = sys_get_temp_dir() . '/ccau_' . (int)$v['id'] . '_' . bin2hex(random_bytes(4)) . '.mp3';
+    try {
+        [$code, , $err] = cc_rv_run([$ff, '-hide_banner', '-loglevel', 'error', '-y', '-i', r2_presign('GET', (string)$v['file_key'], 6 * 3600),
+                                     '-vn', '-ac', '2', '-c:a', 'libmp3lame', '-b:a', '192k', $tmp], 1800);
+        if ($code !== 0 || !is_file($tmp)) throw new RuntimeException('O ffmpeg não converteu o áudio: ' . trim(mb_substr($err, -300)));
+        $set = ['proxy_key' => cc_rv_put((int)$v['id'], 'proxy.mp3', (string)file_get_contents($tmp), 'audio/mpeg'), 'proc_status' => 'ready', 'proc_error' => ''];
+        if ((string)($v['peaks'] ?? '') === '') {   // o browser não leu o original: a forma de onda sai daqui
+            require_once __DIR__ . '/cc_stt.php';
+            if ($pk = cc_audio_peaks_ff($ff, $tmp)) $set['peaks'] = $pk[0];
+        }
+        if ($probe = cc_rv_bin('ffprobe')) {
+            [, $out] = cc_rv_run([$probe, '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', $tmp], 120);
+            if ((float)$out > 0) $set['duration'] = round((float)$out, 3);
+        }
+        $pdo->prepare('UPDATE cc_rv_versions SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($set))) . ' WHERE id = ?')
+            ->execute([...array_values($set), (int)$v['id']]);
+    } finally {
+        @unlink($tmp);
+    }
+}
+
 /**
  * A imagem da marca de água: o logótipo topper. e o nome do cliente, em branco semitransparente com
  * sombra (PNG transparente). O logótipo vem de assets/wm-logo.png; o nome é escrito com a Inter
@@ -440,7 +492,8 @@ function cc_rv_job(PDO $pdo, array $job): void {
     try {
         if ($job['kind'] === 'rv_proc') {
             $pdo->prepare("UPDATE cc_rv_versions SET proc_status = 'running' WHERE id = ?")->execute([(int)$v['id']]);
-            cc_rv_process_video($pdo, $v);
+            if (cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']) === 'audio') cc_rv_process_audio($pdo, $v);
+            else cc_rv_process_video($pdo, $v);
         } else {
             cc_rv_process_wm($pdo, $v, (string)($p['label'] ?? ''));
         }
@@ -522,6 +575,12 @@ function cc_rv_drawing_clean($raw): ?string {
     return $ok ? json_encode($ok) : null;
 }
 
+/** «1:05,3» (áudio). */
+function cc_rv_mss(float $t): string {
+    $d = (int)floor($t * 10 + 1e-6); $s = intdiv($d, 10);
+    return intdiv($s, 60) . ':' . str_pad((string)($s % 60), 2, '0', STR_PAD_LEFT) . ',' . ($d % 10);
+}
+
 /** Um comentário para fora. Para o cliente: sem e-mails da equipa, sem nada interno. */
 function cc_rv_comment_out(array $c, array $v, bool $forClient): array {
     $fn = (int)$v['fps_num']; $fd = (int)$v['fps_den'];
@@ -535,7 +594,11 @@ function cc_rv_comment_out(array $c, array $v, bool $forClient): array {
         'resolved' => $c['resolved_at'] !== null, 'at' => date('d/m/Y H:i', strtotime((string)$c['created_at'])),
     ];
     if ($out['fi'] !== null) {
-        $out['tc'] = cc_rv_tc($out['fi'], $fn, $fd, (string)$v['tc_start']) . ($out['fo'] !== null && $out['fo'] > $out['fi'] ? '–' . cc_rv_tc($out['fo'], $fn, $fd, (string)$v['tc_start']) : '');
+        // áudio: o tempo em minutos e segundos (m:ss,d); vídeo: o timecode SMPTE
+        $lab = cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']) === 'audio'
+            ? static fn(int $f) => cc_rv_mss($f * $fd / max(1, $fn))
+            : static fn(int $f) => cc_rv_tc($f, $fn, $fd, (string)$v['tc_start']);
+        $out['tc'] = $lab($out['fi']) . ($out['fo'] !== null && $out['fo'] > $out['fi'] ? '–' . $lab($out['fo']) : '');
     }
     if (!$forClient) {
         $out['mine'] = (int)($c['user_id'] ?? 0) === (int)(current_user()['id'] ?? -1);
@@ -829,9 +892,10 @@ function cc_rv_to_library(PDO $pdo, array $item, array $v, ?int $by): ?int {
     $kind = cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']);
     $poster = (string)$v['poster_key'] !== '' ? r2_get((string)$v['poster_key'], null, 20971520) : null;
     [$a, $new] = cc_asset_create($pdo, null, [
-        'name' => (string)$v['file_name'], 'mime' => $kind === 'pdf' ? 'image/jpeg' : (string)$v['mime'], 'kind' => $kind === 'video' ? 'video' : 'image',
+        'name' => (string)$v['file_name'], 'mime' => $kind === 'pdf' ? 'image/jpeg' : (string)$v['mime'], 'kind' => in_array($kind, ['video', 'audio'], true) ? $kind : 'image',
+        'peaks' => $kind === 'audio' ? (string)($v['peaks'] ?? '') : '',
         'title' => $item['title'] . ' · ' . cc_rv_vlabel((int)$v['num']) . ' (aprovada)', 'file_key' => 'r2:' . $v['file_key'], 'fp' => sha1('rv|' . $v['id']),
-        'preview' => $poster, 'w' => (int)$v['width'], 'h' => (int)$v['height'], 'duration' => $kind === 'video' ? (float)$v['duration'] : null, 'size' => (int)$v['bytes'],
+        'preview' => $poster, 'w' => (int)$v['width'], 'h' => (int)$v['height'], 'duration' => in_array($kind, ['video', 'audio'], true) ? (float)$v['duration'] : null, 'size' => (int)$v['bytes'],
         'origin' => 'topper', 'deal_id' => (int)$item['deal_id'], 'by' => $by,
     ]);
     if ($new) {
@@ -1085,6 +1149,7 @@ function cc_rv_version_out(array $v, callable $url, bool $client): array {
         'strip' => (string)$v['strip_key'] !== '' ? ['url' => $url($v, 'strip', 0), 'n' => (int)$v['strip_n'], 'w' => (int)$v['strip_w'], 'h' => (int)$v['strip_h']] : null,
         'pages' => $pages, 'sent' => $v['sent_at'] !== null, 'at' => date('d/m/Y H:i', strtotime((string)$v['created_at'])),
     ];
+    if ($kind === 'audio') $o['peaks'] = (string)($v['peaks'] ?? '');   // a forma de onda (§27)
     if (!$client) {
         $o += ['err' => (string)$v['proc_error'], 'name' => (string)$v['file_name'], 'bytes' => (int)$v['bytes'], 'note' => (string)$v['note'],
                'wm' => (string)$v['wm_status'], 'key' => (string)$v['file_key'], 'by' => (int)$v['created_by']];

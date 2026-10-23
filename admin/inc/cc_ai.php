@@ -676,8 +676,9 @@ function cc_ai_prepare(PDO $pdo, array $board, int $by): array {
         foreach (array_values($refs) as $i => $a) {
             $have[] = (int)$a['id'];
             $ratio = ($a['width'] && $a['height']) ? (float)$a['height'] / (float)$a['width'] : 0.62;
-            cc_card_add($pdo, (int)$board['id'], ['type' => $a['kind'] === 'video' ? 'video' : ($a['kind'] === 'link' ? 'link' : 'image'), 'asset_id' => (int)$a['id'], 'lane' => $lane,
-                'x' => $x0 + ($i % 3) * 300, 'y' => $y0 + 260 + intdiv($i, 3) * 230, 'w' => 280, 'h' => round(280 * min(1.4, $ratio)), 'content' => []], $by);
+            $ct = cc_card_type_for($a);
+            cc_card_add($pdo, (int)$board['id'], ['type' => $ct, 'asset_id' => (int)$a['id'], 'lane' => $lane,
+                'x' => $x0 + ($i % 3) * 300, 'y' => $y0 + 260 + intdiv($i, 3) * 230, 'w' => 280, 'h' => in_array($ct, ['file', 'audio'], true) ? 0 : round(280 * min(1.4, $ratio)), 'content' => []], $by);
             $made[$lane]++;
         }
     }

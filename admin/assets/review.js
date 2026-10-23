@@ -8,7 +8,10 @@
  *
  *   TopperReview.mount(el, cfg)   cfg: mode ('team'|'client'), lang, load(), poll(rev), call(a, params|FormData),
  *                                 exportUrl(v, fmt, clientOnly), edit, identity(), identify() (cliente)
- *   TopperReview.previews(file)   poster + tira (vídeo) ou páginas (PDF), feitos no browser antes de enviar
+ *   TopperReview.previews(file)   poster + tira (vídeo), páginas (PDF) ou forma de onda (áudio), feitos no browser antes de enviar
+ *
+ * Áudio (§27): o mesmo leitor no tempo, com a forma de onda no lugar da imagem e da tira (cc_audio.js),
+ * comentários marcados no tempo (m:ss,d), sem desenho nem pinos; comparar = ouvir A ou B no mesmo ponto.
  */
 (function () {
   'use strict';
@@ -33,7 +36,8 @@
       idTitle: 'Antes de comentar', idText: 'Diga-nos quem é: o nome aparece junto dos seus comentários.', idName: 'Nome', idEmail: 'E-mail', idGo: 'Continuar',
       compare: 'Comparar', side: 'Lado a lado', wipe: 'Cortina', over: 'Sobreposição', diff: 'Diferença', opacity: 'Opacidade',
       undo: 'Anular', deleted: 'Comentário apagado.', sent: 'Enviado.', pages: 'páginas', of: 'de', loading: 'A abrir…', offline: 'Sem ligação. Tente outra vez.',
-      approvedBy: 'Aprovada por', on: 'em', versionShort: 'Versão', wmNote: 'Pré-visualização com marca de água'
+      approvedBy: 'Aprovada por', on: 'em', versionShort: 'Versão', wmNote: 'Pré-visualização com marca de água',
+      processingAu: 'A converter o áudio no servidor…', listen: 'Ouvir', listenTip: 'Mesmo ponto, troca entre A e B (teclas A e B)', seekTip: 'Clique para ir a esse ponto'
     },
     en: {
       play: 'Play (space)', pause: 'Pause (space)', prev: 'Previous frame (←)', next: 'Next frame (→)', speed: 'Speed',
@@ -54,7 +58,8 @@
       idTitle: 'Before you comment', idText: 'Tell us who you are: your name appears next to your comments.', idName: 'Name', idEmail: 'Email', idGo: 'Continue',
       compare: 'Compare', side: 'Side by side', wipe: 'Wipe', over: 'Overlay', diff: 'Difference', opacity: 'Opacity',
       undo: 'Undo', deleted: 'Comment deleted.', sent: 'Sent.', pages: 'pages', of: 'of', loading: 'Opening…', offline: 'No connection. Please try again.',
-      approvedBy: 'Approved by', on: 'on', versionShort: 'Version', wmNote: 'Watermarked preview'
+      approvedBy: 'Approved by', on: 'on', versionShort: 'Version', wmNote: 'Watermarked preview',
+      processingAu: 'Converting the audio…', listen: 'Listen', listenTip: 'Same point, switch between A and B (keys A and B)', seekTip: 'Click to go to that point'
     }
   };
   var COLORS = ['#FFC718', '#81CFE3', '#FBAE9C', '#FFFFFF', '#111111', '#2A7928', '#D9443A'];
@@ -82,6 +87,11 @@
     dots: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
   };
   function ico(n) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + (IC[n] || '') + '</svg>'; }
+  // vídeo ou áudio: o que tem tempo
+  function av(el) { return !!el && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO'); }
+  function timed(v) { return !!v && (v.kind === 'video' || v.kind === 'audio'); }
+  function mss(t) { var d = Math.floor(Math.max(0, t) * 10 + 1e-6), s = Math.floor(d / 10); return Math.floor(s / 60) + ':' + p2(s % 60) + ',' + (d % 10); }
+  function wave(v, bars) { var A = window.TopperAudio; return A ? A.waveSvg(A.peaks(v.peaks), bars) : ''; }
 
   // ── timecode SMPTE (o mesmo cálculo do servidor) ────────────
   function tcBase(fn, fd) { var f = fn / Math.max(1, fd), nom = Math.round(f); return [nom, Math.abs(f - nom) > 0.001 && (nom === 30 || nom === 60)]; }
@@ -160,12 +170,14 @@
     var k = kindOfFile(file);
     if (k === 'video') return videoPreviews(file);
     if (k === 'pdf') return pdfPages(file, onProgress).then(function (pages) { return { pages: pages }; });
+    if (k === 'audio' && window.TopperAudio) return window.TopperAudio.prep(file).then(function (r) { return r ? { dur: r.dur, poster: r.prev, peaks: r.peaks } : {}; });
     return Promise.resolve({});
   }
   function kindOfFile(f) {
     var n = (f.name || '').toLowerCase();
     if (f.type === 'application/pdf' || /\.pdf$/.test(n)) return 'pdf';
     if (/^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|tiff?)$/.test(n)) return 'image';
+    if (/^audio\//.test(f.type) || /\.(mp3|wav|m4a|aac|flac|ogg|aif|aiff)$/.test(n)) return 'audio';
     return 'video';
   }
 
@@ -191,7 +203,7 @@
       var d = media && media.duration && isFinite(media.duration) ? media.duration : v.dur;
       return Math.max(0, Math.floor(d * fps(v)) - 1);
     }
-    function tcOf(f, v) { v = v || V(); return v ? tc(f, v.fn, v.fd, v.tc) : ''; }
+    function tcOf(f, v) { v = v || V(); return !v ? '' : v.kind === 'audio' ? mss(f / fps(v)) : tc(f, v.fn, v.fd, v.tc); }
     function isVideo(v) { v = v || V(); return v && v.kind === 'video'; }
 
     function load(keep) {
@@ -245,7 +257,7 @@
       if (TEAM) {
         var ready = v && v.proc === 'ready', sameApproved = it.approved && it.approved.version === (v && v.id);
         var cur = v && v.id === it.current;
-        if (EDIT) acts += '<label class="btn ghost sm" data-tip="Carregar uma versão nova (o original vai para o Drive)">' + ico('down').replace('M12 4v12M6 10l6 6 6-6', 'M12 20V8M6 14l6-6 6 6') + ' Versão nova<input type="file" hidden data-rv-upload accept="video/*,image/*,.pdf,.mov,.mxf,.mp4,.m4v"></label>';
+        if (EDIT) acts += '<label class="btn ghost sm" data-tip="Carregar uma versão nova (o original vai para o Drive)">' + ico('down').replace('M12 4v12M6 10l6 6 6-6', 'M12 20V8M6 14l6-6 6 6') + ' Versão nova<input type="file" hidden data-rv-upload accept="video/*,image/*,audio/*,.pdf,.mov,.mxf,.mp4,.m4v,.aif,.aiff"></label>';
         acts += '<div class="rv-popw"><button type="button" class="btn ghost sm" data-rv-pop="exp"' + (v ? '' : ' disabled') + ' aria-haspopup="true">' + ico('down') + ' Exportar</button>'
           + '<div class="rv-pop" data-pop="exp" hidden><b>Comentários de ' + esc(v ? v.label : '') + '</b>'
           + '<label class="check"><input type="checkbox" data-rv-exp-client> Só os do cliente</label>'
@@ -312,6 +324,7 @@
     function renderViewer(keep) {
       var v = V(), view = S.el.view, keepFrame = keep ? S.frame : 0;
       stopMedia();
+      S.el.auw = null;
       S.cmp = null;
       root.classList.toggle('rv-cmp-on', false);
       view.innerHTML = '';
@@ -322,18 +335,29 @@
       box.appendChild(inner); view.appendChild(box);
       if (v.proc !== 'ready') {
         inner.innerHTML = (v.poster ? '<img src="' + esc(v.poster) + '" alt="">' : '') + '<div class="rv-proc">'
-          + (v.proc === 'error' ? '<b>' + esc(T.failed) + '</b>' + (TEAM && v.err ? '<span>' + esc(v.err) + '</span>' : '') + (TEAM && EDIT && v.kind === 'video' && S.data.ffmpeg ? '<button type="button" class="btn sm" data-rv-retry>' + esc(T.retry) + '</button>' : '')
-            : '<span class="spin" aria-hidden="true"></span> ' + esc(v.proc === 'queued' ? T.queued : T.processing)) + '</div>';
+          + (v.proc === 'error' ? '<b>' + esc(T.failed) + '</b>' + (TEAM && v.err ? '<span>' + esc(v.err) + '</span>' : '') + (TEAM && EDIT && timed(v) && S.data.ffmpeg ? '<button type="button" class="btn sm" data-rv-retry>' + esc(T.retry) + '</button>' : '')
+            : '<span class="spin" aria-hidden="true"></span> ' + esc(v.proc === 'queued' ? T.queued : (v.kind === 'audio' ? T.processingAu : T.processing))) + '</div>';
         S.aspect = v.w && v.h ? v.h / v.w : 9 / 16;
         fit(); renderCtrl(); renderTimeline(); return;
       }
-      if (v.kind === 'video') {
-        media = document.createElement('video');
-        media.playsInline = true; media.preload = 'auto'; media.src = v.src; if (v.poster) media.poster = v.poster;
-        media.setAttribute('playsinline', ''); media.disablePictureInPicture = true; media.controlsList = 'nodownload noremoteplayback';
+      if (timed(v)) {
+        var isAu = v.kind === 'audio';
+        media = document.createElement(isAu ? 'audio' : 'video');
+        media.preload = 'auto'; media.src = v.src;
+        if (isAu) {
+          // áudio: a forma de onda grande (clique = ir a esse ponto), sem desenho nem pinos
+          S.el.auw = h('div', 'rv-auw', wave(v, 240));
+          S.el.auw.setAttribute('data-tip', T.seekTip);
+          S.el.auw.addEventListener('pointerdown', function (e) { var r = S.el.auw.getBoundingClientRect(); if (playing()) togglePlay(false); seekFrame(clamp((e.clientX - r.left) / r.width, 0, 1) * (maxF() + 1)); });
+          inner.classList.add('rv-au'); inner.appendChild(S.el.auw);
+        } else {
+          media.playsInline = true; if (v.poster) media.poster = v.poster;
+          media.setAttribute('playsinline', ''); media.disablePictureInPicture = true;
+        }
+        media.controlsList = 'nodownload noremoteplayback';
         media.addEventListener('contextmenu', function (e) { if (!TEAM) e.preventDefault(); });
         inner.appendChild(media);
-        S.aspect = v.w && v.h ? v.h / v.w : 9 / 16;
+        S.aspect = isAu ? 0.3 : (v.w && v.h ? v.h / v.w : 9 / 16);
         media.addEventListener('loadedmetadata', function () {
           if (media.videoWidth) S.aspect = media.videoHeight / media.videoWidth;
           fit(); renderTimeline(); seekFrame(keepFrame);
@@ -363,6 +387,8 @@
         media.addEventListener('load', function () { if (media.naturalWidth) S.aspect = media.naturalHeight / media.naturalWidth; fit(); });
         inner.appendChild(media);
       }
+      if (v.kind === 'audio') { S.el.svg = null; S.el.inner = inner; fit(); renderCtrl(); renderTimeline(); paint(); return; }
+      S.el.auw = null;
       // a marca de água por cima (só enquanto a gravada no vídeo não está pronta): logótipo topper. e o cliente
       if (cfg.wmText) inner.appendChild(h('div', 'rv-wm', '<img src="/admin/assets/wm-logo.png" alt="">' + '<span>' + esc(cfg.wmText) + '</span>'));
       var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -381,10 +407,10 @@
       });
       paint();
     }
-    function playing() { return media && media.tagName === 'VIDEO' && !media.paused && !media.ended; }
-    function curFrame() { return media && media.tagName === 'VIDEO' ? clamp(Math.floor(media.currentTime * fps() + 1e-3), 0, maxF()) : 0; }
+    function playing() { return av(media) && !media.paused && !media.ended; }
+    function curFrame() { return av(media) ? clamp(Math.floor(media.currentTime * fps() + 1e-3), 0, maxF()) : 0; }
     function seekFrame(f) {
-      if (!media || media.tagName !== 'VIDEO') return;
+      if (!av(media)) return;
       f = clamp(Math.round(f), 0, maxF());
       S.frame = f;
       try { media.currentTime = (f + 0.5) / fps(); } catch (e) {}
@@ -392,11 +418,11 @@
       paint();
     }
     function syncB(force) {
-      if (!mediaB || mediaB.tagName !== 'VIDEO' || !media) return;
+      if (!av(mediaB) || !media) return;
       if (force || Math.abs(mediaB.currentTime - media.currentTime) > 1.5 / fps()) { try { mediaB.currentTime = media.currentTime; } catch (e) {} }
     }
     function trackFrames() {
-      if (!media || media.tagName !== 'VIDEO') return;
+      if (!av(media)) return;
       if (media.requestVideoFrameCallback) {
         var cb = function (now, meta) {
           if (!media) return;
@@ -415,24 +441,24 @@
       if (S.frame >= S.outF || S.frame < S.inF - 1) seekFrame(S.inF);
     }
     function togglePlay(force) {
-      if (!media || media.tagName !== 'VIDEO') return;
+      if (!av(media)) return;
       stopReverse();
       var go = force != null ? force : media.paused;
       if (go) {
         if (S.loop && S.inF != null && S.outF != null && (S.frame >= S.outF || S.frame < S.inF)) seekFrame(S.inF);
         else if (media.ended) seekFrame(0);
         media.playbackRate = S.rate; var p = media.play(); if (p && p.catch) p.catch(function () {});
-        if (mediaB && mediaB.tagName === 'VIDEO') { mediaB.playbackRate = S.rate; mediaB.muted = true; var q = mediaB.play(); if (q && q.catch) q.catch(function () {}); }
+        if (av(mediaB)) { mediaB.playbackRate = S.rate; mediaB.muted = !(S.cmp && S.cmp.listen === 'B'); media.muted = !!(S.cmp && S.cmp.listen === 'B'); var q = mediaB.play(); if (q && q.catch) q.catch(function () {}); }
       } else {
         media.pause(); if (mediaB && mediaB.pause) mediaB.pause();
         seekFrame(curFrame());
       }
     }
-    function step(n) { if (!media || media.tagName !== 'VIDEO') return; stopReverse(); if (playing()) { media.pause(); if (mediaB) mediaB.pause(); } seekFrame(S.frame + n); }
+    function step(n) { if (!av(media)) return; stopReverse(); if (playing()) { media.pause(); if (mediaB) mediaB.pause(); } seekFrame(S.frame + n); }
     function stopReverse() { if (S.rev_timer) { clearInterval(S.rev_timer); S.rev_timer = null; renderCtrlState(); } }
     function reverse() {
       // J: o vídeo não toca para trás no browser; anda frame a frame
-      if (!media || media.tagName !== 'VIDEO') return;
+      if (!av(media)) return;
       if (playing()) { media.pause(); if (mediaB) mediaB.pause(); }
       var mult = S.rev_timer ? Math.min(4, (S.rev_mult || 1) * 2) : 1;
       stopReverse(); S.rev_mult = mult;
@@ -440,7 +466,7 @@
       renderCtrlState();
     }
     function forwardL() {
-      if (!media || media.tagName !== 'VIDEO') return;
+      if (!av(media)) return;
       if (S.rev_timer) { stopReverse(); }
       if (playing()) { S.rate = Math.min(4, S.rate * 2); media.playbackRate = S.rate; if (mediaB) mediaB.playbackRate = S.rate; renderCtrl(); }
       else { S.rate = SPEEDS.indexOf(S.rate) > -1 ? S.rate : 1; togglePlay(true); }
@@ -448,8 +474,8 @@
 
     // ── controlos ─────────────────────────────────────────────
     function renderCtrl() {
-      var v = V(), c = S.el.ctrl, vid = isVideo(v) && v.proc === 'ready';
-      var tools = (TEAM || cfg.canComment !== false) ? ['pen', 'arrow', 'rect', 'ellipse', 'text'].map(function (t) {
+      var v = V(), c = S.el.ctrl, vid = timed(v) && v.proc === 'ready', au = v && v.kind === 'audio';
+      var tools = (TEAM || cfg.canComment !== false) && !au ? ['pen', 'arrow', 'rect', 'ellipse', 'text'].map(function (t) {
         return '<button type="button" class="rv-b' + (S.tool === t ? ' on' : '') + '" data-rv-tool="' + t + '" aria-pressed="' + (S.tool === t) + '" data-tip="' + esc(T[t]) + '" aria-label="' + esc(T[t]) + '">' + ico(t) + '</button>';
       }).join('') + '<span class="rv-colors">' + COLORS.map(function (col) {
         return '<button type="button" class="rv-sw' + (S.color === col ? ' on' : '') + '" style="--c:' + col + '" data-rv-color="' + col + '" aria-label="' + esc(T.color) + ' ' + col + '"></button>';
@@ -467,7 +493,8 @@
           + '<button type="button" class="rv-b' + (S.loop ? ' on' : '') + '" data-rv-loop aria-pressed="' + S.loop + '" data-tip="' + esc(T.loop) + '"' + (S.inF != null && S.outF != null ? '' : ' disabled') + '>' + ico('loop') + '</button>'
           + (S.inF != null || S.outF != null ? '<button type="button" class="rv-b" data-rv-clear data-tip="' + esc(T.clearIO) + '" aria-label="' + esc(T.clearIO) + '">' + ico('x') + '</button>' : '')
           + '<button type="button" class="rv-tc" data-rv-tc aria-live="off"></button>'
-          + '<span class="rv-fps mono" data-tip="' + esc(v.err && TEAM ? v.err : 'fps') + '">' + (Math.round(fps(v) * 1000) / 1000).toString().replace('.', ',') + ' fps' + (TEAM && v.err ? ' ⚠' : '') + '</span>';
+          + (au ? (TEAM && v.err ? '<span class="rv-fps mono" data-tip="' + esc(v.err) + '">⚠</span>' : '')
+            : '<span class="rv-fps mono" data-tip="' + esc(v.err && TEAM ? v.err : 'fps') + '">' + (Math.round(fps(v) * 1000) / 1000).toString().replace('.', ',') + ' fps' + (TEAM && v.err ? ' ⚠' : '') + '</span>');
       } else if (v.kind === 'pdf') {
         left = '<button type="button" class="rv-b" data-rv-pg="-1" aria-label="' + esc(T.page) + ' −">' + ico('chevL') + '</button><span class="rv-tc static">' + esc(T.page) + ' ' + S.page + ' ' + esc(T.of) + ' ' + v.pages.length + '</span>'
           + '<button type="button" class="rv-b" data-rv-pg="1" aria-label="' + esc(T.page) + ' +">' + ico('chevR') + '</button>';
@@ -485,11 +512,16 @@
       var v = V(); if (!v || !S.el) return;
       var t = $('[data-rv-tc]', S.el.ctrl);
       if (t) {
-        t.textContent = S.showFrames ? String(S.frame).padStart(String(maxF()).length, '0') + ' / ' + maxF() : tcOf(S.frame);
-        t.setAttribute('data-tip', S.showFrames ? T.frTip : T.tcTip);
+        if (v.kind === 'audio') { t.textContent = tcOf(S.frame) + ' / ' + mss((maxF() + 1) / fps(v)); t.removeAttribute('data-tip'); }
+        else {
+          t.textContent = S.showFrames ? String(S.frame).padStart(String(maxF()).length, '0') + ' / ' + maxF() : tcOf(S.frame);
+          t.setAttribute('data-tip', S.showFrames ? T.frTip : T.tcTip);
+        }
       }
       var tl = S.el.tl, n = maxF() + 1;
-      var hl = $('.rv-head-line', tl); if (hl && isVideo(v)) hl.style.left = (n > 1 ? (S.frame + 0.5) / n * 100 : 0) + '%';
+      var pct = (n > 1 ? (S.frame + 0.5) / n * 100 : 0) + '%';
+      var hl = $('.rv-head-line', tl); if (hl && timed(v)) hl.style.left = pct;
+      if (v.kind === 'audio') { tl.style.setProperty('--p', pct); if (S.el.auw) S.el.auw.style.setProperty('--p', pct); }
       updateAnchor();
     }
     function paint() { paintLight(); renderOverlay(); }
@@ -497,12 +529,19 @@
     // ── barra do tempo ────────────────────────────────────────
     function renderTimeline() {
       var v = V(), tl = S.el.tl;
-      var show = v && v.kind === 'video' && v.proc === 'ready';
+      var show = timed(v) && v.proc === 'ready';
       tl.hidden = !show;
       if (!show) return;
       var strip = $('.rv-strip', tl);
-      strip.style.backgroundImage = v.strip ? 'url("' + v.strip.url.replace(/"/g, '%22') + '")' : (v.poster ? 'url("' + v.poster.replace(/"/g, '%22') + '")' : 'none');
-      strip.classList.toggle('one', !v.strip);
+      tl.classList.toggle('au', v.kind === 'audio');
+      if (v.kind === 'audio') {   // a forma de onda, com os comentários marcados no tempo por cima
+        if (strip.getAttribute('data-v') !== String(v.id)) { strip.innerHTML = wave(v, 200); strip.setAttribute('data-v', v.id); }
+        strip.style.backgroundImage = 'none'; strip.classList.remove('one');
+      } else {
+        strip.innerHTML = ''; strip.removeAttribute('data-v');
+        strip.style.backgroundImage = v.strip ? 'url("' + v.strip.url.replace(/"/g, '%22') + '")' : (v.poster ? 'url("' + v.poster.replace(/"/g, '%22') + '")' : 'none');
+        strip.classList.toggle('one', !v.strip);
+      }
       var n = maxF() + 1, io = $('.rv-io', tl);
       if (S.inF != null || S.outF != null) {
         var a = S.inF != null ? S.inF : 0, b = S.outF != null ? S.outF : n - 1;
@@ -523,7 +562,7 @@
       function at(e) { var r = tl.getBoundingClientRect(); return clamp(Math.floor((e.clientX - r.left) / r.width * (maxF() + 1)), 0, maxF()); }
       tl.addEventListener('pointerdown', function (e) {
         if (e.target.closest('[data-rv-mk]')) return;
-        if (!media || media.tagName !== 'VIDEO') return;
+        if (!av(media)) return;
         drag = true; tl.setPointerCapture(e.pointerId);
         if (playing()) { media.pause(); if (mediaB) mediaB.pause(); }
         seekFrame(at(e));
@@ -579,7 +618,7 @@
       var v = V(); if (!v) return [];
       return visibleComments().filter(function (c) {
         if (c.parent || c.version !== v.id) return false;
-        if (v.kind === 'video') return c.fi != null && (c.fo != null ? S.frame >= c.fi && S.frame <= c.fo : S.frame === c.fi);
+        if (timed(v)) return c.fi != null && (c.fo != null ? S.frame >= c.fi && S.frame <= c.fo : S.frame === c.fi);
         if (v.kind === 'pdf') return (c.page || 1) === S.page;
         return true;
       });
@@ -596,7 +635,7 @@
         out += '<g class="rv-d' + (S.sel === c.id ? ' sel' : '') + '">' + c.drawing.map(function (sh) { return shapeSvg(sh); }).join('') + '</g>';
       });
       // os pinos (imagem / página)
-      if (v.kind !== 'video') {
+      if (!timed(v)) {
         var idx = numbering();
         here.forEach(function (c) {
           if (c.x == null) return;
@@ -788,7 +827,7 @@
     function anchorNow() {
       var v = V(); if (!v) return {};
       if (S.draft.general && !S.draft.drawing.length) return { label: T.noAnchor };
-      if (v.kind === 'video') {
+      if (timed(v)) {
         if (S.inF != null && S.outF != null && S.outF > S.inF) return { fi: S.inF, fo: S.outF, label: T.interval + ' ' + tcOf(S.inF) + '–' + tcOf(S.outF) };
         return { fi: S.frame, label: tcOf(S.frame) };
       }
@@ -819,7 +858,7 @@
       S.sel = S.sel === id && !seek ? null : id;
       if (c.version !== S.vid) { S.vid = c.version; renderVersions(); renderViewer(); }
       var v = V();
-      if (v && v.kind === 'video' && c.fi != null) { if (playing()) togglePlay(false); seekFrame(c.fi); }
+      if (timed(v) && c.fi != null) { if (playing()) togglePlay(false); seekFrame(c.fi); }
       if (v && v.kind === 'pdf' && c.page && c.page !== S.page) goPage(c.page);
       $$('.rv-c', S.el.side).forEach(function (a) { a.classList.toggle('sel', +a.getAttribute('data-rv-c') === S.sel); });
       var card = $('.rv-c[data-rv-c="' + id + '"]', S.el.side); if (card && seek) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -901,14 +940,26 @@
       var stage = $('[data-rv-cstage]', view);
       function pane(v, lab) {
         var box = h('div', 'rv-box'), inner = h('div', 'rv-media'), el;
-        if (v.kind === 'video') { el = document.createElement('video'); el.playsInline = true; el.preload = 'auto'; el.src = v.src; el.muted = lab === 'B'; }
+        if (v.kind === 'audio') { el = document.createElement('audio'); el.preload = 'auto'; el.src = v.src; el.muted = lab === 'B'; inner.className = 'rv-media rv-au'; inner.appendChild(h('div', 'rv-auw', wave(v, 200))); }
+        else if (v.kind === 'video') { el = document.createElement('video'); el.playsInline = true; el.preload = 'auto'; el.src = v.src; el.muted = lab === 'B'; }
         else { el = document.createElement('img'); el.src = v.kind === 'pdf' ? (v.pages[S.page - 1] || v.pages[0] || {}).url || v.poster : v.src; el.alt = ''; }
         inner.appendChild(el); inner.appendChild(h('span', 'rv-lbl', esc(lab + ' · ' + v.label)));
         box.appendChild(inner);
         return [box, el];
       }
       var A = pane(va, 'A'), B = pane(vb, 'B');
-      if (c.mode === 'side') { stage.appendChild(A[0]); stage.appendChild(B[0]); }
+      if (va.kind === 'audio') {
+        // áudio: as duas formas de onda; ouve-se uma de cada vez, sempre no mesmo ponto
+        c.listen = c.listen || 'A';
+        $('.rv-seg', view).outerHTML = '<div class="rv-seg" role="group" aria-label="' + esc(T.listen) + '" data-tip="' + esc(T.listenTip) + '">' + ['A', 'B'].map(function (k) { return '<button type="button" data-rv-listen="' + k + '" class="' + (c.listen === k ? 'on' : '') + '" aria-pressed="' + (c.listen === k) + '">' + esc(T.listen) + ' ' + k + '</button>'; }).join('') + '</div>';
+        stage.className = 'rv-cmp-stage m-au';
+        [A, B].forEach(function (x, i) { x[0].classList.toggle('on', c.listen === (i ? 'B' : 'A')); stage.appendChild(x[0]); });
+        A[1].muted = c.listen !== 'A'; B[1].muted = c.listen !== 'B';
+        [A, B].forEach(function (x) {
+          var w = $('.rv-auw', x[0]);
+          w.addEventListener('pointerdown', function (e) { var r = w.getBoundingClientRect(); seekFrame(clamp((e.clientX - r.left) / r.width, 0, 1) * (maxF() + 1)); });
+        });
+      } else if (c.mode === 'side') { stage.appendChild(A[0]); stage.appendChild(B[0]); }
       else {
         var wrap = h('div', 'rv-box rv-stack'), inner = h('div', 'rv-media');
         var ea = A[1], eb = B[1]; ea.className = 'a'; eb.className = 'b';
@@ -927,8 +978,8 @@
       }
       media = A[1]; mediaB = B[1];
       S.vid = va.id;
-      S.aspect = va.w && va.h ? va.h / va.w : 0.5625;
-      if (media.tagName === 'VIDEO') {
+      S.aspect = va.kind === 'audio' ? 0.3 : (va.w && va.h ? va.h / va.w : 0.5625);
+      if (av(media)) {
         media.addEventListener('loadedmetadata', function () { if (media.videoWidth) S.aspect = media.videoHeight / media.videoWidth; fit(); seekFrame(keep); });
         media.addEventListener('seeked', function () { if (!playing()) { S.frame = curFrame(); syncB(true); paintLight(); } });
         media.addEventListener('play', function () { trackFrames(); renderCtrlState(); });
@@ -960,6 +1011,8 @@
         var fd = new FormData();
         fd.append('item', it.id); fd.append('key', init.key); fd.append('name', file.name); fd.append('mime', file.type || '');
         if (p && p.w) { fd.append('w', p.w); fd.append('h', p.h); fd.append('dur', p.dur); }
+        else if (p && p.dur) fd.append('dur', p.dur);
+        if (p && p.peaks) fd.append('peaks', p.peaks);
         if (p && p.poster) fd.append('poster', p.poster, 'poster.jpg');
         if (p && p.strip) { fd.append('strip', p.strip, 'strip.jpg'); fd.append('strip_n', p.strip_n); }
         if (p && p.pages) p.pages.forEach(function (b, i) { fd.append('pages[]', b, 'p' + (i + 1) + '.jpg'); });
@@ -1047,6 +1100,7 @@
       else if (t.hasAttribute('data-rv-cmp')) openCompare();
       else if (t.hasAttribute('data-rv-cmp-x')) closeCompare();
       else if ((a = t.getAttribute('data-rv-cmode'))) { S.cmp.mode = a; renderCompare(); }
+      else if ((a = t.getAttribute('data-rv-listen'))) listen(a);
       else if ((a = t.getAttribute('data-rv-mk'))) select(+a, true);
       else if ((a = t.getAttribute('data-rv-go'))) select(+a, true);
       else if ((a = t.getAttribute('data-rv-tab'))) { S.tab = a; renderSide(); }
@@ -1075,7 +1129,7 @@
       var t = e.target, a;
       if (t.hasAttribute('data-rv-upload')) { if (t.files[0]) upload(t.files[0]); t.value = ''; }
       else if (t.hasAttribute('data-rv-attach')) { attach(t.files); t.value = ''; }
-      else if (t.hasAttribute('data-rv-speed')) { S.rate = +t.value; if (media && media.tagName === 'VIDEO') media.playbackRate = S.rate; if (mediaB && mediaB.tagName === 'VIDEO') mediaB.playbackRate = S.rate; }
+      else if (t.hasAttribute('data-rv-speed')) { S.rate = +t.value; if (av(media)) media.playbackRate = S.rate; if (av(mediaB)) mediaB.playbackRate = S.rate; }
       else if (t.hasAttribute('data-rv-allv')) { S.allV = t.checked; renderSide(); }
       else if (t.hasAttribute('data-rv-ca') || t.hasAttribute('data-rv-cb')) { S.cmp[t.hasAttribute('data-rv-ca') ? 'a' : 'b'] = +t.value; renderCompare(); }
       else if (t.hasAttribute('data-rv-diff')) { S.cmp.diff = t.checked; renderCompare(); }
@@ -1126,8 +1180,16 @@
       btn.disabled = true;
       cfg.call('submit', { item: S.data.item.id }).then(function (j) { toast(j.msg); return load(true); }).catch(function (e) { btn.disabled = false; fail(e); });
     }
-    function setIn() { if (!isVideo()) return; S.inF = S.frame; if (S.outF != null && S.outF < S.inF) S.outF = null; S.draft.general = false; renderCtrl(); renderTimeline(); }
-    function setOut() { if (!isVideo()) return; S.outF = S.frame; if (S.inF != null && S.inF > S.outF) S.inF = null; if (S.inF == null) S.inF = 0; S.draft.general = false; renderCtrl(); renderTimeline(); }
+    /** Comparar áudio: passa a ouvir A ou B, no mesmo ponto. */
+    function listen(k) {
+      if (!S.cmp || !av(media) || !av(mediaB)) return;
+      S.cmp.listen = k; syncB(true);
+      media.muted = k !== 'A'; mediaB.muted = k !== 'B';
+      $$('[data-rv-listen]', S.el.view).forEach(function (b) { var on = b.getAttribute('data-rv-listen') === k; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      $$('.rv-cmp-stage.m-au > .rv-box', S.el.view).forEach(function (b, i) { b.classList.toggle('on', (i ? 'B' : 'A') === k); });
+    }
+    function setIn() { if (!timed(V())) return; S.inF = S.frame; if (S.outF != null && S.outF < S.inF) S.outF = null; S.draft.general = false; renderCtrl(); renderTimeline(); }
+    function setOut() { if (!timed(V())) return; S.outF = S.frame; if (S.inF != null && S.inF > S.outF) S.inF = null; if (S.inF == null) S.inF = 0; S.draft.general = false; renderCtrl(); renderTimeline(); }
     function clearIO() { S.inF = null; S.outF = null; S.loop = false; renderCtrl(); renderTimeline(); }
 
     function bindKeys() {
@@ -1144,7 +1206,8 @@
         }
         if (k === 'Escape') { if (S.tool) { S.tool = null; renderCtrl(); renderOverlay(); updateAnchor(); } else if (S.sel) { S.sel = null; renderSide(); renderTimeline(); paint(); } return; }
         if (k === 'c' || k === 'C') { if (canComment()) { e.preventDefault(); focusComposer(); } return; }
-        if (v.kind !== 'video' || v.proc !== 'ready') return;
+        if (!timed(v) || v.proc !== 'ready') return;
+        if ((k === 'a' || k === 'A' || k === 'b' || k === 'B') && S.cmp && S.cmp.listen) { e.preventDefault(); e.stopPropagation(); listen(k.toUpperCase()); return; }
         if (k === ' ' || k === 'k' || k === 'K') { e.preventDefault(); if (k === ' ') togglePlay(); else { stopReverse(); togglePlay(false); } }
         else if (k === 'ArrowLeft') { e.preventDefault(); step(e.shiftKey ? -Math.round(fps()) : -1); }
         else if (k === 'ArrowRight') { e.preventDefault(); step(e.shiftKey ? Math.round(fps()) : 1); }

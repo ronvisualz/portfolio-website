@@ -572,6 +572,7 @@ function cc_asset_create(PDO $pdo, ?string $bytes, array $o): array {
         require_once __DIR__ . '/cc_stt.php';
         cc_ai_queue_asset($pdo, cc_asset_get($pdo, $id), $o['by'] ?? null);
     }
+    if ($kind === 'audio' && empty($o['peaks'])) { require_once __DIR__ . '/cc_stt.php'; cc_au_peaks_queue($pdo, cc_asset_get($pdo, $id), $o['by'] ?? null); }
     return [cc_asset_get($pdo, $id), true];
 }
 
@@ -781,7 +782,7 @@ function cc_job_add(PDO $pdo, string $kind, ?int $assetId, ?int $boardId, ?array
 /** Quantos trabalhos esperam (para a interface saber se continua a pedir). */
 function cc_jobs_pending(PDO $pdo, bool $web = false): int {
     // $web: só o que as páginas podem fazer (o ffmpeg — vídeo do Review, transcrições grandes — é do cron)
-    $w = $web ? " AND kind NOT IN ('rv_proc','rv_wm','stt_ff')" : '';
+    $w = $web ? " AND kind NOT IN ('rv_proc','rv_wm','stt_ff','au_peaks')" : '';
     return (int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE (status = 'queued' OR (status = 'running' AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "'))$w")->fetchColumn();
 }
 
@@ -795,11 +796,11 @@ function cc_jobs_run(PDO $pdo, float $seconds = 20.0): int {
     $n = 0;
     while (microtime(true) < $end) {
         // presos há mais de 15 min (4 h para os vídeos do Review, que o ffmpeg demora a preparar): o pedido morreu
-        $stale = "status = 'running' AND ((kind NOT IN ('rv_proc','rv_wm','stt_ff') AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "') OR started_at < '" . date('Y-m-d H:i:s', time() - 14400) . "')";
+        $stale = "status = 'running' AND ((kind NOT IN ('rv_proc','rv_wm','stt_ff','au_peaks') AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "') OR started_at < '" . date('Y-m-d H:i:s', time() - 14400) . "')";
         $pdo->exec("UPDATE cc_jobs SET status = 'queued' WHERE $stale AND attempts < 3");
         $pdo->exec("UPDATE cc_jobs SET status = 'error', error = 'Interrompido três vezes.' WHERE $stale");
         // os vídeos do Review (ffmpeg) só pela linha de comandos: as páginas não podem correr programas
-        $cli = PHP_SAPI === 'cli' ? '' : " AND kind NOT IN ('rv_proc','rv_wm','stt_ff')";   // e as transcrições que passam pelo ffmpeg
+        $cli = PHP_SAPI === 'cli' ? '' : " AND kind NOT IN ('rv_proc','rv_wm','stt_ff','au_peaks')";   // e as transcrições que passam pelo ffmpeg
         $id = (int)$pdo->query("SELECT id FROM cc_jobs WHERE status = 'queued'$cli ORDER BY CASE WHEN kind = 'import' THEN 0 ELSE 1 END, id LIMIT 1")->fetchColumn();
         if (!$id) break;
         $up = $pdo->prepare("UPDATE cc_jobs SET status = 'running', started_at = ?, attempts = attempts + 1 WHERE id = ? AND status = 'queued'");
@@ -813,7 +814,7 @@ function cc_jobs_run(PDO $pdo, float $seconds = 20.0): int {
             $msg = mb_substr($e->getMessage(), 0, 250);
             $retry = $e instanceof CcAiException && in_array($e->kind, ['rate', 'overloaded', 'server', 'network', 'timeout'], true) && (int)$job['attempts'] < 3;
             $pdo->prepare('UPDATE cc_jobs SET status = ?, error = ?, done_at = ? WHERE id = ?')->execute([$retry ? 'queued' : 'error', $msg, cc_now(), $id]);
-            if (!$retry && $job['asset_id']) {
+            if (!$retry && $job['asset_id'] && $job['kind'] !== 'au_peaks') {   // a forma de onda não é a IA
                 $pdo->prepare("UPDATE cc_assets SET ai_status = ?, ai_error = ? WHERE id = ?")
                     ->execute([$e instanceof CcAiException && in_array($e->kind, ['not_configured', 'budget'], true) ? 'off' : 'error', $msg, (int)$job['asset_id']]);
             }
@@ -831,6 +832,10 @@ function cc_job_exec(PDO $pdo, array $job): void {
             break;
         case 'embed':
             cc_ai_embed_asset($pdo, (int)$job['asset_id']);
+            break;
+        case 'au_peaks':
+            require_once __DIR__ . '/cc_stt.php';
+            cc_au_peaks_run($pdo, $job);
             break;
         case 'stt':
         case 'stt_ff':

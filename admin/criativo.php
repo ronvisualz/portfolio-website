@@ -89,6 +89,7 @@ if ($rvId && cc_rv_ready($pdo)) {
   <p class="muted small rv-keys">← → um frame · Shift ±1 s · Espaço · J K L · I O intervalo · C comentar · Esc</p>
 </div>
 <div id="rv-room" data-item="<?= (int)$it['id'] ?>" data-edit="<?= $canEdit ? 1 : 0 ?>"></div>
+<script src="<?= asset_url('cc_audio.js') ?>"></script>
 <script src="<?= asset_url('review.js') ?>"></script>
 <script>
 (function () {

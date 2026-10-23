@@ -518,7 +518,7 @@ case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida
     $content['state'] = '';
     $ratio = $new['width'] && $new['height'] ? (float)$new['height'] / (float)$new['width'] : 0.62;
     $pdo->prepare('UPDATE cc_cards SET asset_id = ?, type = ?, h = ?, content = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-        ->execute([(int)$new['id'], $new['kind'] === 'video' ? 'video' : ($new['kind'] === 'link' ? 'link' : 'image'), round((float)$c['w'] * min(1.4, $ratio)),
+        ->execute([(int)$new['id'], $nt = cc_card_type_for($new), in_array($nt, ['file', 'audio'], true) ? 0 : round((float)$c['w'] * min(1.4, $ratio)),
                    json_encode($content, JSON_UNESCAPED_UNICODE), $by, cc_now(), (int)$c['id']]);
     $c = cc_card_get($pdo, (int)$c['id']);
     cout(200, ['ok' => true, 'card' => cc_card_public($c, $new), 'old' => (int)$x['id'], 'rev' => cc_board_touch($pdo, (int)$b['id'])]);

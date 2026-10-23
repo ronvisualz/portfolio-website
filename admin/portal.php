@@ -199,12 +199,13 @@ if (isset($_GET['m'])) {
     };
     if ($key === '') { http_response_code(404); exit; }
     $video = $k === 'proxy' && $kind === 'video';
-    if ((int)$item['watermark']) {
+    $audio = $k === 'proxy' && $kind === 'audio';   // áudio (§27): sem marca de água visual
+    if ((int)$item['watermark'] && !$audio) {
         if ($video && $v['wm_status'] === 'ready' && (string)$v['wm_key'] !== '') $key = (string)$v['wm_key'];
         elseif (!$video && in_array($k, ['proxy', 'page', 'poster'], true)) $key = cc_rv_wm_image($v, $key, cc_rv_wm_label($pdo, $item));
     }
-    header('Cache-Control: private, max-age=' . ($video ? 840 : 240));
-    header('Location: ' . cc_rv_url($key, true, $video ? (str_ends_with($key, '.webm') ? 'video/webm' : 'video/mp4') : 'image/jpeg', $video ? 900 : 300), true, 302);
+    header('Cache-Control: private, max-age=' . ($video || $audio ? 840 : 240));
+    header('Location: ' . cc_rv_url($key, true, $video ? (str_ends_with($key, '.webm') ? 'video/webm' : 'video/mp4') : ($audio ? (str_ends_with($key, '.mp3') ? 'audio/mpeg' : (string)$v['mime']) : 'image/jpeg'), $video || $audio ? 900 : 300), true, 302);
     exit;
 }
 if (isset($_GET['ref'])) {
@@ -472,6 +473,6 @@ $cfg = [
     'wm' => portal_wm_overlay($pdo, $roomItem),
 ];
 $body .= '<script>window.PORTAL = ' . json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) . ';</script>'
-       . ($roomItem ? '<script src="' . asset_url('review.js') . '"></script>' : '') . '<script src="' . asset_url('portal.js') . '"></script>';
+       . ($roomItem ? '<script src="' . asset_url('cc_audio.js') . '"></script><script src="' . asset_url('review.js') . '"></script>' : '') . '<script src="' . asset_url('portal.js') . '"></script>';
 portal_shell($T[$tab] . ' · ' . (string)$deal['name'], $body, $lang, 200, '', ['title' => (string)$deal['name'], 'sub' => $clientName !== (string)$deal['name'] ? $clientName : '',
              'until' => $share['expires_on'] ? date('d/m/Y', strtotime((string)$share['expires_on'])) : '']);

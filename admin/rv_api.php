@@ -142,9 +142,10 @@ case 'media': {
         default => '',
     };
     if ($key === '') { http_response_code(404); exit; }
-    $video = in_array($k, ['proxy', 'wm'], true) && cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']) === 'video';
+    $kindV = cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']);
+    $video = in_array($k, ['proxy', 'wm'], true) && in_array($kindV, ['video', 'audio'], true);
     header('Cache-Control: private, max-age=' . ($video ? 1500 : 500));
-    header('Location: ' . ($k === 'orig' ? cc_rv_url($key, false, '', 300, (string)$v['file_name']) : cc_rv_url($key, true, $video ? (str_ends_with($key, '.webm') ? 'video/webm' : 'video/mp4') : '', $video ? 1800 : 600)), true, 302);
+    header('Location: ' . ($k === 'orig' ? cc_rv_url($key, false, '', 300, (string)$v['file_name']) : cc_rv_url($key, true, $video ? ($kindV === 'audio' ? (str_ends_with($key, '.mp3') ? 'audio/mpeg' : (string)$v['mime']) : (str_ends_with($key, '.webm') ? 'video/webm' : 'video/mp4')) : '', $video ? 1800 : 600)), true, 302);
     exit;
 }
 
@@ -260,6 +261,9 @@ case 'upload_done': {
             $pages = $_FILES['pages']['tmp_name'] ?? [];
             if (!$pages) throw new RuntimeException('Não foi possível ler as páginas deste PDF no browser. Tente outra vez.');
             cc_rv_store_pages($pdo, $v, (array)$pages);
+        } elseif ($kind === 'audio') {
+            $pk = preg_replace('~[^A-Za-z0-9+/=_-]~', '', (string)q('peaks'));
+            if (cc_rv_store_audio($pdo, $v, strlen($pk) <= 2000 ? $pk : '', $_FILES['poster']['tmp_name'] ?? null)) cc_rv_queue_video($pdo, $v, $by);
         } else {
             cc_rv_store_preview($pdo, $v, $_FILES['poster']['tmp_name'] ?? null, $_FILES['strip']['tmp_name'] ?? null, qi('strip_n'));
             if (cc_rv_ffmpeg_known()) cc_rv_queue_video($pdo, $v, $by);
@@ -269,13 +273,13 @@ case 'upload_done': {
     }
     cc_rv_touch($pdo, (int)$item['id']);
     $v = cc_rv_version($pdo, $vid);
-    rout(200, ['ok' => true, 'version' => $vid, 'msg' => cc_rv_vlabel((int)$v['num']) . ($v['proc_status'] === 'ready' ? ' pronta.' : ($v['proc_status'] === 'error' ? ': ' . $v['proc_error'] : ' carregada. O servidor está a preparar o vídeo (proxy, fps e timecode).'))]);
+    rout(200, ['ok' => true, 'version' => $vid, 'msg' => cc_rv_vlabel((int)$v['num']) . ($v['proc_status'] === 'ready' ? ' pronta.' : ($v['proc_status'] === 'error' ? ': ' . $v['proc_error'] : ($kind === 'audio' ? ' carregada. O servidor está a converter o áudio para tocar em todos os browsers.' : ' carregada. O servidor está a preparar o vídeo (proxy, fps e timecode).')))]);
 }
 
 case 'version_retry': {
     $item = item_req($pdo);
     $v = version_req($pdo, $item);
-    if (cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']) !== 'video' || !cc_rv_ffmpeg_known()) rfail('Só os vídeos voltam a ser preparados pelo servidor.');
+    if (!in_array(cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']), ['video', 'audio'], true) || !cc_rv_ffmpeg_known()) rfail('Só os vídeos e os áudios voltam a ser preparados pelo servidor.');
     $pdo->prepare("UPDATE cc_rv_versions SET proc_status = 'queued', proc_error = '' WHERE id = ?")->execute([(int)$v['id']]);
     cc_rv_queue_video($pdo, $v, $by);
     cc_rv_touch($pdo, (int)$item['id']);

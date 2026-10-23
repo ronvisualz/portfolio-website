@@ -69,6 +69,58 @@ function cc_ai_queue_asset(PDO $pdo, array $a, ?int $by, bool $force = false): s
     return '';
 }
 
+/**
+ * A forma de onda pelo ffmpeg (cron), para o que o browser não lê (AIFF no Chrome…): mono a 2 kHz,
+ * 600 picos 0–255 (a mesma escala do cc_audio.js). Devolve [picos em base64, duração] ou null.
+ */
+function cc_audio_peaks_ff(string $ff, string $src): ?array {
+    $p = proc_open([$ff, '-hide_banner', '-loglevel', 'error', '-i', $src, '-vn', '-ac', '1', '-ar', '2000', '-t', '14400', '-f', 's16le', '-'],
+                   [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($p)) return null;
+    $raw = (string)stream_get_contents($pipes[1]);
+    fclose($pipes[1]); fclose($pipes[2]); proc_close($p);
+    $n = intdiv(strlen($raw), 2);
+    if ($n < 200) return null;
+    $per = (int)ceil($n / 600); $pk = []; $top = 1;
+    for ($i = 0; $i < 600; $i++) {
+        $chunk = substr($raw, $i * $per * 2, $per * 2);
+        $m = 0;
+        if ($chunk !== '' && strlen($chunk) >= 2) foreach (unpack('s*', $chunk) as $v) { $v = abs($v); if ($v > $m) $m = $v; }
+        $pk[] = $m; if ($m > $top) $top = $m;
+    }
+    $out = '';
+    foreach ($pk as $m) $out .= chr((int)round(sqrt($m / $top) * 255));
+    return [base64_encode($out), round($n / 2000, 3)];
+}
+
+/** O trabalho «au_peaks» (cron): a forma de onda e a duração de um áudio que o browser não leu. */
+function cc_au_peaks_run(PDO $pdo, array $job): void {
+    $a = cc_asset_get($pdo, (int)$job['asset_id']);
+    if (!$a || $a['deleted_at'] || $a['kind'] !== 'audio' || (string)$a['peaks'] !== '') return;
+    if (PHP_SAPI !== 'cli') throw new RuntimeException('A forma de onda deste formato é feita no servidor (cron).');
+    require_once __DIR__ . '/cc_review.php';
+    $ff = cc_rv_bin('ffmpeg');
+    if (!$ff) throw new RuntimeException('Falta o ffmpeg no servidor.');
+    $key = (string)$a['file_key'];
+    $tmp = null;
+    if (str_starts_with($key, 'r2:')) $src = r2_get_url(substr($key, 3), false, '', 3600);
+    else { $tmp = tempnam(sys_get_temp_dir(), 'ccpk'); file_put_contents($tmp, cc_store_get($key, 2147483647)); $src = $tmp; }
+    try {
+        $r = cc_audio_peaks_ff($ff, $src);
+        if (!$r) throw new RuntimeException('O ffmpeg não leu este áudio.');
+        $pdo->prepare('UPDATE cc_assets SET peaks = ?, duration = COALESCE(NULLIF(duration, 0), ?) WHERE id = ?')->execute([$r[0], $r[1], (int)$a['id']]);
+    } finally {
+        if ($tmp) @unlink($tmp);
+    }
+}
+
+/** Um áudio que o browser não consegue ler (sem forma de onda): o cron faz a forma de onda, se houver ffmpeg. */
+function cc_au_peaks_queue(PDO $pdo, array $a, ?int $by): void {
+    if ($a['kind'] !== 'audio' || (string)($a['peaks'] ?? '') !== '' || !cc_ffmpeg_ok($pdo)) return;
+    if (!in_array(strtolower(pathinfo((string)$a['file_name'], PATHINFO_EXTENSION)), ['aif', 'aiff'], true)) return;
+    cc_job_add($pdo, 'au_peaks', (int)$a['id'], null, null, $by);
+}
+
 /** O cron disse que há ffmpeg (as páginas não correm programas). */
 function cc_ffmpeg_ok(PDO $pdo): bool {
     return (string)setting($pdo, 'cc_ffmpeg', '') !== '';
