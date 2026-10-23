@@ -7,8 +7,9 @@
  *   php …/admin/inc/cron_run.php relations só os follow-ups de relação (§13.5)
  *   php …/admin/inc/cron_run.php pipeline  só as automações de data e mensais do Pipeline (§19.7);
  *                                          também correm todas as noites, com a cópia
- *   php …/admin/inc/cron_run.php cc [seg]  a fila da IA do Centro Criativo (análises, embeddings,
- *                                          importações) durante [seg] segundos (por omissão 240)
+ *   php …/admin/inc/cron_run.php cc [seg]  as pastas do Drive a mudar de sítio (arquivar, reabrir,
+ *                                          converter) e a fila da IA do Centro Criativo (análises,
+ *                                          embeddings, importações) durante [seg] segundos (240)
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -38,7 +39,17 @@ try {
         require_once __DIR__ . '/cc.php';
         $sec = max(10, min(3000, (int)($argv[2] ?? 240)));
         @set_time_limit($sec + 600);
-        $out = cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, (float)$sec) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
+        // primeiro as pastas que mudam de sítio (arquivar, reabrir, converter — §10.15), depois a IA
+        // tudo junto cabe em [seg] (o cron corre de 5 em 5 minutos: não se sobrepõe)
+        require_once __DIR__ . '/files.php';
+        $t0 = microtime(true);
+        $out = '';
+        if (files_ready($pdo) && files_on()) {
+            $fm = files_moves_run($pdo, (float)min(90, $sec / 2));
+            $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
+        }
+        $left = max(5.0, $sec - (microtime(true) - $t0));
+        $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {

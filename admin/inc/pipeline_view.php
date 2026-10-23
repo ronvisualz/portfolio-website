@@ -455,6 +455,7 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
     }
     $left = '<div class="lv-l">' . $acts . '<div class="lv-read"><div class="kv">' . $kv . '</div>' . $peopleForm
           . '<section><h4>Notas</h4>' . inline_field('deal', $id, 'notes', e((string)$d['notes']), ['edit' => $edit, 'type' => 'textarea', 'label' => 'Editar notas', 'value' => (string)$d['notes']]) . '</section>'
+          . flow_files_html($pdo, $d, $edit)
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '') . '</div></div>';
     // Crosselling (§22): «Serviços» e, a partir do Kickoff, as frentes no lugar das etapas do negócio.
     require_once __DIR__ . '/xsell_view.php';
@@ -463,4 +464,11 @@ function flow_panel_html(PDO $pdo, array $d, string $back): string {
            . flow_billing_html($pdo, $d, $back) . ($lanes ? '' : flow_rounds_html($pdo, $d, $back)) . flow_focus_html($pdo, $d, $back)
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'deal', $id, $edit, $back, '', ['note']) . '</section></div>';
     return '<div class="lv lv-panel fl" data-deal="' . $id . '">' . $head . $left . $right . '</div>' . flow_task_modal_html($pdo, $d, $back) . flow_send_modal_html($pdo, $d, $back);
+}
+
+/** Os ficheiros do negócio no painel (§10.15): propostas, faturação, criativo, anexos — com «Anexar ficheiro». */
+function flow_files_html(PDO $pdo, array $d, bool $edit): string {
+    require_once __DIR__ . '/files_view.php';
+    if (!files_ready($pdo) || !files_on()) return '';
+    return '<section class="lv-files"><h4>Ficheiros</h4>' . files_list_html($pdo, $d, ['edit' => $edit, 'limit' => 5]) . '</section>';
 }

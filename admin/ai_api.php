@@ -204,13 +204,15 @@ function ai_catalog(): array {
     } catch (R2Exception $e) {
         throw new AiToolError('Não foi possível ler o Drive agora: ' . $e->getMessage());
     }
-    $files = []; $folders = array_fill_keys(DRIVE_ROOTS, true);
+    $files = []; $folders = array_fill_keys(DRIVE_ROOTS, true); $billing = [];
     foreach ($cat['objects'] as $o) {
         $k = (string)$o['key'];
+        // a faturação só para quem vê o Financeiro: para os outros, o assistente não a vê
+        if (!drive_can_see($k)) { $billing[$k] = true; continue; }
         if (substr($k, -1) === '/') $folders[$k] = true; else $files[$k] = $o;
         for ($p = drive_parent($k); $p !== '' && !isset($folders[$p]); $p = drive_parent($p)) $folders[$p] = true;
     }
-    return $m = ['files' => $files, 'folders' => $folders];
+    return $m = ['files' => $files, 'folders' => $folders, 'billing' => $billing];
 }
 
 /** Uma chave vinda do modelo, limpa: sem espaços nas pontas nem «/» inicial. */
@@ -276,6 +278,8 @@ function ai_has_private_inside(string $folder): bool {
             if ($k !== $folder && strncmp($k, $folder, $l) === 0 && ai_private($k)) return true;
         }
     }
+    // documentos de faturação que esta conta não vê também ficam de fora
+    foreach ($cat['billing'] as $k => $x) if (strncmp((string)$k, $folder, $l) === 0) return true;
     return false;
 }
 const AI_PRIVATE_INSIDE = 'Esta pasta contém documentos privados: o assistente não a pode mover, mudar de nome nem enviar para o Lixo. O utilizador pode fazê-lo ele próprio no Drive.';

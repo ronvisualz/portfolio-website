@@ -74,6 +74,40 @@ if (!r2_config()) api_err('O armazenamento R2 ainda não está configurado (falt
 
 $str = static fn(string $k): string => is_string($in[$k] ?? null) ? $in[$k] : '';
 
+// A faturação (as pastas «Faturação» e as antigas «Faturas» dos negócios) só para quem vê o
+// Financeiro: nenhuma chave pedida pode lá estar, os itens do Lixo também não, e uma pasta que
+// os tenha lá dentro não se apaga nem se partilha por quem não os vê.
+$FIN = can('financeiro');
+const DRIVE_BILLING_ERR = 'Os documentos de faturação só estão disponíveis para quem tem acesso ao Financeiro.';
+/** Há documentos de faturação debaixo desta pasta? */
+function api_has_billing(string $folder): bool {
+    if (substr($folder, -1) !== '/') return false;
+    $l = strlen($folder);
+    foreach (drive_catalog()['objects'] as $o) if (strncmp($o['key'], $folder, $l) === 0 && drive_billing($o['key'])) return true;
+    return false;
+}
+if (!$FIN) {
+    $asked = [];
+    foreach (['key', 'from', 'to', 'prefix'] as $f) if (is_string($in[$f] ?? null)) $asked[] = $in[$f];
+    if (is_string($in['prefix'] ?? null) && is_string($in['name'] ?? null)) $asked[] = $in['prefix'] . $in['name'] . '/';
+    if (is_string($in['key'] ?? null) && is_string($in['name'] ?? null)) $asked[] = drive_parent($in['key']) . $in['name'];
+    foreach ((array)($in['keys'] ?? []) as $k) if (is_string($k)) $asked[] = $k;
+    foreach ($asked as $k) if (drive_billing($k)) api_err(DRIVE_BILLING_ERR, 403);
+    $ids = [];
+    if (in_array($do, ['restore', 'purge'], true)) {
+        if (isset($in['id'])) $ids[] = (int)$in['id'];
+        foreach ((array)($in['ids'] ?? []) as $i) $ids[] = (int)$i;
+        if (isset($in['cur']['id'])) $ids[] = (int)$in['cur']['id'];
+    }
+    foreach ($ids ? drive_trash_get_many($pdo, array_values(array_filter($ids))) : [] as $t) if (drive_billing((string)$t['k'])) api_err(DRIVE_BILLING_ERR, 403);
+    if (in_array($do, ['trash', 'delete', 'share_create'], true) && r2_config()) {
+        foreach ($asked as $k) {
+            if (api_has_billing($k)) api_err($do === 'share_create' ? 'Esta pasta tem documentos de faturação. Partilhe uma subpasta ou os ficheiros.'
+                                                                    : 'Esta pasta tem documentos de faturação: só quem tem acesso ao Financeiro a pode enviar para o Lixo.', 403);
+        }
+    }
+}
+
 /** Uma chave vinda do browser, validada (nunca dentro de .topper/). */
 function want_key(string $k, bool $folder = false): string {
     if (!r2_key_ok($k, $folder) || drive_hidden($k)) api_err('Caminho inválido.');
@@ -468,6 +502,7 @@ try {
         $cat = drive_catalog(!empty($in['fresh']));
         $objs = []; $have = [];
         foreach ($cat['objects'] as $o) {
+            if (!$FIN && drive_billing($o['key'])) continue;
             $objs[] = api_obj($o);
             $have[$o['key']] = true;
             // as pastas que só existem por terem coisas lá dentro
@@ -486,7 +521,7 @@ try {
             'favs'      => array_values(array_filter(drive_favs($pdo), static fn($k) => isset($have[$k]))),
             'recents'   => array_values(array_filter(drive_recents($pdo, 50), static fn($r) => isset($have[$r['k']]))),
             'trash'     => drive_trash_stats($pdo),
-            'shares'    => array_map('drive_share_out', drive_shares_active($pdo)),
+            'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !drive_billing((string)$x['k'])))),
             'index'     => $index,
             'listed_at' => (int)$cat['listed_at'],
             'truncated' => !empty($cat['truncated']),
@@ -786,7 +821,8 @@ try {
     }
     case 'trash_list': {
         $st = drive_trash_stats($pdo);
-        api_out(200, ['ok' => true, 'items' => array_map('drive_trash_out', drive_trash_all($pdo)), 'count' => $st['count'], 'size' => $st['size']]);
+        $items = array_values(array_filter(drive_trash_all($pdo), static fn($t) => $FIN || !drive_billing((string)$t['k'])));
+        api_out(200, ['ok' => true, 'items' => array_map('drive_trash_out', $items), 'count' => $FIN ? $st['count'] : count($items), 'size' => $FIN ? $st['size'] : array_sum(array_column($items, 's'))]);
     }
     case 'restore': {
         if (array_key_exists('ids', $in)) api_restore_many($pdo, $in, $more, $nextBody);
@@ -873,7 +909,7 @@ try {
         // Só o que já estava no Lixo quando se carregou em «Esvaziar Lixo» (ids até «upto»): o que
         // outro sócio enviar para o Lixo entretanto fica lá.
         $upto = isset($in['upto']) ? max(0, (int)$in['upto']) : drive_trash_max_id($pdo);
-        $rows = array_reverse(array_values(array_filter(drive_trash_all($pdo), static fn($t) => $t['id'] <= $upto)));   // os mais antigos primeiro
+        $rows = array_reverse(array_values(array_filter(drive_trash_all($pdo), static fn($t) => $t['id'] <= $upto && ($FIN || !drive_billing((string)$t['k'])))));   // os mais antigos primeiro
         $n = max(0, (int)($in['n'] ?? 0));
         $total = isset($in['total']) ? max(0, (int)$in['total']) : array_sum(array_column($rows, 'files'));
         $batch = $TEST_STEPS > 0 ? 1 : 1000;
@@ -894,6 +930,7 @@ try {
         foreach ($listed as $o) {
             $id = (int)explode('/', substr($o['key'], strlen(DRIVE_TRASH)))[0];
             if (isset($live[$id]) || (int)$o['modified'] > $old) continue;
+            if (!$FIN && drive_billing(substr($o['key'], strlen(DRIVE_TRASH . $id . '/')))) continue;
             $orphans[] = $o['key'];
         }
         foreach (array_chunk($orphans, $batch) as $chunk) {
@@ -974,7 +1011,7 @@ try {
         $limit = max(1, min(100, (int)($in['limit'] ?? 30)));
         $items = [];
         if ($q !== '' && function_exists('drive_index_search')) {
-            $items = array_values(drive_index_search($pdo, $q, ['limit' => $limit, 'prefix' => $prefix, 'for_ai' => false]));
+            $items = array_values(array_filter(drive_index_search($pdo, $q, ['limit' => $limit, 'prefix' => $prefix, 'for_ai' => false]), static fn($r) => $FIN || !drive_billing((string)$r['k'])));
         }
         api_out(200, ['ok' => true, 'items' => $items]);
     }

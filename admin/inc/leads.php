@@ -622,6 +622,8 @@ function lead_archive(PDO $pdo, array $l, string $reason, string $note): array {
         ->execute([$reason, $note, $id]);
     if ($tasks) $pdo->prepare("DELETE FROM tasks WHERE deal_id = ? AND status <> 'done'")->execute([$id]);
     deal_log($pdo, $id, 'archive', ['note' => lead_archive_label($reason) . ($note !== '' ? ' · ' . $note : '')]);
+    require_once __DIR__ . '/files.php';
+    files_sync($pdo, $id, 'archive');   // a pasta da lead vai para Arquivo/Leads/
     return ['id' => $id, 'tasks' => $tasks];
 }
 
@@ -671,6 +673,9 @@ function lead_convert(PDO $pdo, array $lead, int $funnelId, int $contactId): str
         if ($lead['person_id'] && (int)$lead['person_id'] !== $contactId) $pdo->prepare($ins)->execute([$lead['id'], (int)$lead['person_id'], 'Contacto']);
         deal_log($pdo, (int)$lead['id'], 'convert', ['to_funnel' => $funnelId, 'to_stage' => $xray]);
         $pdo->commit();
+        // a pasta da lead passa a «Projetos/<ID>_<NOME>/Lead/»
+        require_once __DIR__ . '/files.php';
+        files_sync($pdo, (int)$lead['id'], 'convert');
         // As tarefas automáticas do X-Ray (§19.6 A).
         require_once __DIR__ . '/pipeline_flow.php';
         flow_on_enter($pdo, (int)$lead['id'], $xray);

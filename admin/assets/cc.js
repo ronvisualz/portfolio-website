@@ -25,6 +25,7 @@
 
   // ── ícones (traço, 24×24) ──────────────────────────────────
   var IC = {
+    drive: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     cursor: '<path d="m4 4 7 17 2.5-7.5L21 11Z"/>',
     note: '<path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"/><path d="M15 3v6h6"/>',
     column: '<rect x="4" y="3" width="7" height="18" rx="1.5"/><rect x="13" y="3" width="7" height="12" rx="1.5"/>',
@@ -332,6 +333,7 @@
     var links = [];
     if (a.url) links.push('<a class="lnk" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + ico('ext') + ' Abrir o link</a>');
     if (a.orig && a.kind !== 'video') links.push('<a class="lnk" href="' + esc(a.orig) + '" target="_blank" rel="noopener">' + ico('ext') + ' Original</a>');
+    if (a.drive) links.push('<a class="lnk" href="' + esc(a.drive) + '" data-tip="' + esc(a.drive_path) + '">' + ico('drive') + ' Mostrar no Drive</a>');
     if (links.length) h += '<div>' + links.join(' ') + '</div>';
     if (a.palette && a.palette.length) {
       h += '<div><h4>Paleta</h4><div class="ccd-pal">' + a.palette.map(function (c) { return '<button type="button" data-hex="' + esc(c.hex) + '" title="Procurar por esta cor"><i style="background:' + esc(c.hex) + '"></i>' + esc(c.hex) + '</button>'; }).join('') + '</div></div>';

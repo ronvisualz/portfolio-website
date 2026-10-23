@@ -1457,8 +1457,9 @@ ficheiros `cc_file.php`, interface `assets/cc.js` e `assets/cc.css`.
   telemóvel) já analisada; triagem = enviar para um quadro ou arrumar na biblioteca (com «Anular»).
 - **Envios:** o browser calcula a impressão digital (duplicados reaproveitados), faz a
   pré-visualização (HEIC/AVIF no Safari) e, nos vídeos, os **6–12 frames-chave por deteção de corte**
-  (sem precisar de ffmpeg no servidor). Com o R2 ligado, o original vai diretamente para
-  `.topper/cc/` (invisível no Drive); sem R2, pasta privada.
+  (sem precisar de ffmpeg no servidor). Com o R2 ligado, o original vai diretamente para o
+  armazenamento e passa logo para o seu sítio no Drive (ver §10.15); as miniaturas e os frames
+  ficam em `.topper/cc/` (invisível no Drive); sem R2, pasta privada.
 - **IA de qualidade máxima:** o modelo Claude mais capaz (`cc_config.php › model`, por defeito
   Claude Fable 5.1; se a conta não tiver acesso, Claude Opus 5.5), esforço «high», saídas
   estruturadas (JSON Schema) e **fallbacks do servidor** ligados; embeddings multimodais Voyage
@@ -1509,6 +1510,68 @@ Ficheiros novos: `inc/migrate_creative.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc
 `assets/app.css`, `.gitignore`.
 
 ---
+
+### 10.15 Drive organizada: todos os ficheiros no sítio certo — §24 (23 out 2026)
+
+Base de dados **v25** (`inc/migrate_files.php`, idempotente): `files` (o registo de ficheiros:
+chave atual no Drive, ETag, tamanho, origem, secção, negócio/lead, peça de marketing, referência do
+Centro Criativo, estado) e `file_moves` (a fila das pastas que mudam de sítio); os caminhos do Drive
+guardados noutras tabelas passam a 600 caracteres. Modelo em `inc/files.php`, lista em
+`inc/files_view.php`, pedidos em `files_api.php`.
+
+- **Estrutura** (pastas de topo fixas, não se movem nem vão para o Lixo): `Empresa/` ·
+  `Leads/<NOME>_<AAAA-MM>/` · `Projetos/<ID>_<NOME>/` (em curso e concluídos) · `Marketing/<AAAA-MM>/<peça>/`
+  (peças sem negócio) · `Biblioteca criativa/<quadro>/` · `Showreel e Portfolio/` ·
+  `Arquivo/Negócios/<ID>_<NOME>/` e `Arquivo/Leads/<NOME>_<AAAA-MM>/`. Dentro da pasta do negócio, as
+  secções nascem com o primeiro ficheiro: `Propostas/`, `Faturação/`, `Criativo/` (com `Referências/`,
+  `Opção A/`, `Opção B/`, um sub-quadro por pasta), `Marketing/<peça>/`, `Produção/`, `Entregas/`,
+  `Lead/`. As pastas antigas `NN_NOME_PROJECT` ligadas a um negócio mantêm o nome.
+- **Gravação automática:** proposta (`<ID>_Proposta_v<n>.pdf`, gerar de novo a mesma versão
+  substitui), faturas e comprovativos (`<ID>_Fatura-<número>.pdf`, `<ID>_Comprovativo_<data>.pdf`),
+  originais do Centro Criativo (quadro de um negócio → `Criativo/Referências/` ou a pasta do
+  sub-quadro; quadro livre → `Biblioteca criativa/<quadro>/`; sem quadro → `Biblioteca criativa/Caixa
+  de entrada/`), páginas do pré-criativo em PDF ao enviar para a Orçamentação (`Criativo/Opção A|B/`),
+  o tratamento em PDF quando é gerado, as peças de marketing de um negócio dentro da pasta dele, e as
+  importações (CSV/vCard de contactos, ZIP/PDF/MD do Centro Criativo) em `Empresa/Importações/<AAAA-MM>/`.
+  Uma imagem usada em vários quadros fica uma só vez.
+- **Anexar:** «Anexar ficheiro» na ficha da lead, no painel do Pipeline, no painel «Ficheiros» da ficha
+  do negócio (escolhendo a secção) e na peça de marketing; o ficheiro vai do browser diretamente para a
+  pasta certa no Drive (até 5 GB; acima, pelo Drive) e fica no histórico do registo.
+- **Ciclo de vida:** a pasta acompanha o registo — lead arquivada → `Arquivo/Leads/`, reativada →
+  volta; lead convertida → a pasta inteira passa a `Projetos/<ID>_<NOME>/Lead/`; negócio perdido →
+  `Arquivo/Negócios/` com tudo o que tem dentro; reaberto (também pelo «Anular») → volta. O destino fica
+  logo ligado (o que chega a seguir já vai para lá); a cópia corre na fila — alguns segundos no
+  próprio pedido e o resto pelo cron de 5 em 5 minutos (`cron_run.php cc`); a ficha mostra «A pasta
+  está a mudar…». Ida e volta antes de a cópia começar anula-se. No fim, favoritos, recentes,
+  partilhas, índice de conteúdo e todos os caminhos guardados (registo, Centro Criativo, faturação,
+  peças) seguem a mudança — também quando alguém move uma pasta à mão no Drive.
+- **Encontrar:** cada ficheiro tem «Mostrar no Drive» (abre a pasta com ele selecionado: `drive.php?f=`)
+  e abre pela plataforma com as permissões verificadas; o cartão e o painel «Ficheiros» da ficha
+  agrupam por secção (Propostas, Faturação, Criativo, Marketing, Produção, Entregas, Da lead, Outros),
+  com origem, data, tamanho e autor — incluindo o que foi posto à mão na pasta. Se um ficheiro já não
+  estiver onde o registo diz, encontra-se pela mudança em curso, pela impressão digital (ETag e
+  tamanho) no Drive ou no Lixo («está no Lixo do Drive»); o registo corrige-se sozinho.
+- **Faturação só para o Financeiro:** qualquer pasta `Faturação/` (ou as antigas `Faturas/`) abaixo do
+  primeiro nível só aparece a quem vê o Financeiro — no Drive (catálogo, abrir, enviar, Lixo,
+  pesquisa, partilhas), no assistente do Drive e nas fichas. Quem não a vê também não pode enviar
+  para o Lixo nem partilhar uma pasta que a contenha.
+- **Testado na bancada (MariaDB, R2 simulado):** migração v25; lead → arquivo → reativada → convertida
+  → perdida → reaberta com os ficheiros e o registo a seguir; ida e volta anulada; ficheiro movido à mão
+  encontrado pela impressão digital; Lixo e reposição; proposta, fatura, original do Centro Criativo
+  (painel e envio no browser), páginas do pré-criativo e tratamento em PDF; anexar no browser com
+  progresso; «Mostrar no Drive» com o ficheiro selecionado; faturação escondida e protegida para um
+  colaborador; cron; claro/escuro e telemóvel.
+- **Fase 2 (por pedido):** «Reorganizar o Drive» para o que já existe (negócios já perdidos e
+  arquivados, ficheiros do Centro Criativo já carregados, `Faturas/` antigas), com pré-visualização.
+
+Ficheiros novos: `inc/migrate_files.php`, `inc/files.php`, `inc/files_view.php`, `files_api.php`.
+Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_store.php`,
+`drive_api.php`, `ai_api.php`, `assets/drive/app.js`, `inc/leads.php`, `leads.php`, `inc/undo.php`,
+`inc/pipeline.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget_pdf.php`,
+`inc/cc.php`, `inc/cc_ai.php`, `inc/cc_flow.php`, `inc/cc_import.php`, `cc_api.php`,
+`inc/marketing.php`, `marketing_peca.php`, `contactos.php`, `deal_flow.php`, `negocio.php`,
+`inc/deal_file.php`, `inc/lead_view.php`, `inc/interactions.php`, `inc/cron_run.php`,
+`assets/app.js`, `assets/app.css`, `assets/cc.js`.
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
@@ -2722,3 +2785,24 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 1. Quadros, Biblioteca, Caixa de entrada, IA de análise e ângulos, **pré-criativo**.
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
+
+## 24. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
+
+Tudo o que entra na plataforma ou é gerado por ela fica guardado **uma vez** no Drive, organizado
+por negócio quando pertence a um negócio, por origem e por tipo de documento; o mais importante é
+que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depressa**.
+
+- **Estrutura:** `Empresa/`, `Leads/`, `Projetos/` (negócios em curso e concluídos — o portfólio fica
+  aqui), `Marketing/`, `Biblioteca criativa/`, `Showreel e Portfolio/` e `Arquivo/` (`Negócios/` e
+  `Leads/`). Dentro do negócio: `Propostas/`, `Faturação/`, `Criativo/` (`Opção A/`, `Opção B/`,
+  `Referências/`), `Marketing/`, `Produção/`, `Entregas/`, `Lead/`. Nomes de ficheiro com o padrão da
+  casa (ID, tipo, descrição/versão).
+- **Arquivo:** negócio perdido ou lead arquivada → a pasta inteira, com todos os ficheiros ligados, vai
+  para `Arquivo/`; reaberto → volta. Lead convertida → a pasta passa para dentro da do negócio (`Lead/`).
+- **Encontrar:** «Mostrar no Drive» em cada ficheiro, cartão «Ficheiros» por secção nas fichas, a
+  pesquisa e o assistente do Drive; um ficheiro movido à mão volta a encontrar-se.
+- **Faturação:** só quem tem acesso ao Financeiro a vê.
+- **Fora do Drive (de propósito):** fotografias de perfil, miniaturas e pré-visualizações, cópias de
+  segurança da base de dados.
+- **Autorizado mexer no Drive** para: as pastas de topo fixas, o aviso ao registo quando algo muda de
+  sítio à mão, e a regra da faturação. **Reorganizar o que já existe** fica para a fase 2.

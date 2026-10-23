@@ -16,7 +16,7 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
-require_once __DIR__ . '/r2.php';
+require_once __DIR__ . '/drive.php';   // r2.php e as ajudas do Drive (pastas, «Mostrar no Drive»)
 
 /** Os sub-quadros do projeto, pela ordem (o modelo por defeito de cada funil). */
 const CC_STAGES = [
@@ -152,6 +152,47 @@ function cc_store_delete(string $key): void {
     } catch (Throwable $e) {
         error_log('cc_store_delete: ' . $e->getMessage());
     }
+}
+
+/**
+ * Onde fica no Drive o original de uma referência, pelo quadro onde entrou (§10.15):
+ *   quadro de um negócio → «<pasta do negócio>/Criativo/Referências/» (raiz) ou «…/Criativo/<sub-quadro>/»
+ *   quadro livre         → «Biblioteca criativa/<quadro>/<sub-quadro>/»
+ *   sem quadro           → «Biblioteca criativa/Caixa de entrada/» ou «Biblioteca criativa/Sem quadro/»
+ * Devolve as opções para files_adopt (deal_id + prefix).
+ */
+function cc_drive_place(PDO $pdo, ?array $board, bool $inbox): array {
+    require_once __DIR__ . '/files.php';
+    if (!$board) return ['prefix' => FILES_LIBRARY . ($inbox ? 'Caixa de entrada/' : 'Sem quadro/')];
+    $path = cc_board_path($pdo, $board);
+    $names = array_map(fn($b) => r2_clean_name(trim(preg_replace('/^Pré-criativo · /u', '', (string)$b['title']))) ?: 'Quadro', $path);
+    $dealId = (int)($path[0]['deal_id'] ?? 0);
+    if ($dealId && ($d = files_deal_row($pdo, $dealId)) && ($f = files_folder($pdo, $d))) {
+        $sub = array_slice($names, 1);
+        return ['deal_id' => $dealId, 'section' => 'criativo', 'prefix' => $f . 'Criativo/' . ($sub ? implode('/', $sub) : 'Referências') . '/'];
+    }
+    return ['prefix' => FILES_LIBRARY . implode('/', $names) . '/'];
+}
+
+/**
+ * Um original acabado de chegar (em .topper/cc/o/) passa para o seu sítio no Drive e fica no
+ * registo. As miniaturas e os frames continuam no sistema. Sem Drive, nada muda.
+ */
+function cc_place_original(PDO $pdo, array $asset, ?array $board, bool $inbox, ?int $by): array {
+    $key = (string)$asset['file_key'];
+    if (strncmp($key, 'r2:.topper/cc/o/', 16) !== 0 || !r2_config()) return $asset;
+    try {
+        $o = cc_drive_place($pdo, $board, $inbox) + ['name' => (string)$asset['file_name'] ?: drive_base($key), 'mime' => (string)$asset['mime'],
+                                                      'origin' => 'cc', 'cc_asset_id' => (int)$asset['id'], 'label' => (string)$asset['title'], 'by' => $by];
+        $new = files_adopt($pdo, substr($key, 3), $o);
+        if ($new !== substr($key, 3)) {
+            $pdo->prepare('UPDATE cc_assets SET file_key = ? WHERE id = ?')->execute(['r2:' . $new, (int)$asset['id']]);
+            $asset['file_key'] = 'r2:' . $new;
+        }
+    } catch (Throwable $e) {
+        error_log('cc_place_original ' . $asset['id'] . ': ' . $e->getMessage());   // fica no sistema; nada se perde
+    }
+    return $asset;
 }
 
 /** Impressão digital de um ficheiro: sha1(primeiros 4 MiB + últimos 4 MiB + tamanho) — o browser calcula igual. */
@@ -556,6 +597,12 @@ function cc_asset_public(array $a, bool $full = false): array {
         $out['created'] = date('d/m/Y', strtotime((string)$a['created_at']));
         $out['has_embed'] = $a['embedding'] !== null && $a['embedding'] !== '';
         $out['transcript'] = (string)($a['transcript'] ?? '');
+        // onde o original está no Drive (§10.15): «Mostrar no Drive»
+        $k = strncmp((string)$a['file_key'], 'r2:', 3) === 0 ? substr((string)$a['file_key'], 3) : '';
+        if ($k !== '' && !drive_hidden($k) && can('drive') && drive_can_see($k)) {
+            $out['drive'] = drive_page(drive_parent($k), 'f=' . rawurlencode($k));
+            $out['drive_path'] = drive_parent($k);
+        }
     }
     return $out;
 }

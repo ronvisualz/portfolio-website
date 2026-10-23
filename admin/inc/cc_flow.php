@@ -264,6 +264,7 @@ function cc_send_to_budget(PDO $pdo, array $board, int $by): string {
     // páginas de versões antigas que já não estão ligadas a esta deixam de contar
     $what = implode(' e ', array_map(fn($o) => $o === 'AB' ? 'as duas opções' : 'Opção ' . $o, array_keys($labels)));
     budget_log($pdo, (int)$sheet['id'], 'b_cc', 'Pré-criativo ligado à v' . (int)$v['num'] . ' (' . $what . ')', $by);
+    cc_pages_to_drive($pdo, $deal, $v, $by);   // cada página também em PDF, em «Criativo/Opção A|B/»
     deal_log($pdo, (int)$deal['id'], 'auto', ['note' => 'Pré-criativo enviado para a Orçamentação (v' . (int)$v['num'] . ', ' . $what . ')']);
     // a tarefa do pré-criativo fica feita
     $root = cc_pre_boards($pdo, $board)[0];
@@ -272,6 +273,55 @@ function cc_send_to_budget(PDO $pdo, array $board, int $by): string {
         try { task_done($pdo, (int)$root['task_id']); } catch (Throwable $e) { /* já feita ou apagada */ }
     }
     return $n === 1 ? '1 página ligada à proposta v' . (int)$v['num'] . '.' : $n . ' páginas ligadas à proposta v' . (int)$v['num'] . '. Entram no PDF e na página do cliente.';
+}
+
+/**
+ * As páginas enviadas para a Orçamentação ficam também no Drive, em PDF, na pasta do negócio:
+ * «Criativo/Opção A/», «Criativo/Opção B/» ou «Criativo/Opções A e B/». Reenviar a mesma versão
+ * substitui os ficheiros. Sem Drive, nada a fazer.
+ */
+function cc_pages_to_drive(PDO $pdo, array $deal, array $v, ?int $by): int {
+    if (!r2_config()) return 0;
+    require_once __DIR__ . '/files.php';
+    require_once __DIR__ . '/budget_pdf.php';
+    $n = 0;
+    try {
+        $folder = files_folder($pdo, $deal);
+        if ($folder === null) return 0;
+        foreach (cc_pages_for_version($pdo, (int)$v['id']) as $pg) {
+            $dir = $pg['opt'] === 'AB' ? 'Opções A e B' : 'Opção ' . $pg['opt'];
+            $name = files_name((string)$deal['code'], 'PreCriativo-' . $pg['opt'], trim(($pg['front'] !== '' ? $pg['front'] . '_' : '') . 'v' . (int)$v['num'], '_'), 'pdf');
+            files_put($pdo, ['deal_id' => (int)$deal['id'], 'section' => 'criativo', 'prefix' => $folder . 'Criativo/' . $dir . '/', 'name' => $name, 'mime' => 'application/pdf',
+                             'overwrite' => true, 'origin' => 'cc_page', 'label' => 'Pré-criativo · ' . $dir . ($pg['title'] !== '' ? ' · ' . $pg['title'] : ''), 'by' => $by],
+                      cc_page_pdf($pdo, $deal, $pg, (int)$v['num']));
+            $n++;
+        }
+    } catch (Throwable $e) {
+        error_log('cc_pages_to_drive: ' . $e->getMessage());
+    }
+    return $n;
+}
+
+/** O tratamento em PDF no Drive: «<pasta do negócio>/Criativo/» ou «Biblioteca criativa/<quadro>/». */
+function cc_treatment_to_drive(PDO $pdo, array $board, array $doc, ?int $by): ?string {
+    if (!r2_config()) return null;
+    require_once __DIR__ . '/files.php';
+    require_once __DIR__ . '/budget_pdf.php';
+    try {
+        $root = cc_board_path($pdo, $board)[0];
+        $deal = $root['deal_id'] ? files_deal_row($pdo, (int)$root['deal_id']) : null;
+        $folder = $deal ? files_folder($pdo, $deal) : null;
+        $prefix = $folder !== null ? $folder . 'Criativo/' : FILES_LIBRARY . (r2_clean_name((string)$root['title']) ?: 'Quadro') . '/';
+        $code = $deal ? (string)$deal['code'] : '';
+        $r = files_put($pdo, ['deal_id' => $deal ? (int)$deal['id'] : null, 'section' => 'criativo', 'prefix' => $prefix,
+                              'name' => files_name($code, 'Tratamento', (string)($doc['title'] ?? ''), 'pdf'), 'mime' => 'application/pdf', 'overwrite' => true,
+                              'origin' => 'treatment', 'label' => 'Tratamento · ' . (string)($doc['title'] ?? ''), 'by' => $by],
+                       cc_treatment_pdf($pdo, $code !== '' ? $code : (string)$root['title'], $doc));
+        return $r['key'] ?? null;
+    } catch (Throwable $e) {
+        error_log('cc_treatment_to_drive: ' . $e->getMessage());
+        return null;
+    }
 }
 
 /**

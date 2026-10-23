@@ -17,7 +17,7 @@
   const P = TD.path;
   const esc = TD.esc;
   const BLOCK = 150;                 // linhas por bloco de desenho (a janela tem 2 a 3 blocos)
-  const BASE_ROOTS = ['Empresa/', 'Projetos/', 'Showreel e Portfolio/'];
+  const BASE_ROOTS = ['Empresa/', 'Leads/', 'Projetos/', 'Marketing/', 'Biblioteca criativa/', 'Showreel e Portfolio/', 'Arquivo/'];
   const ROOT_ERR = 'As pastas base não podem ser movidas.';
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || '');
   const MODK = MAC ? '⌘' : 'Ctrl+';
@@ -3184,6 +3184,8 @@
 
   // ── arranque ────────────────────────────────────────────
   const st0 = readUrl();
+  // ?f=<chave>: vem de «Mostrar no Drive» (fichas, Centro Criativo…): abre a pasta com o ficheiro selecionado
+  const f0 = new URLSearchParams(location.search).get('f') || '';
   const hs = history.state;
   S.hist = hs && typeof hs.td === 'number' ? hs.td : 0;
   S.histMax = S.hist;
@@ -3194,7 +3196,10 @@
     try { TD.upload.init({ dock: document.getElementById('drive-upload-dock') }); } catch (err) { console.error(err); }
   }
   renderAll();
-  load(false).then(() => { if (S.view === 'search') contentSearch(); });
+  load(false).then(() => {
+    if (S.view === 'search') contentSearch();
+    else if (f0 && S.view === 'folder') go({ view: 'folder', prefix: S.prefix }, { push: false, replace: true, focusKey: f0, select: true });
+  });
   if (S.view === 'trash') loadTrash();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hookChat); else setTimeout(hookChat, 0);
   window.addEventListener('load', hookChat);   // se o chat.js só criar o TD.chat mais tarde

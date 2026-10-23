@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -291,6 +291,13 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // páginas do pré-criativo, fila e gasto da IA; Review, portal e captura preparados.
     require_once __DIR__ . '/migrate_creative.php';
     migrate_creative($pdo);
+
+    // ── 25 · O registo de ficheiros (§10.15) ───────────────
+    //
+    // Cada ficheiro que entra ou é gerado fica uma vez no Drive, na pasta do negócio, da
+    // lead ou da origem; a fila das pastas que mudam de sítio (arquivar, reabrir, converter).
+    require_once __DIR__ . '/migrate_files.php';
+    migrate_files($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -864,15 +864,19 @@ function billing_store_file(PDO $pdo, array $deal, array $file, string $prefix):
     if ((int)$file['size'] > BILL_MAX_BYTES) throw new RuntimeException('O PDF tem mais de 10 MB.');
     $bytes = (string)file_get_contents($file['tmp_name']);
     if (strncmp($bytes, '%PDF-', 5) !== 0) throw new RuntimeException('O ficheiro tem de ser um PDF.');
-    $name = $prefix . '_' . preg_replace('/[^A-Za-z0-9-]/', '', (string)$deal['code']) . '_' . date('Ymd-His') . '.pdf';
+    // «ID2610-03_Fatura-FT-2026-118.pdf», «ID2610-03_Comprovativo_2026-10-23.pdf»
+    $receipt = $prefix === 'Comprovativo';
+    $name = preg_replace('/[^A-Za-z0-9-]/', '', (string)$deal['code']) . '_' . $prefix . ($receipt ? '_' . date('Y-m-d') : '') . '.pdf';
     require_once __DIR__ . '/r2.php';
     if (r2_config()) {
-        require_once __DIR__ . '/deal_drive.php';
-        $folder = drive_deal_folder($pdo, $deal);
-        r2_put($folder . 'Faturas/' . $name, $bytes, 'application/pdf');
-        if (function_exists('drive_catalog_invalidate')) drive_catalog_invalidate();
-        return ['r2:' . $folder . 'Faturas/' . $name, $name];
+        // na pasta do negócio, «Faturação/» (só quem vê o Financeiro a vê no Drive)
+        require_once __DIR__ . '/files.php';
+        $r = files_put($pdo, ['deal_id' => (int)$deal['id'], 'section' => 'faturacao', 'name' => $name, 'mime' => 'application/pdf',
+                              'origin' => $receipt ? 'receipt' : 'invoice', 'label' => $receipt ? 'Comprovativo de pagamento' : str_replace('-', ' ', $prefix),
+                              'by' => current_user()['id'] ?? null], $bytes);
+        if ($r) return ['r2:' . $r['key'], $r['name']];
     }
+    $name = $prefix . '_' . preg_replace('/[^A-Za-z0-9-]/', '', (string)$deal['code']) . '_' . date('Ymd-His') . '.pdf';
     if (file_put_contents(billing_local_dir() . '/' . $name, $bytes) === false) throw new RuntimeException('Não foi possível guardar o PDF. Tente outra vez.');
     return ['local:' . $name, $name];
 }

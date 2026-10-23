@@ -162,6 +162,10 @@ function drive_store_moved(PDO $pdo, string $from, string $to): void {
         // O índice reaproveita o texto já extraído; se falhar, a próxima reconciliação trata disso.
         try { drive_index_moved($pdo, $from, $to); } catch (Throwable $e) { error_log('drive_index_moved: ' . $e->getMessage()); }
     }
+    // O registo de ficheiros da plataforma (propostas, faturação, Centro Criativo…) segue a mudança.
+    if (is_file(__DIR__ . '/files.php')) {
+        try { require_once __DIR__ . '/files.php'; files_moved($pdo, $from, $to); } catch (Throwable $e) { error_log('files_moved: ' . $e->getMessage()); }
+    }
 }
 
 /** A chave (ou pasta) foi para o Lixo ou apagada: sai dos favoritos e recentes, as partilhas são revogadas. */
@@ -189,6 +193,9 @@ function drive_store_trashed_many(PDO $pdo, array $keys): void {
     $rev = $pdo->prepare('UPDATE drive_shares SET revoked = 1 WHERE id = ?');
     foreach ($pdo->query('SELECT id, obj_key FROM drive_shares WHERE revoked = 0')->fetchAll() as $r) {
         if ($hit((string)$r['obj_key'])) $rev->execute([(int)$r['id']]);
+    }
+    if (is_file(__DIR__ . '/files.php')) {
+        try { require_once __DIR__ . '/files.php'; files_trashed($pdo, $keys); } catch (Throwable $e) { error_log('files_trashed: ' . $e->getMessage()); }
     }
 }
 

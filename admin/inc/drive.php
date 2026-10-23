@@ -12,8 +12,11 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/r2.php';
 
-/** As pastas de topo (aparecem sempre na raiz, mesmo sem marcador). Não se movem nem vão para o Lixo. */
-const DRIVE_ROOTS = ['Empresa/', 'Projetos/', 'Showreel e Portfolio/'];
+/**
+ * As pastas de topo (aparecem sempre na raiz, mesmo sem marcador). Não se movem nem vão para o Lixo.
+ * Leads, Marketing, Biblioteca criativa e Arquivo são as do registo de ficheiros (inc/files.php).
+ */
+const DRIVE_ROOTS = ['Empresa/', 'Leads/', 'Projetos/', 'Marketing/', 'Biblioteca criativa/', 'Showreel e Portfolio/', 'Arquivo/'];
 
 /** O prefixo de sistema: Lixo e miniaturas. Nunca aparece no Drive nem é alvo de ações. */
 const DRIVE_SYS    = '.topper/';
@@ -118,6 +121,29 @@ function drive_cors_json(): string {
 }
 
 // ── sistema, pastas base e catálogo ─────────────────────────
+
+/**
+ * Documentos de faturação: qualquer pasta «Faturação» (ou as antigas «Faturas») abaixo do
+ * primeiro nível — a da pasta de cada negócio, também no Arquivo e nas cópias. Só quem vê o
+ * Financeiro os vê no Drive, no assistente e nas fichas.
+ */
+function drive_billing(string $k): bool {
+    $seg = explode('/', $k);
+    array_shift($seg);
+    if (substr($k, -1) !== '/') array_pop($seg);   // o nome do ficheiro não conta
+    foreach ($seg as $s) {
+        if ($s === '') continue;
+        $t = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', mb_strtolower(trim($s), 'UTF-8'));
+        $t = preg_replace('/[^a-z]/', '', (string)($t === false ? $s : $t));
+        if ($t === 'faturacao' || $t === 'faturas' || $t === 'facturacao' || $t === 'facturas') return true;
+    }
+    return false;
+}
+
+/** Esta conta pode ver esta chave? (a faturação pede a aba Financeiro) */
+function drive_can_see(string $k): bool {
+    return !drive_billing($k) || (function_exists('can') && can('financeiro'));
+}
 
 /** Debaixo de .topper/ (ou a própria «.topper»)? */
 function drive_hidden(string $k): bool {

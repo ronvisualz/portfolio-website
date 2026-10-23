@@ -13,6 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/budget_view.php';
+require_once __DIR__ . '/ui.php';   // wordmark_svg (o logótipo das folhas), também fora das páginas (cron, Centro Criativo)
 
 /** Larguras da Helvetica e da Helvetica-Bold (AFM, por 1000) para os caracteres 32–255 do Windows-1252. */
 const BUDGET_PDF_W = [
@@ -155,7 +156,8 @@ final class BudgetPdf {
 
 /** O nome do ficheiro: «Proposta_ID2610-04_v2.pdf». */
 function budget_pdf_name(array $deal, array $v): string {
-    return 'Proposta_' . preg_replace('/[^A-Za-z0-9-]/', '', (string)$deal['code']) . '_v' . (int)$v['num'] . '.pdf';
+    require_once __DIR__ . '/files.php';
+    return files_name((string)$deal['code'], 'Proposta', 'v' . (int)$v['num'], 'pdf');   // «ID2610-03_Proposta_v2.pdf»
 }
 
 /**
@@ -250,30 +252,7 @@ function budget_pdf_build(PDO $pdo, array $deal, array $v): string {
             $y = 64;
             $label = ($pg['opt'] === 'AB' ? ($calcB ? 'OPÇÕES A E B' : 'OPÇÃO A · PEDIDO') : ($pg['opt'] === 'A' ? 'OPÇÃO A · PEDIDO' : 'OPÇÃO B · PROPOSTA DE VALOR'))
                    . ' · PRÉ-CRIATIVO' . ($pg['front'] !== '' ? ' · ' . mb_strtoupper($pg['front']) : '');
-            $pdf->rect($L, $y - 10, 3, 14, $pg['opt'] === 'B' ? '#FFC718' : '#81CFE3');
-            $pdf->text($L + 10, $y, $label, 8.5, true, '#5C5C5C');
-            $y += 26;
-            foreach (BudgetPdf::wrap($pg['title'] !== '' ? $pg['title'] : 'Pré-criativo', 'F2', 22, $max) as $ln) { $pdf->text($L, $y, $ln, 22, true); $y += 26; }
-            if ($pg['concept'] !== '') { foreach (BudgetPdf::wrap($pg['concept'], 'F2', 12.5, $max) as $ln) { $pdf->text($L, $y, $ln, 12.5, true, '#333333'); $y += 17; } $y += 4; }
-            if ($pg['approach'] !== '') $para($pg['approach'], 10.5);
-            // as referências: 3 × 2, recortadas a 4:3
-            $refs = cc_pdf_refs($pdo, $pg['refs']);
-            if ($refs) {
-                $gap = 10; $cw = ($max - 2 * $gap) / 3; $ch = $cw * 0.75;
-                foreach (array_values($refs) as $i => $jpg) {
-                    $pdf->image($jpg, $L + ($i % 3) * ($cw + $gap), $y + intdiv($i, 3) * ($ch + $gap), $cw, $ch);
-                }
-                $y += (int)ceil(count($refs) / 3) * ($ch + $gap) + 8;
-            }
-            if ($pg['palette']) {
-                foreach ($pg['palette'] as $i => $hex) {
-                    $pdf->rect($L + $i * 74, $y, 64, 26, $hex);
-                    $pdf->text($L + $i * 74, $y + 38, $hex, 7.5, false, '#767676');
-                }
-                $y += 54;
-            }
-            $meta = array_filter([$pg['technique'] !== '' ? 'Técnica: ' . $pg['technique'] : '', $pg['complexity'] !== '' ? 'Complexidade: ' . mb_strtolower($pg['complexity']) : '']);
-            if ($meta) { $pdf->text($L, $y, implode('   ·   ', $meta), 10, false, '#5C5C5C'); $y += 18; }
+            $y = budget_pdf_cc_draw($pdf, $pdo, $pg, $label, $L, $max, $y);
         }
         $footer($page);
         $pdf->page();
@@ -350,18 +329,112 @@ function budget_pdf_publish(PDO $pdo, array $sheet, array $v): array {
     $saved = null;
     if (r2_config()) {
         try {
-            $folder = drive_deal_folder($pdo, $deal);
-            $key = $folder . 'Propostas/' . $name;
-            r2_put($key, $bytes, 'application/pdf');
-            drive_catalog_invalidate();
-            $saved = $key;
+            // na pasta do negócio, «Propostas/»; gerar outra vez a mesma versão substitui o ficheiro
+            $r = files_put($pdo, ['deal_id' => (int)$deal['id'], 'section' => 'propostas', 'name' => $name, 'mime' => 'application/pdf', 'overwrite' => true,
+                                  'origin' => 'proposal', 'label' => 'Proposta v' . (int)$v['num'], 'by' => current_user()['id'] ?? null], $bytes);
+            $saved = $r['key'] ?? null;
         } catch (Throwable $e) {
             error_log('budget_pdf drive: ' . $e->getMessage());
         }
     }
     budget_log($pdo, (int)$sheet['id'], 'b_pdf', 'v' . (int)$v['num'] . ' · ' . $name . ($saved ? ' · no Drive' : ''));
-    return ['msg' => $saved ? 'Proposta guardada no Drive (' . preg_replace('~^Projetos/~', '', $saved) . ') e a descarregar.' : 'Proposta gerada e a descarregar' . (r2_config() ? ' (não foi possível guardar no Drive).' : ' (o Drive não está ligado neste servidor).'),
+    return ['msg' => $saved ? 'Proposta guardada no Drive (' . $saved . ') e a descarregar.' : 'Proposta gerada e a descarregar' . (r2_config() ? ' (não foi possível guardar no Drive).' : ' (o Drive não está ligado neste servidor).'),
             'key' => $saved];
+}
+
+/**
+ * Uma página do pré-criativo (§23.3) a partir de $y: a etiqueta da opção, o título, o conceito,
+ * a abordagem, as referências (3 × 2, a 4:3), a paleta e a técnica. Devolve o $y seguinte.
+ */
+function budget_pdf_cc_draw(BudgetPdf $pdf, PDO $pdo, array $pg, string $label, float $L, float $max, float $y): float {
+    $pdf->rect($L, $y - 10, 3, 14, $pg['opt'] === 'B' ? '#FFC718' : '#81CFE3');
+    $pdf->text($L + 10, $y, $label, 8.5, true, '#5C5C5C');
+    $y += 26;
+    foreach (BudgetPdf::wrap($pg['title'] !== '' ? $pg['title'] : 'Pré-criativo', 'F2', 22, $max) as $ln) { $pdf->text($L, $y, $ln, 22, true); $y += 26; }
+    if ($pg['concept'] !== '') { foreach (BudgetPdf::wrap($pg['concept'], 'F2', 12.5, $max) as $ln) { $pdf->text($L, $y, $ln, 12.5, true, '#333333'); $y += 17; } $y += 4; }
+    if ($pg['approach'] !== '') {
+        foreach (BudgetPdf::wrap($pg['approach'], 'F1', 10.5, $max) as $ln) { if ($ln !== '') $pdf->text($L, $y, $ln, 10.5); $y += 15; }
+        $y += 6;
+    }
+    // as referências: 3 × 2, recortadas a 4:3
+    $refs = cc_pdf_refs($pdo, $pg['refs']);
+    if ($refs) {
+        $gap = 10; $cw = ($max - 2 * $gap) / 3; $ch = $cw * 0.75;
+        foreach (array_values($refs) as $i => $jpg) {
+            $pdf->image($jpg, $L + ($i % 3) * ($cw + $gap), $y + intdiv($i, 3) * ($ch + $gap), $cw, $ch);
+        }
+        $y += (int)ceil(count($refs) / 3) * ($ch + $gap) + 8;
+    }
+    if ($pg['palette']) {
+        foreach ($pg['palette'] as $i => $hex) {
+            $pdf->rect($L + $i * 74, $y, 64, 26, $hex);
+            $pdf->text($L + $i * 74, $y + 38, $hex, 7.5, false, '#767676');
+        }
+        $y += 54;
+    }
+    $meta = array_filter([$pg['technique'] !== '' ? 'Técnica: ' . $pg['technique'] : '', $pg['complexity'] !== '' ? 'Complexidade: ' . mb_strtolower($pg['complexity']) : '']);
+    if ($meta) { $pdf->text($L, $y, implode('   ·   ', $meta), 10, false, '#5C5C5C'); $y += 18; }
+    return $y;
+}
+
+/** O cabeçalho e o rodapé das folhas soltas (pré-criativo, tratamento): faixa, logótipo, etiqueta. */
+function budget_pdf_sheet(BudgetPdf $pdf, PDO $pdo, string $tag, string $ref): void {
+    $L = 56.0; $R = BudgetPdf::W - 56.0;
+    $pdf->rect(0, 0, BudgetPdf::W, 6, '#FFC718');
+    $pdf->wordmark($L, 44, 26);
+    $pdf->text($R, 52, $tag, 9, true, '#5C5C5C', 'r');
+    $pdf->text($R, 66, $ref . ' · ' . date('d/m/Y'), 9, false, '#5C5C5C', 'r');
+    $co = trim((string)setting($pdo, 'company_name', 'topper.')) ?: 'topper.';
+    $pdf->line($L, BudgetPdf::H - 46, $R, BudgetPdf::H - 46);
+    $pdf->text($L, BudgetPdf::H - 32, $co . ' · ' . $ref, 8, false, '#767676');
+}
+
+/** Uma página do pré-criativo sozinha, em PDF (fica no Drive, em «Criativo/Opção A|B/»). */
+function cc_page_pdf(PDO $pdo, array $deal, array $pg, int $num): string {
+    $pdf = new BudgetPdf();
+    $L = 56.0; $max = BudgetPdf::W - 112.0;
+    $ref = trim($deal['code'] . ($num ? ' · v' . $num : ''), ' ·');
+    budget_pdf_sheet($pdf, $pdo, 'PRÉ-CRIATIVO', $ref);
+    $label = ($pg['opt'] === 'AB' ? 'OPÇÕES A E B' : ($pg['opt'] === 'A' ? 'OPÇÃO A · PEDIDO' : 'OPÇÃO B · PROPOSTA DE VALOR'))
+           . ($pg['front'] !== '' ? ' · ' . mb_strtoupper($pg['front']) : '');
+    budget_pdf_cc_draw($pdf, $pdo, $pg, $label, $L, $max, 118);
+    $pdf->page();
+    return $pdf->output('Pré-criativo ' . $ref);
+}
+
+/** O tratamento em PDF: título, logline e as secções, com até 6 referências cada. */
+function cc_treatment_pdf(PDO $pdo, string $ref, array $doc): string {
+    $pdf = new BudgetPdf();
+    $L = 56.0; $max = BudgetPdf::W - 112.0;
+    budget_pdf_sheet($pdf, $pdo, 'TRATAMENTO', $ref);
+    $y = 118.0;
+    $need = function (float $h) use (&$y, $pdf, $pdo, $ref) {
+        if ($y + $h <= BudgetPdf::H - 70) return;
+        $pdf->page();
+        budget_pdf_sheet($pdf, $pdo, 'TRATAMENTO', $ref);
+        $y = 100;
+    };
+    foreach (BudgetPdf::wrap((string)($doc['title'] ?? '') ?: 'Tratamento', 'F2', 24, $max) as $ln) { $pdf->text($L, $y, $ln, 24, true); $y += 28; }
+    if (($doc['logline'] ?? '') !== '') { foreach (BudgetPdf::wrap((string)$doc['logline'], 'F2', 13, $max) as $ln) { $need(18); $pdf->text($L, $y, $ln, 13, true, '#333333'); $y += 18; } }
+    $y += 12;
+    foreach ((array)($doc['sections'] ?? []) as $sec) {
+        $need(60);
+        $pdf->text($L, $y, (string)($sec['heading'] ?? ''), 14, true);
+        $y += 20;
+        foreach (BudgetPdf::wrap((string)($sec['body'] ?? ''), 'F1', 10.5, $max) as $ln) { $need(15); if ($ln !== '') $pdf->text($L, $y, $ln, 10.5); $y += 15; }
+        $refs = cc_pdf_refs($pdo, array_map('intval', (array)($sec['refs'] ?? [])));
+        if ($refs) {
+            $gap = 10; $cw = ($max - 2 * $gap) / 3; $ch = $cw * 0.75;
+            foreach (array_chunk($refs, 3) as $row) {
+                $need($ch + $gap);
+                foreach ($row as $i => $jpg) $pdf->image($jpg, $L + $i * ($cw + $gap), $y, $cw, $ch);
+                $y += $ch + $gap;
+            }
+        }
+        $y += 14;
+    }
+    $pdf->page();
+    return $pdf->output('Tratamento ' . $ref);
 }
 
 /** As referências de uma página do pré-criativo em JPEG 4:3 (o PDF só desenha JPEG). */
