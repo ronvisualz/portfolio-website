@@ -3085,3 +3085,36 @@ Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§24)
 Centro Criativo: frequência das versões automáticas do quadro, número de versões guardadas,
 destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
 gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
+
+## 27. Centro Criativo — Áudio (decidido 23 out 2026)
+
+**Estado atual (verificado no main):** o Centro Criativo não reconhece áudio. `cc_kind_for` só distingue imagem e vídeo; um MP3/WAV vira cartão «Ficheiro» sem leitor, sem análise e sem Review. A Drive já trata áudio (tipos, ícone, filtro, leitor em `assets/drive/preview.js`, partilha) — reaproveitar.
+
+### 27.1 Tipo de cartão «Áudio»
+- Novo tipo `audio` em `CC_CARD_TYPES`; `cc_kind_for` passa a devolver `audio` para `audio/*` e extensões mp3, wav, m4a, aac, flac, ogg, aif, aiff.
+- Os cartões «Ficheiro» antigos que sejam áudio são convertidos automaticamente (migração única).
+- Cartão: nome, duração, forma de onda (gerada no browser ao carregar e guardada como lista de picos, para não recalcular), play/pausa inline, barra de progresso clicável. Só um áudio toca de cada vez no quadro.
+- Na vista aberta: leitor grande, velocidade (0,5×–2×), repetição de um troço (A–B), volume.
+
+### 27.2 Biblioteca
+- Filtro «Áudio» ao lado de Imagem/Vídeo/Link/Ficheiro.
+- Categoria do áudio: Música · Voz-off · Efeito sonoro (SFX) · Ambiente · Outro (sugerida pela IA, editável).
+- Pesquisa inclui a transcrição e os campos da análise.
+
+### 27.3 Review e Portal do cliente
+- Áudio pode ir a Review como o vídeo: comentários marcados no tempo sobre a forma de onda (marcadores clicáveis que saltam para o segundo), versões V1/V2 com comparação A/B (alternar entre versões no mesmo ponto), aprovação/pedido de alterações.
+- Mesmas regras de rondas, permissões e notificações da §24.
+
+### 27.4 IA
+- Voz-off/fala: transcrição com marcas de tempo, pesquisável e copiável; a transcrição alimenta comentários («na frase X»).
+- Música: ambiente/emoção, estilo, instrumentos, ritmo (BPM estimado), energia, adequação sugerida (ex.: «reveal de produto»). Guarda no campo `analysis` como as outras referências.
+- A análise corre ao pedido ou automaticamente conforme a definição já existente para vídeo; respeita o limite de custo da IA.
+- Nota de execução: a transcrição exige um serviço de reconhecimento de fala (o Claude não recebe áudio diretamente) — usar o mesmo caminho que o vídeo já usa para `transcript`, se existir; caso contrário escolher um serviço e configurá-lo em Definições › Integrações.
+
+### 27.5 Captura e importação
+- Importação por link (SoundCloud, bibliotecas de música, link direto de ficheiro) cria cartão de áudio com título, autor e fonte; quando não houver ficheiro descarregável, fica como link com leitor embutido do serviço.
+- Arrastar da Drive para o quadro mantém o tipo áudio.
+
+### 27.6 Limites
+- Tamanho máximo por ficheiro igual ao do vídeo; formatos fora da lista ficam «Ficheiro».
+- Interface sem referências «§» (§21).
