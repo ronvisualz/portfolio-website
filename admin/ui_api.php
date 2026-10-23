@@ -1209,6 +1209,32 @@ try {
         require_once __DIR__ . '/inc/settings_def.php';
         if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
         $tbl = (string)($_POST['table'] ?? '');
+        if ($tbl === 'funnels') {
+            // Centro Criativo (§23): pré-criativo por funil e os sub-quadros do projeto
+            require_once __DIR__ . '/inc/cc.php';
+            $f = funnel_get($pdo, (int)($_POST['id'] ?? 0));
+            $field = (string)($_POST['field'] ?? '');
+            $raw = (string)($_POST['value'] ?? '');
+            if (!$f || !db_has_column($pdo, 'funnels', 'cc_pre_mode')) throw new RuntimeException('Funil inválido.');
+            if ($field === 'cc_pre_mode') {
+                if (!in_array($raw, ['recommended', 'required', 'off'], true)) throw new RuntimeException('Escolha uma opção.');
+                $col = 'cc_pre_mode'; $from = (string)$f['cc_pre_mode']; $val = $raw;
+                $what = 'Centro Criativo · ' . $f['name'] . ' · pré-criativo';
+            } elseif (preg_match('/^cc_stage_([a-z]+)$/', $field, $m) && isset(CC_STAGES[$m[1]])) {
+                $col = 'cc_stages'; $from = (string)$f['cc_stages'];
+                $on = cc_funnel_stages($pdo, (int)$f['id']);
+                $on = $raw === '1' ? array_values(array_unique([...$on, $m[1]])) : array_values(array_diff($on, [$m[1]]));
+                if (!$on) throw new RuntimeException('O projeto precisa de pelo menos um sub-quadro.');
+                $val = implode(',', array_values(array_filter(array_keys(CC_STAGES), fn($k) => in_array($k, $on, true))));
+                $what = 'Centro Criativo · ' . $f['name'] . ' · sub-quadros';
+            } else {
+                throw new RuntimeException('Campo desconhecido.');
+            }
+            if ($from === $val) out(200, ['ok' => true, 'msg' => 'Sem alterações.']);
+            $pdo->prepare("UPDATE funnels SET $col = ? WHERE id = ?")->execute([$val, (int)$f['id']]);
+            setting_log($pdo, 'funnels:' . (int)$f['id'] . ':' . $col, $what, $from, $val);
+            out(200, ['ok' => true, 'msg' => ucfirst(explode(' · ', $what, 3)[2]) . ' de «' . $f['name'] . '» alterado.', 'undo' => undo_push('setting_row', ['table' => 'funnels', 'id' => (int)$f['id'], 'field' => $col, 'from' => $from, 'to' => $val])]);
+        }
         $fields = ['services' => ['name' => 80, 'position' => 0, 'is_active' => 0, 'default_unit' => 0],
                    'mkt_pillars' => ['name' => 80, 'short_name' => 24, 'color' => 0, 'description' => 500, 'position' => 0, 'is_active' => 0, 'kind' => 0]][$tbl] ?? null;
         $field = (string)($_POST['field'] ?? '');

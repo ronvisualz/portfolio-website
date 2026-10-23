@@ -5,7 +5,7 @@
   'use strict';
   var root = document.getElementById('cc');
   if (!root) return;
-  var T = window.topper || {};
+  var T = window.topper || {};   // o app.js carrega depois deste: volta a ler-se no arranque (DOMContentLoaded)
   var CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || '';
   var VIEW = root.getAttribute('data-view');
   var EDIT = root.getAttribute('data-edit') === '1';
@@ -44,6 +44,7 @@
     trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
     check: '<path d="M20 6 9 17l-5-5"/>', swap: '<path d="m17 3 4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/>',
+    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     side: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>', ext: '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
   };
@@ -118,6 +119,8 @@
     document.body.appendChild(m);
     new MutationObserver(function () { if (m.hidden && !m.__keep) setTimeout(function () { m.remove(); }, 400); }).observe(m, { attributes: true, attributeFilter: ['hidden'] });
     if (T.openMdl) T.openMdl(m); else { m.hidden = false; m.classList.add('open'); }
+    // o foco entra na janela (Esc fecha mesmo que o botão que a abriu já não exista)
+    setTimeout(function () { var f = $('button, [href], input, select, textarea', m.lastChild); if (f) f.focus({ preventScroll: true }); }, reduced.matches ? 0 : 260);
     return m;
   }
 
@@ -209,8 +212,8 @@
       var sd = Math.sqrt(vals.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / Math.max(1, vals.length));
       var cuts = diffs.slice(1).filter(function (x) { return x.d > mean + 1.5 * sd; }).sort(function (a, b) { return b.d - a.d; }).slice(0, 11).map(function (x) { return x.t; });
       var times = [diffs[0].t].concat(cuts);
-      for (var j = 1; times.length < 6 && j < 12; j++) {
-        var tt = dur * j / 7;
+      for (var j = 1; times.length < 6 && j < 8; j++) {
+        var tt = Math.min(dur - 0.1, dur * j / 8);
         if (times.every(function (x) { return Math.abs(x - tt) > step * 1.5; })) times.push(tt);
       }
       times = times.sort(function (a, b) { return a - b; }).slice(0, 12);
@@ -744,7 +747,7 @@
         + j.stages.map(function (s) { return '<a href="/admin/criativo.php?b=' + s.id + '"' + (s.id === b.id ? ' class="on" aria-current="page"' : '') + '>' + esc(s.title) + '</a>'; }).join('') + '</nav>' : '';
       var acts = '';
       if (B.lanes && EDIT) acts += '<button type="button" class="btn sm" data-a="prepare" title="3 ângulos por opção e 6–9 referências por faixa">' + ico('spark') + '<span class="lbl"> Preparar com IA</span></button>'
-                                + '<button type="button" class="btn sm dark" data-a="send" title="As páginas entram no PDF e na página do cliente, ao lado de cada opção">' + '<span class="lbl">Enviar para a Orçamentação</span></button>';
+                                + '<button type="button" class="btn sm dark" data-a="send" title="As páginas entram no PDF e na página do cliente, ao lado de cada opção" aria-label="Enviar para a Orçamentação">' + ico('send') + '<span class="lbl"> Enviar para a Orçamentação</span></button>';
       acts += '<button type="button" class="btn ghost sm" data-a="present" title="Modo apresentação (setas para navegar, Esc para sair)">' + ico('present') + '<span class="lbl"> Apresentar</span></button>'
             + '<button type="button" class="ibtn" data-a="side" aria-label="Painel (IA, detalhe, comentários)" data-tip>' + ico('side') + '</button>'
             + (MANAGE ? '<button type="button" class="ibtn" data-a="more" aria-label="Mais" data-tip>⋯</button>' : '');
@@ -780,7 +783,7 @@
       var p = B.data.pages || {};
       el.innerHTML = ['A', 'B'].map(function (l) {
         var pg = p[l], st = pg ? (pg.sent ? 'na proposta (' + pg.sent + ')' : 'página de ' + pg.at) : 'sem página';
-        return '<span class="lb"><i style="background:var(--cc-' + l.toLowerCase() + ')"></i><b>' + (l === 'A' ? 'Opção A · Pedido' : 'Opção B · Proposta de valor') + '</b><span class="st">' + esc(st) + '</span>'
+        return '<span class="cclb"><i style="background:var(--cc-' + l.toLowerCase() + ')"></i><b>' + (l === 'A' ? 'Opção A · Pedido' : 'Opção B · Proposta de valor') + '</b><span class="st">' + esc(st) + '</span>'
           + (EDIT ? '<button type="button" data-page-gen="' + l + '">' + (pg ? 'Gerar outra vez' : 'Gerar página') + '</button>' : '')
           + (pg ? '<button type="button" data-page-view="' + l + '">Ver</button>' : '')
           + (pg && EDIT ? '<button type="button" data-page-both="' + l + '" class="' + (pg.both ? 'on' : '') + '" aria-pressed="' + (pg.both ? 'true' : 'false') + '" title="Esta página liga às duas opções da proposta">Serve as duas</button>' : '') + '</span>';
@@ -833,6 +836,13 @@
       if (B.lanes) { x1 = Math.min(x1, -40); y1 = Math.min(y1, LANE_TOP - 60); x2 = Math.max(x2, 1000); y2 = Math.max(y2, 2190); }
       if (!isFinite(x1)) return null;
       return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    /** Enquadra a seleção (ou tudo, sem seleção). */
+    function fitSel() {
+      var ids = Array.from(B.sel), x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      ids.forEach(function (id) { var c = B.cards.get(id); if (!c) return; if (c.col) c = B.cards.get(c.col) || c; var b = bbox(c); x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); });
+      if (!isFinite(x1)) { fitAll(true); return; }
+      animateView(function () { fitTo({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 }, 80, 1.5); });
     }
     function fitAll(anim) { var b = contentBox(); if (!b) return; var go = function () { fitTo(b, 50, 1); }; if (anim) animateView(go); else { go(); applyView(); } }
 
@@ -1168,7 +1178,9 @@
       var before = JSON.parse(JSON.stringify(c.c || {}));
       target.contentEditable = 'true';
       target.focus();
-      var rng = document.createRange(); rng.selectNodeContents(target); rng.collapse(false);
+      // um título por defeito («Coluna», «Lista») fica selecionado: escrever substitui-o
+      var rng = document.createRange(); rng.selectNodeContents(target);
+      if (!(c.type === 'column' && (c.c.title || '') === 'Coluna') && !(c.type === 'list' && itemIndex == null && (c.c.title || '') === 'Lista')) rng.collapse(false);
       var s = window.getSelection(); s.removeAllRanges(); s.addRange(rng);
       function end() {
         target.removeEventListener('blur', end);
@@ -1319,7 +1331,7 @@
       vp.addEventListener('wheel', function (e) {
         e.preventDefault();
         var k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-        if (e.ctrlKey || e.metaKey) zoomAt(vpPoint(e), Math.exp(-e.deltaY * k * 0.0105));
+        if (e.ctrlKey || e.metaKey) zoomAt(vpPoint(e), Math.exp(-clamp(e.deltaY * k, -60, 60) * 0.006));   // roda: ~1,4× por clique; pinça: suave
         else { B.view.x -= (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k; if (!(e.shiftKey && !e.deltaX)) B.view.y -= e.deltaY * k; applyView(); }
       }, { passive: false });
       // Safari (iPad com teclado/trackpad): gestos de pinça
@@ -1652,6 +1664,7 @@
       else if (!mod && (k === '+' || k === '=')) zoomAt(center(), 1.25);
       else if (!mod && k === '-') zoomAt(center(), 0.8);
       else if (!mod && k === '0') fitAll(true);
+      else if (!mod && (k === 'f' || k === 'F')) fitSel();
       else if (!mod && k === '1') zoomAt(center(), 1 / B.view.s);
       else if (k.indexOf('Arrow') === 0 && B.sel.size && EDIT && !mod) {
         var st = e.shiftKey ? GRID : 1, dx = k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0, dy = k === 'ArrowUp' ? -st : k === 'ArrowDown' ? st : 0, ch = [];
@@ -1949,7 +1962,7 @@
     function pageView(lane) {
       var pg = (B.data.pages || {})[lane];
       if (!pg) return;
-      modal(pageHtml(lane, pg) + '<div class="actions">' + (EDIT ? '<button type="button" class="btn ghost" data-mdl-close>Fechar</button>' : '') + '</div>');
+      modal(pageHtml(lane, pg) + '<div class="actions"><button type="button" class="btn ghost" data-mdl-close>Fechar</button></div>');
     }
 
     // ── apresentação ──
@@ -2037,9 +2050,14 @@
     });
   }
 
-  // ── arranque da página ──
-  if (VIEW === 'projetos') { viewProjects(); bindNewBoard(); }
-  else if (VIEW === 'biblioteca') { viewLibrary(false); bindImport(); }
-  else if (VIEW === 'entrada') viewLibrary(true);
-  else if (VIEW === 'board') viewBoard();
+  // ── arranque da página (depois do app.js: avisos, janelas, «Anular») ──
+  function start() {
+    T = window.topper || {};
+    if (VIEW === 'projetos') { viewProjects(); bindNewBoard(); }
+    else if (VIEW === 'biblioteca') { viewLibrary(false); bindImport(); }
+    else if (VIEW === 'entrada') viewLibrary(true);
+    else if (VIEW === 'board') viewBoard();
+  }
+  // os scripts «defer» correm por ordem e este vem antes do app.js: espera por ele
+  if (window.topper && window.topper.toast) start(); else document.addEventListener('DOMContentLoaded', start);
 })();

@@ -80,7 +80,7 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
     }
     $editable = in_array($d['type'], ['int', 'num', 'text', 'email', 'url', 'time', 'textarea', 'list', 'select'], true);
     $reset = $editable ? '<button type="button" class="set-reset" data-reset="' . e($key) . '" data-def="' . e($def) . '"' . ($v === $def ? ' hidden' : '') . ' data-tip="Repor o valor de origem">Repor (' . e(setting_show($d, $def)) . ')</button>' : '';
-    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai'], true);
+    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels'], true);
     return '<div class="set-row' . ($wide ? ' wide' : '') . '" id="' . $id . '" data-row="' . e($key) . '">' . $label . '<div class="set-f">' . $field . '</div>' . $reset
          . '<div class="set-warn" hidden role="alert"><p></p><div class="actions"><button type="button" class="btn sm" data-impact-ok>Confirmar</button><button type="button" class="btn ghost sm" data-impact-no>Cancelar</button></div></div></div>';
 }
@@ -141,6 +141,42 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             $h = '<div class="set-chips">';
             foreach (TASK_ORIGINS as $k => [$l, $i]) $h .= '<span class="set-chip or-' . $k . '"><i>' . icon($i) . '</i>' . e($l) . '</span>';
             return $h . '</div>';
+        case 'cc_funnels':
+            if (!db_has_column($pdo, 'funnels', 'cc_pre_mode')) return '<span class="set-info">Disponível depois do passo 24 da base de dados.</span>';
+            require_once __DIR__ . '/inc/cc.php';
+            $modes = ['recommended' => 'Recomendado', 'required' => 'Obrigatório', 'off' => 'Desligado'];
+            $h = '<div class="tablewrap"><table class="set-t" data-table="funnels"><thead><tr><th>Funil</th><th>Pré-criativo</th><th>Sub-quadros do projeto (Kickoff)</th></tr></thead><tbody>';
+            foreach (funnels_active($pdo) as $f) {
+                $o = '';
+                foreach ($modes as $k => $l) $o .= '<option value="' . $k . '"' . (($f['cc_pre_mode'] ?? 'recommended') === $k ? ' selected' : '') . '>' . $l . '</option>';
+                $on = cc_funnel_stages($pdo, (int)$f['id']);
+                $ck = '';
+                foreach (CC_STAGES as $k => $l) $ck .= '<label class="check"><input type="checkbox" value="1" data-cell="cc_stage_' . $k . '"' . (in_array($k, $on, true) ? ' checked' : '') . '> ' . e($l) . '</label> ';
+                $h .= '<tr data-id="' . (int)$f['id'] . '"><td><b>' . e($f['name']) . '</b></td><td><select data-cell="cc_pre_mode" aria-label="Pré-criativo em ' . e($f['name']) . '">' . $o . '</select></td><td class="set-checks">' . $ck . '</td></tr>';
+            }
+            return $h . '</tbody></table></div>';
+        case 'cc_ai':
+            if (!db_has_table($pdo, 'cc_ai_usage')) return '<span class="set-info">Disponível depois do passo 24 da base de dados.</span>';
+            require_once __DIR__ . '/inc/cc_ai.php';
+            $cfg = cc_ai_config();
+            $emb = cc_embed_config();
+            $sum = cc_ai_usage_summary($pdo);
+            $usd = fn($v) => number_format((float)$v, 2, ',', ' ') . ' US$';
+            $h = '<div class="set-ai"><span class="chip ' . ($cfg ? 'ok' : 'wait') . '">' . ($cfg ? 'Claude ligado · ' . e($cfg['model']) . ' · esforço ' . e($cfg['effort']) : 'Claude sem chave neste servidor') . '</span> '
+               . '<span class="chip ' . ($emb ? 'ok' : 'wait') . '">' . ($emb ? 'Embeddings ligados · ' . e($emb['model']) : 'Embeddings por ligar (semelhança por etiquetas e paleta)') . '</span> '
+               . '<span class="chip">Transcrição dos vídeos: por ligar</span></div>'
+               . '<p><span class="mono">' . e($usd($sum['spend'])) . '</span> <span class="muted small">este mês · limite ' . e(number_format($sum['cap'], 0, ',', ' ')) . ' € (contado como US$)'
+               . ($cfg ? ' · fallbacks do servidor ligados' . ($cfg['auto'] ? ' · análise automática de cada referência nova' : ' · análise só a pedido') : '') . '</span></p>'
+               . '<p class="small muted">' . $sum['analyzed'] . ' referências analisadas · ' . $sum['embedded'] . ' com embedding · ' . $sum['queued'] . ' na fila' . ($sum['errors'] ? ' · <b>' . $sum['errors'] . ' erros nos últimos 7 dias</b>' : '') . '</p>';
+            if ($sum['rows']) {
+                $h .= '<div class="tablewrap"><table class="set-t"><thead><tr><th>Uso</th><th>Modelo</th><th class="num">Pedidos</th><th class="num hide-sm">Tokens (entrada / saída)</th><th class="num">Custo</th></tr></thead><tbody>';
+                foreach ($sum['rows'] as $r) {
+                    $h .= '<tr><td>' . e(CC_AI_PURPOSES[$r['purpose']] ?? $r['purpose']) . '</td><td class="mono small">' . e($r['model']) . '</td><td class="num">' . (int)$r['n'] . '</td>'
+                        . '<td class="num hide-sm mono small">' . number_format((int)$r['tin'], 0, ',', ' ') . ' / ' . number_format((int)$r['tout'], 0, ',', ' ') . '</td><td class="num mono">' . e($usd($r['usd'])) . '</td></tr>';
+                }
+                $h .= '</tbody></table></div>';
+            }
+            return $h;
         case 'ai':
             require_once __DIR__ . '/inc/ai.php';
             [$ma, $mb, $mLabel] = ai_month_bounds();
@@ -201,7 +237,7 @@ render_flashes();
       $groups = [];
       foreach (settings_defs() as $k => $d) if ($d['tab'] === $tab) $groups[$d['group']][$k] = $d;
       $configure = ['pipeline' => '/admin/pipeline.php', 'leads' => '/admin/leads.php', 'contactos' => '/admin/contactos.php', 'orcamentacao' => '/admin/orcamentacao.php',
-                    'negocios' => '/admin/negocios.php', 'tarefas' => '/admin/calendar.php', 'marketing' => '/admin/marketing.php', 'financeiro' => '/admin/financeiro.php', 'drive' => '/admin/drive.php'][$tab] ?? '';
+                    'negocios' => '/admin/negocios.php', 'criativo' => '/admin/criativo.php', 'tarefas' => '/admin/calendar.php', 'marketing' => '/admin/marketing.php', 'financeiro' => '/admin/financeiro.php', 'drive' => '/admin/drive.php'][$tab] ?? '';
       foreach ($groups as $g => $items): ?>
     <div class="set-blk">
       <h2 class="set-h"><?= e($g) ?></h2>

@@ -926,12 +926,13 @@ function cc_mentions(PDO $pdo, string $body): array {
     $users = $pdo->query("SELECT id, name, role FROM users WHERE is_active = 1 AND deactivated_at IS NULL AND role <> 'superadmin'")->fetchAll();
     $ids = [];
     foreach ($m[1] as $tag) {
-        $t = cc_fold($tag);
-        foreach ($users as $u) {
-            $full = cc_fold((string)$u['name']);
-            $first = explode(' ', $full)[0];
-            if ($full === $t || $first === $t || str_starts_with($t, $first . ' ') && str_starts_with($full, $t)) $ids[(int)$u['id']] = true;
-        }
+        $w = array_map(fn($x) => rtrim($x, '.-'), explode(' ', cc_fold($tag)));
+        $two = count($w) > 1 ? $w[0] . ' ' . $w[1] : '';
+        $hit = [];
+        // «@Nome Apelido» quando há dois com o mesmo nome; senão «@Nome» (a palavra a seguir é texto)
+        foreach ($users as $u) if ($two !== '' && str_starts_with(cc_fold((string)$u['name']), $two)) $hit[] = (int)$u['id'];
+        if (!$hit) foreach ($users as $u) if (explode(' ', cc_fold((string)$u['name']))[0] === $w[0]) $hit[] = (int)$u['id'];
+        foreach ($hit as $id) $ids[$id] = true;
     }
     return array_keys($ids);
 }

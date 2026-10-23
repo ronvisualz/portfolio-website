@@ -40,6 +40,7 @@
 /* ── Biblioteca e Caixa de entrada ──────────────────────── */
 .ccl { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; align-items: start; }
 .ccl-f { position: sticky; top: 12px; display: grid; gap: 16px; font-size: 13px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
+.ccl-f [data-facets] { display: grid; gap: 16px; }
 .ccl-f h4 { margin: 0 0 6px; font: 600 10.5px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--mute-2); }
 .ccl-sw { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ccl-sw button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(0,0,0,.08); cursor: pointer; padding: 0; }
@@ -58,9 +59,9 @@
 .ccl-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .ccl-tile img { width: 100%; display: block; background: var(--chip); }
 .ccl-tile .nf { aspect-ratio: 4/3; display: grid; place-items: center; color: var(--mute-2); }
-.ccl-tile .pal { display: flex; height: 6px; }
+.ccl-tile .pal { display: flex; height: 6px; width: 100%; }
 .ccl-tile .pal i { flex: 1; }
-.ccl-tile .cap { padding: 7px 9px 8px; font-size: 12px; line-height: 1.35; color: var(--mute); background: var(--panel); }
+.ccl-tile .cap { display: block; padding: 7px 9px 8px; font-size: 12px; line-height: 1.35; color: var(--mute); background: var(--panel); }
 .ccl-tile .cap b { display: block; color: var(--fg); font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ccl-tile .badges { position: absolute; top: 7px; left: 7px; right: 7px; display: flex; justify-content: space-between; gap: 6px; pointer-events: none; }
 .cc-badge { font: 600 10px var(--body); letter-spacing: .02em; padding: 2px 7px; border-radius: 100px; background: rgba(17,17,17,.72); color: #fff; backdrop-filter: blur(6px); }
@@ -122,13 +123,13 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-acts { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ccb-acts .btn { padding: 6px 11px; font-size: 12.5px; }
 .ccb-lanebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--g-panel); font-size: 12px; }
-.ccb-lanebar .lb { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 100px; border: 1px solid var(--line); background: var(--panel); }
-.ccb-lanebar .lb i { width: 10px; height: 10px; border-radius: 3px; display: block; }
-.ccb-lanebar .lb b { font-weight: 600; }
-.ccb-lanebar .lb .st { color: var(--mute-2); font-size: 11.5px; }
-.ccb-lanebar .lb button { font: 500 11.5px var(--body); border: 0; background: var(--chip); color: var(--fg); padding: 3px 9px; border-radius: 100px; cursor: pointer; }
-.ccb-lanebar .lb button:hover { background: var(--line); }
-.ccb-lanebar .lb button.on { background: var(--hi); color: #000; }
+.ccb-lanebar .cclb { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 100px; border: 1px solid var(--line); background: var(--panel); }
+.ccb-lanebar .cclb i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.ccb-lanebar .cclb b { font-weight: 600; }
+.ccb-lanebar .cclb .st { color: var(--mute-2); font-size: 11.5px; }
+.ccb-lanebar .cclb button { font: 500 11.5px var(--body); border: 0; background: var(--chip); color: var(--fg); padding: 3px 9px; border-radius: 100px; cursor: pointer; }
+.ccb-lanebar .cclb button:hover { background: var(--line); }
+.ccb-lanebar .cclb button.on { background: var(--hi); color: #000; }
 .ccb-main { flex: 1; min-height: 0; display: flex; position: relative; }
 .ccb-tools { flex: none; width: 48px; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; overflow: auto; }
 .ccb-tools button, .ccb-tools label { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; position: relative; flex: none; }
@@ -324,6 +325,9 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
   .ccb-crumb b { max-width: 56vw; }
   .ccb-acts .btn .lbl { display: none; }
   .ccl-capture { display: inline-flex; }
+  .ccb-lanebar { flex-wrap: nowrap; overflow-x: auto; }
+  .ccb-lanebar > .muted { display: none; }
+  .ccb-lanebar .cclb { flex: none; white-space: nowrap; }
 }
 @media (max-width: 640px) {
   .ccb-tools { position: absolute; left: 8px; top: 8px; bottom: auto; z-index: 6; width: auto; flex-direction: row; flex-wrap: wrap; max-width: calc(100% - 16px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-card); padding: 4px; }
@@ -334,3 +338,6 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
   .ccb-world.anim, .ccc, .ccl-tile, .ccp-tile { transition: none; }
   .ccd, .ccc.new, .cc-slash, .ccl-act { animation: none; }
 }
+
+.ccp-bar .views button.on { background: var(--fg); color: var(--bg); }
+.ccb-lanebar { flex: none; }
