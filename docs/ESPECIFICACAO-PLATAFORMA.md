@@ -2863,9 +2863,6 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
 
-<<<<<<< HEAD
-## 24. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
-=======
 ---
 
 ## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
@@ -2922,7 +2919,6 @@ Validade do link do portal · marca de água por defeito · downloads por defeit
 etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
 
 ## 25. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
->>>>>>> origin/main
 
 Tudo o que entra na plataforma ou é gerado por ela fica guardado **uma vez** no Drive, organizado
 por negócio quando pertence a um negócio, por origem e por tipo de documento; o mais importante é
@@ -2944,68 +2940,12 @@ que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depress
   sítio à mão, e a regra da faturação.
 - **Fase 2 (decidido 23 out 2026):** «Reorganizar o Drive» para o que já existia, com pré-visualização
   do que vai mudar antes de executar e relatório no fim.
-<<<<<<< HEAD
-
----
-
-## 25. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
-
-Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
-
-### 25.1 Versões
-- Uma **peça de review** pertence a um negócio (e a uma frente, §22) e a uma etapa de
-  aprovação (styleframes, animatic, offline, picture lock, finais, lote…).
-- Carregar ficheiro (vídeo, imagem, PDF) → versão **v001, v002…**; nunca se apaga uma versão.
-- Vídeo: gerar no servidor um **proxy H.264** para o browser, **poster**, **tira de miniaturas**
-  e ler o **fps e o timecode de início**; o original fica no Drive (`<negócio>/Produção/Review/`, segundo a §24 Drive).
-- Estados da peça: Em preparação · Enviada ao cliente · Com comentários · Alterações pedidas ·
-  **Aprovada**.
-
-### 25.2 Leitor e comentários no frame exato
-- Leitor com **precisão ao frame**: avançar/recuar 1 frame (← →), J/K/L, velocidade, repetir
-  um intervalo, timecode SMPTE, tira de miniaturas.
-- Comentário preso a um **frame** (ou a um **intervalo**), com **desenho por cima** (seta,
-  retângulo, círculo, mão livre, texto) guardado como vetor; marcadores coloridos na barra do tempo.
-- Imagens e PDF: **pinos** no ponto clicado, com desenho.
-- Respostas em fio, @menções, anexos, **Resolver/Reabrir**.
-- Comentários **Internos** (só a equipa) ou **Para o cliente**; os internos nunca chegam ao portal.
-- Comparar versões: **lado a lado**, **cortina** (wipe) e **sobreposição**, sincronizadas.
-- Exportar comentários: PDF/CSV e **marcadores para Premiere/DaVinci/Avid** (EDL/XML).
-
-### 25.3 Rondas e aprovação
-- **Enviar ao cliente** abre uma ronda; o cliente envia os comentários **de uma vez** (botão
-  «Enviar comentários»): um envio consolidado = **uma ronda** (§19.6 D).
-- Contador «Ronda X de Y incluídas» por etapa (Y vem da proposta/Definições). Ao **passar do
-  incluído**: aviso ao Comercial e sugestão de **pedido de alteração** (§19.6 D).
-- **Aprovar** (equipa ou cliente pelo portal) → peça Aprovada, **conclui a tarefa de aprovação
-  correspondente no Pipeline** (mapa etapa de review ↔ tarefa em Definições › Centro Criativo)
-  e os frames/versão aprovados entram na Biblioteca como referência da casa (§23.1).
-- Aprovação do cliente pede **nome escrito** e confirmação; regista data, IP e versão.
-- Notificações ao responsável de execução e ao comercial em cada ação do cliente.
-
-### 25.4 Portal do cliente
-- **Um link por negócio**, longo e aleatório, **revogável** e com **validade** (por defeito até 60
-  dias após a entrega; Definições). Sem conta. Abrir (GET) **nunca altera nada**; ações por POST.
-- Primeira ação: o cliente indica **nome e email** (guardado nesse browser); os comentários
-  aparecem como «Cliente · Nome». Vários aprovadores do cliente podem usar o mesmo link.
-- Separadores visíveis só se a topper. partilhar: **Proposta** (com pré-criativo) · **Quadros**
-  partilhados (só leitura: tratamento, rotas) · **Review** (peças enviadas).
-- **Nunca** mostra custos, margens, notas, tarefas ou comentários internos.
-- Imagem topper., modo claro/escuro, funciona no telemóvel, **PT/EN** (clientes internacionais).
-- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** com o
-  nome do cliente (opção por peça); **download** só se ativado por peça.
-- Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
-- Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
-
-### 25.5 Definições › Centro Criativo
-Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
-etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
 
 ---
 
 ## 26. Centro Criativo — Fase 3: Tempo real e captura (23 out 2026)
 
-Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25).
+Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§24).
 
 ### 26.1 Edição em tempo real
 - Várias pessoas no **mesmo quadro ao mesmo tempo**, sem conflitos e sem «recarregar»:
@@ -3019,7 +2959,7 @@ Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25)
   grandes, ex.: «Arrumar o quadro» da IA) com «Ver» e «Restaurar»; «Anular» por pessoa.
 - Comentários, reações e @menções em tempo real; notificação a quem é mencionado.
 - Permissões continuam no servidor: só entra quem tem acesso ao negócio (§9.3); o portal do
-  cliente (§25.4) mostra quadros partilhados **só de leitura**, sem cursores da equipa.
+  cliente (§24.4) mostra quadros partilhados **só de leitura**, sem cursores da equipa.
 - **Servidor de tempo real (decidido):** **PartyServer / y-partyserver** (Yjs) em **Cloudflare
   Workers + Durable Objects com SQLite**, na **conta Cloudflare da topper.** (a mesma do R2).
   Um Durable Object por quadro, com a **API de hibernação** (quadros vazios não gastam).
@@ -3062,5 +3002,3 @@ Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25)
 Centro Criativo: frequência das versões automáticas do quadro, número de versões guardadas,
 destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
 gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
-=======
->>>>>>> origin/main
