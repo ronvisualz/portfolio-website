@@ -720,11 +720,13 @@ function cc_fetch(string $url, int $max = 3145728, int $timeout = 8): ?array {
 
 /** Título, descrição e imagem de uma página (Open Graph / Twitter / <title>). */
 function cc_link_meta(string $url): array {
-    $out = ['title' => '', 'description' => '', 'image' => '', 'site' => (string)parse_url($url, PHP_URL_HOST)];
+    $out = ['title' => '', 'description' => '', 'image' => '', 'site' => (string)parse_url($url, PHP_URL_HOST), 'audio' => '', 'video' => '', 'type' => ''];
     $r = cc_fetch($url, 1572864);
     if (!$r) return $out;
     [$html, $type, $final] = $r;
+    $out['type'] = $type;
     if (str_starts_with($type, 'image/')) { $out['image'] = $final; return $out; }
+    if (str_starts_with($type, 'audio/')) { $out['audio'] = $final; return $out; }   // o próprio ficheiro de áudio
     if (!preg_match_all('~<meta\s[^>]*>~i', $html, $m)) $m = [[]];
     $meta = [];
     foreach ($m[0] as $tag) {
@@ -741,6 +743,10 @@ function cc_link_meta(string $url): array {
     }
     $out['image'] = $img;
     $out['site'] = $meta['og:site_name'] ?? $out['site'];
+    // a pré-escuta que as bibliotecas de música põem na página (og:audio) e o leitor embutido (og:video, ex.: Bandcamp)
+    foreach (['audio' => ['og:audio:secure_url', 'og:audio', 'og:audio:url'], 'video' => ['og:video:secure_url', 'og:video', 'og:video:url']] as $k => $keys) {
+        foreach ($keys as $mk) if (!empty($meta[$mk]) && preg_match('~^https://~i', $meta[$mk])) { $out[$k] = $meta[$mk]; break; }
+    }
     foreach (['title', 'description', 'site'] as $k) $out[$k] = mb_substr(trim(preg_replace('/\s+/u', ' ', $out[$k])), 0, $k === 'description' ? 600 : 200);
     return $out;
 }
@@ -749,16 +755,79 @@ function cc_link_meta(string $url): array {
 function cc_asset_from_link(PDO $pdo, string $url, array $o): array {
     $url = mb_substr(trim($url), 0, 1000);
     if (!preg_match('~^https?://~i', $url)) throw new RuntimeException('Endereço inválido.');
-    $st = $pdo->prepare("SELECT * FROM cc_assets WHERE source_url = ? AND kind = 'link' AND deleted_at IS NULL ORDER BY id LIMIT 1");
+    $st = $pdo->prepare("SELECT * FROM cc_assets WHERE source_url = ? AND kind IN ('link','audio') AND deleted_at IS NULL ORDER BY id LIMIT 1");
     $st->execute([$url]);
     if ($dup = $st->fetch()) return [$dup, false];
-    $meta = cc_link_meta($url);
+    // áudio (§27): um ficheiro direto, ou a pré-escuta de uma biblioteca de música, entra como áudio a sério
+    $path = (string)parse_url($url, PHP_URL_PATH);
+    $direct = in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), CC_AUDIO_EXT, true);
+    $meta = $direct ? ['title' => '', 'description' => '', 'image' => '', 'site' => (string)parse_url($url, PHP_URL_HOST), 'audio' => $url, 'video' => '', 'type' => ''] : cc_link_meta($url);
+    $embed = cc_audio_embed($url, $meta);
+    if ($meta['audio'] !== '' && !$embed && ($au = cc_audio_from_url($pdo, $meta['audio'], $url, $meta, $o))) return $au;
     $preview = null;
     if ($meta['image'] !== '' && ($r = cc_fetch($meta['image'], 8388608)) && str_starts_with($r[1], 'image/')) $preview = $r[0];
     [$a, $new] = cc_asset_create($pdo, null, $o + ['kind' => 'link', 'source_url' => $url, 'title' => $meta['title'] ?: $meta['site'], 'preview' => $preview,
-                                                   'name' => '', 'mime' => 'text/html']);
+                                                   'name' => '', 'mime' => 'text/html', 'no_ai' => $embed ? true : !empty($o['no_ai'])]);
     if ($new) {
         $an = ['caption' => $meta['description'], 'site' => $meta['site']];
+        if ($embed) $an['embed'] = $embed;   // o leitor do serviço: o cartão passa a ser de áudio
+        $pdo->prepare('UPDATE cc_assets SET analysis = ? WHERE id = ?')->execute([json_encode($an, JSON_UNESCAPED_UNICODE), (int)$a['id']]);
+        cc_asset_reindex($pdo, (int)$a['id']);
+        $a = cc_asset_get($pdo, (int)$a['id']);
+        if ($embed && empty($o['no_ai'])) { require_once __DIR__ . '/cc_stt.php'; cc_ai_queue_asset($pdo, $a, $o['by'] ?? null); }
+    }
+    return [$a, $new];
+}
+
+/** Os leitores de música que entram no quadro (frame-src da CSP das páginas do Centro Criativo). */
+const CC_EMBED_FRAMES = 'https://w.soundcloud.com https://open.spotify.com https://player-widget.mixcloud.com https://www.mixcloud.com https://embed.music.apple.com https://bandcamp.com';
+const CC_AUDIO_LINK_MAX = 52428800;   // um ficheiro de áudio por link: até 50 MB
+
+/** O leitor embutido de um serviço de música (SoundCloud, Spotify, Mixcloud, Apple Music, Bandcamp), ou null. */
+function cc_audio_embed(string $url, array $meta = []): ?array {
+    $p = parse_url($url);
+    $host = strtolower((string)($p['host'] ?? ''));
+    $host = preg_replace('/^(www|m)\./', '', $host);
+    $path = (string)($p['path'] ?? '');
+    if ($host === 'soundcloud.com' && preg_match('~^/[^/]+/[^/]+~', $path) && !preg_match('~^/(discover|search|you|stream|upload)~', $path)) {
+        return ['provider' => 'SoundCloud', 'src' => 'https://w.soundcloud.com/player/?url=' . rawurlencode('https://soundcloud.com' . rtrim($path, '/')) . '&color=%23ffc718&auto_play=true&hide_related=true&show_comments=false&visual=false', 'h' => 166, 'audio' => true];
+    }
+    if ($host === 'open.spotify.com' && preg_match('~^/(?:intl-[a-z-]+/)?(track|album|playlist|episode|show)/([A-Za-z0-9]{10,40})~', $path, $m)) {
+        return ['provider' => 'Spotify', 'src' => 'https://open.spotify.com/embed/' . $m[1] . '/' . $m[2], 'h' => $m[1] === 'track' || $m[1] === 'episode' ? 152 : 352, 'audio' => true];
+    }
+    if ($host === 'mixcloud.com' && preg_match('~^/[^/]+/[^/]+/?$~', $path)) {
+        return ['provider' => 'Mixcloud', 'src' => 'https://player-widget.mixcloud.com/widget/iframe/?hide_cover=1&autoplay=1&feed=' . rawurlencode(rtrim($path, '/') . '/'), 'h' => 120, 'audio' => true];
+    }
+    if ($host === 'music.apple.com' && preg_match('~^/[a-z]{2}/(album|song|playlist)/~', $path, $m)) {
+        return ['provider' => 'Apple Music', 'src' => 'https://embed.music.apple.com' . $path . (isset($p['query']) ? '?' . $p['query'] : ''), 'h' => $m[1] === 'song' || isset($p['query']) ? 175 : 450, 'audio' => true];
+    }
+    if (str_ends_with($host, 'bandcamp.com') && !empty($meta['video']) && preg_match('~^https://bandcamp\.com/EmbeddedPlayer/[A-Za-z0-9=/_-]+$~', $meta['video'])) {
+        return ['provider' => 'Bandcamp', 'src' => $meta['video'], 'h' => 120, 'audio' => true];
+    }
+    return null;
+}
+
+/**
+ * Um áudio a partir de um endereço (o ficheiro direto, ou a pré-escuta og:audio de uma biblioteca de música):
+ * descarrega (até 50 MB) e cria a referência de áudio. Devolve [asset, novo] ou null (fica como link).
+ */
+function cc_audio_from_url(PDO $pdo, string $audioUrl, string $pageUrl, array $meta, array $o): ?array {
+    $r = cc_fetch($audioUrl, CC_AUDIO_LINK_MAX, 60);
+    if (!$r || strlen($r[0]) > CC_AUDIO_LINK_MAX) return null;
+    [$bytes, $type, $final] = $r;
+    $name = r2_clean_name(rawurldecode(basename((string)parse_url($final, PHP_URL_PATH)))) ?: 'audio';
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!str_starts_with($type, 'audio/') && !in_array($ext, CC_AUDIO_EXT, true)) return null;
+    if (!in_array($ext, CC_AUDIO_EXT, true)) $name .= '.' . (['audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/x-m4a' => 'm4a', 'audio/wav' => 'wav', 'audio/x-wav' => 'wav', 'audio/ogg' => 'ogg', 'audio/flac' => 'flac', 'audio/aac' => 'aac', 'audio/aiff' => 'aif', 'audio/x-aiff' => 'aif'][$type] ?? 'mp3');
+    // a IA espera pela forma de onda e pelo espectrograma que o browser faz quando alguém o abre (audio_meta);
+    // o AIFF, que o browser não lê, vai já (o cron faz a forma de onda)
+    $later = in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), ['aif', 'aiff'], true) ? [] : ['no_ai' => true];
+    [$a, $new] = cc_asset_create($pdo, $bytes, $later + $o + ['kind' => 'audio', 'name' => $name, 'mime' => str_starts_with($type, 'audio/') ? $type : '', 'source_url' => $pageUrl,
+                                                              'title' => $meta['title'] ?: pathinfo($name, PATHINFO_FILENAME), 'fp' => sha1($bytes)]);
+    if ($new && $meta['description'] !== '') {
+        $an = json_decode((string)$a['analysis'], true) ?: [];
+        if ($meta['description'] !== '') $an['caption'] = $meta['description'];
+        $an['site'] = $meta['site'];
         $pdo->prepare('UPDATE cc_assets SET analysis = ? WHERE id = ?')->execute([json_encode($an, JSON_UNESCAPED_UNICODE), (int)$a['id']]);
         cc_asset_reindex($pdo, (int)$a['id']);
         $a = cc_asset_get($pdo, (int)$a['id']);
@@ -1093,7 +1162,8 @@ function cc_library_search(PDO $pdo, array $f, int $limit = 60, int $offset = 0)
     $args = [];
     if (!empty($f['inbox'])) $where[] = 'a.inbox = 1';
     if (in_array($f['origin'] ?? '', ['external', 'topper'], true)) { $where[] = 'a.origin = ?'; $args[] = $f['origin']; }
-    if (in_array($f['kind'] ?? '', ['image', 'video', 'audio', 'link', 'file'], true)) { $where[] = 'a.kind = ?'; $args[] = $f['kind']; }
+    if (($f['kind'] ?? '') === 'audio') $where[] = "(a.kind = 'audio' OR (a.kind = 'link' AND a.analysis LIKE '%\"audio\":true%'))";   // e os leitores de música
+    elseif (in_array($f['kind'] ?? '', ['image', 'video', 'link', 'file'], true)) { $where[] = 'a.kind = ?'; $args[] = $f['kind']; }
     if (isset(CC_AUDIO_CATS[$f['acat'] ?? ''])) { $where[] = 'a.audio_cat = ?'; $args[] = $f['acat']; }
     foreach (array_keys(CC_VOCAB) as $k) {
         if (($f[$k] ?? '') !== '') { $where[] = "a.$k = ?"; $args[] = mb_substr((string)$f[$k], 0, 60); }

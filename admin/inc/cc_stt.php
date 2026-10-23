@@ -57,7 +57,7 @@ function cc_ai_queue_asset(PDO $pdo, array $a, ?int $by, bool $force = false): s
         if ($k === 'stt_ff' && !cc_ffmpeg_ok($pdo)) $k = '';
         if ($k !== '') {
             $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued', ai_error = '' WHERE id = ?")->execute([(int)$a['id']]);
-            cc_job_add($pdo, $k, (int)$a['id'], null, null, $by);
+            cc_job_add($pdo, $k, (int)$a['id'], null, $force ? ['analyze' => 1] : null, $by);   // pedido à mão: a análise vem sempre a seguir
             return $k;
         }
     }
@@ -201,7 +201,8 @@ function cc_stt_run(PDO $pdo, array $job): void {
     cc_asset_reindex($pdo, (int)$a['id']);
     // a seguir, a análise (que já lê a transcrição)
     $a = cc_asset_get($pdo, (int)$a['id']);
-    if (cc_ai_config() && ($a['thumbs'] || in_array($a['kind'], ['link', 'audio'], true)) && (string)$a['ai_model'] === '') {
+    $again = !empty((json_decode((string)($job['payload'] ?? ''), true) ?: [])['analyze']);
+    if (cc_ai_config() && ($a['thumbs'] || in_array($a['kind'], ['link', 'audio'], true)) && ((string)$a['ai_model'] === '' || $again)) {
         $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued' WHERE id = ?")->execute([(int)$a['id']]);
         cc_job_add($pdo, 'analyze', (int)$a['id'], null, null, $job['created_by'] ?? null);
     }

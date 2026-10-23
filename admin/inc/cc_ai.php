@@ -342,7 +342,8 @@ function cc_ai_analyze_asset(PDO $pdo, int $id): void {
     if (!$a || $a['deleted_at']) return;
     $thumb = cc_thumb_pick($a['thumbs'], 1600);
     $frames = $a['kind'] === 'video' ? array_slice(cc_frames($pdo, $id), 0, 12) : [];
-    if ($a['kind'] === 'audio') { cc_ai_analyze_audio($pdo, $a); return; }
+    // áudio (§27) — também um link de um leitor de música (SoundCloud, Spotify…): a análise do som
+    if ($a['kind'] === 'audio' || ($a['kind'] === 'link' && ((json_decode((string)$a['analysis'], true) ?: [])['embed']['audio'] ?? false))) { cc_ai_analyze_audio($pdo, $a); return; }
     if (!$thumb && !$frames && $a['kind'] !== 'link') { $pdo->prepare("UPDATE cc_assets SET ai_status = '' WHERE id = ?")->execute([$id]); return; }
     $pdo->prepare("UPDATE cc_assets SET ai_status = 'running', ai_error = '' WHERE id = ?")->execute([$id]);
     $content = [];
@@ -428,8 +429,10 @@ function cc_ai_analyze_audio(PDO $pdo, array $a): void {
     $cap = json_decode((string)($a['capture'] ?? ''), true) ?: [];
     $content = [];
     $thumb = cc_thumb_pick($a['thumbs'], 1600);
+    $embed = $a['kind'] === 'link' ? ($an0['embed'] ?? null) : null;   // um leitor de um serviço: só a capa e a página
     if ($thumb && ($b = cc_ai_image_block($thumb))) {
-        $content[] = ['type' => 'text', 'text' => 'Espectrograma do áudio (tempo da esquerda para a direita, frequência de baixo para cima em escala logarítmica, cor = intensidade) com a forma de onda em cima:'];
+        $content[] = ['type' => 'text', 'text' => $embed ? 'A capa / imagem da página (' . ($embed['provider'] ?? 'serviço de música') . '):'
+                                                         : 'Espectrograma do áudio (tempo da esquerda para a direita, frequência de baixo para cima em escala logarítmica, cor = intensidade) com a forma de onda em cima:'];
         $content[] = $b;
     }
     $num = fn($k, $d = 1) => isset($f[$k]) && is_numeric($f[$k]) ? number_format((float)$f[$k], $d, ',', '') : null;
@@ -452,7 +455,8 @@ function cc_ai_analyze_audio(PDO $pdo, array $a): void {
          . ($meas ? "\nMedidas (calculadas no browser): " . implode(' · ', $meas) : '')
          . ($a['transcript'] ? "\nTranscrição (com tempos):\n" . mb_substr((string)$a['transcript'], 0, 6000) : "\nSem transcrição.")
          . "\nDiz a categoria, o ambiente/emoção, o estilo, os instrumentos prováveis, o BPM (usa o estimado se fizer sentido), a energia e um uso sugerido."
-         . ' Não tens o som: baseia-te no espectrograma, nas medidas, na transcrição e no contexto, e sê honesto na confiança.';
+         . ($embed ? "\nÉ um link para o leitor de " . ($embed['provider'] ?? 'um serviço de música') . (!empty($an0['caption']) ? '. Descrição da página: ' . mb_substr((string)$an0['caption'], 0, 600) : '') . '.' : '')
+         . ' Não tens o som: baseia-te ' . ($embed ? 'na página, no título, nos créditos' : 'no espectrograma, nas medidas, na transcrição') . ' e no contexto, e sê honesto na confiança.';
     $content[] = ['type' => 'text', 'text' => $ctx];
     $res = cc_claude($pdo, 'cc-analyze', $content, cc_ai_audio_schema(), ['max' => 8000, 'ctx' => ['asset' => $id]]);
     $d = $res['data'];

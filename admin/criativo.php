@@ -127,7 +127,7 @@ if ($boardId) {
     require_once __DIR__ . '/inc/cc_rt.php';
     if (!cc_board_access($pdo, $b)) { flash('Este quadro é de um negócio a que a sua conta não tem acesso.', 'err'); redirect('/admin/criativo.php'); }
     $rtCsp = cc_rt_csp($pdo);
-    if ($rtCsp !== '') csp_send($rtCsp);   // o browser liga-se ao serviço de tempo real (§26)
+    csp_send($rtCsp, CC_EMBED_FRAMES);   // o serviço de tempo real (§26) e os leitores de música dos cartões de áudio (§27)
     $path = cc_board_path($pdo, $b);
     $crumbs = array_map(fn($x) => (string)$x['title'], $path);
     render_header($b['title'], 'criativo', 'cc-full', $crumbs);
@@ -153,6 +153,7 @@ if ($boardId) {
 
 // ── os separadores ──────────────────────────────────────────
 $tab = isset(CC_TABS[$_GET['t'] ?? '']) ? (string)$_GET['t'] : 'projetos';
+csp_send('', CC_EMBED_FRAMES);   // a Biblioteca abre os leitores de música (SoundCloud, Spotify…)
 $inboxN = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
 render_header('Centro Criativo', 'criativo', '', [CC_TABS[$tab]]);
 render_flashes();

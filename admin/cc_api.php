@@ -583,12 +583,9 @@ case 'upload_done': {
             if ($n >= 12 || !is_uploaded_file($tmp) || $_FILES['frames']['size'][$i] > 6291456) continue;
             if (cc_frame_add($pdo, $x, (string)file_get_contents($tmp), (float)($ts[$i] ?? 0), $n)) $n++;
         }
-        require_once __DIR__ . '/inc/cc_ai.php';
-        $cfg = cc_ai_config();
-        if ($cfg && $cfg['auto'] && ($n || $x['thumbs'])) {
-            $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued' WHERE id = ?")->execute([(int)$x['id']]);
-            cc_job_add($pdo, 'analyze', (int)$x['id'], null, null, $by);
-        }
+        // com serviço de fala, primeiro a transcrição (o ffmpeg tira o som no cron), depois a análise (§27)
+        require_once __DIR__ . '/inc/cc_stt.php';
+        if ($n || $x['thumbs']) cc_ai_queue_asset($pdo, cc_asset_get($pdo, (int)$x['id']), $by);
         $x = cc_asset_get($pdo, (int)$x['id']);
     }
     $card = null;
@@ -677,8 +674,9 @@ case 'link_add': {
     $card = null;
     if ($b) {
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.52;
-        $cid = cc_card_add($pdo, (int)$b['id'], ['type' => 'link', 'asset_id' => (int)$x['id'], 'x' => (float)rq('x'), 'y' => (float)rq('y'), 'w' => 300,
-                                                 'h' => $x['thumbs'] ? round(300 * min(1.2, $ratio)) : 0, 'lane' => (string)rq('lane'), 'content' => []], $by);
+        $ct = cc_card_type_for($x);   // um ficheiro de áudio ou um leitor de música (§27) dá um cartão de áudio
+        $cid = cc_card_add($pdo, (int)$b['id'], ['type' => $ct, 'asset_id' => (int)$x['id'], 'x' => (float)rq('x'), 'y' => (float)rq('y'), 'w' => 300,
+                                                 'h' => $x['thumbs'] && $ct === 'link' ? round(300 * min(1.2, $ratio)) : 0, 'lane' => (string)rq('lane'), 'content' => []], $by);
         $card = cc_card_public(cc_card_get($pdo, $cid), $x);
         cc_board_touch($pdo, (int)$b['id']);
     }
@@ -730,12 +728,15 @@ case 'inbox_done': {
 // ── IA ──────────────────────────────────────────────────────
 
 case 'analyze': {
-    require_once __DIR__ . '/inc/cc_ai.php';
+    require_once __DIR__ . '/inc/cc_stt.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
     if (!cc_ai_config()) cfail('A IA do Centro Criativo ainda não está ligada (Definições › Integrações).');
-    $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued', ai_error = '' WHERE id = ?")->execute([(int)$x['id']]);
-    cc_job_add($pdo, 'analyze', (int)$x['id'], null, null, $by);
+    // áudio e vídeo sem transcrição: primeiro a fala (se o serviço estiver ligado), depois a análise
+    if (cc_ai_queue_asset($pdo, $x, $by, true) === '') {
+        $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued', ai_error = '' WHERE id = ?")->execute([(int)$x['id']]);
+        cc_job_add($pdo, 'analyze', (int)$x['id'], null, null, $by);
+    }
     cout(200, ['ok' => true, 'msg' => 'Na fila da IA.']);
 }
 
@@ -743,7 +744,7 @@ case 'analyze_all': {
     require_once __DIR__ . '/inc/cc_ai.php';
     if (!can('criativo', PERM_MANAGE)) cfail('Só quem gere o Centro Criativo.', 403);
     if (!cc_ai_config()) cfail('A IA do Centro Criativo ainda não está ligada (Definições › Integrações).');
-    $ids = $pdo->query("SELECT id FROM cc_assets WHERE deleted_at IS NULL AND thumbs IS NOT NULL AND ai_status IN ('', 'error', 'off') LIMIT 500")->fetchAll(PDO::FETCH_COLUMN);
+    $ids = $pdo->query("SELECT id FROM cc_assets WHERE deleted_at IS NULL AND (thumbs IS NOT NULL OR kind = 'audio') AND ai_status IN ('', 'error', 'off') LIMIT 500")->fetchAll(PDO::FETCH_COLUMN);
     foreach ($ids as $id) {
         $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued' WHERE id = ?")->execute([(int)$id]);
         cc_job_add($pdo, 'analyze', (int)$id, null, null, $by);
