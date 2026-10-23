@@ -65,7 +65,7 @@
   /** Áudios antigos ou vindos da Drive ainda sem forma de onda: o browser calcula (um de cada vez) e guarda. */
   var auPending = new Map(), auQueue = [];   // id → quem espera (null: já tentado)
   function auNeedPeaks(a, done) {
-    if (!EDIT || !AU || !a || a.kind !== 'audio' || a.peaks || !a.orig) return;
+    if (!EDIT || !AU || !a || a.kind !== 'audio' || a.peaks || !a.orig || /\.aiff?$/i.test(a.file || '')) return;   // o AIFF é feito no servidor (cron)
     if (auPending.has(a.id)) { var l = auPending.get(a.id); if (l) l.push(done); return; }
     auPending.set(a.id, [done]);
     auQueue.push(a);

@@ -1733,6 +1733,69 @@ connect-src), `inc/cc.php`, `inc/alerts.php`, `inc/cron_run.php`, `inc/settings_
 (manifest e service worker), `inc/ui.php`, `cc_api.php`, `criativo.php`, `portal.php`, `conta.php`,
 `definicoes.php`, `assets/cc.js`, `assets/app.js` (avisos com botão), CSS.
 
+### 10.18 Centro Criativo — Áudio — §27 (23 out 2026)
+
+Base de dados **v29** (`inc/migrate_audio.php`, idempotente): `cc_assets.audio_cat` (categoria),
+`cc_assets.peaks` e `cc_rv_versions.peaks` (a forma de onda: 600 picos 0–255 em base64). A migração
+converte as referências e os cartões «Ficheiro» que eram áudio (mp3, wav, m4a, aac, flac, ogg, aif,
+aiff — pelo tipo ou pela extensão) para o tipo `audio`; a forma de onda dos antigos é feita na
+primeira vez que alguém com edição os vê.
+
+- **Tipo «Áudio»:** `CC_CARD_TYPES` e `cc_kind_for` conhecem `audio`; `cc_card_type_for` decide o
+  cartão em todo o lado (envio, Drive, link, captura, trocar, Preparar com IA). Os tipos, as extensões e
+  o ícone vêm da Drive (`assets/drive/core.js`: `TD.kind`, `TD.icon('audio')`), carregada nas páginas
+  do Centro Criativo.
+- **No browser (`assets/cc_audio.js`):** ao carregar, o Web Audio lê o ficheiro (até 150 MB) e faz a
+  forma de onda (guardada, não se recalcula), as medidas (BPM estimado com confiança, energia, pico,
+  dinâmica, brilho, silêncio) e uma imagem com a forma de onda e o espectrograma (escala log) — é o que
+  a IA «vê». O **leitor único** da página garante um áudio de cada vez (e pára se um vídeo começar).
+- **Cartão no quadro:** tocar/pausar, nome, categoria e duração (o tempo corre ao tocar), forma de onda
+  com o progresso e clique para ir a esse ponto. Duplo clique abre a **vista aberta** (também na
+  gaveta da Biblioteca): forma de onda grande (clique = ir; arrastar = marcar a repetição A–B),
+  velocidade 0,5×–2×, A / B / sem repetição, volume, transcrição com os tempos clicáveis e «Copiar»,
+  e a análise editável (categoria, energia, BPM, ambiente, estilo, instrumentos, uso sugerido). Formato
+  que o browser não toca: aviso e «Original» para descarregar.
+- **Biblioteca:** filtro «Áudio» (inclui os leitores de música), grupo «Áudio» com as categorias
+  Música · Voz-off · Efeito sonoro (SFX) · Ambiente · Outro e as quantidades; mosaico com a forma de
+  onda e tocar; a pesquisa inclui a transcrição, a categoria e a análise; «Capturar» aceita áudio.
+- **Review e Portal:** uma peça pode ser áudio. A forma de onda fica no lugar da imagem e da tira, com
+  os comentários marcados no tempo (m:ss,d) por cima; as mesmas teclas (espaço, J K L, I O, ← →), sem
+  desenho nem pinos. **Comparar** duas versões: as duas formas de onda e «Ouvir A» / «Ouvir B» (ou as
+  teclas A e B) no mesmo ponto. Aprovação, rondas, permissões e avisos como no vídeo; a versão aprovada
+  entra na Biblioteca como áudio (com a forma de onda). MP3, WAV, M4A, AAC, FLAC e OGG tocam como estão;
+  **AIFF** passa a MP3 no cron (com ffmpeg), que faz também a forma de onda. No portal o áudio não leva
+  marca de água (só a imagem da forma de onda).
+- **IA (no limite mensal de sempre):** **transcrição** com marcas de tempo pelo serviço de fala
+  configurado no servidor — proposta: **OpenAI Whisper** (`whisper-1`, ~0,006 US$/min) ou **Groq**
+  (mesma API) — em `admin/inc/cc_config.php` (`transcribe_key`, `transcribe_model`, `transcribe_url`,
+  `transcribe_usd_min`, `transcribe_lang`; exemplo em `cc_config.example.php`). Serve áudio e **vídeo**
+  (o campo `transcript` que a análise do vídeo já lia): até 25 MB em formato aceite vai direto; vídeos,
+  AIFF e ficheiros grandes passam pelo ffmpeg no cron (mono 16 kHz). Fica uma linha por frase,
+  «[m:ss] texto»; custo registado como «Transcrição (fala)». Depois, a **análise da música** pelo Claude
+  (espectrograma + medidas + transcrição + contexto): categoria, ambiente, estilo, instrumentos, BPM
+  (o medido quando é fiável), energia, uso sugerido, porquê e etiquetas — editável. Definições ›
+  Integrações › Centro Criativo mostra o estado da transcrição (ou a proposta, se ainda não houver chave).
+- **Captura:** link direto para um ficheiro de áudio ou uma página com pré-escuta (`og:audio`, comum
+  nas bibliotecas de música) → descarrega (até 50 MB) e cria um áudio a sério, com título e fonte;
+  SoundCloud, Spotify, Mixcloud, Apple Music e Bandcamp → cartão de áudio com o **leitor do serviço**
+  (botão «Ouvir aqui»; a CSP das páginas do Centro Criativo deixa estes leitores). Pela extensão,
+  Partilhar e Atalho, igual. **Arrastar da Drive** para o quadro (um ou vários ficheiros) cria os cartões
+  com o tipo certo, sem copiar o original (fica na Drive).
+- **Testado na bancada:** conversão dos cartões antigos; envio MP3/WAV (forma de onda, cartão, um a
+  tocar de cada vez, vista aberta com A–B e 1,5×); Biblioteca (filtro, categorias, pesquisa pela
+  transcrição); Drive → quadro (WAV e AIFF; AIFF com forma de onda, transcrição e análise pelo cron);
+  Review (2 versões, comentário no tempo, comparar a ouvir B, aprovar → Biblioteca) e Portal (AIFF
+  convertido, tocar); transcrição e análise com serviços simulados; captura por link (com um servidor
+  local, a bancada não tem DNS); claro/escuro e telemóvel sem deslocamento lateral; sem «§» na interface.
+- **Também corrigido:** o duplo clique nos cartões (com a captura do ponteiro chegava como clique na
+  tela e criava uma nota) passa a abrir o cartão certo.
+
+Ficheiros novos: `inc/migrate_audio.php`, `inc/cc_stt.php`, `assets/cc_audio.js`. Alterados:
+`inc/migrate.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc/cc_review.php`, `inc/capture.php`,
+`inc/bootstrap.php` (`csp_send()` aceita frame-src), `inc/settings_def.php`, `inc/cc_config.example.php`,
+`cc_api.php`, `rv_api.php`, `portal.php`, `criativo.php`, `definicoes.php`, `assets/cc.js`,
+`assets/review.js`, `assets/cc.css`, `assets/review.css`.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

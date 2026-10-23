@@ -53,7 +53,7 @@
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return Promise.reject(new Error('Web Audio'));
     var ctx = new AC();
-    return new Promise(function (res, rej) { ctx.decodeAudioData(buf, res, rej); }).then(function (ab) { if (ctx.close) ctx.close(); return ab; }, function (e) { if (ctx.close) ctx.close(); throw e; });
+    return new Promise(function (res, rej) { var pr = ctx.decodeAudioData(buf, res, rej); if (pr && pr.catch) pr.catch(function () {}); }).then(function (ab) { if (ctx.close) ctx.close(); return ab; }, function (e) { if (ctx.close) ctx.close(); throw e; });
   }
   /** Mistura para mono a 22 050 Hz (para as medidas e o espectrograma). */
   function mono22(ab) {
