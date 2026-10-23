@@ -493,6 +493,8 @@ case 'upload_done': {
     }
     if ($bytes !== null && strlen($bytes) === 0) cfail('O ficheiro está vazio.');
     [$x, $new] = cc_asset_create($pdo, $bytes, $o);
+    // o original vai para o Drive: a pasta do negócio do quadro, ou a Biblioteca criativa
+    if ($new) $x = cc_place_original($pdo, $x, $b, (bool)$o['inbox'], $by);
     // frames-chave de um vídeo (extraídos no browser por deteção de corte)
     if ($new && $x['kind'] === 'video' && !empty($_FILES['frames']['tmp_name']) && is_array($_FILES['frames']['tmp_name'])) {
         $ts = (array)rq('t', []);

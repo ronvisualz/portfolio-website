@@ -751,6 +751,9 @@ function cc_ai_treatment(PDO $pdo, array $board): array {
     $json = json_encode($doc, JSON_UNESCAPED_UNICODE);
     if ($pid = $st->fetchColumn()) $pdo->prepare('UPDATE cc_pages SET data = ?, generated_at = ? WHERE id = ?')->execute([$json, cc_now(), (int)$pid]);
     else $pdo->prepare("INSERT INTO cc_pages (board_id, lane, data, generated_by, generated_at) VALUES (?, 'T', ?, ?, ?)")->execute([(int)$board['id'], $json, current_user()['id'] ?? null, cc_now()]);
+    // e em PDF no Drive (a pasta do negócio, ou a Biblioteca criativa)
+    require_once __DIR__ . '/cc_flow.php';
+    cc_treatment_to_drive($pdo, $board, $doc, current_user()['id'] ?? null);
     return $doc;
 }
 

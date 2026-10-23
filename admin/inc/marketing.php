@@ -368,8 +368,9 @@ function mkt_track_url(string $code): string {
 }
 
 /**
- * A pasta da peça no Drive (§16.5): Marketing/AAAA-MM/<peça>/, com o mês em que entrou em Produção.
- * Com $create, cria-a (e guarda a ligação). Sem o Drive configurado devolve null.
+ * A pasta da peça no Drive (§16.5, §10.15): Marketing/AAAA-MM/<peça>/, com o mês em que entrou em
+ * Produção; uma peça de um negócio fica com ele, em «<pasta do negócio>/Marketing/<peça>/» (e muda
+ * de sítio com a pasta do negócio). Com $create, cria-a (e guarda a ligação). Sem o Drive: null.
  */
 function mkt_drive_folder(PDO $pdo, array $p, bool $create = true): ?string {
     if ((string)$p['drive_folder'] !== '') return (string)$p['drive_folder'];
@@ -378,9 +379,15 @@ function mkt_drive_folder(PDO $pdo, array $p, bool $create = true): ?string {
     $month = lisbon_fmt(strtotime((string)($p['advanced_at'] ?: now_php())), 'Y-m');
     $slug = substr(drive_slug((string)$p['title']), 0, 60) ?: 'peca';
     $path = 'Marketing/' . $month . '/' . $slug . '/';
+    if (!empty($p['deal_id'])) {
+        require_once __DIR__ . '/files.php';
+        $deal = files_deal_row($pdo, (int)$p['deal_id']);
+        $df = $deal ? files_folder($pdo, $deal, $create) : null;
+        if ($df !== null) $path = $df . 'Marketing/' . $slug . '/';
+    }
     $st = $pdo->prepare('SELECT COUNT(*) FROM mkt_pieces WHERE drive_folder = ? AND id <> ?');
     $st->execute([$path, (int)$p['id']]);
-    if ((int)$st->fetchColumn() > 0) $path = 'Marketing/' . $month . '/' . $slug . '-' . (int)$p['id'] . '/';
+    if ((int)$st->fetchColumn() > 0) $path = substr($path, 0, -1) . '-' . (int)$p['id'] . '/';
     if (!$create) return null;
     if (!drive_folder_exists($path)) {
         r2_mkdir_p($path);

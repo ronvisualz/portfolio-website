@@ -1070,6 +1070,33 @@ button.on-dot:disabled { opacity: .5; cursor: default; }
 .cocard .meta { color: var(--mute); font-size: 12.5px; margin-top: 3px; overflow-wrap: anywhere; }
 .ppl { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .ppl li { overflow-wrap: anywhere; }
+
+/* ficheiros de um negócio/lead (§10.15): por secção, com a origem e «Mostrar no Drive» */
+.fls { display: grid; gap: 10px; }
+.fls-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fls-add select { width: auto; min-width: 0; max-width: 60%; height: 32px; padding: 0 8px; font-size: 13px; }
+.fls-sec h5 { margin: 4px 0 4px; font: 600 11px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); }
+.fls-sec h5 .mono { font-weight: 500; margin-left: 4px; }
+.fls-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.fls-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline; padding: 6px 8px; border-radius: 8px; }
+.fls-list li:hover { background: var(--hover); }
+.fls-t { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.fls-t .chip { font-size: 10px; padding: 1px 6px; }
+.fls-name { color: var(--fg); font-weight: 500; font-size: 13.5px; text-decoration: none; overflow-wrap: anywhere; }
+.fls-name:hover { text-decoration: underline; }
+.fls-list small { grid-column: 1; font-size: 12px; overflow-wrap: anywhere; }
+.fls-show { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+.fls-show .ico { width: 14px; height: 14px; }
+.fls-move { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--info-bg); color: var(--info-fg); font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+.fls-move.err { background: var(--bad-bg); color: var(--bad-fg); }
+.fls-move .ico { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.fls-empty { margin: 0; font-size: 13px; }
+.fls-foot { margin: 2px 0 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fls-foot .mono { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .fls-list li { grid-template-columns: 1fr; }
+  .fls-show { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 2px; }
+}
 .ppl a { color: var(--fg); font-weight: 500; text-decoration: none; }
 .ppl a:hover { text-decoration: underline; }
 

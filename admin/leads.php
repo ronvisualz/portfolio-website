@@ -123,6 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('UPDATE deals SET phase = \'lead\', archived_reason = \'\', archived_note = \'\', archived_at = NULL, is_quarantined = 0, state_since = ?, last_touch = ? WHERE id = ? AND phase = \'archived\'')
             ->execute([now_php(), today_lisbon(), $id]);
         deal_log($pdo, $id, 'reactivate');
+        require_once __DIR__ . '/inc/files.php';
+        files_sync($pdo, $id, 'reactivate');   // a pasta volta de Arquivo/Leads/
         flash('Lead reativada.');
         redirect(leads_url($bf + ['open' => $id]));
     }

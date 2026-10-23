@@ -96,6 +96,9 @@ const HISTORY_TYPES = [
     'dates'      => ['Datas do negócio', 'calendar', 'neutral'],
     'round'      => ['Ronda de revisão', 'refresh', 'sky'],
     'rounds'     => ['Rondas esgotadas', 'alert', 'orange'],
+    // Ficheiros (§10.15)
+    'file'       => ['Ficheiro anexado', 'drive', 'sky'],
+    'folder'     => ['Pasta no Drive', 'drive', 'neutral'],
     // Marketing (§16)
     'm_create'   => ['Ideia criada', 'bulb', 'neutral'],
     'm_edit'     => ['Dados alterados', 'pencil', 'neutral'],

@@ -109,6 +109,10 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare("UPDATE deals SET phase = 'pipeline', stage_id = ?, lost_reason = '', lost_stage_id = NULL, lost_at = NULL WHERE id = ?")
                 ->execute([$d['stage_id'], $d['id']]);
             deal_log($pdo, (int)$d['id'], 'reopen', ['to_funnel' => $deal['funnel_id'], 'to_stage' => $d['stage_id'], 'note' => 'Anulado']);
+            require_once __DIR__ . '/cc_flow.php';
+            cc_on_reopen($pdo, (int)$d['id']);
+            require_once __DIR__ . '/files.php';
+            files_sync($pdo, (int)$d['id'], 'reopen');
             return $deal['code'] . ' voltou ao Pipeline.';
 
         case 'lead_state':
@@ -135,6 +139,8 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
                 ->execute([$d['id']]);
             lead_restore_tasks($pdo, $d['tasks'] ?? []);   // as tarefas abertas voltam ao Foco
             deal_log($pdo, (int)$d['id'], 'reactivate', ['note' => 'Arquivo anulado']);
+            require_once __DIR__ . '/files.php';
+            files_sync($pdo, (int)$d['id'], 'reactivate');
             return '«' . $lead['name'] . '» voltou às leads ativas.';
 
         case 'assign':

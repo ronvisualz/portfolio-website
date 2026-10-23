@@ -258,6 +258,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
           . '<section><h4>Porquê abordar</h4>' . inline_field('lead', $id, 'why', e((string)$l['why'])) . '</section>'
           . '<section><h4>Detalhe</h4>' . inline_field('lead', $id, 'detail', e((string)$l['detail'])) . '</section>'
           . '<section><h4>Notas</h4>' . inline_field('lead', $id, 'notes', e((string)$l['notes'])) . '</section>'
+          . lead_files_html($pdo, $l, $ed)
           . ($foot !== '' ? '<div class="lv-foot">' . $foot . '</div>' : '')
           . '</div>'
           . ($ed ? lead_edit_form_html($pdo, $l) : '')
@@ -270,6 +271,13 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
            . '</div>';
 
     return '<div class="lv lv-' . e($mode) . '" data-lead="' . $id . '" data-name="' . e($name) . '">' . $left . $right . '</div>';
+}
+
+/** Os ficheiros da lead (§10.15): a pasta em «Leads/» (ou no Arquivo), com «Anexar ficheiro». */
+function lead_files_html(PDO $pdo, array $l, bool $edit): string {
+    require_once __DIR__ . '/files_view.php';
+    if (!files_ready($pdo) || !files_on()) return '';
+    return '<section class="lv-files"><h4>Ficheiros</h4>' . files_list_html($pdo, $l, ['edit' => $edit, 'limit' => 6]) . '</section>';
 }
 
 /**

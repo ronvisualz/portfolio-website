@@ -504,11 +504,13 @@ if (!$drive) {
     echo deal_card('files', 'drive', 'ne', 'Ficheiros', '<p class="dc-empty">' . $msg . '</p><p class="dc-note mono">Projetos/' . e($deal['code']) . '_…/</p>', ['empty' => true]);
     echo deal_card('docs', 'file', 'ne', 'Documentos', '<p class="dc-empty">' . $msg . '</p>', ['empty' => true]);
 } else {
-    $types = array_slice($drive['by_type'], 0, 3, true);
+    // por secção da pasta (Propostas, Faturação, Criativo…), com o que o registo de ficheiros lhe liga (§10.15)
+    require_once __DIR__ . '/inc/files_view.php';
+    [$fTotal, $fBy, $fLast] = files_counts(files_for_deal($pdo, $deal));
     $kv = [['Pasta', '<span class="mono small">' . e($drive['folder'] ? basename(rtrim($drive['folder'], '/')) : 'ainda não criada') . '</span>']];
-    foreach ($types as $k => $n) $kv[] = [$k, '<span class="mono">' . $n . '</span>'];
-    $kv[] = ['Último', $drive['last'] ? e(shorten(basename($drive['last']['key']), 28)) : '<span class="muted">—</span>'];
-    echo deal_card('files', 'drive', 'ne', 'Ficheiros', deal_kv($kv), ['count' => count($drive['files']), 'panel' => 'dfiles:' . $id, 'href' => $drive['folder'] ? drive_page($drive['folder']) : '/admin/drive.php', 'more' => 'Abrir no Drive']);
+    foreach (array_slice($fBy, 0, 3, true) as $k => $n) $kv[] = [$k, '<span class="mono">' . $n . '</span>'];
+    $kv[] = ['Último', $fLast ? e(shorten($fLast['name'], 28)) : '<span class="muted">—</span>'];
+    echo deal_card('files', 'drive', 'ne', 'Ficheiros', deal_kv($kv), ['count' => $fTotal, 'panel' => 'dfiles:' . $id, 'href' => $drive['folder'] ? drive_page($drive['folder']) : '/admin/drive.php', 'more' => 'Ver ficheiros']);
     $props = can('orcamentacao') && ($bs = budget_sheet_get($pdo, $id)) ? count(array_filter(budget_history($pdo, (int)$bs['id']), fn($h) => $h['event'] === 'b_pdf')) : 0;
     $n = fn(int $x, string $one, string $many) => $x ? $x . ' ' . ($x === 1 ? $one : $many) : '<span class="muted">—</span>';
     echo deal_card('docs', 'file', 'ne', 'Documentos', deal_kv([

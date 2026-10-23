@@ -39,8 +39,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['bill'])) {
         exit('Documento não encontrado.');
     }
     if (str_starts_with($b['file_key'], 'r2:')) {
-        require_once __DIR__ . '/inc/r2.php';
-        header('Location: ' . r2_presign('GET', substr($b['file_key'], 3), 300, ['response-content-disposition' => 'inline; filename="' . $b['file_name'] . '"']), true, 302);
+        require_once __DIR__ . '/inc/files.php';
+        $key = substr($b['file_key'], 3);
+        // movido no Drive sem passar pela plataforma: o registo de ficheiros volta a encontrá-lo
+        if (r2_head($key) === null && files_ready($pdo)) {
+            $st = $pdo->prepare('SELECT * FROM files WHERE key_hash = ?');
+            $st->execute([files_hash($key)]);
+            if (($f = $st->fetch()) && ($loc = files_locate($pdo, $f))['state'] === 'ok') {
+                $key = $loc['key'];
+                $pdo->prepare('UPDATE deal_billing SET file_key = ? WHERE id = ?')->execute(['r2:' . $key, (int)$b['id']]);
+            }
+        }
+        header('Location: ' . r2_presign('GET', $key, 300, ['response-content-disposition' => 'inline; filename="' . $b['file_name'] . '"']), true, 302);
         exit;
     }
     $path = billing_local_dir() . '/' . basename(substr($b['file_key'], 6));

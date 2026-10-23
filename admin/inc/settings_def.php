@@ -201,10 +201,12 @@ function settings_defs(): array {
                                'help' => 'O IVA está em Geral. A faturação legal será ligada a um software certificado pela AT.'],
 
         // ── Drive ──
-        'drive_base'       => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Pastas base', 'type' => 'info', 'show' => 'Projetos/ · Empresa/ · Marketing/',
-                               'help' => 'As pastas de topo do Drive.'],
-        'drive_deal'       => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Pasta de cada negócio', 'type' => 'info', 'show' => 'Projetos/<ID>_<NOME>/ com Faturas/ (documentos submetidos)',
-                               'help' => 'A estrutura que a plataforma cria para cada negócio. Mudá-la exige mover as pastas existentes, por isso fica fixa por agora.'],
+        'drive_base'       => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Pastas base', 'type' => 'info', 'show' => 'Empresa/ · Leads/ · Projetos/ · Marketing/ · Biblioteca criativa/ · Showreel e Portfolio/ · Arquivo/',
+                               'help' => 'As pastas de topo do Drive. Não se movem nem vão para o Lixo.'],
+        'drive_deal'       => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Pasta de cada negócio', 'type' => 'info', 'show' => 'Projetos/<ID>_<NOME>/ com Propostas/ · Faturação/ · Criativo/ · Marketing/ · Produção/ · Entregas/ · Lead/',
+                               'help' => 'As subpastas nascem com o primeiro ficheiro. Negócio perdido ou lead arquivada → Arquivo/; reabertos voltam. A Faturação só aparece a quem vê o Financeiro.'],
+        'drive_reorg'      => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Reorganizar o que já existia', 'type' => 'link', 'href' => '/admin/reorganizar.php', 'show' => 'Reorganizar o Drive',
+                               'help' => 'Pré-visualização do que vai mudar (negócios perdidos para o Arquivo, faturas antigas, peças de marketing, originais do Centro Criativo) e execução em segundo plano. Só administradores.'],
 
         // ── Integrações ──
         'int_meet'         => ['tab' => 'integracoes', 'group' => 'Reuniões', 'label' => 'Google Meet', 'type' => 'info', 'show' => '',

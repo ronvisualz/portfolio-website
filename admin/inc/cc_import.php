@@ -56,7 +56,8 @@ function cc_import_cell(int $i): array {
 /** Um cartão de referência a partir de bytes (imagem, vídeo ou ficheiro). */
 function cc_import_asset(PDO $pdo, int $board, string $bytes, string $name, int &$cell, int $by): void {
     $mime = r2_mime($name);
-    [$a] = cc_asset_create($pdo, $bytes, ['name' => $name, 'mime' => $mime, 'by' => $by, 'inbox' => false]);
+    [$a, $new] = cc_asset_create($pdo, $bytes, ['name' => $name, 'mime' => $mime, 'by' => $by, 'inbox' => false]);
+    if ($new) $a = cc_place_original($pdo, $a, cc_board_get($pdo, $board), false, $by);   // «Biblioteca criativa/<quadro>/»
     [$x, $y] = cc_import_cell($cell++);
     $ratio = $a['width'] && $a['height'] ? (float)$a['height'] / (float)$a['width'] : 0.62;
     cc_card_add($pdo, $board, ['type' => in_array($a['kind'], ['image', 'video'], true) ? $a['kind'] : 'file', 'asset_id' => (int)$a['id'],
@@ -214,7 +215,19 @@ function cc_import_run(PDO $pdo, array $job): void {
         $p['cell'] = $cell;
         cc_job_add($pdo, 'import', null, $board, $p, $by);
     } else {
-        cc_store_delete((string)$p['key']);   // o ficheiro de importação já não é preciso
+        // o ficheiro importado fica guardado no Drive, em «Empresa/Importações/AAAA-MM/»
+        $kept = false;
+        if (strncmp((string)$p['key'], 'r2:', 3) === 0 && r2_config()) {
+            try {
+                require_once __DIR__ . '/files.php';
+                $to = files_adopt($pdo, substr((string)$p['key'], 3), ['prefix' => FILES_IMPORTS . date('Y-m') . '/', 'name' => date('Y-m-d') . '_Centro-Criativo_' . (string)$p['name'],
+                                                                        'origin' => 'import', 'label' => 'Importação para o quadro «' . (string)(cc_board_get($pdo, $board)['title'] ?? '') . '»', 'by' => $by]);
+                $kept = $to !== substr((string)$p['key'], 3);
+            } catch (Throwable $e) {
+                error_log('cc_import keep: ' . $e->getMessage());
+            }
+        }
+        if (!$kept) cc_store_delete((string)$p['key']);
     }
     cc_board_touch($pdo, $board);
 }

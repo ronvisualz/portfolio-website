@@ -74,7 +74,7 @@
     t.setAttribute('role', opt.err ? 'alert' : 'status');
     t.innerHTML = '<span class="tx"></span>';
     t.firstChild.textContent = msg;
-    var ms = opt.undo ? 8000 : (opt.err ? 7000 : 4000);
+    var ms = opt.sticky ? 36e5 : (opt.undo ? 8000 : (opt.err ? 7000 : 4000));
     var timer, tick;
     function close() { clearTimeout(timer); clearInterval(tick); if (t.parentNode) t.parentNode.removeChild(t); }
     if (opt.undo) {
@@ -98,8 +98,8 @@
     toastBox.appendChild(t);
     timer = setTimeout(close, ms);
     t.addEventListener('pointerenter', function () { clearTimeout(timer); });
-    t.addEventListener('pointerleave', function () { timer = setTimeout(close, 2500); });
-    return { close: close };
+    t.addEventListener('pointerleave', function () { if (!opt.sticky) timer = setTimeout(close, 2500); });
+    return { close: close, el: t };
   }
 
   function undo(token, after) {
@@ -1045,5 +1045,67 @@
       var to = $('[data-psend-to]', card);
       if (to) to.textContent = t.value.trim() || '—';
     }
+  });
+
+  // ── anexar ficheiros (§10.15): [data-attach="deal:ID" | "piece:ID"] ──
+  // O servidor escolhe a pasta (a do registo, na secção escolhida) e devolve um URL para enviar
+  // direto ao Drive; no fim regista o ficheiro. Vários de cada vez, com o progresso num aviso.
+  function fileApi(action, data) {
+    var fd = new FormData();
+    Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
+    fd.append('a', action);
+    return fetch('/admin/files_api.php?a=' + action, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf }, body: fd })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Não foi possível concluir. Tente outra vez.' }; }); }, function () { throw new Error('Sem ligação. Tente outra vez.'); })
+      .then(function (j) { if (!j || !j.ok) throw new Error((j && j.error) || 'Não foi possível concluir.'); return j; });
+  }
+  function putFile(url, file, type, onProgress) {
+    return new Promise(function (ok, fail) {
+      var x = new XMLHttpRequest();
+      x.open('PUT', url);
+      x.setRequestHeader('Content-Type', file.type || type || 'application/octet-stream');
+      x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      x.onload = function () { x.status >= 200 && x.status < 300 ? ok() : fail(new Error('O Drive recusou o envio (' + x.status + ').')); };
+      x.onerror = function () { fail(new Error('O envio falhou. Verifique a ligação e tente outra vez.')); };
+      x.send(file);
+    });
+  }
+  function attachFiles(btn, files) {
+    var parts = btn.getAttribute('data-attach').split(':');
+    var box = btn.closest('.fls-add') || btn.parentNode;
+    var sec = box && $('[data-attach-sec]', box);
+    var list = Array.prototype.slice.call(files);
+    var t = toast('A enviar ' + (list.length === 1 ? '«' + list[0].name + '»' : list.length + ' ficheiros') + '…', { sticky: true });
+    var tx = t.el ? $('.tx', t.el) : null;
+    btn.disabled = true;
+    var done = 0, last = '';
+    var next = function (i) {
+      if (i >= list.length) return Promise.resolve();
+      var f = list[i];
+      return fileApi('sign', { target: parts[0], id: parts[1], name: f.name, size: f.size, type: f.type, section: sec ? sec.value : '' })
+        .then(function (j) {
+          return putFile(j.url, f, j.type, function (p) { if (tx) tx.textContent = 'A enviar «' + f.name + '» · ' + Math.round(p * 100) + '%' + (list.length > 1 ? ' (' + (i + 1) + ' de ' + list.length + ')' : ''); })
+            .then(function () { return fileApi('done', { key: j.key }); });
+        })
+        .then(function (r) { done++; last = r.msg; return next(i + 1); });
+    };
+    next(0).then(function () {
+      t.close();
+      toast(done === 1 ? last : done + ' ficheiros guardados no Drive.');
+      if (window.topper.panelKey && window.topper.panelKey() && btn.closest('#sp')) window.topper.reloadPanel(); else location.reload();
+    }, function (err) {
+      t.close();
+      toast(err.message, { err: true });
+      if (done) setTimeout(function () { location.reload(); }, 1200);
+    }).then(function () { btn.disabled = false; });
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-attach]');
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    var inp = document.createElement('input');
+    inp.type = 'file'; inp.multiple = true; inp.hidden = true;
+    inp.addEventListener('change', function () { if (inp.files && inp.files.length) attachFiles(b, inp.files); inp.remove(); });
+    document.body.appendChild(inp);
+    inp.click();
   });
 })();

@@ -1457,8 +1457,9 @@ ficheiros `cc_file.php`, interface `assets/cc.js` e `assets/cc.css`.
   telemóvel) já analisada; triagem = enviar para um quadro ou arrumar na biblioteca (com «Anular»).
 - **Envios:** o browser calcula a impressão digital (duplicados reaproveitados), faz a
   pré-visualização (HEIC/AVIF no Safari) e, nos vídeos, os **6–12 frames-chave por deteção de corte**
-  (sem precisar de ffmpeg no servidor). Com o R2 ligado, o original vai diretamente para
-  `.topper/cc/` (invisível no Drive); sem R2, pasta privada.
+  (sem precisar de ffmpeg no servidor). Com o R2 ligado, o original vai diretamente para o
+  armazenamento e passa logo para o seu sítio no Drive (ver §10.15); as miniaturas e os frames
+  ficam em `.topper/cc/` (invisível no Drive); sem R2, pasta privada.
 - **IA de qualidade máxima:** o modelo Claude mais capaz (`cc_config.php › model`, por defeito
   Claude Fable 5.1; se a conta não tiver acesso, Claude Opus 5.5), esforço «high», saídas
   estruturadas (JSON Schema) e **fallbacks do servidor** ligados; embeddings multimodais Voyage
@@ -1509,6 +1510,78 @@ Ficheiros novos: `inc/migrate_creative.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc
 `assets/app.css`, `.gitignore`.
 
 ---
+
+### 10.15 Drive organizada: todos os ficheiros no sítio certo — §24 (23 out 2026)
+
+Base de dados **v25** (`inc/migrate_files.php`, idempotente): `files` (o registo de ficheiros:
+chave atual no Drive, ETag, tamanho, origem, secção, negócio/lead, peça de marketing, referência do
+Centro Criativo, estado) e `file_moves` (a fila das pastas que mudam de sítio); os caminhos do Drive
+guardados noutras tabelas passam a 600 caracteres. Modelo em `inc/files.php`, lista em
+`inc/files_view.php`, pedidos em `files_api.php`.
+
+- **Estrutura** (pastas de topo fixas, não se movem nem vão para o Lixo): `Empresa/` ·
+  `Leads/<NOME>_<AAAA-MM>/` · `Projetos/<ID>_<NOME>/` (em curso e concluídos) · `Marketing/<AAAA-MM>/<peça>/`
+  (peças sem negócio) · `Biblioteca criativa/<quadro>/` · `Showreel e Portfolio/` ·
+  `Arquivo/Negócios/<ID>_<NOME>/` e `Arquivo/Leads/<NOME>_<AAAA-MM>/`. Dentro da pasta do negócio, as
+  secções nascem com o primeiro ficheiro: `Propostas/`, `Faturação/`, `Criativo/` (com `Referências/`,
+  `Opção A/`, `Opção B/`, um sub-quadro por pasta), `Marketing/<peça>/`, `Produção/`, `Entregas/`,
+  `Lead/`. As pastas antigas `NN_NOME_PROJECT` ligadas a um negócio mantêm o nome.
+- **Gravação automática:** proposta (`<ID>_Proposta_v<n>.pdf`, gerar de novo a mesma versão
+  substitui), faturas e comprovativos (`<ID>_Fatura-<número>.pdf`, `<ID>_Comprovativo_<data>.pdf`),
+  originais do Centro Criativo (quadro de um negócio → `Criativo/Referências/` ou a pasta do
+  sub-quadro; quadro livre → `Biblioteca criativa/<quadro>/`; sem quadro → `Biblioteca criativa/Caixa
+  de entrada/`), páginas do pré-criativo em PDF ao enviar para a Orçamentação (`Criativo/Opção A|B/`),
+  o tratamento em PDF quando é gerado, as peças de marketing de um negócio dentro da pasta dele, e as
+  importações (CSV/vCard de contactos, ZIP/PDF/MD do Centro Criativo) em `Empresa/Importações/<AAAA-MM>/`.
+  Uma imagem usada em vários quadros fica uma só vez.
+- **Anexar:** «Anexar ficheiro» na ficha da lead, no painel do Pipeline, no painel «Ficheiros» da ficha
+  do negócio (escolhendo a secção) e na peça de marketing; o ficheiro vai do browser diretamente para a
+  pasta certa no Drive (até 5 GB; acima, pelo Drive) e fica no histórico do registo.
+- **Ciclo de vida:** a pasta acompanha o registo — lead arquivada → `Arquivo/Leads/`, reativada →
+  volta; lead convertida → a pasta inteira passa a `Projetos/<ID>_<NOME>/Lead/`; negócio perdido →
+  `Arquivo/Negócios/` com tudo o que tem dentro; reaberto (também pelo «Anular») → volta. O destino fica
+  logo ligado (o que chega a seguir já vai para lá); a cópia corre na fila — alguns segundos no
+  próprio pedido e o resto pelo cron de 5 em 5 minutos (`cron_run.php cc`); a ficha mostra «A pasta
+  está a mudar…». Ida e volta antes de a cópia começar anula-se. No fim, favoritos, recentes,
+  partilhas, índice de conteúdo e todos os caminhos guardados (registo, Centro Criativo, faturação,
+  peças) seguem a mudança — também quando alguém move uma pasta à mão no Drive.
+- **Encontrar:** cada ficheiro tem «Mostrar no Drive» (abre a pasta com ele selecionado: `drive.php?f=`)
+  e abre pela plataforma com as permissões verificadas; o cartão e o painel «Ficheiros» da ficha
+  agrupam por secção (Propostas, Faturação, Criativo, Marketing, Produção, Entregas, Da lead, Outros),
+  com origem, data, tamanho e autor — incluindo o que foi posto à mão na pasta. Se um ficheiro já não
+  estiver onde o registo diz, encontra-se pela mudança em curso, pela impressão digital (ETag e
+  tamanho) no Drive ou no Lixo («está no Lixo do Drive»); o registo corrige-se sozinho.
+- **Faturação só para o Financeiro:** qualquer pasta `Faturação/` (ou as antigas `Faturas/`) abaixo do
+  primeiro nível só aparece a quem vê o Financeiro — no Drive (catálogo, abrir, enviar, Lixo,
+  pesquisa, partilhas), no assistente do Drive e nas fichas. Quem não a vê também não pode enviar
+  para o Lixo nem partilhar uma pasta que a contenha.
+- **Testado na bancada (MariaDB, R2 simulado):** migração v25; lead → arquivo → reativada → convertida
+  → perdida → reaberta com os ficheiros e o registo a seguir; ida e volta anulada; ficheiro movido à mão
+  encontrado pela impressão digital; Lixo e reposição; proposta, fatura, original do Centro Criativo
+  (painel e envio no browser), páginas do pré-criativo e tratamento em PDF; anexar no browser com
+  progresso; «Mostrar no Drive» com o ficheiro selecionado; faturação escondida e protegida para um
+  colaborador; cron; claro/escuro e telemóvel.
+- **Fase 2 — «Reorganizar o Drive»** (Definições › Drive, só administradores; `reorganizar.php`,
+  `inc/files_reorg.php`, base **v26** com `file_jobs`): passa o que já existia para a estrutura nova.
+  Pré-visualização, sem mexer em nada, agrupada por tipo e com caixas para escolher: documentos que
+  passam a ficar registados (propostas e faturas que já estavam no Drive — não mudam de sítio),
+  pastas `Faturas/` antigas → `Faturação/` (para `Faturação/Anteriores/` se já houver), peças de
+  marketing de um negócio → pasta do negócio, negócios perdidos e leads arquivadas → `Arquivo/` (também
+  pastas antigas encontradas pelo ID e ainda sem ligação), originais do Centro Criativo guardados no
+  sistema → o seu sítio no Drive (agrupados por destino). A execução corre em segundo plano pela mesma
+  fila das pastas — a página mostra o progresso enquanto está aberta e o cron continua — e termina com
+  um relatório (feito, resultado de cada item, erros). Nada é apagado; links, favoritos, partilhas e
+  caminhos guardados acompanham. Testado na bancada com um cenário antigo completo.
+
+Ficheiros novos: `inc/migrate_files.php`, `inc/files.php`, `inc/files_view.php`, `files_api.php`,
+`inc/files_reorg.php`, `reorganizar.php` (fase 2; também `inc/settings_def.php`).
+Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_store.php`,
+`drive_api.php`, `ai_api.php`, `assets/drive/app.js`, `inc/leads.php`, `leads.php`, `inc/undo.php`,
+`inc/pipeline.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget_pdf.php`,
+`inc/cc.php`, `inc/cc_ai.php`, `inc/cc_flow.php`, `inc/cc_import.php`, `cc_api.php`,
+`inc/marketing.php`, `marketing_peca.php`, `contactos.php`, `deal_flow.php`, `negocio.php`,
+`inc/deal_file.php`, `inc/lead_view.php`, `inc/interactions.php`, `inc/cron_run.php`,
+`assets/app.js`, `assets/app.css`, `assets/cc.js`.
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
@@ -2723,22 +2796,45 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
 
+## 24. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
+
+Tudo o que entra na plataforma ou é gerado por ela fica guardado **uma vez** no Drive, organizado
+por negócio quando pertence a um negócio, por origem e por tipo de documento; o mais importante é
+que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depressa**.
+
+- **Estrutura:** `Empresa/`, `Leads/`, `Projetos/` (negócios em curso e concluídos — o portfólio fica
+  aqui), `Marketing/`, `Biblioteca criativa/`, `Showreel e Portfolio/` e `Arquivo/` (`Negócios/` e
+  `Leads/`). Dentro do negócio: `Propostas/`, `Faturação/`, `Criativo/` (`Opção A/`, `Opção B/`,
+  `Referências/`), `Marketing/`, `Produção/`, `Entregas/`, `Lead/`. Nomes de ficheiro com o padrão da
+  casa (ID, tipo, descrição/versão).
+- **Arquivo:** negócio perdido ou lead arquivada → a pasta inteira, com todos os ficheiros ligados, vai
+  para `Arquivo/`; reaberto → volta. Lead convertida → a pasta passa para dentro da do negócio (`Lead/`).
+- **Encontrar:** «Mostrar no Drive» em cada ficheiro, cartão «Ficheiros» por secção nas fichas, a
+  pesquisa e o assistente do Drive; um ficheiro movido à mão volta a encontrar-se.
+- **Faturação:** só quem tem acesso ao Financeiro a vê.
+- **Fora do Drive (de propósito):** fotografias de perfil, miniaturas e pré-visualizações, cópias de
+  segurança da base de dados.
+- **Autorizado mexer no Drive** para: as pastas de topo fixas, o aviso ao registo quando algo muda de
+  sítio à mão, e a regra da faturação.
+- **Fase 2 (decidido 23 out 2026):** «Reorganizar o Drive» para o que já existia, com pré-visualização
+  do que vai mudar antes de executar e relatório no fim.
+
 ---
 
-## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
+## 25. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
 
 Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
 
-### 24.1 Versões
+### 25.1 Versões
 - Uma **peça de review** pertence a um negócio (e a uma frente, §22) e a uma etapa de
   aprovação (styleframes, animatic, offline, picture lock, finais, lote…).
 - Carregar ficheiro (vídeo, imagem, PDF) → versão **v001, v002…**; nunca se apaga uma versão.
 - Vídeo: gerar no servidor um **proxy H.264** para o browser, **poster**, **tira de miniaturas**
-  e ler o **fps e o timecode de início**; o original fica no Drive (`<ID>_<NOME>/Review/`).
+  e ler o **fps e o timecode de início**; o original fica no Drive (`<negócio>/Produção/Review/`, segundo a §24 Drive).
 - Estados da peça: Em preparação · Enviada ao cliente · Com comentários · Alterações pedidas ·
   **Aprovada**.
 
-### 24.2 Leitor e comentários no frame exato
+### 25.2 Leitor e comentários no frame exato
 - Leitor com **precisão ao frame**: avançar/recuar 1 frame (← →), J/K/L, velocidade, repetir
   um intervalo, timecode SMPTE, tira de miniaturas.
 - Comentário preso a um **frame** (ou a um **intervalo**), com **desenho por cima** (seta,
@@ -2749,7 +2845,7 @@ Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Apli
 - Comparar versões: **lado a lado**, **cortina** (wipe) e **sobreposição**, sincronizadas.
 - Exportar comentários: PDF/CSV e **marcadores para Premiere/DaVinci/Avid** (EDL/XML).
 
-### 24.3 Rondas e aprovação
+### 25.3 Rondas e aprovação
 - **Enviar ao cliente** abre uma ronda; o cliente envia os comentários **de uma vez** (botão
   «Enviar comentários»): um envio consolidado = **uma ronda** (§19.6 D).
 - Contador «Ronda X de Y incluídas» por etapa (Y vem da proposta/Definições). Ao **passar do
@@ -2760,7 +2856,7 @@ Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Apli
 - Aprovação do cliente pede **nome escrito** e confirmação; regista data, IP e versão.
 - Notificações ao responsável de execução e ao comercial em cada ação do cliente.
 
-### 24.4 Portal do cliente
+### 25.4 Portal do cliente
 - **Um link por negócio**, longo e aleatório, **revogável** e com **validade** (por defeito até 60
   dias após a entrega; Definições). Sem conta. Abrir (GET) **nunca altera nada**; ações por POST.
 - Primeira ação: o cliente indica **nome e email** (guardado nesse browser); os comentários
@@ -2774,6 +2870,56 @@ Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Apli
 - Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
 - Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
 
-### 24.5 Definições › Centro Criativo
+### 25.5 Definições › Centro Criativo
 Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
 etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
+
+---
+
+## 26. Centro Criativo — Fase 3: Tempo real e captura (23 out 2026)
+
+Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§25).
+
+### 26.1 Edição em tempo real
+- Várias pessoas no **mesmo quadro ao mesmo tempo**, sem conflitos e sem «recarregar»:
+  sincronização por **CRDT (Yjs)**; cada alteração aparece aos outros em < 200 ms.
+- **Presença:** avatares de quem está no quadro (no topo), **cursores com nome e cor** da pessoa
+  (cor da aba Equipa), seleção dos outros com contorno da cor deles, «está a escrever…» em notas.
+- **Seguir** uma pessoa (clicar no avatar → a vista acompanha o que ela vê; útil em reuniões e
+  apresentações). Sair com Esc ou ao mexer.
+- **Sem ligação:** continua a trabalhar; sincroniza ao voltar a ligação (aviso discreto).
+- **Histórico do quadro:** versões automáticas (a cada sessão de trabalho e antes de ações
+  grandes, ex.: «Arrumar o quadro» da IA) com «Ver» e «Restaurar»; «Anular» por pessoa.
+- Comentários, reações e @menções em tempo real; notificação a quem é mencionado.
+- Permissões continuam no servidor: só entra quem tem acesso ao negócio (§9.3); o portal do
+  cliente (§25.4) mostra quadros partilhados **só de leitura**, sem cursores da equipa.
+- **Servidor de tempo real:** o alojamento atual (PHP) não mantém ligações permanentes
+  (WebSocket). **Decisão técnica a tomar:** serviço gerido de colaboração (ex.: Liveblocks,
+  Y-Sweet/Jamsocket, PartyKit) **ou** pequeno servidor Node próprio (Hostinger Node.js) com
+  y-websocket e persistência na base. Autenticação por token curto emitido pelo PHP.
+  Recomendação: serviço gerido (menos manutenção, escala sozinho); confirmar custo.
+
+### 26.2 Extensão do browser «Guardar na topper.»
+- Chrome/Edge (e Brave/Arc) primeiro; Firefox a seguir; Safari mais tarde.
+- **Clique direito** numa imagem, vídeo, link ou texto selecionado → «Guardar na topper.».
+  **Botão da extensão:** guardar a página inteira, **captura de uma área do ecrã** ou do
+  frame atual de um vídeo (YouTube/Vimeo/Instagram) com o link e o tempo.
+- Escolher destino: **Caixa de entrada** (por defeito) ou um quadro recente/pesquisado;
+  nota opcional; etiquetas sugeridas pela IA depois.
+- Guarda o URL de origem e o autor/créditos quando a página os indicar.
+- **Autenticação:** token pessoal gerado em **Perfil › Ligações** (revogável); a extensão
+  nunca guarda a palavra-passe.
+- Atalho de teclado configurável (ex.: Alt+Shift+S).
+
+### 26.3 Captura no telemóvel e tablet
+- **Instalar a plataforma como app** (PWA) no iPhone/iPad/Android.
+- Android: aparece no menu **Partilhar** do sistema (Web Share Target) → envia imagem, vídeo ou
+  link para a Caixa de entrada.
+- iPhone/iPad: **Atalho do iOS** «Guardar na topper.» (fornecido pela plataforma em Perfil ›
+  Ligações) no menu Partilhar, usando o mesmo token pessoal.
+- Tudo o que chega passa pela análise da IA (§23.5) e fica na Caixa de entrada para triagem.
+
+### 26.4 Definições
+Centro Criativo: frequência das versões automáticas do quadro, número de versões guardadas,
+destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
+gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).

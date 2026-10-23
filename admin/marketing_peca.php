@@ -41,7 +41,7 @@ render_flashes();
   <?php if ($p['status'] === 'producao' && can('drive')): ?>
     <?php if ($p['drive_folder']): ?><a class="btn ghost sm" href="<?= e(drive_page_url((string)$p['drive_folder'])) ?>"><?= icon('drive') ?> Pasta no Drive</a>
     <?php elseif ($canEdit && $driveReady): ?><form method="post" action="/admin/mkt_api.php" class="inl" data-drive><?= csrf_field() ?><input type="hidden" name="a" value="drive"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="back" value="<?= e($self) ?>">
-      <button class="btn ghost sm" type="submit" data-tip="Marketing/AAAA-MM/<peça>/"><?= icon('drive') ?> Criar pasta no Drive</button></form><?php endif; ?>
+      <button class="btn ghost sm" type="submit" data-tip="<?= $p['deal_id'] ? 'Na pasta do negócio, em Marketing/<peça>/' : 'Marketing/AAAA-MM/<peça>/' ?>"><?= icon('drive') ?> Criar pasta no Drive</button></form><?php endif; ?>
   <?php endif; ?>
   <?php if ($p['deal_drive'] && can('drive')): ?><a class="btn ghost sm" href="<?= e(drive_page_url((string)$p['deal_drive'])) ?>" data-tip="Os ficheiros do negócio (material do breakdown)"><?= icon('drive') ?> Ficheiros do negócio</a><?php endif; ?>
 </div>
@@ -199,9 +199,13 @@ render_flashes();
     <?php if ($p['drive_folder']): ?><span>Pasta</span><div class="mono small"><?= e((string)$p['drive_folder']) ?></div><?php endif; ?>
   </div>
   <?php if ($p['idea']): ?><p class="mid"><?= nl2br(e((string)$p['idea'])) ?></p><?php endif; ?>
-  <?php if ($p['template'] === 'breakdown' && $p['deal_id']): ?><p class="muted small"><?= icon('bulb') ?> Breakdown: material na pasta do negócio no Drive. Quando existir o Centro Criativo, liga-se também às versões e referências do projeto.</p><?php endif; ?>
+  <?php if ($p['template'] === 'breakdown' && $p['deal_id']): ?><p class="muted small"><?= icon('bulb') ?> Breakdown: o material está na pasta do negócio no Drive (Criativo, Produção, Entregas) e no quadro do projeto no Centro Criativo.</p><?php endif; ?>
   <?php endif; ?>
 </section>
+
+<?php if ($driveReady): require_once __DIR__ . '/inc/files_view.php'; ?>
+<section class="lv-blk"><h4><?= icon('drive') ?> Ficheiros</h4><?= files_piece_html($pdo, $p, $canEdit) ?></section>
+<?php endif; ?>
 
 <?php if ($p['status'] === 'producao'): $done = count(array_filter($check, fn($c) => !empty($c['done']))); ?>
 <section class="lv-blk" data-checklist="<?= $id ?>">

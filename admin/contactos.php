@@ -128,7 +128,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$rows) { flash('Não encontrei contactos no ficheiro. O CSV precisa de cabeçalho (Nome, Empresa, Email, Telefone…).', 'err'); redirect($back); }
         foreach ($rows as &$r) $r['match'] = ct_import_match($pdo, $r);
         unset($r);
-        $_SESSION['ct_import'] = ['file' => mb_substr($name, 0, 120), 'rows' => $rows];
+        // o ficheiro original fica para o guardar no Drive se a importação for feita (Empresa/Importações/)
+        $_SESSION['ct_import'] = ['file' => mb_substr($name, 0, 120), 'rows' => $rows, 'raw' => base64_encode((string)file_get_contents($f['tmp_name']))];
         redirect(ct_url($bf + ['importar' => 1]));
     }
 
@@ -159,7 +160,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(ct_url($bf + ['importar' => 1]));
         }
         unset($_SESSION['ct_import']);
-        flash('Importação: ' . $n['create'] . ' novos, ' . $n['update'] . ' completados, ' . $n['skip'] . ' ignorados.');
+        $kept = '';
+        if (!empty($imp['raw']) && $n['create'] + $n['update'] > 0) {
+            require_once __DIR__ . '/inc/files.php';
+            try {
+                $r = files_put($pdo, ['prefix' => FILES_IMPORTS . date('Y-m') . '/', 'name' => date('Y-m-d') . '_Contactos_' . $imp['file'], 'origin' => 'import',
+                                      'label' => 'Importação de contactos (' . $n['create'] . ' novos, ' . $n['update'] . ' completados)', 'by' => $by], (string)base64_decode((string)$imp['raw']));
+                if ($r) $kept = ' O ficheiro ficou no Drive, em ' . drive_parent($r['key']) . '.';
+            } catch (Throwable $e) { error_log('ct_import keep: ' . $e->getMessage()); }
+        }
+        flash('Importação: ' . $n['create'] . ' novos, ' . $n['update'] . ' completados, ' . $n['skip'] . ' ignorados.' . $kept);
         redirect($back);
     }
 

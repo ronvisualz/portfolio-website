@@ -246,7 +246,8 @@ function deal_drive_summary(PDO $pdo, array $deal): ?array {
         error_log('deal_drive_summary: ' . $e->getMessage());
         return ['error' => true];
     }
-    $files = array_values(array_filter($objs, fn($o) => substr($o['key'], -1) !== '/'));
+    // a faturação só para quem vê o Financeiro (§10.15)
+    $files = array_values(array_filter($objs, fn($o) => substr($o['key'], -1) !== '/' && drive_can_see($o['key'])));
     usort($files, fn($a, $b) => (int)$b['modified'] <=> (int)$a['modified']);
     $by = []; $docs = ['contract' => [], 'fiscal' => [], 'supplier' => []];
     foreach ($files as $o) {
@@ -472,15 +473,12 @@ function deal_panel(PDO $pdo, string $type, array $deal): array {
                       . '<section><h4>Fiscais <span class="h-sub">faturas emitidas</span></h4>' . $list($dr['docs']['fiscal'])
                       . ($money ? '<p><a class="lnk" href="' . $go('/admin/documento.php?id=' . $id) . '">' . icon('file') . ' Resumo de cobrança</a></p>' : '') . '</section>'
                       . '<section><h4>Faturas de fornecedores</h4>' . $list($dr['docs']['supplier']) . '</section>'
-                      . '<p class="muted small">Os documentos vêm da pasta do negócio no Drive, pelo nome e pela subpasta (Propostas, Contratos, Faturas, Fornecedores).</p>';
+                      . '<p class="muted small">Os documentos vêm da pasta do negócio no Drive, pelo nome e pela subpasta (Propostas, Contratos, Faturação, Fornecedores).</p>';
                 return ['title' => 'Documentos', 'html' => $html, 'url' => $dr['folder'] ? drive_page($dr['folder']) : '/admin/drive.php'];
             }
-            $types = '';
-            foreach ($dr['by_type'] as $k => $n) $types .= '<span>' . e($k) . '</span><div class="mono">' . $n . '</div>';
-            $html = $head . '<section><h4>Pasta</h4><p class="mono small">' . e($dr['folder'] ?: 'Projetos/' . $deal['code'] . '_… (ainda não criada)') . '</p>'
-                  . ($types ? '<div class="kv">' . $types . '</div>' : '') . '</section>'
-                  . '<section><h4>Últimos ficheiros</h4>' . $list($dr['files']) . '</section>'
-                  . '<p><a class="btn sm" href="' . e($dr['folder'] ? drive_page($dr['folder']) : '/admin/drive.php') . '">' . icon('drive') . ' Abrir no Drive</a></p>';
+            // por secção (Propostas, Faturação, Criativo…), com a origem e «Mostrar no Drive»; anexar daqui (§10.15)
+            require_once __DIR__ . '/files_view.php';
+            $html = $head . '<section><h4>Ficheiros</h4>' . files_list_html($pdo, $deal, ['edit' => record_reach($pdo, $deal, PERM_EDIT)]) . '</section>';
             return ['title' => 'Ficheiros', 'html' => $html, 'url' => $dr['folder'] ? drive_page($dr['folder']) : '/admin/drive.php'];
 
         case 'dhist':
