@@ -19,6 +19,7 @@
  *   analyze, analyze_all (gerir), work
  *   ai (angles | refs | similar | tidy | treatment | shots | shots_tasks), prepare, page_gen, page_both, send_budget
  *   comment_add, comment_del, comment_resolve, react, import
+ * Áudio (§27): audio_meta (forma de onda, medidas e espectrograma vindos do browser), drive_add (ficheiros arrastados da Drive)
  * Tempo real e histórico (§26):
  *   a=rt_token          board — um token novo para o serviço de tempo real (ler)
  *   a=versions          board — as versões do quadro (ler) · a=version_view  board, id — os cartões de uma versão (ler)
@@ -80,6 +81,25 @@ function card_ids(PDO $pdo, int $boardId, $raw): array {
     $st = $pdo->prepare('SELECT id FROM cc_cards WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')');
     $st->execute([$boardId]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** A forma de onda vinda do browser: base64 de 100–2000 picos (0–255). Devolve o texto a guardar, ou null. */
+function audio_peaks_in(string $b64): ?string {
+    if ($b64 === '' || strlen($b64) > 4000 || !preg_match('~^[A-Za-z0-9+/=_-]+$~', $b64)) return null;
+    $raw = base64_decode(strtr($b64, '-_', '+/'), true);
+    if ($raw === false || strlen($raw) < 100 || strlen($raw) > 2000) return null;
+    return base64_encode($raw);
+}
+
+/** As medidas do áudio feitas no browser (só números conhecidos). */
+function audio_feats_in(string $json): array {
+    $f = json_decode($json, true);
+    if (!is_array($f)) return [];
+    $out = [];
+    foreach (['bpm', 'bpm_conf', 'rms_db', 'peak_db', 'dyn_db', 'centroid', 'zcr', 'silence', 'channels', 'rate'] as $k) {
+        if (isset($f[$k]) && is_numeric($f[$k]) && is_finite((float)$f[$k])) $out[$k] = round((float)$f[$k], 3);
+    }
+    return $out;
 }
 
 function users_light(PDO $pdo): array {
@@ -234,12 +254,12 @@ case 'version_mark': {
 case 'poll': {
     $b = board_req($pdo, 'id');
     release_session();
-    cout(200, ['ok' => true, 'rev' => (int)$b['rev'], 'changed' => (int)$b['rev'] !== rint('rev'), 'jobs' => cc_jobs_pending($pdo)]);
+    cout(200, ['ok' => true, 'rev' => (int)$b['rev'], 'changed' => (int)$b['rev'] !== rint('rev'), 'jobs' => cc_jobs_pending($pdo, true)]);
 }
 
 case 'library': {
     release_session();
-    $f = ['q' => rq('q'), 'color' => rq('color'), 'origin' => rq('origin'), 'kind' => rq('kind'), 'inbox' => rq('inbox') === '1', 'deal' => rint('deal')];
+    $f = ['q' => rq('q'), 'color' => rq('color'), 'origin' => rq('origin'), 'kind' => rq('kind'), 'acat' => rq('acat'), 'inbox' => rq('inbox') === '1', 'deal' => rint('deal')];
     foreach (array_keys(CC_VOCAB) as $k) $f[$k] = (string)rq($k);
     [$items, $total] = cc_library_search($pdo, $f, 60, max(0, rint('offset')));
     $out = ['ok' => true, 'items' => $items, 'total' => $total];
@@ -247,6 +267,7 @@ case 'library': {
         $out['facets'] = cc_library_facets($pdo);
         $out['vocab'] = array_map(fn($k) => ['key' => $k, 'label' => CC_VOCAB[$k][0], 'values' => cc_vocab($pdo, $k)], array_keys(CC_VOCAB));
         $out['inbox_n'] = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
+        $out['acats'] = CC_AUDIO_CATS;
     }
     cout(200, $out);
 }
@@ -546,6 +567,11 @@ case 'upload_done': {
         cfail('Falta o ficheiro.');
     }
     if ($bytes !== null && strlen($bytes) === 0) cfail('O ficheiro está vazio.');
+    if (cc_kind_for($o['mime'], $name) === 'audio' || $o['kind'] === 'audio') {
+        // áudio (§27): a forma de onda e as medidas calculadas no browser
+        if (($pk = audio_peaks_in((string)rq('peaks'))) !== null) $o['peaks'] = $pk;
+        $o['feats'] = audio_feats_in((string)rq('feats'));
+    }
     [$x, $new] = cc_asset_create($pdo, $bytes, $o);
     // o original vai para o Drive: a pasta do negócio do quadro, ou a Biblioteca criativa
     if ($new) $x = cc_place_original($pdo, $x, $b, (bool)$o['inbox'], $by);
@@ -569,8 +595,9 @@ case 'upload_done': {
     if ($b) {
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
         $w = (float)rq('cw', 280);
-        $cid = cc_card_add($pdo, (int)$b['id'], ['type' => in_array($x['kind'], ['image', 'video', 'link'], true) ? $x['kind'] : 'file', 'asset_id' => (int)$x['id'],
-            'x' => (float)rq('x'), 'y' => (float)rq('y'), 'w' => $w, 'h' => $x['kind'] === 'file' ? 0 : round($w * min(2.5, $ratio)),
+        $ct = cc_card_type_for($x);
+        $cid = cc_card_add($pdo, (int)$b['id'], ['type' => $ct, 'asset_id' => (int)$x['id'],
+            'x' => (float)rq('x'), 'y' => (float)rq('y'), 'w' => $ct === 'audio' ? max($w, 300) : $w, 'h' => in_array($ct, ['file', 'audio'], true) ? 0 : round($w * min(2.5, $ratio)),
             'lane' => (string)rq('lane'), 'column_id' => rint('column') ? (card_ids($pdo, (int)$b['id'], [rint('column')])[0] ?? null) : null, 'content' => []], $by);
         $c = cc_card_get($pdo, $cid);
         $card = cc_card_public($c, $x);
@@ -580,6 +607,64 @@ case 'upload_done': {
         $x = cc_asset_get($pdo, (int)$x['id']);
     }
     cout(200, ['ok' => true, 'asset' => cc_asset_public($x), 'card' => $card, 'new' => $new]);
+}
+
+case 'audio_meta': {   // um áudio já guardado (antigo, ou vindo da Drive): o browser calculou a forma de onda
+    $x = cc_asset_get($pdo, rint('id'));
+    if (!$x || $x['deleted_at'] || $x['kind'] !== 'audio') cfail('Referência não encontrada.', 404);
+    $set = [];
+    if (($pk = audio_peaks_in((string)rq('peaks'))) !== null && (string)$x['peaks'] === '') $set['peaks'] = $pk;
+    if ((float)$x['duration'] <= 0 && is_numeric(rq('dur')) && (float)rq('dur') > 0) $set['duration'] = round((float)rq('dur'), 3);
+    $feats = audio_feats_in((string)rq('feats'));
+    $an = json_decode((string)$x['analysis'], true) ?: [];
+    if ($feats && empty($an['feats'])) { $an['feats'] = $feats; $set['analysis'] = json_encode($an, JSON_UNESCAPED_UNICODE); }
+    $gotThumb = false;
+    if (!$x['thumbs'] && !empty($_FILES['prev']['tmp_name']) && is_uploaded_file($_FILES['prev']['tmp_name']) && $_FILES['prev']['size'] < 12582912
+        && ($img = cc_gd_open((string)file_get_contents($_FILES['prev']['tmp_name'])))) {
+        $set['thumbs'] = json_encode(cc_thumbs_make($img, 't/' . substr((string)$x['sha1'], 0, 2) . '/' . $x['sha1']));
+        $set['palette'] = json_encode(cc_palette($img));
+        $gotThumb = true;
+    }
+    if ($set) {
+        $pdo->prepare('UPDATE cc_assets SET ' . implode(', ', array_map(fn($k) => $k . ' = ?', array_keys($set))) . ' WHERE id = ?')->execute([...array_values($set), (int)$x['id']]);
+        cc_asset_reindex($pdo, (int)$x['id']);
+    }
+    $x = cc_asset_get($pdo, (int)$x['id']);
+    if ($gotThumb && in_array((string)$x['ai_status'], ['', 'off'], true) && (string)$x['ai_model'] === '') {
+        require_once __DIR__ . '/inc/cc_stt.php';
+        cc_ai_queue_asset($pdo, $x, $by);
+    }
+    cout(200, ['ok' => true, 'asset' => cc_asset_public(cc_asset_get($pdo, (int)$x['id']))]);
+}
+
+case 'drive_add': {   // ficheiros arrastados da Drive para o quadro (o original fica onde está; o tipo mantém-se)
+    if (!can('drive')) cfail('A sua conta não vê o Drive.', 403);
+    $b = board_req($pdo);
+    board_editable($b);
+    $keys = json_decode((string)rq('keys', '[]'), true);
+    if (!is_array($keys) || !$keys) cfail('Nada para juntar.');
+    release_session();
+    $cards = []; $skipped = 0; $i = 0;
+    foreach (array_slice($keys, 0, 30) as $k) {
+        $k = (string)$k;
+        if ($k === '' || str_ends_with($k, '/') || drive_hidden($k) || !drive_can_see($k) || !($h = r2_head($k))) { $skipped++; continue; }
+        $name = drive_base($k);
+        $mime = r2_mime($name);
+        $kind = cc_kind_for($mime, $name);
+        $o = ['name' => $name, 'mime' => $mime, 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
+              'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'];
+        if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($k, null, 41943040);
+        [$x] = cc_asset_create($pdo, null, $o);
+        $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
+        $type = cc_card_type_for($x);
+        $w = $type === 'audio' ? 300.0 : 280.0;
+        $cid = cc_card_add($pdo, (int)$b['id'], ['type' => $type, 'asset_id' => (int)$x['id'], 'x' => (float)rq('x') + ($i % 4) * 310, 'y' => (float)rq('y') + intdiv($i, 4) * 320,
+                                                 'w' => $w, 'h' => in_array($type, ['file', 'audio'], true) ? 0 : round($w * min(2.5, $ratio)), 'lane' => (string)rq('lane'), 'content' => []], $by);
+        $cards[] = cc_card_public(cc_card_get($pdo, $cid), $x);
+        $i++;
+    }
+    $rev = $cards ? cc_board_touch($pdo, (int)$b['id']) : (int)$b['rev'];
+    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'msg' => count($cards) . (count($cards) === 1 ? ' ficheiro da Drive no quadro.' : ' ficheiros da Drive no quadro.') . ($skipped ? ' ' . $skipped . ' sem acesso ou já não existem.' : '')]);
 }
 
 case 'link_add': {
@@ -604,7 +689,7 @@ case 'asset_save': {
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
     $in = [];
-    foreach (['title', 'caption', 'why', 'composition', 'color', 'movement', 'tags', 'origin', ...array_keys(CC_VOCAB)] as $k) if (isset($_POST[$k])) $in[$k] = (string)$_POST[$k];
+    foreach (['title', 'caption', 'why', 'composition', 'color', 'movement', 'tags', 'origin', 'acat', 'au_mood', 'au_genre', 'au_use', 'au_instruments', 'au_bpm', 'au_energy', ...array_keys(CC_VOCAB)] as $k) if (isset($_POST[$k])) $in[$k] = (string)$_POST[$k];
     foreach (array_keys(CC_VOCAB) as $k) if (isset($in[$k]) && $in[$k] !== '' && !in_array($in[$k], cc_vocab($pdo, $k), true)) cfail('«' . $in[$k] . '» não está no vocabulário (Definições › Centro Criativo).');
     cc_asset_edit($pdo, $x, $in, $by);
     cout(200, ['ok' => true, 'asset' => cc_asset_public(cc_asset_get($pdo, (int)$x['id']), true), 'msg' => 'Guardado.']);
@@ -632,8 +717,9 @@ case 'inbox_done': {
         [$x0, $y0] = cc_board_free_spot($pdo, (int)$b['id']);
         foreach (cc_assets_by_ids($pdo, $ids) as $i => $x) {
             $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
-            cc_card_add($pdo, (int)$b['id'], ['type' => in_array($x['kind'], ['image', 'video', 'link'], true) ? $x['kind'] : 'file', 'asset_id' => (int)$x['id'],
-                'x' => $x0 + ($i % 5) * 300, 'y' => $y0 + intdiv($i, 5) * 300, 'w' => 280, 'h' => $x['kind'] === 'file' ? 0 : round(280 * min(1.6, $ratio)), 'content' => []], $by);
+            $ct = cc_card_type_for($x);
+            cc_card_add($pdo, (int)$b['id'], ['type' => $ct, 'asset_id' => (int)$x['id'],
+                'x' => $x0 + ($i % 5) * 300, 'y' => $y0 + intdiv($i, 5) * 300, 'w' => $ct === 'audio' ? 300 : 280, 'h' => in_array($ct, ['file', 'audio'], true) ? 0 : round(280 * min(1.6, $ratio)), 'content' => []], $by);
             $n++;
         }
         cc_board_touch($pdo, (int)$b['id']);
@@ -668,7 +754,7 @@ case 'analyze_all': {
 case 'work': {   // o browser vai pedindo enquanto houver fila (um pedido de cada vez)
     release_session();
     $n = cc_jobs_run($pdo, 22.0);
-    cout(200, ['ok' => true, 'done' => $n, 'pending' => cc_jobs_pending($pdo)]);
+    cout(200, ['ok' => true, 'done' => $n, 'pending' => cc_jobs_pending($pdo, true)]);
 }
 
 case 'ai': {

@@ -15,7 +15,12 @@
  * embed_usd_mtok    preço do modelo de embeddings (USD por milhão de tokens), para o gasto.
  * monthly_cap_eur   limite mensal da IA do Centro Criativo (conta à parte do assistente do Drive).
  * auto_analyze      analisar sozinho cada referência nova (true) ou só quando se pede (false).
- * transcribe_*      transcrição dos vídeos (por ligar: escolher o serviço e pôr a chave).
+ * transcribe_*      transcrição com marcas de tempo (áudio e vídeo): o Claude não ouve áudio, por isso a
+ *                   fala passa por um serviço de reconhecimento. Recomendado: OpenAI Whisper
+ *                   (platform.openai.com › API keys; modelo whisper-1, ~0,006 US$/min, português).
+ *                   Qualquer serviço com a mesma API serve (ex.: Groq: transcribe_url
+ *                   https://api.groq.com/openai/v1/audio/transcriptions, modelo whisper-large-v3).
+ *                   transcribe_usd_min: o preço por minuto, para o gasto (conta no limite mensal).
  */
 return [
     'anthropic_key'   => '',
@@ -27,6 +32,10 @@ return [
     'embed_usd_mtok'  => 0.12,
     'monthly_cap_eur' => 60,
     'auto_analyze'    => true,
-    // 'transcribe_provider' => '',
-    // 'transcribe_key'      => '',
+    'transcribe_provider' => 'openai',
+    'transcribe_key'      => 'COLE_AQUI_A_CHAVE_DO_SERVICO_DE_FALA',
+    'transcribe_model'    => 'whisper-1',
+    'transcribe_url'      => 'https://api.openai.com/v1/audio/transcriptions',
+    'transcribe_usd_min'  => 0.006,
+    'transcribe_lang'     => '',      // vazio = deteta; 'pt' para forçar português
 ];

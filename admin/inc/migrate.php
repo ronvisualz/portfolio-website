@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -308,6 +308,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     migrate_review($pdo);
     require_once __DIR__ . '/migrate_rt.php';
     migrate_rt($pdo);
+    // ── 29 · Centro Criativo: áudio (§27) — tipo próprio, categoria, forma de onda; os áudios antigos convertidos ──
+    require_once __DIR__ . '/migrate_audio.php';
+    migrate_audio($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

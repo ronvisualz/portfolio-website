@@ -51,6 +51,130 @@
   };
   function ico(n, cls) { return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (IC[n] || IC.file) + '</svg>'; }
 
+  // ── áudio: os tipos e o ícone vêm da Drive (drive/core.js); a forma de onda e o leitor único do cc_audio.js ──
+  var AU = window.TopperAudio || null;
+  var ACATS = { musica: 'Música', voz: 'Voz-off', sfx: 'Efeito sonoro (SFX)', ambiente: 'Ambiente', outro: 'Outro' };
+  IC.pause = '<path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" fill="currentColor" stroke="none"/>';
+  function auIco() { return window.TD && TD.icon ? TD.icon('audio', 'ico') : ico('file'); }
+  function isAudioName(n) { n = String(n || '').toLowerCase(); return window.TD && TD.kind ? TD.kind(n).id === 'audio' : /\.(mp3|wav|m4a|aac|flac|ogg|aif|aiff)$/.test(n); }
+  function isAudio(a) { return !!a && (a.kind === 'audio' || !!(a.embed && a.embed.audio)); }
+  /** O tipo do cartão para uma referência (o mesmo que cc_card_type_for no servidor). */
+  function cardTypeOf(a) { return isAudio(a) ? 'audio' : a.kind === 'video' ? 'video' : a.kind === 'link' ? 'link' : a.kind === 'file' ? 'file' : 'image'; }
+  function auDur(a) { return a && a.dur ? (AU ? AU.fmt(a.dur) : fmtDur(a.dur)) : ''; }
+  function auWave(a, bars) { return AU ? AU.waveSvg(a && a.peaks ? AU.peaks(a.peaks) : null, bars) : ''; }
+  /** Áudios antigos ou vindos da Drive ainda sem forma de onda: o browser calcula (um de cada vez) e guarda. */
+  var auPending = new Map(), auQueue = [];   // id → quem espera (null: já tentado)
+  function auNeedPeaks(a, done) {
+    if (!EDIT || !AU || !a || a.kind !== 'audio' || a.peaks || !a.orig) return;
+    if (auPending.has(a.id)) { var l = auPending.get(a.id); if (l) l.push(done); return; }
+    auPending.set(a.id, [done]);
+    auQueue.push(a);
+    if (auQueue.length === 1) auNext();
+  }
+  function auNext() {
+    var a = auQueue[0];
+    if (!a) return;
+    AU.prepUrl(a.orig).then(function (r) {
+      return r ? api('audio_meta', { id: a.id, peaks: r.peaks, dur: r.dur.toFixed(3), feats: r.feats, prev: r.prev }) : null;
+    }).then(function (j) {
+      var l = auPending.get(a.id) || [];
+      auPending.set(a.id, null);
+      if (j && j.asset) l.forEach(function (fn) { try { fn(j.asset); } catch (e) {} });
+    }).catch(function () { auPending.set(a.id, null); }).then(function () { auQueue.shift(); auNext(); });
+  }
+  /** O leitor de um serviço (SoundCloud…) no lugar da forma de onda. */
+  function auEmbed(box, a) {
+    if (!box || !a.embed || !a.embed.src || $('iframe', box)) return;
+    if (AU) AU.hub.pause();
+    var w = $('[data-au-wave], .ccd-auw', box) || box;
+    w.innerHTML = '<iframe src="' + esc(a.embed.src) + '" title="' + esc(a.title || 'Áudio') + '" allow="autoplay; encrypted-media" loading="lazy" style="height:' + (+a.embed.h || 166) + 'px"></iframe>';
+    box.classList.add('embedded');
+  }
+  /** A vista aberta: forma de onda grande, tocar/pausar, tempo, velocidade, repetição A–B e volume. */
+  function auPlayerHtml(a) {
+    var id = 'a' + a.id, d = auDur(a) || '0:00';
+    if (!a.orig) {
+      return '<div class="ccd-au" data-au-id="' + id + '">' + (a.embed && a.embed.src ? '<div class="ccd-auw" data-au-big>' + auWave(a, 160) + '</div><button type="button" class="btn sm" data-au="embed">' + ico('play') + ' Ouvir aqui (' + esc(a.embed.provider || 'leitor do site') + ')</button>'
+        : '<div class="empty">' + auIco() + ' ' + esc(a.file || a.title) + '</div>') + '</div>';
+    }
+    var rate = AU ? AU.hub.state().rate : 1;
+    return '<div class="ccd-au" data-au-id="' + id + '" data-au-url="' + esc(a.orig) + '">'
+      + '<div class="ccd-auw" data-au-big title="Clique para ir a esse ponto · arraste para marcar a repetição A–B">' + auWave(a, 160) + '<i class="ab" hidden></i></div>'
+      + '<div class="ccd-auc"><button type="button" class="ccd-aup" data-au="play" aria-label="Tocar ou pausar (Espaço)">' + ico('play') + ico('pause', 'pause') + '</button>'
+      + '<span class="t mono" data-au-t data-au-dur="0:00 / ' + d + '">0:00 / ' + d + '</span>'
+      + '<select class="mini" data-au="rate" aria-label="Velocidade">' + [0.5, 0.75, 1, 1.25, 1.5, 2].map(function (r) { return '<option value="' + r + '"' + (r === rate ? ' selected' : '') + '>' + String(r).replace('.', ',') + '×</option>'; }).join('') + '</select>'
+      + '<span class="ccd-ab" role="group" aria-label="Repetição A–B"><button type="button" data-au="a" title="Início da repetição no ponto atual">A</button><button type="button" data-au="b" title="Fim da repetição no ponto atual">B</button><button type="button" data-au="abx" title="Sem repetição" aria-label="Sem repetição" hidden>' + ico('x') + '</button></span>'
+      + '<label class="ccd-vol" title="Volume">' + auIco() + '<input type="range" min="0" max="1" step="0.05" value="' + (AU ? AU.hub.state().volume : 1) + '" data-au="vol" aria-label="Volume"></label></div>'
+      + '<p class="small ccd-auerr" hidden>O browser não consegue tocar este formato. Use «Original» para o descarregar.</p></div>';
+  }
+  /** Liga a vista aberta ao leitor único. */
+  function bindAuPlayer(box, a) {
+    var p = $('.ccd-au', box);
+    if (!p || !AU) return;
+    if (!a.orig) { var eb = $('[data-au="embed"]', p); if (eb) eb.addEventListener('click', function () { eb.remove(); auEmbed(p, a); }); return; }
+    var id = 'a' + a.id, url = a.orig, wave = $('[data-au-big]', p), abEl = $('.ab', wave), abx = $('[data-au="abx"]', p);
+    function dur() { var s = AU.hub.state(); return s.id === id && s.d && isFinite(s.d) ? s.d : (a.dur || 0); }
+    function drawAB() {
+      var s = AU.hub.abState(), d = dur(), on = s.a != null && s.b != null && d && AU.hub.state().id === id;
+      abEl.hidden = !on; abx.hidden = !(on || s.a != null);
+      $$('[data-au="a"],[data-au="b"]', p).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-au') === 'a' ? s.a != null : s.b != null); });
+      if (on) { abEl.style.left = (s.a / d * 100) + '%'; abEl.style.width = ((s.b - s.a) / d * 100) + '%'; }
+    }
+    function frac(e) { var r = wave.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); }
+    var dragA = null;
+    wave.addEventListener('pointerdown', function (e) { dragA = { f: frac(e), x: e.clientX }; wave.setPointerCapture(e.pointerId); });
+    wave.addEventListener('pointermove', function (e) {
+      if (!dragA || Math.abs(e.clientX - dragA.x) < 5) return;
+      var d = dur(), f = frac(e);
+      if (!d) return;
+      if (AU.hub.state().id !== id) AU.hub.play(id, url, dragA.f * d);
+      AU.hub.ab(Math.min(dragA.f, f) * d, Math.max(dragA.f, f) * d);
+      dragA.moved = true; drawAB();
+    });
+    wave.addEventListener('pointerup', function (e) {
+      if (!dragA) return;
+      var f = dragA.moved ? null : frac(e), s = AU.hub.abState();
+      dragA = null;
+      if (f != null) AU.hub.seek(id, url, f);
+      else if (s.a != null) AU.hub.seekT(id, url, s.a);
+      drawAB();
+    });
+    p.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-au]');
+      if (!b) return;
+      var k = b.getAttribute('data-au'), st = AU.hub.state(), t = st.id === id ? st.t : 0, s = AU.hub.abState();
+      if (k === 'play') AU.hub.toggle(id, url);
+      else if (k === 'a') { AU.hub.ab(t, s.b != null && s.b > t ? s.b : null); if (st.id !== id) AU.hub.play(id, url); }
+      else if (k === 'b') { if (s.a != null && t > s.a) AU.hub.ab(s.a, t); else toast('Marque primeiro o início (A), antes deste ponto.'); }
+      else if (k === 'abx') AU.hub.ab(null, null);
+      drawAB();
+    });
+    p.addEventListener('change', function (e) {
+      var k = e.target.getAttribute('data-au');
+      if (k === 'rate') AU.hub.rate(+e.target.value);
+    });
+    p.addEventListener('input', function (e) { if (e.target.getAttribute('data-au') === 'vol') AU.hub.volume(+e.target.value); });
+    document.addEventListener('topper-audio', function on(ev) {
+      if (!p.isConnected) { document.removeEventListener('topper-audio', on); return; }
+      if (ev.detail.id === id && ev.detail.error) $('.ccd-auerr', p).hidden = false;
+    });
+    // a forma de onda que faltava (áudios antigos): calcula agora
+    auNeedPeaks(a, function (na) { a.peaks = na.peaks; if (!a.dur) a.dur = na.dur; var w = $('.au-wave', wave); if (w && p.isConnected) w.outerHTML = auWave(na, 160); });
+    AU.hub.paint();
+    drawAB();
+  }
+  /** A transcrição «[m:ss] texto» com os tempos clicáveis. */
+  function transcriptHtml(t) {
+    var lines = String(t || '').split('\n').filter(function (l) { return l.trim(); });
+    if (!lines.length) return '';
+    return '<div class="ccd-tr"><h4>Transcrição <button type="button" class="lnk small" data-tr-copy>Copiar</button></h4><div class="ccd-trl">' + lines.map(function (l) {
+      var m = /^\[(?:(\d+):)?(\d+):(\d\d)\]\s*(.*)$/.exec(l);
+      if (!m) return '<p>' + esc(l) + '</p>';
+      var s = (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]);
+      return '<p><button type="button" data-seek="' + s + '">' + esc(l.slice(1, l.indexOf(']'))) + '</button> ' + esc(m[4]) + '</p>';
+    }).join('') + '</div></div>';
+  }
+
   // ── pedidos ────────────────────────────────────────────────
   function api(a, data, method) {
     method = method || (data ? 'POST' : 'GET');
@@ -234,6 +358,7 @@
   function kindOf(file) {
     if (/^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) return 'video';
     if (/^image\//.test(file.type) || /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp)$/i.test(file.name)) return 'image';
+    if (/^audio\//.test(file.type) || isAudioName(file.name)) return 'audio';
     return 'file';
   }
   /** Envia um ficheiro. ctx: board, x, y, lane, column, inbox, cw. Devolve { asset, card }. */
@@ -248,9 +373,9 @@
         row.done('já estava na biblioteca');
         var out = { asset: init.dup, card: null };
         if (ctx.board) {
-          var a = init.dup, ratio = a.w && a.h ? a.h / a.w : 0.62, w = ctx.cw || 280;
-          var r = await api('card_add', { board: ctx.board, type: a.kind === 'file' ? 'file' : a.kind, asset: a.id, x: ctx.x, y: ctx.y, w: w,
-                                          h: a.kind === 'file' ? 0 : Math.round(w * Math.min(2.5, ratio)), lane: ctx.lane || '', column: ctx.column || '' });
+          var a = init.dup, ratio = a.w && a.h ? a.h / a.w : 0.62, ct = cardTypeOf(a), w = ct === 'audio' ? Math.max(300, ctx.cw || 0) : ctx.cw || 280;
+          var r = await api('card_add', { board: ctx.board, type: ct, asset: a.id, x: ctx.x, y: ctx.y, w: w,
+                                          h: ct === 'file' || ct === 'audio' ? 0 : Math.round(w * Math.min(2.5, ratio)), lane: ctx.lane || '', column: ctx.column || '' });
           out.card = r.card;
         } else if (ctx.inbox) {
           await api('inbox_done', { ids: [init.dup.id], back: 1 });
@@ -258,13 +383,16 @@
         return out;
       }
       row.set(0.04);
-      var prep = kind === 'image' ? await imagePreview(file) : kind === 'video' ? await videoFrames(file, function (p) { row.set(0.04 + p * 0.36); }) : null;
+      // áudio: a forma de onda, as medidas e a imagem do espectrograma (para a IA) são feitas aqui, no browser
+      var prep = kind === 'image' ? await imagePreview(file) : kind === 'video' ? await videoFrames(file, function (p) { row.set(0.04 + p * 0.36); })
+               : kind === 'audio' && AU ? await AU.prep(file) : null;
       var fd = new FormData();
-      var f = { name: file.name, size: file.size, mime: file.type, fp: fp, kind: kind, w: prep ? prep.w : '', h: prep ? prep.h : '', dur: prep && prep.dur ? prep.dur.toFixed(3) : '',
+      var f = { name: file.name, size: file.size, mime: file.type, fp: fp, kind: kind, w: prep && prep.w ? prep.w : '', h: prep && prep.h ? prep.h : '', dur: prep && prep.dur ? prep.dur.toFixed(3) : '',
                 board: ctx.board || '', x: ctx.x == null ? '' : Math.round(ctx.x), y: ctx.y == null ? '' : Math.round(ctx.y), lane: ctx.lane || '',
                 column: ctx.column || '', inbox: ctx.inbox ? 1 : '', cw: ctx.cw || '', a: 'upload_done' };
       Object.keys(f).forEach(function (k) { fd.append(k, f[k]); });
       if (prep && prep.prev) fd.append('prev', prep.prev, 'prev');
+      if (prep && prep.peaks) { fd.append('peaks', prep.peaks); fd.append('feats', JSON.stringify(prep.feats || {})); }
       if (prep && prep.frames) prep.frames.forEach(function (fr) { fd.append('frames[]', fr.blob, 'f.jpg'); fd.append('t[]', fr.t.toFixed(3)); });
       if (init.mode === 'r2') {
         await xhr('PUT', init.put, file, file.type ? { 'Content-Type': file.type } : {}, function (p) { row.set(0.4 + p * 0.5); });
@@ -322,7 +450,8 @@
   function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
   function assetDetailHtml(a) {
     var media;
-    if (a.kind === 'video' && a.orig) media = '<video controls playsinline preload="metadata" src="' + esc(a.orig) + '" poster="' + esc(thumbUrl(a, 768)) + '"></video>';
+    if (isAudio(a)) media = auPlayerHtml(a);
+    else if (a.kind === 'video' && a.orig) media = '<video controls playsinline preload="metadata" src="' + esc(a.orig) + '" poster="' + esc(thumbUrl(a, 768)) + '"></video>';
     else if (a.thumb) media = '<img src="' + esc(thumbUrl(a, 1600)) + '" alt="' + esc(a.title) + '">';
     else media = '<div class="empty">' + ico('file') + ' ' + esc(a.file || a.title) + '</div>';
     var h = '<div class="ccd-media">' + media + '</div>';
@@ -331,12 +460,13 @@
         return '<button type="button" data-seek="' + f.t + '" title="' + esc(f.caption || '') + '"><img src="' + esc(f.thumb) + '" alt="" loading="lazy"><span>' + fmtDur(f.t) + '</span></button>';
       }).join('') + '</div></div>';
     }
+    if (a.transcript) h += transcriptHtml(a.transcript);
     var links = [];
     if (a.url) links.push('<a class="lnk" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + ico('ext') + ' Abrir o link</a>');
-    if (a.orig && a.kind !== 'video') links.push('<a class="lnk" href="' + esc(a.orig) + '" target="_blank" rel="noopener">' + ico('ext') + ' Original</a>');
+    if (a.orig && a.kind !== 'video') links.push('<a class="lnk" href="' + esc(a.orig) + '" target="_blank" rel="noopener"' + (a.kind === 'audio' ? ' download="' + esc(a.file || '') + '"' : '') + '>' + ico('ext') + ' Original</a>');
     if (a.drive) links.push('<a class="lnk" href="' + esc(a.drive) + '" data-tip="' + esc(a.drive_path) + '">' + ico('drive') + ' Mostrar no Drive</a>');
     if (links.length) h += '<div>' + links.join(' ') + '</div>';
-    if (a.palette && a.palette.length) {
+    if (a.palette && a.palette.length && !isAudio(a)) {
       h += '<div><h4>Paleta</h4><div class="ccd-pal">' + a.palette.map(function (c) { return '<button type="button" data-hex="' + esc(c.hex) + '" title="Procurar por esta cor"><i style="background:' + esc(c.hex) + '"></i>' + esc(c.hex) + '</button>'; }).join('') + '</div></div>';
     }
     var an = a.analysis || {};
@@ -348,8 +478,21 @@
     if (an.confidence != null && an.confidence !== '') h += '<div class="ccd-conf">Confiança<i><b style="width:' + Math.round(an.confidence * 100) + '%"></b></i>' + Math.round(an.confidence * 100) + '%</div>';
     var ro = EDIT ? '' : ' readonly';
     h += '<label><span>Título</span><input name="title" value="' + esc(a.title) + '"' + ro + '></label>'
-      + '<label><span>Legenda</span><textarea name="caption"' + ro + '>' + esc(an.caption || '') + '</textarea></label>'
-      + '<div class="row">' + (a.vocab || []).map(function (v) {
+      + '<label><span>Legenda</span><textarea name="caption"' + ro + '>' + esc(an.caption || '') + '</textarea></label>';
+    if (isAudio(a)) {   // categoria (sugerida pela IA, editável) e a análise da música
+      var au = an.audio || {}, ft = an.feats || {}, dis = EDIT ? '' : ' disabled';
+      h += '<div class="row r3"><label><span>Categoria</span><select name="acat"' + dis + '><option value="">—</option>' + Object.keys(ACATS).map(function (k) { return '<option value="' + k + '"' + (a.acat === k ? ' selected' : '') + '>' + esc(ACATS[k]) + '</option>'; }).join('') + '</select></label>'
+        + '<label><span>Energia</span><select name="au_energy"' + dis + '><option value="">—</option>' + ['baixa', 'média', 'alta'].map(function (k) { return '<option' + (au.energy === k ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select></label>'
+        + '<label><span>BPM' + (ft.bpm && ft.bpm_conf >= 0.35 ? ' <small class="muted">(medido ' + Math.round(ft.bpm) + ')</small>' : '') + '</span><input name="au_bpm" type="number" min="0" max="300" inputmode="numeric" value="' + (au.bpm || '') + '"' + ro + '></label></div>'
+        + '<div class="row"><label><span>Ambiente</span><input name="au_mood" value="' + esc(au.mood || '') + '"' + ro + '></label><label><span>Estilo</span><input name="au_genre" value="' + esc(au.genre || '') + '"' + ro + '></label></div>'
+        + '<label><span>Instrumentos (separados por vírgulas)</span><input name="au_instruments" value="' + esc((au.instruments || []).join(', ')) + '"' + ro + '></label>'
+        + '<label><span>Uso sugerido</span><input name="au_use" value="' + esc(au.use || '') + '"' + ro + '></label>'
+        + '<div class="row"><label><span>Origem</span><select name="origin"' + dis + '><option value="external"' + (a.origin !== 'topper' ? ' selected' : '') + '>Externa</option><option value="topper"' + (a.origin === 'topper' ? ' selected' : '') + '>topper.</option></select></label></div>'
+        + '<label><span>Etiquetas (separadas por vírgulas)</span><input name="tags" value="' + esc((a.tags || []).join(', ')) + '"' + ro + '></label>'
+        + '<label><span>Porque funciona</span><textarea name="why"' + ro + '>' + esc(an.why || '') + '</textarea></label></div>';
+      if (an.speech && an.speech.lang) h += '<p class="small muted">Fala detetada: ' + esc(an.speech.lang) + (an.speech.segments ? ' · ' + an.speech.segments + ' frases transcritas' : '') + '</p>';
+    } else
+    h += '<div class="row">' + (a.vocab || []).map(function (v) {
           var cur = (a.facets || {})[v.key] || '';
           return '<label><span>' + esc(v.label) + '</span><select name="' + v.key + '"' + (EDIT ? '' : ' disabled') + '><option value="">—</option>'
             + v.values.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label>';
@@ -376,9 +519,16 @@
   /** Liga os botões do detalhe. o: onColor(hex), onAdd(asset), onChange(asset), onDelete(id), onOpen(id). */
   function bindAssetDetail(box, a, o) {
     o = o || {};
+    if (isAudio(a)) bindAuPlayer(box, a);
     box.addEventListener('click', function (e) {
       var s = e.target.closest('[data-seek]');
-      if (s) { var v = $('video', box); if (v) { v.currentTime = +s.getAttribute('data-seek'); v.play().catch(function () {}); } return; }
+      if (s) {
+        var v = $('video', box);
+        if (v) { v.currentTime = +s.getAttribute('data-seek'); v.play().catch(function () {}); }
+        else if (AU && a.orig && isAudio(a)) AU.hub.seekT('a' + a.id, a.orig, +s.getAttribute('data-seek'));
+        return;
+      }
+      if (e.target.closest('[data-tr-copy]')) { if (navigator.clipboard) navigator.clipboard.writeText(a.transcript || '').then(function () { toast('Transcrição copiada.'); }, function () { toast('Não foi possível copiar.', { err: true }); }); return; }
       var hx = e.target.closest('[data-hex]');
       if (hx && o.onColor) { o.onColor(hx.getAttribute('data-hex')); return; }
       var b = e.target.closest('[data-d]');
@@ -527,28 +677,32 @@
   // ══ Biblioteca e Caixa de entrada ══════════════════════════
   var COLORS = ['#111111', '#F4F1EA', '#9E9E9E', '#C62828', '#F4511E', '#FFC718', '#7CB342', '#00897B', '#81CFE3', '#1E63B5', '#5E35B1', '#D81B60', '#795548'];
   function viewLibrary(inbox) {
-    var f = { q: '', color: '', origin: '', kind: '' }, offset = 0, total = 0, loading = false, items = new Map(), sel = new Set(), boards = null, facetsBuilt = false, timer;
+    var f = { q: '', color: '', origin: '', kind: '', acat: '' }, offset = 0, total = 0, loading = false, items = new Map(), sel = new Set(), boards = null, facetsBuilt = false, timer;
     root.innerHTML = '<div class="ccl"><aside class="ccl-f" aria-label="Filtros"><div><input type="search" placeholder="Procurar (texto, etiqueta, técnica…)" aria-label="Procurar referências" data-q></div>'
       + '<div><h4>Cor</h4><div class="ccl-sw" data-colors>' + COLORS.map(function (c) { return '<button type="button" style="background:' + c + '" data-color="' + c + '" aria-label="Cor ' + c + '" title="' + c + '"></button>'; }).join('')
       + '<input type="color" value="#FFC718" aria-label="Outra cor" data-color-in title="Outra cor"></div></div>'
       + '<div data-facets></div>'
       + '<div><h4>Origem</h4><div class="ccl-chips" data-g="origin"><button type="button" data-v="external">Externas</button><button type="button" data-v="topper">topper.</button></div></div>'
-      + '<div><h4>Tipo</h4><div class="ccl-chips" data-g="kind"><button type="button" data-v="image">Imagens</button><button type="button" data-v="video">Vídeos</button><button type="button" data-v="link">Links</button><button type="button" data-v="file">Ficheiros</button></div></div>'
+      + '<div><h4>Tipo</h4><div class="ccl-chips" data-g="kind"><button type="button" data-v="image">Imagens</button><button type="button" data-v="video">Vídeos</button><button type="button" data-v="audio">Áudio</button><button type="button" data-v="link">Links</button><button type="button" data-v="file">Ficheiros</button></div></div>'
+      + '<div data-acats></div>'
       + (MANAGE ? '<div><button type="button" class="lnk" data-analyze-all>' + ico('spark') + ' Analisar o que falta</button></div>' : '')
       + '</aside><section><div class="ccl-head"><span data-count>—</span>'
-      + (inbox ? '<span>Tudo o que se captura entra aqui, já analisado pela IA. Arraste para um quadro ou selecione.</span>' : '<span>Cole (Ctrl V) ou arraste imagens, vídeos e links para aqui.</span>')
-      + (EDIT ? '<label class="btn sm ccl-capture">' + ico('upload') + ' Capturar<input type="file" multiple accept="image/*,video/*" capture="environment" data-cc-upload hidden></label>' : '')
+      + (inbox ? '<span>Tudo o que se captura entra aqui, já analisado pela IA. Arraste para um quadro ou selecione.</span>' : '<span>Cole (Ctrl V) ou arraste imagens, vídeos, áudio e links para aqui.</span>')
+      + (EDIT ? '<label class="btn sm ccl-capture">' + ico('upload') + ' Capturar<input type="file" multiple accept="image/*,video/*,audio/*" data-cc-upload hidden></label>' : '')
       + '</div><div class="ccl-grid" data-grid></div><div class="ccl-more" data-more></div><div data-act></div></section></div>';
     var grid = $('[data-grid]', root), more = $('[data-more]', root), count = $('[data-count]', root), act = $('[data-act]', root);
 
     function tile(a) {
       var ratio = a.w && a.h ? a.w + '/' + a.h : '4/3';
-      var b = '<span class="badges"><span>' + (a.kind === 'video' ? '<span class="cc-badge">▶ ' + fmtDur(a.dur) + '</span>' : a.kind === 'link' ? '<span class="cc-badge">Link</span>' : '')
+      var au = isAudio(a);
+      var b = '<span class="badges"><span>' + (a.kind === 'video' ? '<span class="cc-badge">▶ ' + fmtDur(a.dur) + '</span>' : au ? '<span class="cc-badge">♪ ' + (auDur(a) || 'Áudio') + '</span>' + (a.acat && ACATS[a.acat] ? ' <span class="cc-badge">' + esc(ACATS[a.acat]) + '</span>' : '') : a.kind === 'link' ? '<span class="cc-badge">Link</span>' : '')
         + (a.origin === 'topper' ? ' <span class="cc-badge y">topper.</span>' : '') + (a.de != null ? ' <span class="cc-badge">ΔE ' + String(a.de).replace('.', ',') + '</span>' : '') + '</span>' + aiBadge(a) + '</span>';
-      var img = a.thumb ? '<img src="' + esc(thumbUrl(a, 256)) + '" srcset="' + esc(a.thumb + '&s=' + thumbW(a.tw, 256)) + ' 256w, ' + esc(a.thumb + '&s=' + thumbW(a.tw, 768)) + ' 768w" sizes="(max-width: 860px) 50vw, 240px" alt="' + esc(a.caption || a.title) + '" loading="lazy" decoding="async" style="aspect-ratio:' + ratio + '">'
+      // áudio: a forma de onda (com tocar/pausar), não o espectrograma que a IA vê
+      var img = au ? '<span class="ccl-au" data-au-id="a' + a.id + '">' + (a.orig ? '<button type="button" class="ccl-aup" data-au-play aria-label="Tocar ou pausar">' + ico('play') + ico('pause', 'pause') + '</button>' : '<span class="ccl-aup">' + auIco() + '</span>') + auWave(a, 70) + '</span>'
+        : a.thumb ? '<img src="' + esc(thumbUrl(a, 256)) + '" srcset="' + esc(a.thumb + '&s=' + thumbW(a.tw, 256)) + ' 256w, ' + esc(a.thumb + '&s=' + thumbW(a.tw, 768)) + ' 768w" sizes="(max-width: 860px) 50vw, 240px" alt="' + esc(a.caption || a.title) + '" loading="lazy" decoding="async" style="aspect-ratio:' + ratio + '">'
                         : '<span class="nf">' + ico('file') + '</span>';
       return '<div class="ccl-tile' + (sel.has(a.id) ? ' sel' : '') + '" role="button" tabindex="0" draggable="true" data-id="' + a.id + '">' + img
-        + (a.pal && a.pal.length ? '<span class="pal">' + palHtml(a.pal, 6) + '</span>' : '')
+        + (a.pal && a.pal.length && !au ? '<span class="pal">' + palHtml(a.pal, 6) + '</span>' : '')
         + '<span class="cap"><b>' + esc(a.title || a.file || 'Sem título') + '</b>' + esc((a.caption || '').slice(0, 110)) + '</span>' + b
         + (inbox && EDIT ? '<span class="ck" data-ck role="checkbox" aria-checked="' + (sel.has(a.id) ? 'true' : 'false') + '" aria-label="Selecionar" tabindex="-1">' + (sel.has(a.id) ? ico('check') : '') + '</span>' : '') + '</div>';
     }
@@ -561,9 +715,12 @@
       api('library', q, 'GET').then(function (j) {
         total = j.total;
         if (j.facets && !facetsBuilt) buildFacets(j.vocab, j.facets);
+        if (j.facets && j.acats) buildAcats(j.acats, j.facets.acat || []);
         var h = '';
         j.items.forEach(function (a) { items.set(a.id, a); h += tile(a); });
         grid.insertAdjacentHTML('beforeend', h);
+        j.items.forEach(function (a) { auNeedPeaks(a, refreshTile); });
+        if (AU) AU.hub.paint();
         offset += j.items.length;
         count.textContent = total === 1 ? '1 referência' : total + ' referências';
         more.textContent = items.size < total ? '' : (total ? '' : (inbox ? 'A caixa de entrada está vazia.' : 'Nada encontrado.'));
@@ -579,6 +736,15 @@
         if (!vals.length) return '';
         return '<div><h4>' + esc(v.label) + '</h4><div class="ccl-chips" data-g="' + v.key + '">' + vals.map(function (x) { return '<button type="button" data-v="' + esc(x) + '">' + esc(x) + '<em>' + counts[x] + '</em></button>'; }).join('') + '</div></div>';
       }).join('');
+    }
+    /** As categorias do áudio (Música, Voz-off, SFX, Ambiente, Outro), com quantas há de cada. */
+    function buildAcats(labels, counts) {
+      var n = {};
+      counts.forEach(function (x) { n[x.v] = x.n; });
+      var keys = Object.keys(labels).filter(function (k) { return n[k]; });
+      $('[data-acats]', root).innerHTML = keys.length ? '<h4>Áudio</h4><div class="ccl-chips" data-g="acat">' + keys.map(function (k) {
+        return '<button type="button" data-v="' + k + '"' + (f.acat === k ? ' class="on"' : '') + '>' + esc(labels[k]) + '<em>' + n[k] + '</em></button>';
+      }).join('') + '</div>' : '';
     }
     function refreshTile(a) {
       var old = items.get(a.id);
@@ -630,6 +796,8 @@
       load(true);
     }
     root.addEventListener('click', function (e) {
+      var ap = e.target.closest('[data-au-play]');
+      if (ap) { var at = items.get(+ap.closest('.ccl-tile').getAttribute('data-id')); if (at && AU && at.orig) AU.hub.toggle('a' + at.id, at.orig); return; }
       var c = e.target.closest('[data-color]');
       if (c) { setColor(c.getAttribute('data-color')); return; }
       var ch = e.target.closest('.ccl-chips button');
@@ -890,6 +1058,15 @@
           h = (a && a.thumb ? '<div class="ccc-media" style="aspect-ratio:' + (a.w && a.h ? a.w + '/' + a.h : '1.91/1') + '"><img alt="" decoding="async" draggable="false"></div>' : '')
             + '<div class="ccc-cap ccc-link"><span class="site">' + esc(a ? (hostOf(a.url)) : '') + '</span><b>' + esc(a ? a.title : 'Link') + '</b>' + esc(a && a.caption ? a.caption.slice(0, 140) : '') + '</div>';
           break;
+        case 'audio': {   // forma de onda (picos guardados), tocar/pausar, duração; um áudio de cada vez
+          var d = auDur(a), cat = a && a.acat && ACATS[a.acat] ? ACATS[a.acat] : (a && a.embed ? hostOf(a.url) : '');
+          h = '<div class="ccc-au" data-au-id="' + (a ? 'a' + a.id : '') + '">'
+            + '<button type="button" class="ccc-aup" data-cact="au-play" aria-label="Tocar ou pausar">' + ico('play') + ico('pause', 'pause') + '</button>'
+            + '<div class="ccc-aum"><b>' + esc(a ? a.title || a.file : 'Áudio') + '</b><small>' + (cat ? '<span>' + esc(cat) + '</span>' : '') + (d ? '<span data-au-t data-au-dur="' + d + '">' + d + '</span>' : '<span data-au-t></span>') + '</small></div>'
+            + '<div class="ccc-auw" data-au-wave data-cact="au-seek" title="Clique para ir a esse ponto">' + auWave(a, 80) + '</div></div>'
+            + (x.caption ? '<div class="ccc-cap">' + esc(x.caption) + '</div>' : '');
+          break;
+        }
         case 'note':
           h = '<div class="ccc-text" data-ph="Escreva…">' + esc(x.text || '') + '</div>';
           break;
@@ -941,6 +1118,7 @@
       }
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
       if (c.type === 'video' && c.asset && c.asset.orig) bindVideoHover(el, c);
+      if (c.type === 'audio') auNeedPeaks(c.asset, auUpdated);
       return el;
     }
     function place(c, el) {
@@ -972,6 +1150,19 @@
         v.play().catch(function () {});
       });
       el.addEventListener('pointerleave', function () { var v = $('video', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } });
+    }
+    /** A forma de onda calculada: todos os cartões com essa referência. */
+    function auUpdated(na) {
+      B.cards.forEach(function (c) { if (c.asset && c.asset.id === na.id) { Object.assign(c.asset, { peaks: na.peaks, dur: na.dur || c.asset.dur }); rerender(c); } });
+      if (AU) AU.hub.paint();
+    }
+    function auAct(c, b, e) {
+      var a = c.asset;
+      if (!a || !AU) return;
+      var box = b.closest('.ccc-au');
+      if (!a.orig) { if (a.embed) { auEmbed(box, a); measure(c, b.closest('.ccc')); } return; }
+      if (b.getAttribute('data-cact') === 'au-seek') { var r = b.getBoundingClientRect(); AU.hub.seek('a' + a.id, a.orig, clamp((e.clientX - r.left) / r.width, 0, 1)); }
+      else AU.hub.toggle('a' + a.id, a.orig);
     }
     function measure(c, el) {
       if (c.type === 'image' || c.type === 'video' || c.type === 'drawing') return;
@@ -1157,7 +1348,9 @@
     function addAsset(aid, at) {
       return api('asset', { id: aid }, 'GET').then(function (j) {
         var a = j.asset, w = 280, ratio = a.w && a.h ? a.h / a.w : 0.62, p = at || spot(w);
-        return addCard(a.kind === 'video' ? 'video' : a.kind === 'link' ? 'link' : a.kind === 'file' ? 'file' : 'image', {}, p, { asset: a.id, h: a.kind === 'file' ? 0 : Math.round(w * Math.min(2.5, ratio)) });
+        var ct = cardTypeOf(a);
+        if (ct === 'audio') { w = 300; p = at || spot(w); }
+        return addCard(ct, {}, p, Object.assign({ asset: a.id, h: ct === 'file' || ct === 'audio' ? 0 : Math.round(w * Math.min(2.5, ratio)) }, ct === 'audio' ? { w: w } : {}));
       }).catch(fail);
     }
     function addLink(url, at) {
@@ -1165,6 +1358,22 @@
       return api('link_add', { board: B.id, url: url, x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
         row.done(); B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); kickWorker();
         if (RT) RT.added([j.card]);
+      }).catch(function (e) { row.fail(e.message); });
+    }
+    function addDrive(keys, at) {
+      var p = at || spot(300), row = Up.add('Da Drive');
+      return api('drive_add', { board: B.id, keys: keys, x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
+        row.done();
+        B.rev = j.rev;
+        if (j.cards.length) {
+          j.cards.forEach(function (c) { B.cards.set(c.id, c); });
+          cull();
+          push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
+          if (RT) RT.added(j.cards);
+          select(j.cards.map(function (c) { return c.id; }));
+          kickWorker();
+        }
+        toast(j.msg, j.cards.length ? {} : { err: true });
       }).catch(function (e) { row.fail(e.message); });
     }
     function addFiles(files, at) {
@@ -1377,6 +1586,7 @@
         if (!b) return;
         e.stopPropagation();
         var el = b.closest('.ccc'), c = B.cards.get(+el.getAttribute('data-id')), act = b.getAttribute('data-cact');
+        if (act === 'au-play' || act === 'au-seek') { auAct(c, b, e); return; }
         if (act === 'com') { select([c.id]); B.side = 'com'; sideEl.hidden = false; sideSync(); return; }
         if (act === 'del') { select([c.id]); delSel(); return; }
         if (act === 'keep') {
@@ -1400,7 +1610,7 @@
       vp.addEventListener('dragover', function (e) {
         if (!EDIT || !e.dataTransfer) return;
         var t = e.dataTransfer.types;
-        if (t.indexOf('Files') >= 0 || t.indexOf('text/x-cc-asset') >= 0 || t.indexOf('text/uri-list') >= 0 || t.indexOf('text/plain') >= 0) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+        if (t.indexOf('Files') >= 0 || t.indexOf('text/x-cc-asset') >= 0 || t.indexOf('application/x-td-keys') >= 0 || t.indexOf('text/uri-list') >= 0 || t.indexOf('text/plain') >= 0) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
       });
       vp.addEventListener('drop', function (e) {
         if (!EDIT || !e.dataTransfer) return;
@@ -1408,6 +1618,8 @@
         var p = vpPoint(e), w = toWorld(p.x, p.y), at = { x: Math.round((w.x - 140) / GRID) * GRID, y: Math.round((w.y - 40) / GRID) * GRID };
         var aid = e.dataTransfer.getData('text/x-cc-asset');
         if (aid) { addAsset(+aid, at); return; }
+        var tdk = e.dataTransfer.getData('application/x-td-keys');   // da Drive: o original fica lá e o tipo mantém-se
+        if (tdk) { addDrive(tdk, at); return; }
         if (e.dataTransfer.files && e.dataTransfer.files.length) { addFiles(e.dataTransfer.files, at); return; }
         var u = (e.dataTransfer.getData('text/uri-list') || '').split('\n')[0].trim();
         var t = u || e.dataTransfer.getData('text/plain');
@@ -1636,12 +1848,14 @@
       drag = null;
     }
     function dbl(e) {
-      var el = e.target.closest('.ccc');
-      if (!el) { if (EDIT && B.tool === 'select' && !e.target.closest('.ccb-zoom')) { var p = vpPoint(e), w = toWorld(p.x, p.y); addNote('', { x: Math.round((w.x - 120) / GRID) * GRID, y: Math.round((w.y - 30) / GRID) * GRID }); } return; }
+      // com a captura do ponteiro o alvo pode chegar como a tela: vê o que está debaixo do rato
+      var tg = e.target.closest('.ccc') ? e.target : (document.elementFromPoint(e.clientX, e.clientY) || e.target);
+      var el = tg.closest('.ccc');
+      if (!el) { if (EDIT && B.tool === 'select' && !tg.closest('.ccb-zoom')) { var p = vpPoint(e), w = toWorld(p.x, p.y); addNote('', { x: Math.round((w.x - 120) / GRID) * GRID, y: Math.round((w.y - 30) / GRID) * GRID }); } return; }
       var c = B.cards.get(+el.getAttribute('data-id'));
       if (!c) return;
-      if (c.type === 'board' && c.ref) { if (e.target.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/criativo.php?b=' + c.ref; return; }
-      if (c.type === 'list') { var li = e.target.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null); return; }
+      if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/criativo.php?b=' + c.ref; return; }
+      if (c.type === 'list') { var li = tg.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null); return; }
       if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
       if (c.type === 'file' && c.asset && c.asset.orig) { window.open(c.asset.orig, '_blank', 'noopener'); return; }
@@ -1839,7 +2053,7 @@
       }
       if (B.side === 'det') {
         var c = sel.length === 1 ? sel[0] : null;
-        if (!c || !c.asset) { sideBody.innerHTML = '<p class="muted">Selecione uma imagem, vídeo ou link para ver a análise, a paleta e editar.</p>'; return; }
+        if (!c || !c.asset) { sideBody.innerHTML = '<p class="muted">Selecione uma imagem, vídeo, áudio ou link para ver a análise, a paleta e editar.</p>'; return; }
         sideBody.innerHTML = '<span class="spin"></span>';
         api('asset', { id: c.asset.id }, 'GET').then(function (j) {
           if (B.side !== 'det') return;

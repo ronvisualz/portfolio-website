@@ -402,3 +402,68 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-vprev .vp-c.t-note { background: var(--note, #FFF4C2); color: #222; }
 .ccd-cap blockquote { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--line-2); color: var(--mute); white-space: pre-wrap; }
 .ccd-cap p { margin: 2px 0; }
+
+/* ── Áudio (forma de onda, leitor único) ─────────────────── */
+.au-wave { position: relative; display: block; width: 100%; height: 100%; }
+.au-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.au-wave path { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.au-wave .b path { stroke: var(--mute-2); opacity: .55; }
+.au-wave .f { clip-path: inset(0 calc(100% - var(--p, 0%)) 0 0); }
+.au-wave .f path { stroke: var(--fg); }
+.au-wave.empty path { stroke-dasharray: 2 4; }
+.au-ph { position: absolute; top: -2px; bottom: -2px; left: var(--p, 0%); width: 2px; margin-left: -1px; border-radius: 2px; background: var(--hi); opacity: 0; transition: opacity var(--t); pointer-events: none; }
+.playing .au-ph, .ccd-au .au-ph { opacity: 1; }
+.ico.pause { display: none; }
+.playing > button .ico.pause, .playing .ccd-aup .ico.pause { display: inline-block; }
+.playing > button .ico:not(.pause), .playing .ccd-aup .ico:not(.pause) { display: none; }
+.au-err .au-wave { opacity: .35; }
+
+/* no quadro */
+.ccc.t-audio { padding: 0; }
+.ccc-au { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto 46px; gap: 8px 10px; padding: 12px 12px 10px; align-items: center; }
+.ccc-aup { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--hi); color: #111; display: grid; place-items: center; cursor: pointer; box-shadow: var(--sh-card); transition: transform var(--t); }
+.ccc-aup:hover { transform: scale(1.06); }
+.ccc-aup .ico { width: 16px; height: 16px; }
+.ccc-aum { min-width: 0; font-size: 12.5px; line-height: 1.3; }
+.ccc-aum b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccc-aum small { display: flex; gap: 8px; color: var(--mute); font: 500 11px var(--mono); }
+.ccc-aum small span + span::before { content: '·'; margin-right: 8px; color: var(--mute-2); }
+.ccc-auw { grid-column: 1 / -1; height: 46px; cursor: pointer; position: relative; }
+.ccc-au.embedded { grid-template-rows: auto auto; }
+.ccc-au iframe, .ccd-au iframe { grid-column: 1 / -1; width: 100%; border: 0; border-radius: 8px; display: block; background: var(--chip); }
+.ccc-au.embedded .ccc-auw { height: auto; cursor: default; }
+
+/* na Biblioteca */
+.ccl-au { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 8px; height: 78px; padding: 30px 10px 8px; background: var(--g-band, var(--chip)); }
+.ccl-au .au-wave { height: 38px; }
+.ccl-aup { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--hi); color: #111; display: grid; place-items: center; cursor: pointer; pointer-events: auto; }
+span.ccl-aup { background: var(--chip); color: var(--mute); }
+.ccl-aup .ico { width: 14px; height: 14px; }
+
+/* a vista aberta */
+.ccd-au { display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: var(--g-band, var(--chip)); border: 1px solid var(--line); }
+.ccd-auw { position: relative; height: 92px; cursor: pointer; touch-action: none; user-select: none; }
+.ccd-auw .ab { position: absolute; top: 0; bottom: 0; background: var(--hi-soft); border-left: 2px solid var(--hi); border-right: 2px solid var(--hi); border-radius: 3px; pointer-events: none; mix-blend-mode: multiply; }
+:root[data-theme="dark"] .ccd-auw .ab { mix-blend-mode: screen; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ccd-auw .ab { mix-blend-mode: screen; } }
+.ccd-auc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.ccd-aup { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--hi); color: #111; display: grid; place-items: center; cursor: pointer; box-shadow: var(--sh-card); }
+.ccd-aup .ico { width: 17px; height: 17px; }
+.ccd-auc .t { font: 600 12px var(--mono); min-width: 92px; }
+.ccd-auc select.mini { width: auto; min-width: 0; }
+.ccd-ab { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.ccd-ab button { border: 0; background: var(--panel); color: var(--fg); font: 600 12px var(--mono); padding: 5px 10px; cursor: pointer; display: grid; place-items: center; }
+.ccd-ab button + button { border-left: 1px solid var(--line-2); }
+.ccd-ab button.on { background: var(--hi); color: #111; }
+.ccd-ab .ico { width: 13px; height: 13px; }
+.ccd-vol { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--mute); }
+.ccd-vol .ico { width: 16px; height: 16px; }
+.ccd-vol input { width: 96px; accent-color: var(--fg); }
+.ccd-auerr { margin: 0; color: var(--bad-fg); }
+.ccd-an .row.r3 { grid-template-columns: 1.3fr 1fr .8fr; }
+.ccd-tr h4 { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.ccd-trl { max-height: 260px; overflow: auto; display: grid; gap: 4px; font-size: 13px; line-height: 1.45; padding-right: 4px; }
+.ccd-trl p { margin: 0; }
+.ccd-trl button { border: 0; background: var(--chip); color: var(--fg); font: 600 11px var(--mono); padding: 1px 6px; border-radius: 5px; cursor: pointer; margin-right: 4px; }
+.ccd-trl button:hover { background: var(--hi); color: #111; }
+@media (max-width: 560px) { .ccd-vol { margin-left: 0; } .ccd-an .row.r3 { grid-template-columns: 1fr 1fr; } }

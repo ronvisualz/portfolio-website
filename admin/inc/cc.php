@@ -39,7 +39,11 @@ const CC_KINDS = [
     'free'        => 'Quadro livre',
 ];
 
-const CC_CARD_TYPES = ['image', 'video', 'link', 'note', 'list', 'column', 'swatch', 'drawing', 'file', 'arrow', 'board'];
+const CC_CARD_TYPES = ['image', 'video', 'audio', 'link', 'note', 'list', 'column', 'swatch', 'drawing', 'file', 'arrow', 'board'];
+
+/** Áudio (§27): as extensões reconhecidas (as mesmas da Drive) e as categorias (sugeridas pela IA, editáveis). */
+const CC_AUDIO_EXT = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'aif', 'aiff'];
+const CC_AUDIO_CATS = ['musica' => 'Música', 'voz' => 'Voz-off', 'sfx' => 'Efeito sonoro (SFX)', 'ambiente' => 'Ambiente', 'outro' => 'Outro'];
 
 /** Larguras das miniaturas (px). O browser escolhe pela largura no ecrã × densidade. */
 const CC_THUMBS = [256, 768, 1600];
@@ -470,6 +474,7 @@ function cc_kind_for(string $mime, string $name): string {
     if (str_starts_with($mime, 'image/') && $mime !== 'image/vnd.adobe.photoshop') return 'image';
     if (str_starts_with($mime, 'video/')) return 'video';
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (str_starts_with($mime, 'audio/') || in_array($ext, CC_AUDIO_EXT, true)) return 'audio';
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'bmp'], true)) return 'image';
     if (in_array($ext, ['mp4', 'mov', 'm4v', 'webm', 'mkv'], true)) return 'video';
     return 'file';
@@ -481,6 +486,12 @@ function cc_search_text(array $a): string {
     $parts = [$a['title'] ?? '', $a['file_name'] ?? '', $a['source_url'] ?? '', $a['tags'] ?? '', $a['style'] ?? '', $a['technique'] ?? '',
               $a['camera'] ?? '', $a['environment'] ?? '', $a['light'] ?? '', $a['transcript'] ?? ''];
     $cap = json_decode((string)($a['capture'] ?? ''), true);
+    if (!empty($a['audio_cat'])) $parts[] = CC_AUDIO_CATS[$a['audio_cat']] ?? '';
+    if (is_array($an) && is_array($an['audio'] ?? null)) {   // a análise da música (§27): estilo, instrumentos, uso…
+        foreach (['genre', 'energy', 'use', 'mood'] as $k) $parts[] = is_string($an['audio'][$k] ?? null) ? $an['audio'][$k] : '';
+        if (is_array($an['audio']['instruments'] ?? null)) $parts[] = implode(' ', array_filter($an['audio']['instruments'], 'is_string'));
+        if (!empty($an['audio']['bpm'])) $parts[] = (int)$an['audio']['bpm'] . ' bpm';
+    }
     if (is_array($cap)) foreach (['note', 'quote', 'author', 'site'] as $k) $parts[] = is_string($cap[$k] ?? null) ? $cap[$k] : '';
     if (is_array($an)) {
         foreach (['caption', 'composition', 'color', 'why', 'movement', 'notes'] as $k) $parts[] = is_string($an[$k] ?? null) ? $an[$k] : '';
@@ -513,7 +524,7 @@ function cc_asset_create(PDO $pdo, ?string $bytes, array $o): array {
     if ($bytes !== null) $fp = cc_fingerprint($bytes);
     if ($fp !== '' && ($dup = cc_asset_by_fp($pdo, $fp))) return [$dup, false];
     $kind = (string)($o['kind'] ?? '') ?: cc_kind_for($mime, $name);
-    if (!in_array($kind, ['image', 'video', 'link', 'file'], true)) $kind = 'file';
+    if (!in_array($kind, ['image', 'video', 'audio', 'link', 'file'], true)) $kind = 'file';
     if ($fp === '') $fp = sha1(($o['source_url'] ?? '') . '|' . microtime(true) . '|' . random_int(0, PHP_INT_MAX));
 
     // o original
@@ -549,9 +560,18 @@ function cc_asset_create(PDO $pdo, ?string $bytes, array $o): array {
                    ($o['origin'] ?? '') === 'topper' ? 'topper' : 'external', !empty($o['deal_id']) ? (int)$o['deal_id'] : null,
                    !empty($o['inbox']) ? 1 : 0, $o['by'] ?? null, $now]);
     $id = (int)$pdo->lastInsertId();
+    if ($kind === 'audio' && (!empty($o['peaks']) || !empty($o['feats']))) {   // áudio: a forma de onda e as medidas do browser
+        $pdo->prepare('UPDATE cc_assets SET peaks = ?, analysis = ? WHERE id = ?')
+            ->execute([$o['peaks'] ?? null, !empty($o['feats']) ? json_encode(['feats' => $o['feats']]) : null, $id]);
+    }
     cc_asset_reindex($pdo, $id);
     // vídeos: a análise espera pelos frames-chave (cc_api junta-os e põe na fila)
     if ($auto && $kind !== 'video') cc_job_add($pdo, 'analyze', $id, null, null, $o['by'] ?? null);
+    // áudio (§27): primeiro a transcrição (se houver serviço de fala), depois a análise
+    if ($kind === 'audio' && empty($o['no_ai'])) {
+        require_once __DIR__ . '/cc_stt.php';
+        cc_ai_queue_asset($pdo, cc_asset_get($pdo, $id), $o['by'] ?? null);
+    }
     return [cc_asset_get($pdo, $id), true];
 }
 
@@ -591,6 +611,13 @@ function cc_asset_public(array $a, bool $full = false): array {
         'file' => (string)$a['file_name'], 'mime' => (string)$a['mime'],
         'cap' => json_decode((string)($a['capture'] ?? ''), true) ?: null,   // guardado com a extensão / Partilhar / Atalho (§26)
     ];
+    if ($a['kind'] === 'audio' || (is_array($an) && !empty($an['embed']))) {
+        // áudio (§27): a forma de onda, a categoria e o leitor embutido de um serviço (SoundCloud…)
+        $out['peaks'] = (string)($a['peaks'] ?? '');
+        $out['acat'] = (string)($a['audio_cat'] ?? '');
+        if (is_array($an) && !empty($an['embed'])) $out['embed'] = $an['embed'];
+        if (is_array($an) && !empty($an['audio'])) $out['audio'] = $an['audio'];
+    }
     if ($full) {
         $out['analysis'] = is_array($an) ? $an : null;
         $out['ai_error'] = (string)$a['ai_error'];
@@ -616,12 +643,22 @@ function cc_asset_edit(PDO $pdo, array $a, array $in, int $by): void {
     $an = json_decode((string)$a['analysis'], true);
     if (!is_array($an)) $an = [];
     foreach (['caption', 'why', 'composition', 'color', 'movement'] as $k) if (array_key_exists($k, $in)) $an[$k] = mb_substr(trim((string)$in[$k]), 0, 2000);
+    if ($a['kind'] === 'audio' || !empty($an['audio'])) {   // a análise do áudio (§27), editável
+        $au = is_array($an['audio'] ?? null) ? $an['audio'] : [];
+        foreach (['mood' => 120, 'genre' => 80, 'use' => 200] as $k => $max) if (array_key_exists('au_' . $k, $in)) $au[$k] = mb_substr(trim((string)$in['au_' . $k]), 0, $max);
+        if (array_key_exists('au_instruments', $in)) $au['instruments'] = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 40), explode(',', (string)$in['au_instruments'])), 'strlen')), 0, 10);
+        if (array_key_exists('au_bpm', $in)) $au['bpm'] = max(0, min(300, (int)$in['au_bpm']));
+        if (array_key_exists('au_energy', $in)) $au['energy'] = in_array($in['au_energy'], ['baixa', 'média', 'alta'], true) ? (string)$in['au_energy'] : '';
+        if (array_key_exists('acat', $in) && isset(CC_AUDIO_CATS[$in['acat']])) $au['category'] = (string)$in['acat'];
+        if ($au) $an['audio'] = $au;
+    }
     $an['human'] = true;
     $set = ['analysis' => json_encode($an, JSON_UNESCAPED_UNICODE), 'edited_by' => $by, 'edited_at' => cc_now()];
     if (array_key_exists('title', $in)) $set['title'] = mb_substr(trim((string)$in['title']), 0, 255);
     foreach (array_keys(CC_VOCAB) as $f) if (array_key_exists($f, $in)) $set[$f] = mb_substr(trim((string)$in[$f]), 0, 60);
     if (array_key_exists('tags', $in)) $set['tags'] = cc_tags_clean((string)$in['tags']);
     if (array_key_exists('origin', $in)) $set['origin'] = $in['origin'] === 'topper' ? 'topper' : 'external';
+    if (array_key_exists('acat', $in) && ($in['acat'] === '' || isset(CC_AUDIO_CATS[$in['acat']]))) $set['audio_cat'] = (string)$in['acat'];
     $sql = implode(', ', array_map(fn($k) => $k . ' = ?', array_keys($set)));
     $pdo->prepare("UPDATE cc_assets SET $sql WHERE id = ?")->execute([...array_values($set), (int)$a['id']]);
     cc_asset_reindex($pdo, (int)$a['id']);
@@ -742,8 +779,10 @@ function cc_job_add(PDO $pdo, string $kind, ?int $assetId, ?int $boardId, ?array
 }
 
 /** Quantos trabalhos esperam (para a interface saber se continua a pedir). */
-function cc_jobs_pending(PDO $pdo): int {
-    return (int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE status = 'queued' OR (status = 'running' AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "')")->fetchColumn();
+function cc_jobs_pending(PDO $pdo, bool $web = false): int {
+    // $web: só o que as páginas podem fazer (o ffmpeg — vídeo do Review, transcrições grandes — é do cron)
+    $w = $web ? " AND kind NOT IN ('rv_proc','rv_wm','stt_ff')" : '';
+    return (int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE (status = 'queued' OR (status = 'running' AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "'))$w")->fetchColumn();
 }
 
 /**
@@ -756,11 +795,11 @@ function cc_jobs_run(PDO $pdo, float $seconds = 20.0): int {
     $n = 0;
     while (microtime(true) < $end) {
         // presos há mais de 15 min (4 h para os vídeos do Review, que o ffmpeg demora a preparar): o pedido morreu
-        $stale = "status = 'running' AND ((kind NOT IN ('rv_proc','rv_wm') AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "') OR started_at < '" . date('Y-m-d H:i:s', time() - 14400) . "')";
+        $stale = "status = 'running' AND ((kind NOT IN ('rv_proc','rv_wm','stt_ff') AND started_at < '" . date('Y-m-d H:i:s', time() - 900) . "') OR started_at < '" . date('Y-m-d H:i:s', time() - 14400) . "')";
         $pdo->exec("UPDATE cc_jobs SET status = 'queued' WHERE $stale AND attempts < 3");
         $pdo->exec("UPDATE cc_jobs SET status = 'error', error = 'Interrompido três vezes.' WHERE $stale");
         // os vídeos do Review (ffmpeg) só pela linha de comandos: as páginas não podem correr programas
-        $cli = PHP_SAPI === 'cli' ? '' : " AND kind NOT IN ('rv_proc','rv_wm')";
+        $cli = PHP_SAPI === 'cli' ? '' : " AND kind NOT IN ('rv_proc','rv_wm','stt_ff')";   // e as transcrições que passam pelo ffmpeg
         $id = (int)$pdo->query("SELECT id FROM cc_jobs WHERE status = 'queued'$cli ORDER BY CASE WHEN kind = 'import' THEN 0 ELSE 1 END, id LIMIT 1")->fetchColumn();
         if (!$id) break;
         $up = $pdo->prepare("UPDATE cc_jobs SET status = 'running', started_at = ?, attempts = attempts + 1 WHERE id = ? AND status = 'queued'");
@@ -792,6 +831,12 @@ function cc_job_exec(PDO $pdo, array $job): void {
             break;
         case 'embed':
             cc_ai_embed_asset($pdo, (int)$job['asset_id']);
+            break;
+        case 'stt':
+        case 'stt_ff':
+            // a fala → texto com marcas de tempo (§27.4)
+            require_once __DIR__ . '/cc_stt.php';
+            cc_stt_run($pdo, $job);
             break;
         case 'import':
             require_once __DIR__ . '/cc_import.php';
@@ -932,6 +977,16 @@ function cc_card_public(array $c, ?array $asset = null, array $comments = []): a
     return $out;
 }
 
+/** O tipo de cartão de uma referência: áudio também para um link com leitor de áudio embutido (SoundCloud…). */
+function cc_card_type_for(array $a): string {
+    if ($a['kind'] === 'audio') return 'audio';
+    if ($a['kind'] === 'link') {
+        $an = json_decode((string)($a['analysis'] ?? ''), true);
+        return is_array($an) && ($an['embed']['audio'] ?? false) ? 'audio' : 'link';
+    }
+    return in_array($a['kind'], ['image', 'video'], true) ? (string)$a['kind'] : 'file';
+}
+
 /** Os cartões de um quadro, com as referências e o número de comentários, de uma só vez. */
 function cc_board_cards_public(PDO $pdo, int $boardId): array {
     $cards = cc_cards($pdo, $boardId);
@@ -958,7 +1013,7 @@ function cc_card_add(PDO $pdo, int $boardId, array $d, ?int $by): int {
     $type = in_array($d['type'] ?? '', CC_CARD_TYPES, true) ? $d['type'] : 'note';
     $z = (int)$pdo->query('SELECT COALESCE(MAX(z), 0) + 1 FROM cc_cards WHERE board_id = ' . $boardId)->fetchColumn();
     $now = cc_now();
-    $defW = ['column' => 300, 'note' => 240, 'list' => 260, 'swatch' => 140, 'board' => 240, 'drawing' => 320, 'arrow' => 0, 'link' => 280, 'file' => 240][$type] ?? 260;
+    $defW = ['column' => 300, 'note' => 240, 'list' => 260, 'swatch' => 140, 'board' => 240, 'drawing' => 320, 'arrow' => 0, 'link' => 280, 'file' => 240, 'audio' => 300][$type] ?? 260;
     $pdo->prepare('INSERT INTO cc_cards (board_id, type, asset_id, ref_board_id, column_id, lane, x, y, w, h, z, ord, content, created_by, created_at, updated_by, updated_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([$boardId, $type, !empty($d['asset_id']) ? (int)$d['asset_id'] : null, !empty($d['ref_board_id']) ? (int)$d['ref_board_id'] : null,
@@ -1033,7 +1088,8 @@ function cc_library_search(PDO $pdo, array $f, int $limit = 60, int $offset = 0)
     $args = [];
     if (!empty($f['inbox'])) $where[] = 'a.inbox = 1';
     if (in_array($f['origin'] ?? '', ['external', 'topper'], true)) { $where[] = 'a.origin = ?'; $args[] = $f['origin']; }
-    if (in_array($f['kind'] ?? '', ['image', 'video', 'link', 'file'], true)) { $where[] = 'a.kind = ?'; $args[] = $f['kind']; }
+    if (in_array($f['kind'] ?? '', ['image', 'video', 'audio', 'link', 'file'], true)) { $where[] = 'a.kind = ?'; $args[] = $f['kind']; }
+    if (isset(CC_AUDIO_CATS[$f['acat'] ?? ''])) { $where[] = 'a.audio_cat = ?'; $args[] = $f['acat']; }
     foreach (array_keys(CC_VOCAB) as $k) {
         if (($f[$k] ?? '') !== '') { $where[] = "a.$k = ?"; $args[] = mb_substr((string)$f[$k], 0, 60); }
     }
@@ -1107,6 +1163,10 @@ function cc_library_facets(PDO $pdo): array {
     foreach (array_keys(CC_VOCAB) as $k) {
         $rows = $pdo->query("SELECT $k AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND $k <> '' GROUP BY $k ORDER BY n DESC, v LIMIT 40")->fetchAll();
         $out[$k] = array_map(fn($r) => ['v' => (string)$r['v'], 'n' => (int)$r['n']], $rows);
+    }
+    if (db_has_column($pdo, 'cc_assets', 'audio_cat')) {
+        $out['acat'] = array_map(fn($r) => ['v' => (string)$r['v'], 'n' => (int)$r['n']],
+            $pdo->query("SELECT audio_cat AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND kind = 'audio' AND audio_cat <> '' GROUP BY audio_cat")->fetchAll());
     }
     return $out;
 }

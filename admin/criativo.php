@@ -141,6 +141,8 @@ if ($boardId) {
 <?php if ($rtCsp !== ''): ?>
 <script src="<?= asset_url('vendor/rt/topper-rt.js') ?>" defer></script>
 <?php endif; ?>
+<script src="<?= asset_url('drive/core.js') ?>" defer></script>
+<script src="<?= asset_url('cc_audio.js') ?>" defer></script>
 <script src="<?= asset_url('cc_rt.js') ?>" defer></script>
 <script src="<?= asset_url('cc.js') ?>" defer></script>
 <?php
@@ -298,5 +300,7 @@ render_flashes();
     <div class="actions"><button class="btn" type="submit">Importar</button><button class="btn ghost" type="button" data-mdl-close>Cancelar</button></div>
   </form>
 </div>
+<script src="<?= asset_url('drive/core.js') ?>" defer></script>
+<script src="<?= asset_url('cc_audio.js') ?>" defer></script>
 <script src="<?= asset_url('cc.js') ?>" defer></script>
 <?php render_footer();
