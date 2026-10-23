@@ -4,7 +4,7 @@
  *
  * Tempo real: os quadros sincronizam por Yjs num Durable Object da Cloudflare (PartyServer,
  * rt/ no repositório). O PHP decide quem entra: emite um token curto (10 min) assinado com
- * Ed25519 — a chave privada fica no servidor (settings), a pública vai para o Worker
+ * ECDSA P-256 (ES256, pelo OpenSSL do PHP) — a chave privada fica no servidor (settings), a pública vai para o Worker
  * (RT_PUBLIC_KEY, não é segredo). Só recebe token quem tem acesso ao negócio do quadro.
  * A base de dados continua a ser o registo dos cartões: cada pessoa grava o que muda (cc_api)
  * e o tempo real leva as mudanças aos outros logo (< 200 ms).
@@ -61,22 +61,46 @@ function cc_rt_csp(PDO $pdo): string {
     return $u . ' ' . preg_replace('~^http~', 'ws', $u);
 }
 
-/** As chaves Ed25519 que assinam os tokens: [privada, pública] (criadas na primeira vez). */
+/**
+ * As chaves que assinam os tokens (ECDSA P-256 / ES256, criadas na primeira vez):
+ * [privada (PEM), pública (SPKI em base64url, para o Worker)]. Usa o OpenSSL do PHP (o alojamento não tem sodium).
+ */
 function cc_rt_keys(PDO $pdo): ?array {
     static $keys = null;   // a cache de settings() não vê o que se grava a meio do pedido
     if ($keys !== null) return $keys;
-    if (!function_exists('sodium_crypto_sign_keypair')) return null;
-    $sk = (string)setting($pdo, 'rt_sign_sk', '');
-    $pk = (string)setting($pdo, 'rt_sign_pk', '');
+    if (!function_exists('openssl_pkey_new')) return null;
+    $sk = (string)setting($pdo, 'rt_es_sk', '');
+    $pk = (string)setting($pdo, 'rt_es_pk', '');
     if ($sk === '' || $pk === '') {
-        $kp = sodium_crypto_sign_keypair();
-        $sk = cc_rt_b64u(sodium_crypto_sign_secretkey($kp));
-        $pk = cc_rt_b64u(sodium_crypto_sign_publickey($kp));
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        if (!$key || !openssl_pkey_export($key, $sk)) return null;
+        $pem = (string)(openssl_pkey_get_details($key)['key'] ?? '');
+        $der = base64_decode(preg_replace('/-----[^-]+-----|\s+/', '', $pem), true);
+        if (!$der) return null;
+        $pk = cc_rt_b64u($der);
         require_once __DIR__ . '/ai.php';
-        ai_setting_set($pdo, 'rt_sign_sk', $sk);
-        ai_setting_set($pdo, 'rt_sign_pk', $pk);
+        ai_setting_set($pdo, 'rt_es_sk', $sk);
+        ai_setting_set($pdo, 'rt_es_pk', $pk);
     }
-    return $keys = [cc_rt_unb64u($sk), $pk];
+    return $keys = [$sk, $pk];
+}
+
+/** Assinatura ECDSA do OpenSSL (DER) → r||s com 32 bytes cada (o formato da WebCrypto). */
+function cc_rt_der2raw(string $der): ?string {
+    $o = 0;
+    if (($der[$o++] ?? '') !== "\x30") return null;
+    $len = ord($der[$o++]);
+    if ($len & 0x80) $o += $len & 0x7f;
+    $out = '';
+    for ($i = 0; $i < 2; $i++) {
+        if (($der[$o++] ?? '') !== "\x02") return null;
+        $n = ord($der[$o++]);
+        $v = ltrim(substr($der, $o, $n), "\x00");
+        $o += $n;
+        if (strlen($v) > 32) return null;
+        $out .= str_pad($v, 32, "\x00", STR_PAD_LEFT);
+    }
+    return $out;
 }
 
 /** O token curto de um quadro: «<conteúdo>.<assinatura>» (base64url). */
@@ -84,7 +108,8 @@ function cc_rt_token(PDO $pdo, int $boardId, int $userId, string $role): ?string
     $k = cc_rt_keys($pdo);
     if (!$k) return null;
     $payload = cc_rt_b64u(json_encode(['b' => $boardId, 'u' => $userId, 'r' => $role, 'exp' => time() + CC_RT_TOKEN_TTL]));
-    return $payload . '.' . cc_rt_b64u(sodium_crypto_sign_detached($payload, $k[0]));
+    if (!openssl_sign($payload, $der, $k[0], OPENSSL_ALGO_SHA256) || !($raw = cc_rt_der2raw($der))) return null;
+    return $payload . '.' . cc_rt_b64u($raw);
 }
 
 /** O negócio de um quadro (o do próprio, ou o do quadro de topo). */

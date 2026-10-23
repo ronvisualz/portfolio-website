@@ -4,7 +4,7 @@
  * Um Durable Object por quadro (sala «b<id>»), com Yjs (y-partyserver) e a API de hibernação:
  * um quadro sem ninguém não gasta. O documento fica no SQLite do próprio Durable Object.
  *
- * Entrada: só com um token curto emitido pelo PHP (Ed25519; a chave pública vem de RT_PUBLIC_KEY ou,
+ * Entrada: só com um token curto emitido pelo PHP (ECDSA P-256 / ES256; a chave pública vem de RT_PUBLIC_KEY ou,
  * sem ela, do próprio servidor da topper. em RT_KEY_URL — publicar o Worker não pede chave nenhuma):
  *   { b: <quadro>, u: <utilizador>, r: "edit" | "view" | "portal", exp: <unix> }
  * O token diz o quadro: não serve para outro. «view» e «portal» só leem (as alterações são
@@ -22,6 +22,8 @@ import * as syncProtocol from "y-protocols/sync";
 import * as awarenessProtocol from "y-protocols/awareness";
 
 const enc = new TextEncoder();
+const ALG_KEY = { name: "ECDSA", namedCurve: "P-256" };
+const ALG_SIGN = { name: "ECDSA", hash: "SHA-256" };
 let keyCache = null;
 
 function b64urlToBytes(s) {
@@ -34,7 +36,7 @@ function b64urlToBytes(s) {
 }
 
 /**
- * A chave pública Ed25519: RT_PUBLIC_KEY (se estiver definida) ou a que o servidor da topper. publica em
+ * A chave pública (ECDSA P-256, SPKI em base64url): RT_PUBLIC_KEY (se estiver definida) ou a que o servidor da topper. publica em
  * RT_KEY_URL (pública; guardada 10 min). Assim publicar o Worker não pede chave nenhuma.
  */
 async function publicKey(env, fresh) {
@@ -46,7 +48,7 @@ async function publicKey(env, fresh) {
     raw = (await r.json()).pk || "";
   }
   if (keyCache && keyCache.raw === raw) { keyCache.at = Date.now(); return keyCache.key; }
-  const key = await crypto.subtle.importKey("raw", b64urlToBytes(raw), { name: "Ed25519" }, false, ["verify"]);
+  const key = await crypto.subtle.importKey("spki", b64urlToBytes(raw), ALG_KEY, false, ["verify"]);
   keyCache = { raw, key, at: Date.now() };
   return key;
 }
@@ -58,9 +60,9 @@ async function verify(token, env) {
   if (parts.length !== 2) return null;
   try {
     const sig = b64urlToBytes(parts[1]), data = enc.encode(parts[0]);
-    let ok = await crypto.subtle.verify("Ed25519", await publicKey(env, false), sig, data);
+    let ok = await crypto.subtle.verify(ALG_SIGN, await publicKey(env, false), sig, data);
     // a chave pode ter mudado no servidor: confirma uma vez com a chave acabada de ler
-    if (!ok && !env.RT_PUBLIC_KEY && keyCache && keyCache.at < Date.now() - 30000) ok = await crypto.subtle.verify("Ed25519", await publicKey(env, true), sig, data);
+    if (!ok && !env.RT_PUBLIC_KEY && keyCache && keyCache.at < Date.now() - 30000) ok = await crypto.subtle.verify(ALG_SIGN, await publicKey(env, true), sig, data);
     if (!ok) return null;
     const p = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0])));
     if (!p || typeof p.b !== "number" || typeof p.u !== "number" || !["edit", "view", "portal"].includes(p.r)) return null;

@@ -1660,7 +1660,7 @@ Modelo em `inc/cc_rt.php` e `inc/capture.php`.
 
 - **Serviço de tempo real (`rt/`):** Worker da Cloudflare com PartyServer / y-partyserver e um Durable
   Object por quadro (sala `b<id>`), SQLite do próprio objeto e API de hibernação (um quadro sem ninguém
-  não gasta). Entra-se só com um token curto (10 min) que o PHP assina com Ed25519: a chave privada fica
+  não gasta). Entra-se só com um token curto (10 min) que o PHP assina com ECDSA P-256 (ES256, pelo OpenSSL — o alojamento não tem sodium): a chave privada fica
   em `settings` no servidor; a pública (não é segredo) o Worker lê-a de `/admin/rt_key.php` e guarda-a
   10 min (ou fixa-se em `RT_PUBLIC_KEY`) — não há segredo nenhum no Worker nem no código. O token diz o quadro, a pessoa e o papel: `edit` escreve,
   `view` só lê (o servidor ignora as alterações), `portal` só lê e não envia nem recebe presença (o

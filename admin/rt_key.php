@@ -11,4 +11,4 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=300');
 $k = cc_rt_ready($pdo) ? cc_rt_keys($pdo) : null;
 if (!$k) { http_response_code(503); echo '{"ok":false}'; exit; }
-echo json_encode(['ok' => true, 'alg' => 'Ed25519', 'pk' => $k[1]]);
+echo json_encode(['ok' => true, 'alg' => 'ES256', 'pk' => $k[1]]);

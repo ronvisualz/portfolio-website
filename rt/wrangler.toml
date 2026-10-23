@@ -8,7 +8,7 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 
 [vars]
-# a chave pública Ed25519 que verifica os tokens curtos emitidos pelo PHP (não é segredo):
+# a chave pública (ECDSA P-256) que verifica os tokens curtos emitidos pelo PHP (não é segredo):
 # lida do servidor em RT_KEY_URL; RT_PUBLIC_KEY só se se quiser fixá-la aqui
 RT_KEY_URL = "https://topperhub.xyz/admin/rt_key.php"
 RT_PUBLIC_KEY = ""
