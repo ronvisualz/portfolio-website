@@ -3181,3 +3181,116 @@ gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
 ### 27.6 Limites
 - Tamanho máximo por ficheiro igual ao do vídeo; formatos fora da lista ficam «Ficheiro».
 - Interface sem referências «§» (§21).
+
+## 28. Financeiro (decidido 23 out 2026)
+
+**Ponto de partida (verificado no main):** `admin/financeiro.php` já tem os separadores Negócios · Por receber · Fluxo de caixa · Custos · IVA, a tabela `company_costs` (custos da empresa por ano/mês com IVA e «pago») e gráficos em `inc/charts.php`. A §28 alarga isto; não se perde nada do que existe (migração dos dados atuais).
+
+**Acesso:** só superadmin, admins (sócios) e quem tem a permissão «Financeiro». Verificado no servidor em todas as rotas, ficheiros e exportações. O comercial continua a ver só o estado «pago / por receber» do seu negócio (já existe na ficha). O colaborador vê os seus próprios recibos de vencimento em Perfil.
+
+**Princípio legal:** a plataforma **não é software de faturação certificado**. As faturas e recibos continuam a ser emitidos no programa certificado (por escolher) e são *registados* aqui com o PDF. Todas as taxas e limites fiscais ficam como **parâmetros editáveis** em Definições › Financeiro, cada um com a fonte legal, o ano e a data da última verificação; o contabilista certificado valida-os no início de cada ano. Nunca valores fixos no código.
+
+### 28.1 Separadores
+Visão geral · A receber (faturas emitidas) · A pagar (faturas recebidas) · Custos fixos · Salários · Tesouraria · Simulador · Impostos (IVA e calendário fiscal). Os separadores atuais «Negócios» e «Fluxo de caixa» passam para dentro de Visão geral e Tesouraria.
+
+### 28.2 Movimentos: interno vs. negócio
+Todo o documento (fatura, recibo, nota de crédito, despesa) tem obrigatoriamente:
+- **Sentido:** Receita (emitimos) ou Despesa (recebemos).
+- **Âmbito:** «Empresa (interno)» ou «Negócio» — neste caso escolhe-se o negócio (código + nome) e, se houver crosselling (§22), a frente. **Pagamentos a fornecedores e freelancers não podem ser guardados sem âmbito**; se forem de um negócio, o negócio é obrigatório.
+- **Contraparte:** contacto/empresa (§13) ou fornecedor/freelancer; NIF.
+- Categoria (lista editável: Software, Equipamento, Renda, Telecomunicações, Contabilidade, Seguros, Viaturas, Deslocações, Freelancers, Fornecedores de produção, Marketing, Formação, Impostos, Salários, Outros).
+- Valores: base, taxa de IVA, IVA, total, retenção na fonte (se houver), moeda.
+- Datas: emissão, vencimento, pagamento.
+- Ficheiros: PDF do documento + comprovativo de pagamento + recibo — guardados na Drive (§25) em `Financeiro/AAAA/MM/` e, se for de negócio, também visíveis na pasta do negócio.
+As despesas ligadas a um negócio entram automaticamente nos custos reais desse negócio (margem e gross profit da ficha e da Orçamentação).
+
+### 28.3 A receber (faturas emitidas)
+Estados: **Emitida → Parcialmente paga → Paga → Recibo arquivado**, e «Anulada» (com nota de crédito).
+- Lançar: carregar o PDF da fatura; a IA lê nº, data, NIF, base, IVA, total e vencimento e preenche (o utilizador confirma). É o mesmo PDF que conclui a tarefa «Emitir fatura» do pipeline (§19.6 E) — um só lançamento.
+- **Só passa a «Paga» com comprovativo de pagamento submetido** (PDF/imagem do comprovativo ou movimento bancário conciliado, §28.7). Pagamentos parciais acumulam até ao total (ex.: 50/50, 40/40/20).
+- Antiguidade: em dia · 1–30 · 31–60 · 61–90 · +90 dias, com cores e alerta no menu (já existe o alerta de atraso).
+- Lembrete ao cliente: rascunho de email gerado pela IA (cordial → firme conforme o atraso), enviado só depois de aprovado.
+- Faturas de clientes estrangeiros sem IVA (autoliquidação/exportação) com a menção indicada.
+
+### 28.4 A pagar (faturas recebidas)
+Estados: **Por pagar → Paga → Recibo arquivado**, «Em disputa».
+- Lançar arrastando o PDF (ou por email reencaminhado para um endereço próprio, sugestão para fase 2); a IA extrai os dados, sugere categoria e âmbito pelo NIF e histórico; deteta **duplicados** (mesmo NIF + nº).
+- Pagar: marcar paga exige comprovativo (ou conciliação). Lista «A pagar esta semana» e «Vencidas».
+- Freelancers (recibo verde): calcula a **retenção na fonte de IRS** a fazer (taxa parâmetro, hoje 23% para atividades do art. 151.º; 0% se o freelancer tiver dispensa — campo na ficha do fornecedor) e o IVA (23% ou isento art. 53.º). Mostra «pagar ao freelancer» e «entregar ao Estado».
+- Rendas pagas a senhorio com contabilidade organizada / pessoa coletiva: retenção de 25% (parâmetro).
+
+### 28.5 Custos fixos operacionais
+Registo de todos os custos recorrentes: nome, categoria, fornecedor, valor, IVA (dedutível ou não), periodicidade (mensal, trimestral, anual — convertida para valor mensal), data de início e fim, método de pagamento, âmbito (sempre interno).
+- Gera automaticamente o lançamento «Por pagar» em cada vencimento (com PDF a juntar).
+- Salários (custo total da empresa, §28.6) entram automaticamente como custo fixo.
+- Total mensal de custos fixos = base do runway (§28.8). Mostra alterações de mês para mês («+120 €/mês desde março: novo software»).
+
+### 28.6 Salários (processamento)
+Ficha de colaborador (Equipa §17) passa a ter, só visível a quem tem Financeiro: vencimento base bruto, subsídio de refeição (valor/dia, dinheiro ou cartão), situação para IRS (não casado / casado único titular / casado dois titulares), nº de dependentes, deficiência, residência (Continente/Açores/Madeira), duodécimos sim/não, IBAN, NIF, NISS, tipo de contrato, data de entrada.
+
+**Emitir pagamento:** escolher colaborador(es) e mês → «Emitir». O sistema calcula e mostra:
+| | Colaborador | Empresa |
+|---|---|---|
+| Bruto | vencimento + subsídios do mês | |
+| Segurança Social | −11% | +23,75% (TSU) |
+| IRS retido | −(R × taxa − parcela a abater − parcela por dependente × nº) | |
+| Subsídio de refeição | isento até 6,15 €/dia (dinheiro) ou 10,46 €/dia (cartão); excesso tributado | custo |
+| Seguro de acidentes de trabalho | | % da apólice (parâmetro, obrigatório) |
+| **Total** | **Líquido a receber** | **Custo total para a empresa** |
+- IRS: tabelas de retenção do Continente do **Despacho n.º 233-A/2026** (em vigor desde 1 jan 2026) guardadas como dados (escalões, taxa, parcela a abater, parcela por dependente); importadas de novo a cada ano e quando houver tabelas novas a meio do ano. Subsídios de férias e de Natal retidos **autonomamente** (como manda a lei), ou em duodécimos se escolhido.
+- FCT/FGCT: contribuições suspensas — parâmetro a 0% (pode voltar).
+- Avisos: vencimento abaixo do salário mínimo (920 € em 2026, parâmetro); dados em falta (NIF, NISS, IBAN).
+- Saídas: **recibo de vencimento PDF** (enviado ao colaborador e no Perfil dele); lançamentos «A pagar»: líquido ao colaborador; IRS retido ao Estado (DMR até dia 10 e pagamento até dia 20 do mês seguinte); Segurança Social 34,75% (declaração até dia 10, pagamento entre 10 e 20 do mês seguinte). Ficheiro para o contabilista (CSV/PDF resumo mensal).
+- Custo anual mostrado na ficha: 14 meses × (bruto × 1,2375) + refeição + seguro.
+
+### 28.7 Tesouraria
+- Contas: bancos, cartões, caixa — saldo atual atualizado por **importação do extrato (CSV/OFX)** ou manualmente (com data).
+- **Conciliação:** cada movimento do extrato é emparelhado com uma fatura/custo/salário (sugestão automática por valor, data e NIF; o utilizador confirma). Conciliar conta como comprovativo de pagamento.
+- Saldo disponível = soma das contas − compromissos já conhecidos até ao fim do mês (IVA a entregar, IRS e SS dos salários, faturas a pagar vencidas).
+- Previsão de tesouraria 6/12 meses: saldo + recebimentos esperados (faturas emitidas por vencimento, prestações dos negócios ganhos) − custos fixos − pagamentos previstos.
+
+### 28.8 Runway
+- **Reserva de emergência (capital morto)** = N meses × custos fixos mensais. N = **6 por defeito**, editável só por superadmin/admins (Definições › Financeiro, com registo de alterações).
+- Runway total = saldo disponível ÷ custos fixos mensais.
+- **Runway útil = runway total − N** (ex.: 24 meses de saldo → 18 meses úteis). É o número principal da aba.
+- Duas leituras lado a lado: **Conservador** (sem receita, só custos fixos) e **Com tendência** (custos fixos − receita média recebida dos últimos 6 meses ajustada pela tendência). Se a receita cobre os custos: «Sustentável — o saldo cresce X €/mês».
+- Alerta aos sócios quando o runway útil desce abaixo de 6 meses (limiar editável) e quando se entra na reserva.
+
+### 28.9 Tendência de crescimento
+- Receita recebida e faturada por mês; média móvel de 3 e 6 meses; crescimento médio mensal (composto) dos últimos 6 e 12 meses; projeção com três cenários (pessimista = metade da tendência, realista, otimista = tendência + 50%), parâmetros editáveis.
+- A projeção usa também o pipeline: negócios ganhos ainda por faturar (certos) e propostas abertas × probabilidade da etapa (§19) (prováveis), mostrados à parte.
+
+### 28.10 Simulador de decisões
+Uma ferramenta «E se…?»: escolhe-se o tipo, preenchem-se poucos campos, e mostra o impacto em **custo mensal real, custo anual, runway útil antes → depois, mês em que se entra na reserva** e **receita extra necessária para manter o runway** (custo ÷ margem média dos negócios). Cenários guardáveis e comparáveis lado a lado; podem ser «aplicados» (viram custo fixo/colaborador previsto).
+1. **Contratar:** salário bruto, subsídio de refeição, data de início → custo total empresa (14 meses, TSU 23,75%, seguro, refeição), mais equipamento inicial opcional. Mostra também o líquido que a pessoa recebe.
+2. **Arrendar escritório:** renda, caução (meses), despesas fixas (eletricidade, água, internet, condomínio, limpeza, seguro), obras/mobiliário iniciais. Regras: renda é gasto dedutível em IRC; arrendamento normalmente isento de IVA (sem IVA a deduzir) salvo renúncia do senhorio; retenção de 25% quando aplicável (§28.4).
+3. **Investir num serviço/software/equipamento:** valor único ou mensal, IVA dedutível, duração; equipamento amortizado (taxa por tipo, parâmetro).
+4. **Comprar viatura:** tipo (ligeiro de passageiros / comercial), motorização (elétrico, híbrido plug-in, híbrido normal, gasolina, gasóleo, GPL/GNV), preço sem IVA, compra a pronto / crédito / renting (AOV), km/ano, consumo, seguro, manutenção. Calcula:
+   - **IVA dedutível na compra** (ligeiros de passageiros): elétrico até 62.500 € — 100%; plug-in até 50.000 € — 100%; GPL/GNV até 37.500 € — 50%; gasolina, gasóleo e híbrido normal — 0%. Acima do limite, não dedutível. Comerciais: regra própria (parâmetro).
+   - **IVA dos consumos:** eletricidade 100% (elétrico/plug-in), gasóleo/GPL/GNV 50%, gasolina 0% (parâmetros).
+   - **Depreciação fiscal:** 25%/ano; só aceite até ao limite fiscal (combustão 25.000 €, plug-in 50.000 €, elétrico 62.500 €, GPL/GNV 37.500 €, Portaria 467/2010 — parâmetros).
+   - **Tributação autónoma** sobre todos os encargos da viatura (depreciação, renting, seguro, manutenção, combustível, portagens): gasolina/gasóleo/híbrido normal: 8% (< 37.500 €), 25% (37.500–45.000 €), 32% (≥ 45.000 €); plug-in: 2,5% / 7,5% / 15% (se cumprir os requisitos: Euro 6e-bis até 80 g CO₂/km, ou Euro 6 anterior com ≥ 50 km de autonomia elétrica e < 50 g CO₂/km); elétrico: 0% até 62.500 €, 10% acima.
+   - Resultado: custo real mensal e a 4 anos de cada opção, com comparação lado a lado (ex.: elétrico vs gasóleo) e poupança de IRC.
+- **Efeito do IRC** em todos os cenários (só quando a empresa tem lucro): gasto dedutível poupa IRC à taxa marginal — 15% nos primeiros 50.000 € de matéria coletável (PME) e 19% acima (2026), + derrama municipal (parâmetro, Lisboa até 1,5%).
+- Aviso fixo no simulador: «Estimativa com as regras de [ano]. Confirma com o contabilista antes de decidir.»
+
+### 28.11 Impostos
+- IVA: apuramento por período (mensal ou trimestral, parâmetro) a partir dos lançamentos: liquidado − dedutível = a entregar/recuperar (já existe; passa a usar as faturas reais).
+- **Calendário fiscal** com alertas: DMR e Segurança Social (dia 10/20), declaração periódica de IVA, pagamentos por conta e Modelo 22 de IRC, IES, Modelo 10 — datas como parâmetros. Cada obrigação gera tarefa ao responsável financeiro.
+- Exportação para o contabilista: ZIP mensal com PDFs + CSV de lançamentos.
+
+### 28.12 Gráficos (Visão geral)
+Seguem a linha de `inc/charts.php` e da §11 (claro/escuro, degradês suaves, animação de entrada, dica ao passar o rato com valores exatos):
+1. **Runway** — barra horizontal: meses úteis (cor da marca) + reserva de N meses (tracejado), com o número grande «18 meses úteis» e a data estimada.
+2. **Fluxo de caixa 12 meses** — barras de entradas vs saídas por mês + linha do saldo; os meses futuros a tracejado (previsão).
+3. **Por receber por antiguidade** — barra empilhada (em dia · 1–30 · 31–60 · 61–90 · +90), clicável para filtrar.
+4. **Custos fixos por categoria** — barras horizontais ordenadas (não gráfico circular).
+5. **Receita com tendência** — barras mensais + média móvel e projeção com banda pessimista/otimista.
+Quatro números no topo: Saldo disponível · Por receber (em atraso a vermelho) · A pagar 30 dias · Runway útil.
+
+### 28.13 Sugestões incluídas
+- Conciliação bancária por extrato (elimina «marcar pago» à mão).
+- IA a ler PDFs de faturas e a sugerir categoria/âmbito.
+- Lembretes de cobrança aprovados antes de enviar.
+- Integração futura com o programa de faturação certificado escolhido (InvoiceXpress, Moloni, TOConline, etc.) para emitir a fatura a partir do negócio e importar automaticamente — fase 2.
+- Interface sem referências «§» (§21); «Anular» em todas as ações (§11).
