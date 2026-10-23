@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — «Reorganizar o Drive» (§24, fase 2). Só administradores.
+ * topper. admin — «Reorganizar o Drive» (§25, fase 2). Só administradores.
  *
  * GET               a pré-visualização (o que vai mudar, de onde para onde, com caixas para escolher)
  *                   ou, se há uma reorganização a correr, o progresso; no fim, o relatório.

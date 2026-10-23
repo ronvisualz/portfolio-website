@@ -1511,7 +1511,7 @@ Ficheiros novos: `inc/migrate_creative.php`, `inc/cc.php`, `inc/cc_ai.php`, `inc
 
 ---
 
-### 10.15 Drive organizada: todos os ficheiros no sítio certo — §24 (23 out 2026)
+### 10.15 Drive organizada: todos os ficheiros no sítio certo — §25 (23 out 2026)
 
 Base de dados **v25** (`inc/migrate_files.php`, idempotente): `files` (o registo de ficheiros:
 chave atual no Drive, ETag, tamanho, origem, secção, negócio/lead, peça de marketing, referência do
@@ -2796,7 +2796,62 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
 
-## 24. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
+---
+
+## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
+
+Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
+
+### 24.1 Versões
+- Uma **peça de review** pertence a um negócio (e a uma frente, §22) e a uma etapa de
+  aprovação (styleframes, animatic, offline, picture lock, finais, lote…).
+- Carregar ficheiro (vídeo, imagem, PDF) → versão **v001, v002…**; nunca se apaga uma versão.
+- Vídeo: gerar no servidor um **proxy H.264** para o browser, **poster**, **tira de miniaturas**
+  e ler o **fps e o timecode de início**; o original fica no Drive (`<ID>_<NOME>/Review/`).
+- Estados da peça: Em preparação · Enviada ao cliente · Com comentários · Alterações pedidas ·
+  **Aprovada**.
+
+### 24.2 Leitor e comentários no frame exato
+- Leitor com **precisão ao frame**: avançar/recuar 1 frame (← →), J/K/L, velocidade, repetir
+  um intervalo, timecode SMPTE, tira de miniaturas.
+- Comentário preso a um **frame** (ou a um **intervalo**), com **desenho por cima** (seta,
+  retângulo, círculo, mão livre, texto) guardado como vetor; marcadores coloridos na barra do tempo.
+- Imagens e PDF: **pinos** no ponto clicado, com desenho.
+- Respostas em fio, @menções, anexos, **Resolver/Reabrir**.
+- Comentários **Internos** (só a equipa) ou **Para o cliente**; os internos nunca chegam ao portal.
+- Comparar versões: **lado a lado**, **cortina** (wipe) e **sobreposição**, sincronizadas.
+- Exportar comentários: PDF/CSV e **marcadores para Premiere/DaVinci/Avid** (EDL/XML).
+
+### 24.3 Rondas e aprovação
+- **Enviar ao cliente** abre uma ronda; o cliente envia os comentários **de uma vez** (botão
+  «Enviar comentários»): um envio consolidado = **uma ronda** (§19.6 D).
+- Contador «Ronda X de Y incluídas» por etapa (Y vem da proposta/Definições). Ao **passar do
+  incluído**: aviso ao Comercial e sugestão de **pedido de alteração** (§19.6 D).
+- **Aprovar** (equipa ou cliente pelo portal) → peça Aprovada, **conclui a tarefa de aprovação
+  correspondente no Pipeline** (mapa etapa de review ↔ tarefa em Definições › Centro Criativo)
+  e os frames/versão aprovados entram na Biblioteca como referência da casa (§23.1).
+- Aprovação do cliente pede **nome escrito** e confirmação; regista data, IP e versão.
+- Notificações ao responsável de execução e ao comercial em cada ação do cliente.
+
+### 24.4 Portal do cliente
+- **Um link por negócio**, longo e aleatório, **revogável** e com **validade** (por defeito até 60
+  dias após a entrega; Definições). Sem conta. Abrir (GET) **nunca altera nada**; ações por POST.
+- Primeira ação: o cliente indica **nome e email** (guardado nesse browser); os comentários
+  aparecem como «Cliente · Nome». Vários aprovadores do cliente podem usar o mesmo link.
+- Separadores visíveis só se a topper. partilhar: **Proposta** (com pré-criativo) · **Quadros**
+  partilhados (só leitura: tratamento, rotas) · **Review** (peças enviadas).
+- **Nunca** mostra custos, margens, notas, tarefas ou comentários internos.
+- Imagem topper., modo claro/escuro, funciona no telemóvel, **PT/EN** (clientes internacionais).
+- Ficheiros por **URLs assinados de curta duração**; vídeos de review com **marca de água** com o
+  nome do cliente (opção por peça); **download** só se ativado por peça.
+- Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
+- Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
+
+### 24.5 Definições › Centro Criativo
+Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
+etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
+
+## 25. Drive organizada: todos os ficheiros no sítio certo (decidido 23 out 2026)
 
 Tudo o que entra na plataforma ou é gerado por ela fica guardado **uma vez** no Drive, organizado
 por negócio quando pertence a um negócio, por origem e por tipo de documento; o mais importante é

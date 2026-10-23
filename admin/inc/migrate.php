@@ -296,7 +296,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     //
     // Cada ficheiro que entra ou é gerado fica uma vez no Drive, na pasta do negócio, da
     // lead ou da origem; a fila das pastas que mudam de sítio (arquivar, reabrir, converter).
-    // ── 26 · Reorganizar o Drive (§24, fase 2): a fila do que já existia ──
+    // ── 26 · Reorganizar o Drive (§25, fase 2): a fila do que já existia ──
     require_once __DIR__ . '/migrate_files.php';
     migrate_files($pdo);
 
