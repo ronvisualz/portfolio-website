@@ -7,6 +7,7 @@ require_once __DIR__ . '/inc/pipeline_flow.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/alerts.php';
 require_once __DIR__ . '/inc/interactions.php';
+require_once __DIR__ . '/inc/xsell.php';
 $user = require_login();
 require_page('pipeline');
 
@@ -148,7 +149,7 @@ $self    = pipe_url(array_filter(['v' => $view === 'funil' ? null : $view, 'f' =
 render_header('Pipeline', 'pipeline');
 render_flashes();
 ?>
-<h1>Pipeline</h1>
+<div class="h1-row"><h1>Pipeline</h1><?= cfg_link('pipeline') ?></div>
 
 <div class="tabs-row pipe-tabs">
   <div class="tabs">
@@ -158,8 +159,8 @@ render_flashes();
   </div>
   <div class="tabs tabs-lost"><a href="<?= e(pipe_url(['v' => 'perdidos'])) ?>" class="<?= $view === 'perdidos' ? 'on' : '' ?>"><?= icon('x') ?> Perdidos (<?= $count('lost') ?>)</a></div>
 </div>
-<?php if (can('pipeline', PERM_MANAGE)): ?>
-  <div class="sub"><a class="lnk" href="/admin/funis.php">Configurar funis e etapas</a></div>
+<?php if (can('pipeline', PERM_MANAGE) && !is_admin()): ?>
+  <div class="sub"><a class="lnk" href="/admin/funis.php">Funis e etapas</a></div>
 <?php endif; ?>
 
 <?php if ($view === 'funil' && $fid):
@@ -169,6 +170,24 @@ render_flashes();
     $seesProd = can('negocios');
     $prodDeals = $seesProd ? $selectDeals("d.funnel_id = ? AND (d.phase = 'production' OR (d.phase = 'done' AND d.done_at >= ?))",
                                           [$fid, (new DateTimeImmutable(today_lisbon()))->modify('-30 days')->format('Y-m-d') . ' 00:00:00'], 'negocios') : [];
+    // Crosselling (§22): em produção, um negócio com várias frentes aparece pelas frentes (cada uma
+    // no funil do seu serviço, na sua etapa), não pelo negócio.
+    $multiIds = xsell_ready($pdo) ? array_map('intval', $pdo->query('SELECT deal_id FROM deal_lines GROUP BY deal_id HAVING COUNT(*) >= 2')->fetchAll(PDO::FETCH_COLUMN)) : [];
+    $prodDeals = array_values(array_filter($prodDeals, fn($d) => !in_array((int)$d['id'], $multiIds, true)));
+    $laneCards = [];
+    if ($seesProd && $multiIds) {
+        $since = (new DateTimeImmutable(today_lisbon()))->modify('-30 days')->format('Y-m-d') . ' 00:00:00';
+        $byId = [];
+        foreach ($selectDeals("d.phase IN ('production','done') AND d.id IN (" . implode(',', $multiIds) . ')', [], 'negocios') as $d) $byId[(int)$d['id']] = $d;
+        $st = $pdo->prepare("SELECT l.*, f.name AS funnel_name, f.xray_kind FROM deal_lines l JOIN funnels f ON f.id = l.funnel_id
+                              WHERE l.funnel_id = ? AND (l.status IN ('active','waiting') OR (l.status = 'done' AND l.done_at >= ?))");
+        $st->execute([$fid, $since]);
+        foreach ($st->fetchAll() as $l) {
+            if (!isset($byId[(int)$l['deal_id']])) continue;
+            $d = xsell_vdeal($byId[(int)$l['deal_id']], $l) + ['_status' => $l['status'], '_value' => $l['value'], '_others' => xsell_label($pdo, $byId[(int)$l['deal_id']])];
+            $laneCards[] = $d;
+        }
+    }
     $allDeals = $selectDeals("d.phase = 'pipeline' AND d.funnel_id = ?", [$fid]);
     $vistaCount = [];
     foreach (array_keys(PIPE_VISTAS) as $k) $vistaCount[$k] = count(array_filter($allDeals, fn($d) => $inVista($d, $k)));
@@ -176,8 +195,13 @@ render_flashes();
     $byStage = [];
     $doneStage = 0;
     foreach ($stages as $s) if ($s['kind'] === 'done') $doneStage = (int)$s['id'];
+    $kickStage = 0;
+    foreach ($stages as $s) if ($s['kind'] === 'kickoff') $kickStage = (int)$s['id'];
     foreach (array_merge($deals, array_values(array_filter($prodDeals, fn($d) => $inVista($d, $vista === 'risco' ? '' : $vista)))) as $d) {
         $byStage[$d['phase'] === 'done' && $doneStage ? $doneStage : (int)$d['stage_id']][] = $d;
+    }
+    foreach (array_filter($laneCards, fn($d) => $inVista($d, $vista === 'risco' ? '' : $vista)) as $d) {
+        $byStage[$d['_status'] === 'done' ? $doneStage : ($d['_status'] === 'waiting' ? $kickStage : (int)$d['stage_id'])][] = $d;
     }
     // Ganhos este mês: chegaram a Kickoff neste funil desde o dia 1.
     $won = $selectDeals("d.phase IN ('production','done') AND d.funnel_id = ? AND d.id IN (
@@ -199,7 +223,7 @@ render_flashes();
   <?php foreach ($stages as $s): $sid = (int)$s['id']; $cards = $byStage[$sid] ?? [];
         $com = in_array($s['kind'], ['xray', 'commercial'], true);
         $zone = $com ? 'com' : ($s['kind'] === 'done' ? 'done' : 'prod');
-        $val = fn($d) => (float)($com ? $d['value_estimate'] : ($d['budget'] ?: $d['value_estimate']));
+        $val = fn($d) => (float)($com ? $d['value_estimate'] : (isset($d['_line']) ? (float)$d['_value'] : ($d['budget'] ?: $d['value_estimate'])));
         $total = array_sum(array_map($val, $cards)); ?>
     <?php if ($s['kind'] === 'kickoff'): ?><div class="col-sep" aria-hidden="true"><span>Produção</span></div><?php endif; ?>
     <section class="col z-<?= $zone ?><?= $s['kind'] === 'kickoff' ? ' col-win' : '' ?>" data-stage="<?= $sid ?>" data-zone="<?= $zone ?>" aria-label="<?= e($s['name']) ?>">
@@ -212,13 +236,16 @@ render_flashes();
       </header>
       <div class="cards">
       <?php foreach ($cards as $d): $idle = days_since(deal_last_move($d)); $risk = $com && $idle > $staleLimit;
-            $gate = $s['kind'] !== 'done' && $d['phase'] !== 'done' ? deal_gate($pdo, $d, $s) : [];
+            $lane = isset($d['_line']); $waiting = $lane && $d['_status'] === 'waiting';
+            $gate = $s['kind'] !== 'done' && $d['phase'] !== 'done' && !$waiting ? deal_gate($pdo, $d, $s) : [];
             $gOk = count(array_filter($gate, fn($g) => $g['ok']));
-            $drag = $canEdit && $d['phase'] !== 'done'; ?>
-        <article class="dcard<?= $risk ? ' risk' : '' ?><?= $d['phase'] === 'done' ? ' is-done' : '' ?>" draggable="<?= $drag ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>" data-value="<?= $val($d) ?>">
+            $drag = $canEdit && $d['phase'] !== 'done' && !$waiting;
+            $xs = $lane ? $d['_others'] : ($com ? xsell_label($pdo, $d) : ''); ?>
+        <article class="dcard<?= $risk ? ' risk' : '' ?><?= $d['phase'] === 'done' ? ' is-done' : '' ?><?= $lane ? ' is-lane' : '' ?>" draggable="<?= $drag ? 'true' : 'false' ?>" data-id="<?= (int)$d['id'] ?>"<?= $lane ? ' data-line="' . (int)$d['_line'] . '"' : '' ?> data-value="<?= $val($d) ?>">
           <div class="id"><span><?= e($d['code']) ?></span><?php if ($gate): ?><span class="chip<?= $gOk === count($gate) ? ' ok' : '' ?>" data-tip="<?= e($gOk === count($gate) ? 'Requisitos cumpridos: pode avançar' : 'Falta: ' . implode(' · ', array_map(fn($g) => $g['label'], array_filter($gate, fn($g) => !$g['ok'])))) ?>" tabindex="0" aria-label="Requisitos <?= $gOk ?> de <?= count($gate) ?>"><?= $gOk ?>/<?= count($gate) ?></span><?php endif; ?><?php if ($risk): ?><span class="chip risk" data-tip="Sem movimento há <?= $idle ?> dias" aria-label="Sem movimento há <?= $idle ?> dias"><?= $idle ?>d</span><?php endif; ?></div>
           <a class="dname" data-panel="deal:<?= (int)$d['id'] ?>" href="<?= e($com ? pipe_url(['f' => $fid, 'deal' => $d['id']]) . '#negocio' : '/admin/negocio.php?id=' . (int)$d['id']) ?>"><?= e($d['name']) ?></a>
           <?php if ($d['contact_name'] && $d['contact_name'] !== $d['name']): ?><div class="muted"><?= e($d['contact_name']) ?></div><?php endif; ?>
+          <?php if ($xs !== ''): ?><div class="xs-card" data-tip="<?= e($lane ? 'Frente de um negócio de crosselling' : 'Negócio de crosselling') ?>"><?= icon('merge') ?> <?= e($xs) ?><?= $waiting ? ' · <b>à espera</b>' : '' ?></div><?php endif; ?>
           <div class="drow">
             <span class="mono"><?= $val($d) ? eur0($val($d)) : '<span class="muted">sem valor</span>' ?></span>
             <span class="owner"><span class="dot" style="background:<?= e($d['owner_color'] ?: '#ccc') ?>"></span> <?= e($d['owner_name'] ?? 'Por atribuir') ?></span>
@@ -228,7 +255,7 @@ render_flashes();
             <input type="hidden" name="do" value="move"><input type="hidden" name="id" value="<?= (int)$d['id'] ?>">
             <input type="hidden" name="back" value="<?= e($self) ?>">
             <select name="stage_id" class="mini" aria-label="Mover <?= e($d['code']) ?> para">
-              <?php foreach ($stages as $o): if ($o['kind'] === 'done' || ($d['phase'] === 'production' && in_array($o['kind'], ['xray', 'commercial'], true))) continue; ?><option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === $sid ? 'selected' : '' ?>><?= e($o['name']) ?></option><?php endforeach; ?>
+              <?php foreach ($stages as $o): if (($o['kind'] === 'done' && !($lane && $d['sync_mode'] === 'independent')) || ($d['phase'] === 'production' && in_array($o['kind'], ['xray', 'commercial'], true)) || ($lane && $o['kind'] === 'kickoff' && (int)$o['id'] !== $sid)) continue; ?><option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === $sid ? 'selected' : '' ?>><?= e($o['name']) ?></option><?php endforeach; ?>
             </select>
             <noscript><button class="btn sm" type="submit">Mover</button></noscript>
           </form>

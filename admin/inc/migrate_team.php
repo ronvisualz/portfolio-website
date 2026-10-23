@@ -199,7 +199,7 @@ function migrate_team(PDO $pdo): void {
                 ->execute([$email, $name, password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT), $did, $color, $p]);
             $uid = (int)$pdo->lastInsertId();
             $invite[] = $uid;
-            $pdo->prepare("INSERT INTO user_history (user_id, event, note) VALUES (?, 'create', 'Conta de sócio criada (§17.9)')")->execute([$uid]);
+            $pdo->prepare("INSERT INTO user_history (user_id, event, note) VALUES (?, 'create', 'Conta de sócio criada')")->execute([$uid]);
         }
         foreach ($cargos as $c) if (isset($pos[mb_strtolower($c)])) $link->execute([$uid, $pos[mb_strtolower($c)]]);
         if ($did) $pdo->prepare('UPDATE departments SET head_user_id = COALESCE(head_user_id, ?) WHERE id = ?')->execute([$uid, $did]);

@@ -9,19 +9,28 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/tasks.php';
 
-/** Os filtros do endereço (§18.5), normalizados. */
-function tasks_filters(array $g, bool $operator): array {
+/** Os filtros do endereço, normalizados. $defWho: o «Quem» com que a lista abre (o do Perfil, ou «Eu» para operadores). */
+function tasks_filters(array $g, bool $operator, string $defWho = ''): array {
+    if (!in_array($defWho, ['me', 'all'], true) || ($defWho === 'me' && !$operator)) $defWho = $operator ? 'me' : 'all';
+    tasks_default_who($defWho);
     $f = [
         'est'    => in_array($g['est'] ?? '', ['todo', 'done', 'all'], true) ? $g['est'] : 'todo',
         'urg'    => in_array($g['urg'] ?? '', ['late', 'today', 'week'], true) ? $g['urg'] : '',
-        'quem'   => (string)($g['quem'] ?? ($operator ? 'me' : 'all')),
+        'quem'   => (string)($g['quem'] ?? $defWho),
         'tipo'   => isset(TASK_TYPES[$g['tipo'] ?? '']) ? $g['tipo'] : '',
         'origem' => isset(TASK_ORIGINS[$g['origem'] ?? '']) ? $g['origem'] : '',
         'neg'    => max(0, (int)($g['neg'] ?? 0)),
         'solto'  => !empty($g['solto']) ? 1 : 0,
     ];
-    if (!in_array($f['quem'], ['me', 'all', 'none'], true) && !ctype_digit($f['quem'])) $f['quem'] = $operator ? 'me' : 'all';
+    if (!in_array($f['quem'], ['me', 'all', 'none'], true) && !ctype_digit($f['quem'])) $f['quem'] = $defWho;
     return $f;
+}
+
+/** O «Quem» com que a lista abre (para o «Limpar filtros» voltar a ele). */
+function tasks_default_who(?string $set = null): string {
+    static $who = 'all';
+    if ($set !== null) $who = $set;
+    return $who;
 }
 
 /** O endereço com os filtros, mudando só o que se pede (os valores por defeito saem). */
@@ -167,7 +176,7 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
     $h .= '<form class="fg" method="get" action="/admin/calendar.php">' . ($tab !== 'tarefas' ? '<input type="hidden" name="t" value="' . e($tab) . '">' : '') . $hidden
         . '<label class="sr" for="f-neg">Negócio</label><select id="f-neg" name="neg" onchange="this.form.submit()">' . $opts . '</select></form>';
     // «Limpar filtros»: volta ao que a aba mostra ao abrir.
-    $def = ['est' => 'todo', 'urg' => '', 'quem' => $myMember !== null && isset($members[$myMember]) ? 'me' : 'all', 'tipo' => '', 'origem' => '', 'neg' => 0];
+    $def = ['est' => 'todo', 'urg' => '', 'quem' => tasks_default_who(), 'tipo' => '', 'origem' => '', 'neg' => 0];
     $dirty = false;
     foreach ($def as $k => $v) if ((string)$f[$k] !== (string)$v && ($tab === 'tarefas' || !in_array($k, ['est', 'quem'], true))) $dirty = true;
     if ($dirty) $h .= '<a class="fclear" href="' . e(tasks_url($tab, ['solto' => $f['solto']] + $def + $f)) . '">' . icon('x') . ' Limpar filtros</a>';
@@ -253,7 +262,7 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
       <div class="field"><label for="tk-ct">Contacto</label>' . contact_pick_html($pdo, 'contact_label', 'contact_id', $v['contact_id'] ? (int)$v['contact_id'] : null, 'tk-ct') . '</div>
       <div class="field"><label for="tk-prio">Prioridade</label><select id="tk-prio" name="priority">' . $prio . '</select></div>
       <div class="field"><label for="tk-rep">Repetir</label><select id="tk-rep" name="repeat_rule">' . $rep . '</select></div>
-      <div class="field wide" data-not="block"><span class="lbl">Participantes <span class="muted">(recebem o convite no chat, §17.7; pede data e hora)</span></span><div class="chips-check">' . ($pp ?: '<span class="muted small">Sem outras pessoas.</span>') . '</div></div>
+      <div class="field wide" data-only="guests"><span class="lbl">Participantes — recebem o convite no chat</span><div class="chips-check">' . ($pp ?: '<span class="muted small">Sem outras pessoas.</span>') . '</div></div>
       <div class="field"><label for="tk-ck">Checklist <span class="muted">(um item por linha; [x] = feito)</span></label><textarea id="tk-ck" name="checklist" rows="3" placeholder="[ ] Exportar&#10;[ ] Enviar ao cliente">' . e($ck) . '</textarea></div>
       <div class="field"><label for="tk-att">Anexos <span class="muted">(links, um por linha)</span></label><textarea id="tk-att" name="attachments" rows="3" placeholder="https://…">' . e($att) . '</textarea></div>
     </div>

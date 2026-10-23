@@ -13,6 +13,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/interactions.php';
 require_once __DIR__ . '/inline.php';
+require_once __DIR__ . '/reach.php';
 require_once __DIR__ . '/contacts.php';   // «Trazido por» (§13.4)
 
 /** Anel do prazo (enche com a percentagem) + texto, com a hora limite na dica. */
@@ -136,7 +137,7 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
         . (!empty($a['area'])
             ? '<textarea id="' . $f($k) . '" name="f[' . $k . ']" rows="' . ($a['rows'] ?? 3) . '" maxlength="' . (int)$def[$k][1] . '"' . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . '>' . e((string)$l[$k]) . '</textarea>'
             : '<input type="text" id="' . $f($k) . '" name="f[' . $k . ']" maxlength="' . (int)$def[$k][1] . '" value="' . e((string)$l[$k]) . '"'
-              . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . (isset($a['im']) ? ' inputmode="' . $a['im'] . '"' : '') . '>')
+              . (isset($a['ph']) ? ' placeholder="' . e($a['ph']) . '"' : '') . (isset($a['im']) ? ' inputmode="' . $a['im'] . '"' : '') . (isset($a['list']) ? ' list="' . e($a['list']) . '"' : '') . '>')
         . '</div>';
     $select = function (string $k, string $label, ?string $cur = null) use ($def, $f, $l) {
         $cur ??= (string)$l[$k];
@@ -162,7 +163,8 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
          . $select('service', 'Serviço')
          . $select('priority', 'Prioridade')
          . $select('origin', 'Origem')
-         . $text('campaign', 'Campanha')
+         . $text('campaign', 'Campanha', ['list' => 'dl-campaigns-' . $id])
+         . '<datalist id="dl-campaigns-' . $id . '">' . implode('', array_map(fn($c) => '<option value="' . e($c) . '">', setting_lines($pdo, 'lead_campaigns', []))) . '</datalist>'
          . '<div class="field"><label for="' . $f('brought_by') . '">Trazido por</label>'
          . contact_pick_html($pdo, 'f[brought_by]', 'f[brought_by_id]', $l['brought_by_id'] !== null ? (int)$l['brought_by_id'] : null, $f('brought_by'), 'Quem originou (agência, parceiro…)') . '</div>'
          . '<div class="field wide"><span class="lbl">Tipo</span><div class="chips-check" role="group" aria-label="Tipo">' . $types . '</div></div>'
@@ -174,6 +176,15 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
          . '<span class="spacer"></span><span class="muted kbd-hint">Esc cancela · ⌘/Ctrl+Enter grava</span>'
          . '<button type="submit" class="btn">' . icon('check') . ' Gravar</button></div>'
          . '</form>';
+}
+
+/** Os dois botões da quarentena: «Não é spam» (vai para «Por atribuir») e «É spam» (elimina, com «Anular»). */
+function lead_spam_buttons(int $id, bool $small = false): string {
+    $f = fn(string $do, string $cls, string $ic, string $label, string $tip) => '<form method="post" action="/admin/leads.php" class="inl">' . csrf_field()
+        . '<input type="hidden" name="do" value="' . $do . '"><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="back[v]" value="quarentena">'
+        . '<button class="btn ' . $cls . ($small ? ' sm' : '') . '" type="submit" data-tip="' . e($tip) . '">' . icon($ic) . ' ' . $label . '</button></form>';
+    return $f('release', '', 'check', 'Não é spam', 'Passa para «Por atribuir» como lead normal')
+         . $f('spam', 'ghost danger-t', 'ban', 'É spam', 'Elimina a lead (pode anular)');
 }
 
 /**
@@ -223,9 +234,8 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
     if ($edit && $active && !$quar) {
         if (can('pipeline', PERM_EDIT)) $foot .= '<a class="btn" href="/admin/leads.php?conv=' . $id . '#converter">' . icon('arrow') . ' Converter em negócio</a>';
         $foot .= '<button type="button" class="btn ghost" data-archive="' . $id . '" data-name="' . e($name) . '">' . icon('archive') . ' Arquivar</button>';
-    } elseif ($edit && $quar) {
-        $foot .= '<form method="post" action="/admin/leads.php">' . csrf_field() . '<input type="hidden" name="do" value="release"><input type="hidden" name="id" value="' . $id . '">'
-               . '<input type="hidden" name="back[v]" value="quarentena"><button class="btn" type="submit">' . icon('check') . ' Não é spam</button></form>';
+    } elseif ($edit && $quar && sees_unassigned(me_row($pdo))) {
+        $foot .= lead_spam_buttons($id);
     } elseif ($edit) {
         $foot .= '<form method="post" action="/admin/leads.php">' . csrf_field() . '<input type="hidden" name="do" value="reactivate"><input type="hidden" name="id" value="' . $id . '">'
                . '<button class="btn" type="submit">' . icon('refresh') . ' Reativar</button></form>';
@@ -239,7 +249,7 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
           . '<div class="lv-chips">' . lead_state_chip($l) . ($clock ? ' ' . lead_ring($clock) : '')
           . ($l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '')
           . ($quar ? ' <span class="chip wait">Quarentena</span>' : '')
-          . ($l['phase'] === 'archived' ? ' <span class="muted">' . e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) . ($l['archived_note'] ? ' · ' . e($l['archived_note']) : '') . '</span>' : '')
+          . ($l['phase'] === 'archived' ? ' <span class="muted">' . e(lead_archive_label((string)$l['archived_reason'])) . ($l['archived_note'] ? ' · ' . e($l['archived_note']) : '') . '</span>' : '')
           . '</div></header>';
 
     $left = '<div class="lv-l">' . $head . $acts
@@ -269,9 +279,8 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
  */
 function lead_modals_html(?array $arch = null, string $back = ''): string {
     $reasons = '';
-    foreach (ARCHIVE_REASONS as $k => $label) {
-        if ($k === 'perdido_migracao') continue;
-        $reasons .= '<label class="rb"><input type="radio" name="reason" value="' . $k . '"' . ($k === 'outro' ? ' data-other' : '') . ' required><span>' . e($label) . '</span></label>';
+    foreach (lead_archive_reasons($GLOBALS['pdo']) as $k => $label) {
+        $reasons .= '<label class="rb"><input type="radio" name="reason" value="' . e($k) . '"' . ($k === 'outro' ? ' data-other' : '') . ' required><span>' . e($label) . '</span></label>';
     }
     $archOpen = $arch !== null;
     return
@@ -290,6 +299,7 @@ function lead_modals_html(?array $arch = null, string $back = ''): string {
     . '<div class="mdl-back" data-mdl-close></div>'
     . '<div class="mdl-card pop-in">'
     . '<h3 id="mdl-out-t">Como correu?</h3><p class="muted" data-out-name></p>'
+    . '<p class="muted small out-hint">A chamada só fica feita quando escolher o resultado. Fechar deixa-a por fazer.</p>'
     . '<div class="out-step" data-step="choose"><div class="opts">'
     . '<button type="button" class="opt" data-out="missed">' . icon('phone-off') . '<b>Chamada não atendida</b><small>→ Sem resposta · o prazo recomeça</small></button>'
     . '<button type="button" class="opt" data-out="followup">' . icon('phone') . '<b>Follow-Up</b><small>→ nota da conversa + próxima ação</small></button>'

@@ -75,6 +75,9 @@ function deal_steps(PDO $pdo, array $deal): array {
 function deal_step_label(PDO $pdo, array $deal): string {
     if ($deal['phase'] === 'done') return 'Concluído';
     if ($deal['phase'] !== 'production') return (string)($deal['stage_name'] ?? '—');
+    // Crosselling (§22): onde está cada frente.
+    require_once __DIR__ . '/xsell_view.php';
+    if (xsell_is_multi($pdo, $deal)) return xsell_lanes_short($pdo, $deal);
     return deal_steps($pdo, $deal)['now'];
 }
 
@@ -202,7 +205,7 @@ function deal_attention(PDO $pdo, array $deal, ?array $fig, array $tasks, array 
     $toRate = array_values(array_filter($check['items'], fn($i) => $i['key'] === 'rated'))[0];
     if (!$toRate['ok']) {
         [$r, $n] = array_map('intval', explode('/', $toRate['detail']));
-        $out[] = ['Avaliar ' . ($n - $r) . ($n - $r === 1 ? ' fornecedor' : ' fornecedores'), 'o', 'Como correu o trabalho (Contactos, §13.3)'];
+        $out[] = ['Avaliar ' . ($n - $r) . ($n - $r === 1 ? ' fornecedor' : ' fornecedores'), 'o', 'Como correu o trabalho (fica em Contactos)'];
     }
     $sheet = budget_sheet_get($pdo, (int)$deal['id']);
     if (!$sheet || !budget_has_lines($pdo, $sheet)) $out[] = ['Sem orçamento na plataforma', '', $deal['created_at'] < '2026-10-21' ? 'Negócio anterior à plataforma: o Resultado usa o valor e os custos existentes' : 'A folha da Orçamentação ainda não tem linhas'];
@@ -538,6 +541,8 @@ function deal_disclose_label(array $deal): string {
 function deal_mark_delivered(PDO $pdo, array $deal, bool $on): void {
     $pdo->prepare('UPDATE deals SET delivered_at = ? WHERE id = ?')->execute([$on ? now_php() : null, $deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'delivered', ['note' => $on ? 'Entregas feitas' : 'Entregas por confirmar']);
+    // Depois da entrega o cliente entra nas Relações, com o comercial como dono (se ainda lá não estiver).
+    if ($on) { require_once __DIR__ . '/pipeline_flow.php'; flow_relation_after_delivery($pdo, $deal); }
 }
 
 /** «Enviar para o portfólio» (Marketing): fica registado e cria a tarefa de preparar o material. Devolve o id da tarefa. */

@@ -209,7 +209,7 @@ function my_alerts(PDO $pdo): array {
         foreach ($st->fetchAll() as $h) {
             $gate = $h['event'] === 'stage';
             $out['deal'][] = ['key' => 'flow:' . $h['id'], 'kind' => 'deal', 'icon' => $gate ? 'stage' : 'alert', 'sev' => 'warn', 'date' => substr((string)$h['created_at'], 0, 10),
-                              'title' => ($gate ? 'Gate de produção passado · ' : 'Rondas incluídas esgotadas · ') . $h['code'],
+                              'title' => ($gate ? 'Gate de produção passado · ' : (str_contains((string)$h['note'], 'acima do incluído') ? 'Pedido de alteração · ' : 'Rondas incluídas esgotadas · ')) . $h['code'],
                               'sub' => $gate ? $h['from_name'] . ' → ' . $h['to_name'] . ' · ' . $h['name'] : $h['note'],
                               'url' => can('negocios') ? '/admin/negocio.php?id=' . (int)$h['deal_id'] : '/admin/pipeline.php?deal=' . (int)$h['deal_id']];
         }
@@ -271,7 +271,10 @@ function my_alerts(PDO $pdo): array {
 
 /** O centro de notificações: todos os alertas, com o estado lido/por ler. */
 function notifications(PDO $pdo): array {
-    $all = array_merge(...array_values(my_alerts($pdo)));
+    // O Perfil (§20.1): cada um escolhe as categorias que quer na plataforma.
+    $uid = (int)(current_user()['id'] ?? 0);
+    $groups = array_filter(my_alerts($pdo), fn($k) => !isset(NOTIF_CATS[$k]) || user_wants($pdo, $uid, $k, 'app'), ARRAY_FILTER_USE_KEY);
+    $all = $groups ? array_merge(...array_values($groups)) : [];
     if (!$all) return [];
     $read = [];
     try {

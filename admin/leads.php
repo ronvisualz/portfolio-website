@@ -15,8 +15,8 @@ require_page('leads');
 // é lead.php. Quem vê o quê vem do âmbito da aba Leads (inc/perm.php).
 
 const VIEWS = ['ativas' => 'Ativas', 'fila' => 'Por atribuir', 'arquivadas' => 'Arquivadas', 'quarentena' => 'Quarentena'];
-/** Vistas guardadas (§11.12). «Em risco» = sem próxima ação (§12.7). */
-const LEAD_VISTAS = ['meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
+/** Vistas rápidas. «Todas» é a que não filtra; «Em risco» = sem próxima ação. */
+const LEAD_VISTAS = ['todas' => 'Todas', 'meus' => 'As minhas', 'risco' => 'Em risco', 'mes' => 'Este mês'];
 
 function lead_filters(array $src): array {
     $f = [];
@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'archive') {
         $r = (string)($_POST['reason'] ?? '');
         $note = mb_substr(trim((string)($_POST['note'] ?? '')), 0, 255);
-        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') { flash('Escolha o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
+        if (!isset(lead_archive_reasons($pdo)[$r])) { flash('Escolha o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
         if ($r === 'outro' && $note === '') { flash('Escreva o motivo.', 'err'); redirect(leads_url($bf + ['arch' => $id])); }
         if ($lead['phase'] !== 'lead') { flash('Esta lead já não está ativa.', 'err'); redirect($back); }
         flash('Lead arquivada.', 'ok', undo_push('lead_archive', lead_archive($pdo, $lead, $r, $note)));
@@ -127,27 +127,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(leads_url($bf + ['open' => $id]));
     }
 
-    if ($do === 'release') {   // tirar da quarentena: entra a sério (contactos, prazo, primeira chamada)
-        $pdo->prepare('UPDATE deals SET is_quarantined = 0, state_since = ? WHERE id = ?')->execute([now_php(), $id]);
-        lead_start($pdo, $id, null, (int)$me['id']);
-        flash('Lead libertada da quarentena.');
+    // Quarentena: «Não é spam» passa à fila «Por atribuir» como lead normal (contactos, prazo,
+    // primeira chamada); «É spam» elimina, com «Anular». Só quem gere a fila.
+    if (in_array($do, ['release', 'spam'], true)) {
+        if (!$manager || !can('leads', PERM_EDIT)) { flash('Só admins e chefes de equipa tratam a quarentena.', 'err'); redirect($back); }
+        if ($lead['phase'] !== 'lead' || !(int)$lead['is_quarantined']) { flash('Esta lead já não está em quarentena.', 'err'); redirect(leads_url(['v' => 'quarentena'])); }
+        $name = lead_display_name($lead);
+        if ($do === 'release') {
+            $pdo->prepare('UPDATE deals SET is_quarantined = 0, owner_id = NULL, state_since = ? WHERE id = ?')->execute([now_php(), $id]);
+            deal_log($pdo, $id, 'release', ['note' => 'Não é spam: passou para «Por atribuir»']);
+            lead_start($pdo, $id, null, (int)$me['id']);
+            flash('«' . $name . '» passou para «Por atribuir».');
+        } else {
+            flash('«' . $name . '» eliminada como spam.', 'ok', undo_push('lead_spam', lead_spam_delete($pdo, $lead)));
+        }
         redirect(leads_url(['v' => 'quarentena']));
     }
 
     if ($do === 'convert') {
         if ($lead['phase'] !== 'lead') { flash('Esta lead já não está ativa.', 'err'); redirect($back); }
         require_perm('pipeline', PERM_EDIT);
+        require_once __DIR__ . '/inc/xsell.php';
         $funnel = (int)($_POST['funnel_id'] ?? 0);
+        // Crosselling (§22): um pacote escolhe o serviço principal; ou serviços adicionais à mão.
+        $pkg = xsell_package_get($pdo, (int)($_POST['package'] ?? 0));
+        if ($pkg && ($pf = xsell_package_funnels($pkg))) $funnel = $pf[0];
         $st = $pdo->prepare('SELECT COUNT(*) FROM funnels WHERE id = ? AND is_active = 1');
         $st->execute([$funnel]);
         if (!(int)$st->fetchColumn()) { flash('Escolha o funil.', 'err'); redirect(leads_url($bf + ['conv' => $id]) . '#converter'); }
         try {
             $code = lead_convert($pdo, $lead, $funnel, (int)($_POST['contact_id'] ?? 0));
+            $deal = deal_get($pdo, $id);
+            $xs = '';
+            if ($pkg) $xs = ' ' . xsell_apply_package($pdo, $deal, (int)$pkg['id'], (int)$me['id']);
+            elseif ($extra = array_filter(array_map('intval', (array)($_POST['funnels'] ?? [])))) $xs = ' Crosselling: ' . xsell_set_services($pdo, $deal, $extra, (int)$me['id']);
         } catch (Throwable $e) {
             flash('Não foi possível converter: ' . ($e instanceof RuntimeException ? $e->getMessage() : 'erro na base de dados.'), 'err');
             redirect($back);
         }
-        flash("Lead convertida: $code entrou no Pipeline, na etapa X-Ray.");
+        flash("Lead convertida: $code entrou no Pipeline, na etapa X-Ray." . $xs);
         redirect(leads_url($bf));
     }
 
@@ -164,6 +182,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── dados ───────────────────────────────────────────────────
 $filters = lead_filters($_GET);
+// Sem nada no endereço, a aba abre na vista do Perfil; por defeito, os operadores em
+// «As minhas» e o superadmin em «Todas».
+if (!$filters && !isset($_GET['open'])) {
+    $start = user_start_view($pdo, (int)$me['id'], 'leads');
+    if ($start === '') $start = $me['role'] === 'superadmin' ? 'ativas' : 'minhas';
+    if ($start === 'minhas') $filters['vista'] = 'meus';
+}
 $view = $filters['v'] ?? 'ativas';
 if (!isset(VIEWS[$view]) || (in_array($view, ['fila', 'quarentena'], true) && !$manager)) $view = 'ativas';
 
@@ -210,12 +235,13 @@ $monthStart = (new DateTimeImmutable(today_lisbon()))->format('Y-m-01');
 $inVista = static function (array $l, string $vista) use ($me, $monthStart): bool {
     return match ($vista) {
         'meus'  => (int)$l['owner_id'] === (int)$me['id'],
+        'todas' => true,
         'risco' => $l['phase'] === 'lead' && $l['next'] === null,
         'mes'   => substr((string)($l['phase'] === 'archived' ? $l['archived_at'] : $l['created_at']), 0, 10) >= $monthStart,
         default => true,
     };
 };
-$vista   = isset(LEAD_VISTAS[$filters['vista'] ?? '']) ? (string)$filters['vista'] : '';
+$vista   = isset(LEAD_VISTAS[$filters['vista'] ?? '']) && $filters['vista'] !== 'todas' ? (string)$filters['vista'] : '';
 $estado  = isset(LEAD_STATE[$filters['estado'] ?? '']) ? (string)$filters['estado'] : '';
 $urgente = !empty($filters['urgente']);
 $isLate  = static fn(array $l) => $l['clock'] && $l['clock']['level'] === 'late';
@@ -240,6 +266,7 @@ $base = array_values(array_filter($all, $rest));
 $vistaCount = []; foreach (array_keys(LEAD_VISTAS) as $k) $vistaCount[$k] = count(array_filter($base, fn($l) => $inVista($l, $k) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
 $stateCount = []; foreach (array_keys(LEAD_STATE) as $k) $stateCount[$k] = count(array_filter($base, fn($l) => $l['lead_state'] === $k && $inVista($l, $vista) && (!$urgente || $isLate($l))));
 $lateCount = count(array_filter($base, fn($l) => $isLate($l) && $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado)));
+$vistaLate = []; foreach (array_keys(LEAD_VISTAS) as $k) $vistaLate[$k] = count(array_filter($base, fn($l) => $inVista($l, $k) && $isLate($l) && (!$estado || $l['lead_state'] === $estado)));
 
 $rows = array_values(array_filter($base, fn($l) => $inVista($l, $vista) && (!$estado || $l['lead_state'] === $estado) && (!$urgente || $isLate($l))));
 usort($rows, static function ($a, $b) use ($view) {
@@ -284,7 +311,7 @@ render_flashes();
 echo paginate_css();
 ?>
 <?php if ($openLead): ?><div data-open-panel="lead:<?= (int)$openLead['id'] ?>" hidden></div><?php endif; ?>
-<h1>Leads</h1>
+<div class="h1-row"><h1>Leads</h1><?= cfg_link('leads') ?></div>
 
 <div class="stats">
   <a class="stat hero" href="<?= e(leads_url(['urgente' => 1])) ?>"><div class="k">Em atraso</div><div class="v"><?= $kLate ?></div><div class="n"><?= $kNear ?> a aproximar do prazo</div></a>
@@ -319,8 +346,8 @@ echo paginate_css();
     <a href="<?= e($estado === $k ? $chip([], ['estado']) : $chip(['estado' => $k])) ?>" class="<?= $estado === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $stateCount[$k] ?></span></a>
   <?php endforeach; ?>
   <span class="sep" aria-hidden="true"></span>
-  <?php foreach (LEAD_VISTAS as $k => $label): ?>
-    <a href="<?= e($vista === $k ? $chip([], ['vista']) : $chip(['vista' => $k])) ?>" class="<?= $vista === $k ? 'on' : '' ?>"><?= e($label) ?> <span class="mono"><?= $vistaCount[$k] ?></span></a>
+  <?php foreach (LEAD_VISTAS as $k => $label): $on = $k === 'todas' ? $vista === '' : $vista === $k; ?>
+    <a href="<?= e($chip(['vista' => $on || $k === 'todas' ? 'todas' : $k])) ?>" class="<?= $on ? 'on' : '' ?>"<?= $on ? ' aria-current="true"' : '' ?>><?= e($label) ?> <span class="mono">· <?= $vistaCount[$k] ?></span><?php if (in_array($k, ['todas', 'meus'], true) && $vistaLate[$k]): ?> <span class="vlate" data-tip="Em atraso">· <?= $vistaLate[$k] ?> <?= icon('alert') ?></span><?php endif; ?></a>
   <?php endforeach; ?>
 </nav>
 <?php endif; ?>
@@ -330,7 +357,7 @@ echo paginate_css();
   <input type="search" name="q" value="<?= e($q) ?>" placeholder="Procurar nome, empresa, contacto, nota" aria-label="Procurar" data-refocus>
   <select name="tipo" aria-label="Tipo">
     <option value="">Todos os tipos</option>
-    <?php foreach (LEAD_TYPES_LIST as $t): ?><option <?= ($filters['tipo'] ?? '') === $t ? 'selected' : '' ?>><?= e($t) ?></option><?php endforeach; ?>
+    <?php foreach (lead_types($pdo) as $t): ?><option <?= ($filters['tipo'] ?? '') === $t ? 'selected' : '' ?>><?= e($t) ?></option><?php endforeach; ?>
   </select>
   <select name="prio" aria-label="Prioridade">
     <option value="">Prioridade</option>
@@ -354,7 +381,7 @@ echo paginate_css();
 <table class="leads-t">
   <thead>
     <tr><th><?= $view === 'arquivadas' ? 'Arquivada' : 'Prazo' ?></th><th>Nome</th><th><?= $view === 'arquivadas' ? 'Motivo' : 'Estado' ?></th><th>Responsável</th>
-        <th class="hide-sm">Próxima ação</th><th class="hide-sm">Último contacto</th></tr>
+        <?php if ($view === 'quarentena'): ?><th>Motivo</th><th class="t-act"><span class="sr">Ações</span></th><?php else: ?><th class="hide-sm">Próxima ação</th><th class="hide-sm">Último contacto</th><?php endif; ?></tr>
   </thead>
   <tbody>
   <?php if (!$rows): ?><tr><td colspan="6" class="empty">Nenhuma lead aqui.</td></tr><?php endif; ?>
@@ -365,12 +392,17 @@ echo paginate_css();
         <a class="b" href="/admin/lead.php?id=<?= $lid ?>&amp;back=<?= e(rawurlencode($self)) ?>" data-panel="lead:<?= $lid ?>"><?= e($l['dn']) ?></a>
         <small><?= e($l['dc'] !== '' ? $l['dc'] : implode(' · ', array_filter([(string)$l['types'], (string)$l['service']]))) ?><?= $l['priority'] === 'alta' ? ' <span class="chip no">Alta</span>' : '' ?></small>
       </td>
-      <td><?= $view === 'arquivadas' ? e(ARCHIVE_REASONS[$l['archived_reason']] ?? $l['archived_reason']) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
+      <td><?= $view === 'arquivadas' ? e(lead_archive_label((string)$l['archived_reason'])) . ($l['archived_note'] ? '<div class="muted" style="font-size:12px">' . e(shorten($l['archived_note'], 40)) . '</div>' : '') : lead_state_chip($l) ?></td>
       <td><?= e($l['owner_name'] ?? 'Por atribuir') ?></td>
+      <?php if ($view === 'quarentena'): ?>
+      <td class="muted small"><?= e(shorten(lead_quarantine_reason($l), 70)) ?></td>
+      <td class="t-act nowrap"><?= $canEdit ? lead_spam_buttons($lid, true) : '' ?></td>
+      <?php else: ?>
       <td class="hide-sm"><?php if ($l['next']): [$kl] = LEAD_TASK_KINDS[$l['next']['kind'] ?? 'task'] ?? LEAD_TASK_KINDS['task']; ?>
         <span class="<?= task_is_late($l['next']) ? 'neg' : '' ?>"><?= e($kl) ?> · <?= e(lead_task_when($l['next'])) ?></span>
       <?php elseif ($l['phase'] === 'lead'): ?><span class="risk-txt">Sem próxima ação</span><?php else: ?><span class="muted">—</span><?php endif; ?></td>
       <td class="hide-sm nowrap muted"><?= e(lead_ago($l['last_contact_at'])) ?></td>
+      <?php endif; ?>
     </tr>
   <?php endforeach; ?>
   </tbody>
@@ -404,7 +436,7 @@ if ($canEdit):
       <div class="field wide"><label for="nl-li">Redes sociais</label><textarea id="nl-li" name="links" rows="2" placeholder="Um link por linha (Instagram, LinkedIn, site…)"><?= $ov('links') ?></textarea></div>
       <div class="field wide"><label>Tipo</label>
         <div class="chips-check">
-          <?php foreach (LEAD_TYPES_LIST as $t): ?><label class="rb"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, (array)($old['types'] ?? []), true) ? 'checked' : '' ?>><span><?= e($t) ?></span></label><?php endforeach; ?>
+          <?php foreach (lead_types($pdo) as $t): ?><label class="rb"><input type="checkbox" name="types[]" value="<?= e($t) ?>" <?= in_array($t, (array)($old['types'] ?? []), true) ? 'checked' : '' ?>><span><?= e($t) ?></span></label><?php endforeach; ?>
         </div></div>
       <div class="field"><label for="nl-se">Serviço</label>
         <select id="nl-se" name="service"><option value="">—</option><?php foreach (LEAD_SERVICES_LIST as $sv): ?><option <?= ($old['service'] ?? '') === $sv ? 'selected' : '' ?>><?= e($sv) ?></option><?php endforeach; ?></select></div>
@@ -447,10 +479,28 @@ if ($convLead && $convLead['phase'] === 'lead' && can('pipeline', PERM_EDIT)):
     <input type="hidden" name="do" value="convert"><input type="hidden" name="id" value="<?= (int)$convLead['id'] ?>">
     <h3 id="converter">Converter «<?= e(lead_display_name($convLead)) ?>» em negócio</h3>
     <p class="muted">Recebe o ID do negócio (ex.: ID<?= date('ym') ?>-01), sai das Leads e entra no Pipeline na etapa X-Ray. O prazo da lead termina.</p>
-    <div class="field"><label for="cfunnel">Funil</label>
+    <div class="field"><label for="cfunnel">Funil <span class="muted">(serviço principal)</span></label>
       <select id="cfunnel" name="funnel_id" required><option value="">Escolher…</option>
         <?php foreach ($funnels as $f): ?><option value="<?= (int)$f['id'] ?>"><?= e($f['name']) ?></option><?php endforeach; ?>
       </select></div>
+    <?php // Crosselling (§22): serviços adicionais ou um pacote, já na conversão.
+    require_once __DIR__ . '/inc/xsell.php'; $pks = xsell_packages($pdo); ?>
+    <details class="fl-edit xs-conv"><summary><?= icon('merge') ?> Crosselling <span class="muted">(opcional)</span></summary>
+      <?php if ($pks): ?>
+        <div class="field"><label for="cpkg">Pacote</label><select id="cpkg" name="package"><option value="">Sem pacote</option>
+          <?php foreach ($pks as $p): ?><option value="<?= (int)$p['id'] ?>" data-main="<?= (int)(xsell_package_funnels($p)[0] ?? 0) ?>"><?= e($p['name']) ?></option><?php endforeach; ?></select>
+          <small class="muted">Escolhe o serviço principal, os adicionais e a sincronização do pacote.</small></div>
+      <?php endif; ?>
+      <div class="field"><span class="lbl">Serviços adicionais</span><div class="chips-check">
+        <?php foreach ($funnels as $f): ?><label class="rb"><input type="checkbox" name="funnels[]" value="<?= (int)$f['id'] ?>"><span><?= e($f['name']) ?></span></label><?php endforeach; ?>
+      </div><small class="muted">Uma só fase comercial e uma só proposta; no Kickoff cada serviço passa a uma frente.</small></div>
+    </details>
+    <script>
+      (function (f) {
+        var pk = f.querySelector('#cpkg'), fu = f.querySelector('#cfunnel');
+        if (pk) pk.addEventListener('change', function () { var m = pk.selectedOptions[0] && pk.selectedOptions[0].getAttribute('data-main'); if (m && m !== '0') fu.value = m; });
+      })(document.currentScript.closest('form'));
+    </script>
     <div class="field" style="margin-top:12px"><label>Cliente (contacto)</label>
       <?php $first = true; foreach ($opts as $c): ?>
         <label class="check"><input type="radio" name="contact_id" value="<?= (int)$c['id'] ?>" <?= $first ? 'checked' : '' ?>>

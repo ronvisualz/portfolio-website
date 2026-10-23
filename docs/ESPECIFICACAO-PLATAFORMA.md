@@ -1298,6 +1298,132 @@ Ficheiros novos: `inc/migrate_pipeline.php`, `inc/pipeline_flow.php`, `inc/pipel
 `inc/alerts.php`, `inc/interactions.php`, `inc/cron_run.php`, `inc/bootstrap.php` (página sem sessão),
 `conta.php`, `assets/app.js`, `assets/app.css`.
 
+### 10.12 Perfil e Definições, ajustes a Leads e Tarefas — §20, §21, §19.10 (22 out 2026)
+
+Base de dados **v22** (`inc/migrate_settings.php`, idempotente): tabela `settings_log` (registo
+das Definições: quem, o quê, quando, antes → depois) e `users.prefs` (JSON com as preferências do
+Perfil). O passo tira também as referências «(§…)» que passos anteriores deixaram em notas dos
+históricos (`user_history`, `deal_history`).
+
+- **Topo e barra lateral (§20.1):** avatar no canto superior direito com menu **Perfil ·
+  Definições (só admins) · Sair** (setas e Esc); o botão claro/escuro fica fora do menu. No fundo
+  da barra lateral, só a engrenagem **Definições**, só para superadmin e admins.
+- **Perfil (`conta.php`):** nome, palavra-passe, tema, menu, **vista com que cada aba abre**
+  (Leads: «As minhas» / «Todas»; Tarefas: «Eu» / «Todos») e **notificações por categoria**
+  (leads, fila, negócios, faturas, equipa) no sino e/ou por email. As secções de admin saíram
+  daqui (um aviso aponta para Definições). O sino e os emails (equipa, negócio ao comercial)
+  respeitam estas escolhas (`user_wants`).
+- **Definições (`definicoes.php`, `inc/settings_def.php`, `assets/settings.js`):** um separador
+  por aba — Geral, Leads, Pipeline, Contactos, Orçamentação, Negócios, Tarefas, Marketing,
+  Financeiro, Drive (só leitura), Integrações, Segurança — mais **Registo de alterações** e a
+  ligação a **Utilizadores e permissões** (continuam na aba Equipa). Cada campo tem ⓘ com a
+  explicação, **grava sozinho** (aviso «… · Anular»), **«Repor (valor de origem)»** quando difere,
+  e validação no servidor (ex.: IVA 0–50 %, remetente só @topperdigital.xyz, fim do dia depois do
+  início). Mudanças que mexem em dados existentes mostram antes um **aviso de impacto** com
+  Confirmar / Cancelar (prazos das leads: quantas leads ativas e quantas passam a estar em atraso;
+  cadências das relações; IVA; dias sem mexer). **Pesquisa** por nome, grupo e ajuda, que leva ao
+  campo noutro separador. O registo mostra cada alteração (nas listas, «+ item · − item») com
+  «Repor». Tabelas (serviços, pilares) gravam célula a célula. Junta o que estava espalhado:
+  prazos e listas das leads, regras anti-spam do formulário do site, motivos de perda, validade e
+  condições de pagamento da proposta, assunto e introdução do email da proposta, cadências,
+  serviços, orçamentação (MSO, margem, objetivo, ocupação, custos fixos, modelos, condições),
+  dias sem mexer, prazos de tarefas e faturas, tarefas (máximo por coluna, agrupar automáticas),
+  marketing (pilares, objetivos, voz), dados da empresa (rodapé do PDF), horário e dias úteis
+  (contam nos prazos), Discord e remetente dos emails, sessão e tentativas de entrada. O editor
+  de funis abre a partir de Definições › Pipeline. As páginas de origem têm um atalho
+  **«Configurar»** (só admins). Sem autenticação de dois passos. **Permissões no servidor:**
+  página e API recusam (403) a quem não é admin.
+- **Leads (§21.1–2):** na quarentena cada lead tem **«Não é spam»** (sai da quarentena para
+  «Por atribuir», com contactos, prazo e a chamada) e **«É spam»** (elimina com «Anular», que a
+  repõe com o mesmo ID e histórico), na lista (com o motivo) e no painel; só admins e chefes de
+  equipa. A aba abre em **«As minhas»** para operadores e em **«Todas»** para o superadmin (ou na
+  vista escolhida no Perfil); os botões mostram total e atrasos («As minhas · 23 · 22 ⚠»).
+- **Tarefas (§21.3):** «Quem» abre pela preferência do Perfil (e «Limpar filtros» volta a ela);
+  **Participantes** só em Reunião, Gravação e Visita, com o rótulo «Participantes — recebem o
+  convite no chat» (o servidor ignora participantes nos outros tipos). Não há referências à
+  especificação na interface.
+- **§19.10, §19.11 e §19.6 E confirmados**, com três acertos: «Entregas feitas» também passa o
+  cliente às **Relações** (já acontecia ao entrar em Concluído); o comercial é avisado quando as
+  rondas incluídas **se esgotam** (a última incluída) e quando há **pedido de alteração** (acima
+  do incluído), com títulos diferentes no sino; uma tarefa feita à mão **«Emitir fatura…»** ligada
+  a um negócio só fica feita com o PDF da fatura submetido, como as automáticas. O Marketing Buddy
+  tem o funil de agente de IA (Onboarding, Configuração do agente, Ativo, Revisão trimestral e
+  renovação).
+- **Testado na bancada** (MariaDB, Playwright): gravação automática, impacto e Confirmar, Repor,
+  lista com «Anular», valores inválidos recusados, tabela de serviços, pesquisa, registo e Repor,
+  menu do avatar; Colab sem engrenagem, 403 na página e na API; Perfil; quarentena (spam →
+  Anular → volta; não é spam → Por atribuir com chamada; Colab recusado); vistas iniciais de
+  operador, admin e superadmin; Participantes por tipo; fatura manual recusada sem PDF; rondas
+  2 de 2 e 3 de 2 notificadas; Relações após entrega; claro/escuro e telemóvel sem deslocamento.
+
+Ficheiros novos: `definicoes.php`, `assets/settings.js`, `inc/settings_def.php`,
+`inc/migrate_settings.php`. Alterados: `conta.php`, `inc/layout.php`, `inc/ui.php`,
+`inc/bootstrap.php`, `inc/migrate.php`, `ui_api.php`, `inc/undo.php`, `inc/alerts.php`,
+`inc/team.php`, `team_api.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget.php`,
+`inc/budget_pdf.php`, `inc/leads.php`, `inc/lead_view.php`, `inc/inline.php`, `inc/interactions.php`,
+`inc/tasks.php`, `inc/tasks_view.php`, `inc/deal_file.php`, `deal_flow.php`, `leads.php`,
+`calendar.php`, `funis.php`, `contactos.php`, `orcamentacao.php`, `negocios.php`, `marketing.php`,
+`pipeline.php`, `../contacto.php`, `assets/app.js`, `assets/tasks.js`, `assets/app.css`.
+
+### 10.13 Crosselling: um negócio, várias frentes — §22 (23 out 2026)
+
+Base de dados **v23** (`inc/migrate_xsell.php`, idempotente): `deal_lines` (os serviços de cada
+negócio; no Kickoff, as frentes com etapa, estado, execução, arranque, entrega e valor),
+`packages`, `xsell_opps`, `xsell_rules`; em `deals` `sync_mode`, `xsell_from_id` e `package_id`;
+`budget_lines.funnel_id` e `tasks.line_id`. Motor em `inc/xsell.php`, ecrãs em `inc/xsell_view.php`.
+
+- **Correção (Leads):** a chamada de uma lead só fica feita com o resultado do «Como correu?»;
+  fechar o formulário (clicar ao lado, Esc, «Fechar») deixa-a por fazer. O servidor recusa
+  concluir a chamada de uma lead sem resultado venha de onde vier (na aba Tarefas abre a ficha
+  da lead). «Arquivar» e «Converter» registam a chamada como atendida.
+- **Fase comercial:** no painel do negócio, **Serviços** (juntar/tirar serviços adicionais ou
+  aplicar um pacote) e o **Plano das frentes** (sincronizadas ou timelines diferentes, obrigatório
+  e requisito da proposta; arranque «no Kickoff / depois de outra frente / numa data», entrega por
+  frente e execução por frente, só admins). Na conversão da lead escolhe-se já um pacote ou os
+  serviços adicionais. O X-Ray junta as perguntas de todos os serviços (sem repetir) e tem as
+  **Oportunidades de crosselling** (serviços falados e não incluídos). As automações das etapas
+  comerciais dos serviços adicionais juntam-se às do principal, sem tarefas repetidas.
+- **Kickoff e produção:** cada serviço passa a uma **frente** com as etapas, gates e automações do
+  funil do seu serviço (lidos do funil, sem cópias); as frentes «à espera» arrancam quando a frente
+  anterior conclui ou na data (relógio diário). Na ficha e no painel, uma linha de etapas por
+  frente, os requisitos, «Avançar», «Forçar» (admins) e as rondas de revisão de cada frente; o topo
+  resume onde está cada frente e as listas mostram o mesmo. No quadro do Pipeline, cada frente
+  aparece como cartão no funil do seu serviço e arrasta-se (com os gates). As tarefas de fatura e
+  pagamento só vêm do funil principal (um plano de pagamento). **Concluir:** sincronizadas — todas
+  na última etapa de produção com os requisitos cumpridos e passam juntas a Concluído; timelines
+  diferentes — cada frente conclui sozinha e o negócio conclui quando todas terminaram (o Marketing
+  Buddy fica como avença ativa). A checklist de fecho mostra o que falta; admins podem forçar com
+  motivo. Tudo com «Anular» e no histórico (com o serviço).
+- **Medir:** as linhas da folha de orçamento podem ser marcadas com o serviço; o valor de cada
+  frente é o preço dividido pelo custo de cada serviço (guardado no Kickoff e no fecho).
+  **Relatórios › Crosselling:** % de ganhos com 2+ serviços, taxa de fecho com pacote vs. isoladas,
+  valor médio, crosselling posterior (e dias até lá), matriz serviço × serviço, % por serviço
+  principal, combinações e oportunidades.
+- **Sugerir:** Definições › Pipeline › **Pacotes e crosselling** (página dos funis, separador
+  Crosselling): pacotes (serviços, principal, sincronização, modelo de orçamento) e regras
+  «depois de entregar X, propor Y ao fim de N dias» — ao concluir, o comercial recebe «Propor Y a
+  {cliente}» e fica uma oportunidade (se o cliente ainda não tiver Y). Na ficha do contacto,
+  **Serviços comprados** (o que comprou, o que falta oferecer, oportunidades com «Criar negócio» —
+  negócio novo em X-Ray ligado ao anterior — e «Descartar»). «Combinar funis» saiu.
+- **Permissões no servidor:** serviços, plano e frentes pedem edição do negócio; pacotes e regras só
+  admins; oportunidades pedem edição do Pipeline.
+- **Testado na bancada:** timelines diferentes (frente à espera arranca depois da principal, sem
+  tarefas de fatura, conclusão e regra pós-entrega com oportunidade), sincronizadas (frente não
+  conclui sozinha, fecho bloqueado e forçado, todas concluem juntas), negócio de um só serviço sem
+  alterações, conversão com serviço adicional, plano, ficha, quadro, pacote, orçamento, relatório,
+  contacto e «Criar negócio», Colab recusado, claro/escuro e telemóvel sem deslocamento.
+- **A decidir mais tarde:** juntar um serviço depois do Kickoff (hoje faz-se como negócio novo
+  ligado); dependências entre frentes sincronizadas a meio da produção.
+
+Ficheiros novos: `inc/migrate_xsell.php`, `inc/xsell.php`, `inc/xsell_view.php`,
+`inc/xsell_settings.php`, `xsell_act.php`. Alterados: `inc/migrate.php`, `inc/pipeline.php`,
+`inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/deal_file.php`, `inc/undo.php`,
+`inc/interactions.php`, `inc/budget.php`, `inc/budget_view.php`, `inc/contact_view.php`,
+`inc/settings_def.php`, `inc/tasks.php`, `inc/lead_view.php`, `deal_flow.php`, `ui_api.php`,
+`tasks_api.php`, `pipeline.php`, `negocio.php`, `leads.php`, `xray.php`, `funis.php`,
+`relatorios.php`, `assets/app.js`, `assets/leads.js`, `assets/tasks.js`, `assets/budget.js`,
+`assets/app.css`.
+
 ---
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
@@ -2366,3 +2492,150 @@ Todas as alterações verificadas no servidor (só superadmin/admins).
 3. **Participantes (formulário de tarefa, §18.7):** o campo só aparece quando o tipo é
    **Reunião, Gravação ou Visita**. Texto do rótulo: «Participantes — recebem o convite no
    chat». **Nunca mostrar referências à especificação (ex.: «§17.7») na interface** — regra geral.
+<<<<<<< HEAD
+=======
+
+---
+
+## 22. Crosselling: um negócio, várias frentes (decidido 23 out 2026)
+
+Substitui os «funis combinados» da §9.1 (cópias de etapas que não acompanhavam os funis de
+origem). Não chegou a ser criado nenhum funil combinado, por isso não há nada a converter; a
+opção «Combinar funis» sai das Definições › Funis.
+
+1. **Modelo.** Um negócio de crosselling tem **um serviço principal** (o funil do negócio) e um
+   ou mais **serviços adicionais**. A fase comercial é **uma só** (X-Ray → Proposta → Aguardar
+   feedback → Kickoff, iguais em todos os funis): o X-Ray junta as perguntas dos serviços (sem
+   repetir), há uma proposta e as automações das etapas comerciais dos vários funis juntam-se
+   (a mesma tarefa não se cria duas vezes). No **Kickoff** abre-se uma **frente** por serviço
+   (o principal incluído). Cada frente segue as etapas, gates e automações **do funil do seu
+   serviço** — sem cópias: mudar o funil de VFX muda todas as frentes de VFX — e tem o seu
+   responsável de execução. O comercial continua dono do negócio inteiro (§19.10).
+2. **Sincronização — escolha obrigatória** num negócio de crosselling, requisito para enviar
+   a proposta (e portanto para o Kickoff):
+   - **Sincronizadas:** todas as frentes arrancam no Kickoff, partilham a data de entrega e
+     **entregam juntas** — nenhuma frente passa a Concluído sozinha; o negócio conclui (com a
+     checklist de fecho) quando todas estão na última etapa de produção com os requisitos
+     cumpridos, e aí todas passam a Concluído.
+   - **Timelines diferentes:** cada frente adicional tem o seu **arranque** (no Kickoff, depois
+     de outra frente concluir, ou numa data) e a sua **data de entrega**, e conclui sozinha
+     (com as automações de Concluído do seu funil). O negócio conclui quando todas as frentes
+     estão concluídas. Sempre **vinculadas** ao mesmo negócio, proposta e plano de pagamento.
+3. **Um único plano de pagamento.** A proposta, o orçamento e a faturação são do negócio. As
+   tarefas de fatura e de pagamento vêm só do funil principal; as das frentes adicionais não se
+   criam (não há faturas em duplicado).
+4. **Marketing Buddy em pacote** (por enquanto): a frente Buddy é uma avença; o negócio pode
+   concluir quando as outras frentes terminam e a frente Buddy continua «Ativa», ligada ao
+   negócio.
+5. **Medir.** Cada frente guarda o seu valor (s/ IVA): as linhas da folha de orçamento podem
+   ser marcadas por serviço e o preço divide-se pelo custo de cada serviço. Cada negócio guarda
+   como nasceu o crosselling: **pacote** (na mesma proposta) ou **posterior** (negócio novo de
+   um cliente que já comprou, ligado ao negócio anterior). **Relatórios › Crosselling:** matriz
+   serviço × serviço (negócios ganhos e valor), % de negócios de cada serviço com um segundo
+   serviço, taxa de fecho das propostas com pacote vs. isoladas, tempo médio até ao crosselling
+   posterior, combinações que mais vendem e o resultado das oportunidades.
+6. **Também na primeira versão:**
+   - **Pacotes** pré-definidos (Definições › Pipeline): nome, serviços, sincronização por defeito
+     e modelo de orçamento opcional; escolher um pacote preenche os serviços (e o orçamento).
+   - **Oportunidades no X-Ray:** os serviços falados com o cliente e não incluídos ficam
+     registados como oportunidade (proposto e não vendido conta nos relatórios).
+   - **Crosselling depois da entrega:** regras nas Definições (ex.: VFX → propor Ads e Marketing
+     Buddy, 30 dias depois); ao concluir, o comercial recebe a tarefa «Propor … a {cliente}» se o
+     cliente ainda não tiver esse serviço, e fica uma oportunidade.
+   - **Serviços comprados** na ficha do contacto: o que já comprou, o que falta oferecer e as
+     oportunidades abertas, com atalho para um negócio novo.
+>>>>>>> origin/main
+
+---
+
+## 22. Centro Criativo (decidido 23 out 2026; 22.3 a confirmar)
+
+Espaço de trabalho criativo da equipa de execução — «Milanote com esteroides» ligado ao
+negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a §11.
+
+### 22.1 Separadores
+**Projetos · Biblioteca · Caixa de entrada · Review.**
+- **Projetos:** um quadro por negócio, com sub-quadros por etapa (Brief · Referências ·
+  Conceito · Tratamento · Styleframes · Storyboard · Lista de planos · Review), a partir de um
+  modelo por funil. Tela infinita com colunas e grelha suave (snap), cartões: imagem, vídeo,
+  link (pré-visualização), nota, lista, coluna, amostra de cor, desenho, ficheiro, setas,
+  sub-quadro. Comentários e @menções por cartão. Modo apresentação.
+- **Biblioteca:** todas as referências; uma referência pode estar em vários quadros **sem
+  cópia** (referência, não duplicado). Pesquisa por texto, **por cor** (paleta extraída) e
+  **«mais como este»** (semelhança visual). Filtros: estilo, técnica, câmara, ambiente, luz,
+  cor, origem (projetos topper. / externas). Frames aprovados nos projetos entram na
+  biblioteca como referências da casa (ligados ao negócio; respeita «Pode ser divulgado?»
+  apenas para uso externo).
+- **Caixa de entrada:** tudo o que é capturado (colar, arrastar, partilha do telemóvel,
+  extensão do browser na fase 3) entra aqui já analisado pela IA; triagem = arrastar para um
+  quadro.
+- **Review:** versões v001… lado a lado; comentários no **frame exato** (timecode) com desenho;
+  Aprovar · Pedir alterações. Aprovar conclui a tarefa de aprovação correspondente no Pipeline
+  (styleframes, animatic, picture lock…); conta rondas (§19.6 D) e avisa o Comercial quando se
+  passa das incluídas.
+
+### 22.2 Quadro do projeto
+Criado no **Kickoff**. Se existir pré-criativo (22.3), o quadro nasce a partir dele: a opção
+escolhida pelo cliente passa a ser o sub-quadro **Conceito**; a outra fica guardada dentro do
+quadro como «Rota não escolhida». O brief vem do X-Ray.
+
+### 22.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
+- **Nasce sozinho** quando o X-Ray é validado: cria o quadro «Pré-criativo · <negócio>» com o
+  brief do X-Ray e **duas faixas: Opção A (Pedido) e Opção B (Proposta de valor)**; cria a
+  tarefa «Pré-criativo · <cliente>» para o responsável de execução (prazo por defeito +2 d.u.,
+  Definições). **Um só quadro com duas faixas**, não dois quadros.
+- **Rápido por desenho** (orçamentos em massa; objetivo < 30 min):
+  1. «Preparar com IA»: a IA lê o brief, propõe 3 ângulos por opção e sugere 6–9 referências da
+     biblioteca para cada faixa;
+  2. a equipa só **mantém / tira / troca** cartões e ajusta o texto;
+  3. «Gerar página»: monta automaticamente **uma página por opção** (título, conceito numa
+     frase, abordagem, 6 referências, paleta, técnica e complexidade) com o modelo visual da
+     topper.; sem paginação manual.
+- **Enviar para a Orçamentação:** a página da faixa A liga-se à Opção A e a da faixa B à Opção
+  B (§19.3); uma faixa pode ser marcada **«Serve as duas»**. As páginas entram no PDF da
+  proposta e na página de resposta do cliente, ao lado de cada opção.
+- Na etapa Proposta, o pré-criativo é **recomendado, não obrigatório** (configurável por
+  funil nas Definições) para não travar orçamentos rápidos.
+- Negócio **perdido/arquivado** → pré-criativo arquivado com ele (reaberto se o negócio reabrir).
+  Negócio em **Kickoff** → vira a base do quadro do projeto (22.2).
+
+### 22.4 Portal do cliente (feedback sem conta)
+- Um **link por negócio** (token longo, revogável, com validade; abrir não altera nada — POST
+  para ações, §19.4). O cliente identifica-se com nome e email na primeira ação.
+- Mostra só o que a topper. partilha: proposta e pré-criativo (fase comercial); quadros
+  partilhados (tratamento, rotas) e **Review** (versões, comentários no frame, Aprovar / Pedir
+  alterações) na produção. Nunca dados internos (custos, notas, tarefas).
+- Comentários do cliente aparecem marcados «Cliente»; um envio consolidado de comentários =
+  uma ronda. Aprovar pelo portal pede confirmação com nome escrito e fica registado.
+- O responsável comercial e o de execução são notificados de cada ação do cliente.
+
+### 22.5 IA (qualidade premium)
+- Análise por referência (uma vez, guardada): legenda, estilo, técnica, ambiente, luz,
+  composição, movimento de câmara, cor, **«porque funciona»**; vocabulário controlado da
+  topper. + etiquetas livres; confiança e edição humana.
+- Vídeo: 6–12 frames-chave por deteção de corte (ffmpeg/PySceneDetect) + transcrição; análise
+  plano a plano; frames pesquisáveis individualmente.
+- Paleta: extração determinística (k-means em Lab), não por IA; pesquisa por cor com ΔE.
+- Ações «/»: Analisar · Ângulos para este projeto · Referências para o brief · Mais como este ·
+  Arrumar o quadro · Quadro → tratamento (documento/PDF) · Storyboard → lista de planos (→ tarefas).
+- **Modelos: a melhor qualidade disponível**, porque o serviço é premium: o modelo Claude mais
+  capaz para ângulos, tratamentos e análise; **embeddings multimodais de topo por API paga**
+  (não modelo local) para «mais como este» e referências para o brief. Chaves só no servidor;
+  uso e custo visíveis em Definições › Integrações.
+
+### 22.6 Fluidez
+Colar/arrastar qualquer coisa (imagem/ficheiro → cartão; link → pré-visualização; texto →
+nota; código de cor → amostra). Atalhos (N nota, C coluna, ⌘K, «/» IA, espaço para mover;
+documentados em Conhecimento › Navegação). Miniaturas por nível de zoom, carregamento só do
+visível, vídeo só reproduz ao passar o cursor. 60 fps a mover e fazer zoom; funciona no iPad
+(arrastar com o dedo).
+
+### 22.7 Importação
+Sem importar nada agora, mas criar o **mecanismo de importação**: aceitar um ZIP/PDF/Markdown
+(formatos de exportação do Milanote) ou pasta de imagens → cria um quadro com os cartões em
+grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com análise da IA).
+
+### 22.8 Fases
+1. Quadros, Biblioteca, Caixa de entrada, IA de análise e ângulos, **pré-criativo**.
+2. Review com comentários no frame e **portal do cliente**.
+3. Edição em tempo real por várias pessoas e extensão do browser.

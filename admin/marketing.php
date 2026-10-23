@@ -23,7 +23,7 @@ render_header('Marketing', 'marketing', '', [MKT_TABS[$tab]]);
 render_flashes();
 ?>
 <div class="page-head">
-  <div><h1>Marketing</h1>
+  <div><div class="h1-row"><h1>Marketing</h1><?= cfg_link('marketing') ?></div>
     <p class="sub">Conteúdo para Instagram, LinkedIn e X: ideias → criar → produzir → agendar → medir.</p></div>
   <?php if ($canEdit): ?>
     <button type="button" class="btn" data-new="#mdl-idea" data-new-idea aria-keyshortcuts="I N"><?= icon('plus') ?> Ideia <span class="kbd">I</span></button>

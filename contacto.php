@@ -63,19 +63,20 @@ if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $message === '
     reply(false, 'Please fill in your name, a valid email and a message.', 422);
 }
 
-// Limite por IP: mais de 5 envios na última hora são recusados.
+// Limite por IP: acima dos envios por hora (Definições › Leads) são recusados.
 $ip = @inet_pton((string)($_SERVER['REMOTE_ADDR'] ?? '')) ?: null;
 $st = $pdo->prepare('SELECT COUNT(*) FROM form_submissions WHERE ip ' . (db_is_sqlite($pdo) ? 'IS' : '<=>') . ' ? AND created_at > ?');
 $st->execute([$ip, gmdate('Y-m-d H:i:s', time() - 3600)]);
-if ((int)$st->fetchColumn() >= 5) reply(false, 'Too many messages in a short time. Please try again later or email us.', 429);
+if ((int)$st->fetchColumn() >= max(1, (int)setting($pdo, 'form_rate_hour', 5))) reply(false, 'Too many messages in a short time. Please try again later or email us.', 429);
 $pdo->prepare('INSERT INTO form_submissions (ip, created_at) VALUES (?, ?)')->execute([$ip, gmdate('Y-m-d H:i:s')]);
 
-// Sinais de spam → quarentena.
+// Sinais de spam → quarentena (os limites estão em Definições › Leads).
 $why = [];
 if (trim((string)($_POST['website'] ?? '')) !== '') $why[] = 'campo escondido preenchido';
 $ts = (int)($_POST['ts'] ?? 0);
-if ($ts > 0 && (time() * 1000 - $ts) < 3000) $why[] = 'enviado em menos de 3 segundos';
-if (preg_match_all('~https?://~i', $message) > 2) $why[] = 'muitos links';
+$minSec = max(0, (int)setting($pdo, 'spam_min_seconds', 3));
+if ($minSec && $ts > 0 && (time() * 1000 - $ts) < $minSec * 1000) $why[] = 'enviado em menos de ' . $minSec . ' segundos';
+if (preg_match_all('~https?://~i', $message) > max(0, (int)setting($pdo, 'spam_max_links', 2))) $why[] = 'muitos links';
 
 $services = ['vfx' => 'VFX / 3D', 'marketing' => 'Marketing Buddy', 'both' => 'Ambos'];
 $notes = [];

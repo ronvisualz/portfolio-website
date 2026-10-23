@@ -188,9 +188,17 @@ try {
         foreach (NAV_ITEMS as $key => [$label, $href, $ico]) {
             if (can(NAV_TABS[$key] ?? $key)) $nav[] = [$label, $href, $ico];
         }
-        $nav[] = ['A minha conta', '/admin/conta.php', 'user'];
-        $nav[] = ['Definições (como quer ser tratado, modo)', '/admin/conta.php#definicoes', 'user'];
+        $nav[] = ['Perfil (preferências, notificações, palavra-passe)', '/admin/conta.php', 'user'];
+        if (is_admin()) $nav[] = ['Definições', '/admin/definicoes.php', 'cog'];
         if (can('pipeline', PERM_MANAGE)) $nav[] = ['Funis e automações (Definições)', '/admin/funis.php', 'pipeline'];
+        // As próprias definições (só admins): «margem» leva direto ao campo.
+        if (is_admin() && $fq !== '' && mb_strlen($fq) >= 3) {
+            require_once __DIR__ . '/inc/settings_def.php';
+            foreach (settings_index() as $d) {
+                if (!str_contains(fold($d['l'] . ' ' . $d['g']), $fq)) continue;
+                $add('Definições', ['title' => $d['l'], 'sub' => $d['tab'] . ' · ' . $d['g'], 'url' => '/admin/definicoes.php?t=' . $d['t'] . '#set-' . $d['k'], 'icon' => icon('cog')]);
+            }
+        }
         if (is_admin()) $nav[] = ['Migração', '/admin/migracao.php', 'migracao'];
         foreach ($nav as [$label, $href, $ico]) {
             if ($fq !== '' && !str_contains(fold($label), $fq) && !str_contains('ir para ' . fold($label), $fq)) continue;
@@ -557,6 +565,8 @@ try {
         $st->execute([(int)($_POST['task'] ?? 0), (int)$l['id']]);
         $t = $st->fetch();
         if (!$t || $t['status'] === 'done') throw new RuntimeException('Essa tarefa já não está aberta.');
+        // Uma chamada de uma lead ativa só fica feita com o resultado: primeiro «Como correu?».
+        if ($t['kind'] === 'call' && $l['phase'] === 'lead') out(200, ['ok' => true, 'needs_outcome' => true, 'task' => (int)$t['id']]);
         $snap = ['id' => (int)$t['id'], 'status' => $t['status'], 'done_at' => $t['done_at'], 'member_id' => $t['member_id'], 'position' => $t['position']];
         $snap['spawned'] = task_done($pdo, (int)$t['id']);   // fica no histórico da lead; se se repete, cria a seguinte
         // Reunião, email, almoço ou jantar feitos contam como contacto e, em Follow-Up, como follow-up.
@@ -572,12 +582,30 @@ try {
         if (!$post) break;
         $l = lead_for_edit($pdo);
         $res = (string)($_POST['result'] ?? '');
+        if (!in_array($res, ['missed', 'followup', 'answered'], true)) throw new RuntimeException('Escolha como correu.');
+        // A chamada que deu origem ao «Como correu?» fica feita agora, com o resultado.
+        if (($tid = (int)($_POST['task'] ?? 0)) > 0) {
+            $st = $pdo->prepare("SELECT * FROM tasks WHERE id = ? AND deal_id = ? AND kind = 'call'");
+            $st->execute([$tid, (int)$l['id']]);
+            $t = $st->fetch();
+            if (!$t) throw new RuntimeException('Essa chamada já não existe. Recarregue a página.');
+            if ($t['status'] !== 'done') {
+                $GLOBALS['LEAD_OUTCOME_OK'] = true;
+                task_done($pdo, $tid);
+                unset($GLOBALS['LEAD_OUTCOME_OK']);
+            }
+        }
+        if ($res === 'answered') {   // atendida, a seguir vem Arquivar ou Converter
+            deal_log($pdo, (int)$l['id'], 'call_ok', ['note' => 'Chamada atendida']);
+            lead_touch($pdo, (int)$l['id']);
+            out(200, ['ok' => true, 'msg' => 'Chamada registada.'] + lead_parts($pdo, (int)$l['id']));
+        }
         if ($res === 'missed') {
             $n = (int)$l['no_answer'] + 1;
             $pdo->prepare("UPDATE deals SET lead_state = 'sem_resposta', state_since = ?, no_answer = ? WHERE id = ?")->execute([now_php(), $n, $l['id']]);
             deal_log($pdo, (int)$l['id'], 'call_miss', ['note' => $n . '.ª tentativa · prazo recomeçou']);
             lead_touch($pdo, (int)$l['id']);
-            out(200, ['ok' => true, 'msg' => 'Chamada não atendida (' . $n . '.ª tentativa).', 'attempt' => $n, 'suggest_archive' => $n >= 3,
+            out(200, ['ok' => true, 'msg' => 'Chamada não atendida (' . $n . '.ª tentativa).', 'attempt' => $n, 'suggest_archive' => $n >= max(2, (int)setting($pdo, 'lead_attempts_archive', 3)),
                       'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])] + lead_parts($pdo, (int)$l['id']));
         }
         if ($res === 'followup') {
@@ -597,7 +625,7 @@ try {
         $l = lead_for_edit($pdo);
         $r = (string)($_POST['reason'] ?? '');
         $note = trim(mb_substr((string)($_POST['note'] ?? ''), 0, 255));
-        if (!isset(ARCHIVE_REASONS[$r]) || $r === 'perdido_migracao') throw new RuntimeException('Escolha o motivo.');
+        if (!isset(lead_archive_reasons($pdo)[$r])) throw new RuntimeException('Escolha o motivo.');
         if ($r === 'outro' && $note === '') throw new RuntimeException('Escreva o motivo.');
         out(200, ['ok' => true, 'msg' => 'Lead arquivada.', 'undo' => undo_push('lead_archive', lead_archive($pdo, $l, $r, $note)),
                   'next' => lead_next_urgent($pdo, me_row($pdo), (int)$l['id'])]);
@@ -968,9 +996,10 @@ try {
         $a = budget_lines($pdo, (int)$v['id'], 'A');
         if (!$a) throw new RuntimeException('A Opção A ainda não tem linhas.');
         foreach ($a as $l) {
-            budget_line_save($pdo, $v, null, ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
+            $nid = budget_line_save($pdo, $v, null, ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
                 'label' => $l['label'], 'price_unit' => $l['price_unit'], 'unit_price' => (float)$l['unit_price'], 'qty' => (float)$l['qty'], 'qty_unit' => $l['qty_unit'],
                 'note' => $l['note'], 'opt' => 'B']);
+            if (!empty($l['funnel_id'])) $pdo->prepare('UPDATE budget_lines SET funnel_id = ? WHERE id = ?')->execute([$l['funnel_id'], $nid]);
         }
         if (trim((string)$v['scope_b']) === '' && trim((string)$v['description']) !== '') $pdo->prepare('UPDATE budget_versions SET scope_b = ? WHERE id = ?')->execute([$v['description'], $v['id']]);
         budget_log($pdo, (int)$sheet['id'], 'b_line', 'v' . $v['num'] . ' · Opção B criada a partir da A (' . count($a) . ' linhas)');
@@ -1017,6 +1046,13 @@ try {
         }
         if (!$lineId) $d['opt'] = ($_POST['opt'] ?? 'A') === 'B' ? 'B' : 'A';
         $lid = budget_line_save($pdo, $v, $lineId ?: null, $d);
+        // Crosselling (§22): o serviço da linha (vazio = o principal), só entre os serviços do negócio.
+        if (array_key_exists('funnel_id', $_POST) && db_has_column($pdo, 'budget_lines', 'funnel_id')) {
+            require_once __DIR__ . '/inc/xsell.php';
+            $fn = (int)$_POST['funnel_id'];
+            $ok = $fn && in_array($fn, array_map(fn($l) => (int)$l['funnel_id'], xsell_lines($pdo, (int)$sheet['deal_id'])), true);
+            $pdo->prepare('UPDATE budget_lines SET funnel_id = ? WHERE id = ?')->execute([$ok ? $fn : null, $lid]);
+        }
         $who = $kind === 'supplier' ? (string)$pdo->query('SELECT name FROM contacts WHERE id = ' . (int)$d['contact_id'])->fetchColumn()
              : ($kind === 'team' ? (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)$d['user_id'])->fetchColumn() : 'interno');
         $ql = budget_qty_label($d);
@@ -1136,6 +1172,89 @@ try {
         out(200, ['ok' => true, 'msg' => $r['msg'], 'url' => '/admin/orcamento_pdf.php?v=' . (int)$v['id']]);
 
     // ── Pipeline: mover sem recarregar ──────────────────────
+    // ── Definições (§20): grava sozinho, com aviso de impacto, «Repor valor de origem» e «Anular» ──
+    case 'setting_save':
+    case 'setting_reset':
+    case 'setting_restore':
+        if (!$post) break;
+        require_once __DIR__ . '/inc/settings_def.php';
+        if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
+        $key = (string)($_POST['key'] ?? '');
+        $why = '';
+        if ($a === 'setting_restore') {
+            // «Repor» numa linha do registo: o valor de antes dessa alteração.
+            $st = $pdo->prepare('SELECT * FROM settings_log WHERE id = ?');
+            $st->execute([(int)($_POST['log'] ?? 0)]);
+            $row = $st->fetch();
+            if (!$row || !setting_def((string)$row['skey'])) throw new RuntimeException('Essa alteração já não pode ser reposta aqui.');
+            $key = (string)$row['skey'];
+            $value = (string)$row['old_value'];
+            $why = setting_def($key)['label'] . ' reposto';
+        } else {
+            $def = setting_def($key);
+            if (!$def) throw new RuntimeException('Definição desconhecida.');
+            $value = $a === 'setting_reset' ? (string)($def['default'] ?? '') : (string)($_POST['value'] ?? '');
+            if ($a === 'setting_reset') $why = $def['label'] . ' reposto no valor de origem';
+        }
+        try {
+            [$msg, $shown, $undo] = setting_save($pdo, $key, $value, !empty($_POST['confirm']), $why);
+        } catch (SettingImpact $e) {
+            out(409, ['ok' => false, 'impact' => $e->getMessage(), 'error' => $e->getMessage()]);
+        }
+        out(200, ['ok' => true, 'msg' => $msg . ($why !== '' ? ': ' . $shown : ''), 'key' => $key, 'value' => setting_get($pdo, $key), 'shown' => $shown, 'undo' => $undo]);
+
+    // Linhas das listas com tabela (serviços dos Contactos, pilares do Marketing): grava cada campo.
+    case 'setting_row':
+        if (!$post) break;
+        require_once __DIR__ . '/inc/settings_def.php';
+        if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
+        $tbl = (string)($_POST['table'] ?? '');
+        $fields = ['services' => ['name' => 80, 'position' => 0, 'is_active' => 0, 'default_unit' => 0],
+                   'mkt_pillars' => ['name' => 80, 'short_name' => 24, 'color' => 0, 'description' => 500, 'position' => 0, 'is_active' => 0, 'kind' => 0]][$tbl] ?? null;
+        $field = (string)($_POST['field'] ?? '');
+        if (!$fields || !array_key_exists($field, $fields) || !db_has_column($pdo, $tbl, $field)) throw new RuntimeException('Campo desconhecido.');
+        $id = (int)($_POST['id'] ?? 0);
+        $raw = (string)($_POST['value'] ?? '');
+        if ($id === 0 && $field === 'name') {
+            // Linha nova.
+            $name = trim(mb_substr($raw, 0, 80));
+            if ($name === '') throw new RuntimeException('Escreva o nome.');
+            $st = $pdo->prepare("SELECT COUNT(*) FROM $tbl WHERE LOWER(name) = ?");
+            $st->execute([mb_strtolower($name)]);
+            if ((int)$st->fetchColumn()) throw new RuntimeException('«' . $name . '» já está na lista.');
+            $pos = (int)$pdo->query("SELECT COALESCE(MAX(position), 0) + 1 FROM $tbl")->fetchColumn();
+            if ($tbl === 'services') $pdo->prepare('INSERT INTO services (name, position, is_active) VALUES (?, ?, 1)')->execute([$name, $pos]);
+            else $pdo->prepare("INSERT INTO mkt_pillars (name, short_name, color, position) VALUES (?, ?, 'neutral', ?)")->execute([$name, mb_substr($name, 0, 24), $pos]);
+            setting_log($pdo, $tbl, ($tbl === 'services' ? 'Contactos · Serviço' : 'Marketing · Pilar') . ' acrescentado', '', $name);
+            out(200, ['ok' => true, 'msg' => '«' . $name . '» acrescentado.', 'reload' => true]);
+        }
+        $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ?");
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) throw new RuntimeException('Essa linha já não existe.');
+        $max = $fields[$field];
+        if ($max > 0) {
+            $val = trim(mb_substr($raw, 0, $max));
+            if ($field === 'name' && $val === '') throw new RuntimeException('O nome não pode ficar vazio.');
+        } elseif ($field === 'color') {
+            require_once __DIR__ . '/inc/marketing.php';
+            if (!isset(MKT_PILLAR_COLORS[$raw])) throw new RuntimeException('Escolha uma cor.');
+            $val = $raw;
+        } elseif ($field === 'kind') {
+            $val = $raw === 'employer' ? 'employer' : '';
+        } elseif ($field === 'default_unit') {
+            if ($raw !== '' && !isset(SERVICE_UNITS[$raw])) throw new RuntimeException('Escolha uma unidade.');
+            $val = $raw;
+        } else {
+            $val = (string)max(0, min(999, (int)$raw));
+            if ($field === 'is_active') $val = $raw === '1' ? '1' : '0';
+        }
+        if ((string)$row[$field] === $val) out(200, ['ok' => true, 'msg' => 'Sem alterações.']);
+        $pdo->prepare("UPDATE $tbl SET $field = ? WHERE id = ?")->execute([$val, $id]);
+        $what = ($tbl === 'services' ? 'Contactos · Serviço «' : 'Marketing · Pilar «') . $row['name'] . '» · ' . ['name' => 'nome', 'short_name' => 'nome curto', 'color' => 'cor', 'description' => 'descrição', 'position' => 'ordem', 'is_active' => 'ativo', 'kind' => 'employer branding', 'default_unit' => 'unidade'][$field];
+        setting_log($pdo, $tbl . ':' . $id . ':' . $field, $what, (string)$row[$field], $val);
+        out(200, ['ok' => true, 'msg' => ucfirst(explode(' · ', $what, 2)[1]) . ' alterado.', 'undo' => undo_push('setting_row', ['table' => $tbl, 'id' => $id, 'field' => $field, 'from' => (string)$row[$field], 'to' => $val])]);
+
     case 'deal_move':
         if (!$post) break;
         require_perm('pipeline', PERM_EDIT);
@@ -1147,6 +1266,20 @@ try {
         // e as etapas de produção (record_reach pede então a aba Negócios); concluir faz-se na checklist de fecho.
         $to = stage_get($pdo, (int)($_POST['stage_id'] ?? 0));
         if (!$to) throw new RuntimeException('Etapa inválida.');
+        // Uma frente de crosselling (§22): o cartão é a frente, que anda no funil do seu serviço.
+        if (($lid = (int)($_POST['line'] ?? 0)) > 0) {
+            require_once __DIR__ . '/inc/xsell.php';
+            $line = xsell_line_get($pdo, $lid);
+            if (!$line || (int)$line['deal_id'] !== (int)$deal['id']) out(404, ['ok' => false, 'error' => 'Frente não encontrada. Recarregue a página.']);
+            $snap = ['id' => (int)$deal['id'], 'lines' => xsell_snapshot($pdo, (int)$deal['id']), 'line' => $lid, 'to_stage' => (int)$to['id']];
+            flow_created(null, true);
+            try {
+                $msg = xsell_line_move($pdo, $deal, $line, (int)$to['id'], (string)($_POST['force'] ?? ''));
+            } catch (GateBlocked $e) {
+                out(409, ['ok' => false, 'error' => $e->getMessage(), 'gate' => $e->missing, 'can_force' => is_admin()]);
+            }
+            out(200, ['ok' => true, 'msg' => $msg, 'phase' => 'production', 'undo' => undo_push('line_stage', $snap + ['auto_tasks' => flow_created()]), 'won' => false]);
+        }
         if ($to['kind'] === 'done') throw new RuntimeException('Para concluir, use a checklist de fecho na ficha do negócio (aba Negócios).');
         if ($deal['phase'] === 'production' && in_array($to['kind'], ['xray', 'commercial'], true)) throw new RuntimeException('Um negócio em produção não volta à fase comercial.');
         $snap = undo_deal_snapshot($deal);

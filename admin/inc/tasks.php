@@ -224,6 +224,23 @@ function task_has_busy(PDO $pdo): bool {
     return $has ??= db_has_column($pdo, 'tasks', 'busy');
 }
 
+/** Concluir a chamada de uma lead pede o resultado: abre-se a ficha da lead («Como correu?»). */
+class TaskNeedsOutcome extends RuntimeException {
+    public int $lead;
+    public function __construct(int $lead) {
+        parent::__construct('Registe como correu a chamada (não atendida, Follow-Up, arquivar ou converter): a tarefa fica feita com o resultado.');
+        $this->lead = $lead;
+    }
+}
+
+/**
+ * Uma tarefa feita à mão «Emitir fatura…» ligada a um negócio segue a mesma regra das
+ * automáticas: só fica feita quando o PDF da fatura é submetido no negócio. Devolve o doc_kind.
+ */
+function task_doc_kind_for(string $title, $dealId): string {
+    return $dealId && preg_match('/^\s*emitir\s+(a\s+)?fatura/iu', $title) ? 'invoice' : '';
+}
+
 function task_create(PDO $pdo, array $v): int {
     $now = task_now();
     $pdo->prepare(
@@ -270,6 +287,12 @@ function task_update(PDO $pdo, array $old, array $v): void {
  */
 function task_done(PDO $pdo, int $id): ?int {
     $t = task_by_id($pdo, $id);
+    // A chamada de uma lead só fica feita com o resultado («Como correu?»), registado na ficha da lead.
+    if ($t && $t['status'] !== 'done' && $t['kind'] === 'call' && !empty($t['deal_id']) && empty($GLOBALS['LEAD_OUTCOME_OK'])) {
+        $ph = $pdo->prepare('SELECT phase FROM deals WHERE id = ?');
+        $ph->execute([(int)$t['deal_id']]);
+        if ($ph->fetchColumn() === 'lead') throw new TaskNeedsOutcome((int)$t['deal_id']);
+    }
     // Faturas, pagamentos e X-Ray (§19.6 E) só ficam feitos pelo documento/validação no negócio.
     if ($t && $t['status'] !== 'done' && ($t['doc_kind'] ?? '') !== '') {
         require_once __DIR__ . '/pipeline_flow.php';
@@ -400,6 +423,9 @@ function task_done_list(PDO $pdo, int $limit, ?int $member = null, ?array $visib
 // ════════════════════════════════════════════════════════════
 
 /** Os 19 tipos (§18.6; Almoço, Jantar e Evento vêm da ficha da lead): chave → [nome, ícone]. A cor vem do CSS (.ty-<chave>, tokens claro/escuro). */
+/** Os tipos com participantes (recebem o convite no chat). */
+const TASK_GUEST_KINDS = ['meeting', 'shoot', 'visit'];
+
 const TASK_TYPES = [
     'call'     => ['Chamada', 'phone'],
     'meeting'  => ['Reunião', 'meeting'],

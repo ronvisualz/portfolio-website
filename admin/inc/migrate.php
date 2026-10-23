@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 23;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -271,6 +271,19 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // cliente e documentos de faturação submetidos.
     require_once __DIR__ . '/migrate_pipeline.php';
     migrate_pipeline_flow($pdo);
+
+    // ── 22 · Perfil e Definições (§20) ──────────────────────
+    //
+    // Registo de alterações das Definições e as preferências pessoais do Perfil.
+    require_once __DIR__ . '/migrate_settings.php';
+    migrate_settings_tab($pdo);
+
+    // ── 23 · Crosselling: um negócio, várias frentes (§22) ──
+    //
+    // Os serviços de cada negócio (frentes no Kickoff), pacotes, oportunidades, regras
+    // de crosselling depois da entrega e o serviço de cada linha do orçamento.
+    require_once __DIR__ . '/migrate_xsell.php';
+    migrate_xsell($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

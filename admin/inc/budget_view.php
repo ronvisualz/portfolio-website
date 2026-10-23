@@ -148,7 +148,7 @@ function budget_lines_rows(PDO $pdo, array $lines, bool $money, bool $editable):
                          : '<span class="mono">' . e(budget_n((float)$l['qty'])) . '</span>');
         $inactive = $l['kind'] === 'supplier' && (int)($l['contact_active'] ?? 1) !== 1;
         $h .= '<tr data-line="' . $id . '" data-kind="' . e($l['kind']) . '"' . ($inactive ? ' class="bl-off"' : '') . '>'
-            . '<td class="bl-nm"><b>' . e($l['label']) . '</b><small>' . e($who) . ($l['note'] !== '' ? ' · ' . e(shorten((string)$l['note'], 60)) : '') . '</small></td>'
+            . '<td class="bl-nm"><b>' . e($l['label']) . '</b>' . (!empty($l['funnel_id']) ? ' <span class="chip xs-bl" data-tip="Serviço desta linha (crosselling)">' . e(budget_funnel_name($pdo, (int)$l['funnel_id'])) . '</span>' : '') . '<small>' . e($who) . ($l['note'] !== '' ? ' · ' . e(shorten((string)$l['note'], 60)) : '') . '</small></td>'
             . '<td class="num nowrap">' . ($show ? e(budget_unit_price_label($l)) : $hide) . '</td>'
             . '<td class="num bl-qc">' . $qty . '</td>'
             . '<td class="bl-uc">' . budget_unit_cell($l, $editable && !$fixedOther) . '</td>'
@@ -161,6 +161,25 @@ function budget_lines_rows(PDO $pdo, array $lines, bool $money, bool $editable):
     return $h;
 }
 
+/** O nome de um funil (serviço), para a marca das linhas de um negócio de crosselling. */
+function budget_funnel_name(PDO $pdo, int $id): string {
+    static $names = null;
+    $names ??= $pdo->query('SELECT id, name FROM funnels')->fetchAll(PDO::FETCH_KEY_PAIR);
+    return (string)($names[$id] ?? '');
+}
+
+/** Num negócio de crosselling (§22), a que serviço pertence a linha: dá o valor de cada serviço. */
+function budget_line_funnel_field(PDO $pdo, array $v): string {
+    require_once __DIR__ . '/xsell.php';
+    $dealId = (int)$pdo->query('SELECT deal_id FROM budget_sheets WHERE id = ' . (int)$v['sheet_id'])->fetchColumn();
+    $lines = $dealId ? xsell_lines($pdo, $dealId) : [];
+    if (count($lines) < 2) return '';
+    $o = '';
+    foreach ($lines as $l) $o .= '<option value="' . ((int)$l['is_main'] ? '' : (int)$l['funnel_id']) . '">' . e($l['funnel_name'] . ((int)$l['is_main'] ? ' (principal)' : '')) . '</option>';
+    return '<div class="field"><label for="bl-fn">Serviço <small class="muted">(crosselling)</small></label><select id="bl-fn" name="funnel_id">' . $o . '</select>'
+         . '<small class="muted">O preço divide-se pelos serviços na proporção do custo de cada um.</small></div>';
+}
+
 /** Os dados de cada linha para o formulário de alterar (sem preços para quem não vê o Financeiro). */
 function budget_lines_json(array $lines, bool $money): string {
     $out = [];
@@ -168,7 +187,7 @@ function budget_lines_json(array $lines, bool $money): string {
         $p = budget_line_public($l, $money);
         $out[(int)$l['id']] = ['kind' => $l['kind'], 'service_id' => $l['service_id'], 'contact_id' => $l['contact_id'], 'user_id' => $l['user_id'],
                                'label' => $l['label'], 'price_unit' => $l['price_unit'], 'unit_price' => $p['unit_price'] !== null ? budget_n((float)$p['unit_price']) : '',
-                               'qty' => budget_n((float)$l['qty']), 'qty_unit' => $l['qty_unit'], 'note' => $l['note']];
+                               'qty' => budget_n((float)$l['qty']), 'qty_unit' => $l['qty_unit'], 'note' => $l['note'], 'funnel_id' => $l['funnel_id'] ?? null];
     }
     return json_encode($out, JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP);
 }
@@ -427,6 +446,7 @@ function budget_line_modal_html(PDO $pdo, array $v, bool $money): string {
          . '<div class="grid bl-qty" data-qty-row><div class="field"><label for="bl-q">Quantidade</label><input type="text" id="bl-q" name="qty" inputmode="decimal" maxlength="9" placeholder="10"></div>'
          . '<div class="field" data-qu-time><label for="bl-qu">Em</label><select id="bl-qu" name="qty_unit">' . $qu . '</select></div>'
          . '<div class="field" data-qu-fixed hidden><span class="lbl">Unidade</span><p class="bl-fixu" data-fixed-unit></p></div></div>'
+         . budget_line_funnel_field($pdo, $v)
          . '<div class="field"><label for="bl-note">Nota <small class="muted">(opcional)</small></label><input type="text" id="bl-note" name="note" maxlength="255" placeholder="Inclui 2 rondas de alterações…"></div>'
          . '<p class="bl-prev" data-bl-prev aria-live="polite"></p>'
          . '<div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><button class="btn" type="submit">' . icon('check') . ' <span data-bl-submit>Adicionar linha</span></button></div>'

@@ -292,6 +292,7 @@ function contact_view(PDO $pdo, array $c, string $mode = 'panel', string $back =
     $prov = contact_is_provider($c);
     $rel = relation_get($pdo, $id);
     $tasks = contact_open_tasks($pdo, $id);
+    require_once __DIR__ . '/xsell_view.php';   // «Serviços comprados» (crosselling)
 
     $dial = lead_phone_dial((string)$c['phone']);
     $wa = ltrim($dial, '+');
@@ -352,6 +353,7 @@ function contact_view(PDO $pdo, array $c, string $mode = 'panel', string $back =
     $right = '<div class="lv-r">'
            . ($prov ? contact_services_html($pdo, $c, $edit) : '')
            . contact_sources_html($pdo, $c)
+           . xsell_contact_html($pdo, $c, $back)
            . ($edit ? '<section class="lv-blk"><h4>Nova ação</h4>' . contact_new_action_html($pdo, $c, $rel) . '</section>' : '')
            . '<section class="lv-blk"><h4>Foco <span class="mono" data-focus-n>' . count($tasks) . '</span></h4><div class="lv-focus">' . contact_focus_html($tasks, $edit) . '</div></section>'
            . '<section class="lv-blk lv-hist"><h4>Notas &amp; Histórico</h4>' . history_block($pdo, 'contact', $id, $edit, $back, '', ['note']) . '</section>'

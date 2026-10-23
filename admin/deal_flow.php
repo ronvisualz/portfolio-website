@@ -16,12 +16,16 @@
  *   round         [note]                 mais uma ronda de revisão na etapa
  *   task_add      kind title date assignee
  *   task_done     task
+ *   services      funnels[] [package]    crosselling: os serviços adicionais, ou um pacote (fase comercial)
+ *   plan          sync_mode start[] after[] start_date[] delivery[] exec[]   as frentes (§22)
+ *   move + line   stage_id [force]       mover uma frente de crosselling na sua etapa
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/pipeline_view.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/undo.php';
+require_once __DIR__ . '/inc/xsell.php';
 $user = require_login();
 
 // ── descarregar um documento de faturação ───────────────────
@@ -69,6 +73,16 @@ try {
             $must(flow_can_edit($pdo, $deal));
             $to = (int)($_POST['stage_id'] ?? 0);
             $force = trim((string)($_POST['force'] ?? ''));
+            // Uma frente de crosselling (§22): anda no funil do seu serviço, com os gates dele.
+            if (($lid = (int)($_POST['line'] ?? 0)) > 0) {
+                $line = xsell_line_get($pdo, $lid);
+                if (!$line || (int)$line['deal_id'] !== (int)$deal['id']) throw new RuntimeException('Frente não encontrada.');
+                $snap = ['id' => (int)$deal['id'], 'lines' => xsell_snapshot($pdo, (int)$deal['id']), 'line' => $lid, 'to_stage' => $to];
+                flow_created(null, true);
+                $msg = xsell_line_move($pdo, $deal, $line, $to, $force);
+                flash(($force !== '' ? 'Passagem forçada (fica no histórico). ' : '') . $msg, 'ok', undo_push('line_stage', $snap + ['auto_tasks' => flow_created()]));
+                break;
+            }
             $snap = undo_deal_snapshot($deal);
             flow_created(null, true);
             $msg = deal_move($pdo, $deal, $to, $force);
@@ -144,9 +158,25 @@ try {
                 : billing_validate_payment($pdo, $deal, $t, $_POST, $_FILES['file'] ?? null, $me));
             break;
 
+        case 'services':
+            $must(flow_can_edit($pdo, $deal));
+            if ((int)($_POST['package'] ?? 0) > 0) { flash(xsell_apply_package($pdo, $deal, (int)$_POST['package'], $me)); break; }
+            flash(xsell_set_services($pdo, $deal, array_map('intval', (array)($_POST['funnels'] ?? [])), $me));
+            break;
+
+        case 'plan':
+            $must(flow_can_edit($pdo, $deal));
+            flash(xsell_save_plan($pdo, $deal, $_POST, $me));
+            break;
+
         case 'round':
             $must(flow_can_edit($pdo, $deal));
             $s = $deal['stage_id'] ? stage_get($pdo, (int)$deal['stage_id']) : null;
+            if (($lid = (int)($_POST['line'] ?? 0)) > 0) {   // a ronda de uma frente (§22), na etapa dela
+                $line = xsell_line_get($pdo, $lid);
+                if (!$line || (int)$line['deal_id'] !== (int)$deal['id'] || !$line['stage_id']) throw new RuntimeException('Frente não encontrada.');
+                $s = stage_get($pdo, (int)$line['stage_id']);
+            }
             if (!$s) throw new RuntimeException('O negócio não está numa etapa.');
             flash(rounds_add($pdo, $deal, $s, (string)($_POST['note'] ?? ''), $me));
             break;
@@ -168,9 +198,9 @@ try {
             }
             $member = $who ? member_for_user($pdo, $who) : null;
             $now = task_now();
-            $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, kind, priority, status, position, created_at, updated_at, created_by)
-                           VALUES (?,\'\',?,\'\',?,?,?,\'media\',\'todo\',?,?,?,?)')
-                ->execute([$title, $member, $deal['id'], $date !== '' ? $date : null, $kind, task_next_position($pdo, $member), $now, $now, $me]);
+            $pdo->prepare('INSERT INTO tasks (title, description, member_id, job_name, deal_id, due_date, kind, priority, status, position, created_at, updated_at, created_by, doc_kind)
+                           VALUES (?,\'\',?,\'\',?,?,?,\'media\',\'todo\',?,?,?,?,?)')
+                ->execute([$title, $member, $deal['id'], $date !== '' ? $date : null, $kind, task_next_position($pdo, $member), $now, $now, $me, task_doc_kind_for($title, $deal['id'])]);
             $tid = (int)$pdo->lastInsertId();
             deal_log($pdo, (int)$deal['id'], 'task_new', ['note' => TASK_TYPES[$kind][0] . ' · ' . $title]);
             flash('Tarefa criada.', 'ok', undo_push('task_new', ['id' => $tid]));

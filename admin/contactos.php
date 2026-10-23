@@ -322,7 +322,7 @@ $contactCell = function (array $c) {
 };
 ?>
 <?php if ($openC): ?><div data-open-panel="contact:<?= (int)$openC['id'] ?>" hidden></div><?php endif; ?>
-<h1>Contactos</h1>
+<div class="h1-row"><h1>Contactos</h1><?= cfg_link('contactos') ?></div>
 
 <div class="stats">
   <a class="stat hero" href="<?= e(ct_url(['t' => 'relacoes', 'rel' => 'atraso'])) ?>"><div class="k">Relações em atraso</div><div class="v"><?= $relLate ?></div><div class="n">de <?= count($relRows) ?> acompanhadas</div></a>

@@ -37,8 +37,8 @@ $passive = !$post && in_array($a, ['ping', 'chat_list', 'chat_thread'], true);
 if (current_user() === null) tout(401, ['ok' => false, 'error' => 'A sessão terminou. Entre outra vez.']);
 if ($passive) {
     $now = time();
-    if ($now - (int)($_SESSION['last_seen'] ?? 0) > (int)$CONFIG['idle_timeout_minutes'] * 60
-        || $now - (int)($_SESSION['started'] ?? 0) > (int)$CONFIG['absolute_timeout_hours'] * 3600) {
+    [$idleMax, $hardMax] = session_limits();
+    if ($now - (int)($_SESSION['last_seen'] ?? 0) > $idleMax || $now - (int)($_SESSION['started'] ?? 0) > $hardMax) {
         tout(401, ['ok' => false, 'error' => 'A sessão terminou. Entre outra vez.']);
     }
     $st = $pdo->prepare('SELECT is_active, deactivated_at FROM users WHERE id = ?');
@@ -75,7 +75,7 @@ function msg_out(PDO $pdo, array $m, int $me): array {
                            'platform' => MEETING_PLATFORMS[$mt['platform']] ?? '', 'deal' => $mt['deal_code'] ? $mt['deal_code'] . ' · ' . $mt['deal_name'] : '',
                            'link' => $mt['status'] === 'accepted' ? (string)$mt['link'] : '', 'can_answer' => (int)$mt['invitee_id'] === $me && $mt['status'] === 'pending',
                            'can_cancel' => (int)$mt['requester_id'] === $me && $mt['status'] === 'pending', 'start' => substr((string)$mt['starts_at'], 0, 16),
-                           'needs_link' => $mt['link'] === '' && $mt['platform'] !== 'local' && !(($mt['platform'] === 'meet' && team_meet_config()['google']) || ($mt['platform'] === 'discord' && team_meet_config()['discord']))];
+                           'needs_link' => $mt['link'] === '' && $mt['platform'] !== 'local' && !(($mt['platform'] === 'meet' && team_meet_config()['google']) || ($mt['platform'] === 'discord' && team_meet_settings()['discord']))];
     }
     return $out;
 }

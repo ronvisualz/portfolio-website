@@ -31,6 +31,30 @@ const ARCHIVE_REASONS  = [
     'perdido_migracao' => 'Perdido (migração)',
 ];
 
+/** Os tipos de lead (Definições › Leads). */
+function lead_types(PDO $pdo): array {
+    return setting_lines($pdo, 'lead_types', LEAD_TYPES_LIST);
+}
+
+/**
+ * Os motivos de arquivo a escolher (Definições › Leads): chave → nome. Os de origem guardam a
+ * sua chave; os acrescentados guardam «c:<nome>». «Outro» pede sempre uma nota.
+ */
+function lead_archive_reasons(PDO $pdo): array {
+    $byLabel = array_flip(array_map('mb_strtolower', array_diff_key(ARCHIVE_REASONS, ['perdido_migracao' => 1])));
+    $out = [];
+    foreach (setting_lines($pdo, 'lead_archive_reasons', array_diff_key(ARCHIVE_REASONS, ['perdido_migracao' => 1])) as $l) {
+        $k = $byLabel[mb_strtolower($l)] ?? mb_substr('c:' . $l, 0, 40);
+        $out[$k] = $l;
+    }
+    return $out;
+}
+
+/** O nome de um motivo de arquivo guardado (os de origem, os acrescentados, ou o texto). */
+function lead_archive_label(string $r): string {
+    return ARCHIVE_REASONS[$r] ?? (str_starts_with($r, 'c:') ? substr($r, 2) : $r);
+}
+
 /** Prazo por estado, em horas (definições globais, só superadmin e admins mudam). */
 const LEAD_DEADLINE_DEFAULTS = ['novo' => 24, 'sem_resposta' => 24, 'follow_up' => 48];
 
@@ -234,7 +258,7 @@ function lead_input(array $src): array {
     $types = [];
     foreach ((array)($src['types'] ?? []) as $t) {
         $t = trim((string)$t);
-        if (in_array($t, LEAD_TYPES_LIST, true) && !in_array($t, $types, true)) $types[] = $t;
+        if (in_array($t, lead_types($GLOBALS['pdo']), true) && !in_array($t, $types, true)) $types[] = $t;
     }
     $txt = static fn(string $k, int $n) => mb_substr(trim((string)($src[$k] ?? '')), 0, $n);
     [$phones, $email, $links, $extra] = lead_parse_contacts($txt('phone', 255), $txt('email', 190), (string)($src['links'] ?? ''));
@@ -380,6 +404,49 @@ function lead_start(PDO $pdo, int $id, ?int $useContactId = null, ?int $by = nul
     $due = lead_clock($l, lead_deadline_hours($pdo));
     lead_task_create($pdo, $l, 'call', 'Ligar a ' . lead_display_name($l), '', $due ? lisbon_fmt($due['due']) : null,
                      null, $l['owner_id'] !== null ? (int)$l['owner_id'] : null, '', $by);
+}
+
+/** Porque ficou em quarentena (a linha «Quarentena: …» das notas). */
+function lead_quarantine_reason(array $l): string {
+    return preg_match('/Quarentena:\s*([^\n]+)/u', (string)$l['notes'], $m) ? trim($m[1]) : '—';
+}
+
+/** O que guarda uma lead (a linha e o que pende dela), para «É spam» se poder anular. */
+const LEAD_SPAM_TABLES = ['deal_history', 'interactions', 'deal_contacts', 'tasks', 'events'];
+
+/** «É spam»: elimina a lead em quarentena. Devolve a cópia para o «Anular». */
+function lead_spam_delete(PDO $pdo, array $l): array {
+    $id = (int)$l['id'];
+    $snap = ['deal' => $l, 'rows' => []];
+    foreach (LEAD_SPAM_TABLES as $t) {
+        if (!db_has_table($pdo, $t)) continue;
+        $st = $pdo->prepare("SELECT * FROM $t WHERE deal_id = ?");
+        $st->execute([$id]);
+        $snap['rows'][$t] = $st->fetchAll();
+    }
+    $pdo->beginTransaction();
+    foreach (['tasks', 'events'] as $t) if (db_has_table($pdo, $t)) $pdo->prepare("DELETE FROM $t WHERE deal_id = ?")->execute([$id]);
+    $pdo->prepare('DELETE FROM deals WHERE id = ?')->execute([$id]);   // o resto vai em cascata
+    $pdo->commit();
+    return $snap;
+}
+
+/** Repõe a lead eliminada por «É spam», com o mesmo ID e o mesmo histórico. */
+function lead_spam_restore(PDO $pdo, array $snap): void {
+    $ins = static function (string $t, array $r) use ($pdo) {
+        $cols = array_keys(array_filter($r, 'is_string', ARRAY_FILTER_USE_KEY));
+        $pdo->prepare("INSERT INTO $t (" . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')
+            ->execute(array_map(fn($c) => $r[$c], $cols));
+    };
+    $pdo->beginTransaction();
+    try {
+        $ins('deals', $snap['deal']);
+        foreach ($snap['rows'] as $t => $rows) foreach ($rows as $r) $ins($t, $r);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw new RuntimeException('Já não foi possível repor esta lead.');
+    }
 }
 
 // ── prazos (24/7) ──────────────────────────────────────────
@@ -554,7 +621,7 @@ function lead_archive(PDO $pdo, array $l, string $reason, string $note): array {
     $pdo->prepare("UPDATE deals SET phase = 'archived', archived_reason = ?, archived_note = ?, archived_at = " . now_sql($pdo) . " WHERE id = ? AND phase = 'lead'")
         ->execute([$reason, $note, $id]);
     if ($tasks) $pdo->prepare("DELETE FROM tasks WHERE deal_id = ? AND status <> 'done'")->execute([$id]);
-    deal_log($pdo, $id, 'archive', ['note' => ARCHIVE_REASONS[$reason] . ($note !== '' ? ' · ' . $note : '')]);
+    deal_log($pdo, $id, 'archive', ['note' => lead_archive_label($reason) . ($note !== '' ? ' · ' . $note : '')]);
     return ['id' => $id, 'tasks' => $tasks];
 }
 

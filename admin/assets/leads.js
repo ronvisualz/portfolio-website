@@ -285,9 +285,10 @@
     b.disabled = true;
     var li = b.closest('li'); if (li) li.classList.add('done');
     T.api('lead_task_done', { id: id, task: b.getAttribute('data-done') }).then(function (j) {
+      // Uma chamada só fica feita com o resultado: «Como correu?». Fechar sem escolher deixa-a aberta.
+      if (j.needs_outcome) { b.disabled = false; if (li) li.classList.remove('done'); openOutcome(id, b, j.task); return; }
       setTimeout(function () { applyParts(id, j); }, reduced.matches ? 0 : 220);
       T.toast(j.msg, { undo: j.undo, afterUndo: function () { refreshView(id); } });
-      if (j.call) openOutcome(id, b);
     }).catch(function (er) { b.disabled = false; if (li) li.classList.remove('done'); fail(er); });
   });
 
@@ -301,10 +302,11 @@
     b.hidden = !next;
     b.setAttribute('data-next', next || '');
   }
-  function openOutcome(id, from) {
+  function openOutcome(id, from, task) {
     var m = outMdl(); if (!m) return;
     var v = viewsOf(id)[0];
     m.setAttribute('data-lead', id);
+    m.setAttribute('data-task', task || '');
     $('[data-out-name]', m).textContent = v ? v.getAttribute('data-name') : '';
     $('[data-out="convert"]', m).href = '/admin/leads.php?conv=' + id + '#converter';
     $('[data-suggest]', m).hidden = true;
@@ -318,15 +320,33 @@
   }
   document.addEventListener('click', function (e) {
     var m = outMdl(); if (!m || !m.contains(e.target)) return;
+    var task = function () { return m.getAttribute('data-task') || ''; };
     var id = m.getAttribute('data-lead');
     var o = e.target.closest('[data-out]');
     if (o) {
       var what = o.getAttribute('data-out');
-      if (what === 'convert') return;   // segue o link
       e.preventDefault();
+      // Arquivar ou Converter depois de uma chamada atendida: a chamada fica feita primeiro.
+      if (what === 'convert' || what === 'archive') {
+        var go = function () {
+          if (what === 'convert') { location.href = o.getAttribute('href'); return; }
+          closeMdl(m);
+          var v = viewsOf(id)[0];
+          openArchive(id, v ? v.getAttribute('data-name') : '', v ? $('[data-archive]', v) : o, '');
+        };
+        if (!task()) { go(); return; }
+        o.classList.add('busy');
+        T.api('lead_outcome', { id: id, result: 'answered', task: task() }).then(function (j) {
+          m.setAttribute('data-task', '');
+          applyParts(id, j);
+          go();
+        }).catch(fail).then(function () { o.classList.remove('busy'); });
+        return;
+      }
       if (what === 'missed') {
         o.disabled = true;
-        T.api('lead_outcome', { id: id, result: 'missed' }).then(function (j) {
+        T.api('lead_outcome', { id: id, result: 'missed', task: task() }).then(function (j) {
+          m.setAttribute('data-task', '');
           applyParts(id, j);
           $('[data-missed-msg]', m).textContent = j.msg + ' O prazo recomeçou.';
           $('[data-suggest]', m).hidden = !j.suggest_archive;
@@ -337,11 +357,11 @@
       } else if (what === 'followup') {
         outStep(m, 'followup');
         $('textarea[name=note]', m).focus();
-      } else if (what === 'archive' || what === 'archive-noanswer') {
+      } else if (what === 'archive-noanswer') {
         closeMdl(m);
         var v = viewsOf(id)[0];
         // Sai do botão Arquivar da própria lead (painel ou ficha), como se tivesse sido carregado.
-        openArchive(id, v ? v.getAttribute('data-name') : '', v ? $('[data-archive]', v) : o, what === 'archive-noanswer' ? 'sem_resposta' : '');
+        openArchive(id, v ? v.getAttribute('data-name') : '', v ? $('[data-archive]', v) : o, 'sem_resposta');
       }
       return;
     }
@@ -365,7 +385,8 @@
     e.preventDefault();
     var id = m.getAttribute('data-lead'), btn = $('button[type=submit]', e.target);
     btn.disabled = true;
-    T.api('lead_outcome', { id: id, result: 'followup', note: $('textarea[name=note]', e.target).value }).then(function (j) {
+    T.api('lead_outcome', { id: id, result: 'followup', task: m.getAttribute('data-task') || '', note: $('textarea[name=note]', e.target).value }).then(function (j) {
+      m.setAttribute('data-task', '');
       applyParts(id, j);
       closeMdl(m);
       T.toast(j.msg);

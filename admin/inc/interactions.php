@@ -36,6 +36,8 @@ const HISTORY_TYPES = [
     'note'       => ['Nota', 'bubble', 'note'],
     'archive'    => ['Arquivada', 'archive', 'red'],
     'reactivate' => ['Reativada', 'refresh', 'sky'],
+    'release'    => ['Saiu da quarentena', 'check', 'green'],
+    'xsell'      => ['Crosselling', 'merge', 'yellow'],
     'convert'    => ['Convertida em negócio', 'arrow', 'yellow'],
     'late'       => ['Prazo em atraso', 'clock', 'red'],
     'stage'      => ['Mudou de etapa', 'arrows', 'neutral'],
@@ -154,7 +156,9 @@ function history_text(array $h): string {
     if ($h['event'] === 'funnel') {
         $parts[] = ($h['from_funnel'] ?? '?') . ' › ' . ($h['from_stage'] ?? '?') . ' → ' . ($h['to_funnel'] ?? '?') . ' › ' . ($h['to_stage'] ?? '?');
     } elseif ($h['from_stage'] || $h['to_stage']) {
-        $parts[] = trim(($h['from_stage'] ?? '') . ' → ' . ($h['to_stage'] ?? ''), ' →');
+        // A etapa de uma frente de crosselling (§22): o serviço à frente.
+        $svc = isset($h['deal_funnel']) && $h['to_funnel_id'] && (int)$h['to_funnel_id'] !== (int)$h['deal_funnel'] && $h['event'] === 'stage' ? $h['to_funnel'] . ': ' : '';
+        $parts[] = $svc . trim(($h['from_stage'] ?? '') . ' → ' . ($h['to_stage'] ?? ''), ' →');
     }
     if ((string)$h['note'] !== '') $parts[] = $h['note'];
     return implode(' · ', $parts);
@@ -192,7 +196,7 @@ function timeline(PDO $pdo, string $type, int $id, int $limit = 80): array {
     if ($dealIds) {
         $only = $type === 'contact' ? " AND h.event IN ('create','convert','lost','reopen','archive')" : '';
         $hist = $pdo->query(
-            'SELECT h.*, u.name AS who, d.code, d.name AS deal_name, fs.name AS from_stage, ts.name AS to_stage, ff.name AS from_funnel, tf.name AS to_funnel
+            'SELECT h.*, u.name AS who, d.code, d.name AS deal_name, d.funnel_id AS deal_funnel, fs.name AS from_stage, ts.name AS to_stage, ff.name AS from_funnel, tf.name AS to_funnel
                FROM deal_history h
                JOIN deals d ON d.id = h.deal_id
                LEFT JOIN users u ON u.id = h.user_id

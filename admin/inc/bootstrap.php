@@ -182,8 +182,7 @@ function require_login(): array {
     }
 
     $now      = time();
-    $idleMax  = (int)$CONFIG['idle_timeout_minutes'] * 60;
-    $hardMax  = (int)$CONFIG['absolute_timeout_hours'] * 3600;
+    [$idleMax, $hardMax] = session_limits();
     $lastSeen = (int)($_SESSION['last_seen'] ?? 0);
     $started  = (int)($_SESSION['started'] ?? 0);
 
@@ -264,7 +263,7 @@ function record_attempt(PDO $pdo, string $email, bool $ok): void {
 function is_locked_out(PDO $pdo, string $email): bool {
     global $CONFIG;
     $window = (int)$CONFIG['attempt_window_minutes'];
-    $max    = (int)$CONFIG['max_attempts'];
+    $max    = max(3, (int)setting($pdo, 'login_max_attempts', (int)$CONFIG['max_attempts']));
 
     $st = $pdo->prepare(
         'SELECT COUNT(*) FROM login_attempts
@@ -274,6 +273,50 @@ function is_locked_out(PDO $pdo, string $email): bool {
     );
     $st->execute([$window, $email, client_ip_bin()]);
     return (int)$st->fetchColumn() >= $max;
+}
+
+/** Os limites da sessão em segundos [inatividade, máximo] (Definições › Segurança, ou o ficheiro de configuração). */
+function session_limits(): array {
+    global $CONFIG, $pdo;
+    $idle = (int)setting($pdo, 'session_idle_min', (int)$CONFIG['idle_timeout_minutes']);
+    $hard = (int)setting($pdo, 'session_max_hours', (int)$CONFIG['absolute_timeout_hours']);
+    return [max(5, min(480, $idle)) * 60, max(1, min(72, $hard)) * 3600];
+}
+
+// ── preferências pessoais (Perfil, §20.1) ──────────────────
+/** As categorias de notificações do Perfil (§20.1): chave → [nome, o que inclui, tem email?]. */
+const NOTIF_CATS = [
+    'lead'    => ['Leads', 'Leads minhas a aproximar-se ou em atraso', false],
+    'queue'   => ['Fila «Por atribuir»', 'Leads novas por atribuir (chefes de equipa e admins)', false],
+    'deal'    => ['Pipeline e negócios', 'Negócios parados, respostas de clientes, gates de produção e rondas esgotadas', true],
+    'invoice' => ['Por receber', 'Valores em atraso (quem vê o Financeiro)', false],
+    'team'    => ['Equipa', 'Mensagens, pedidos de reunião, pedidos de ajuda e férias', true],
+];
+
+/** As preferências pessoais (users.prefs em JSON): notificações e vista inicial de cada aba. */
+function user_prefs(PDO $pdo, int $uid): array {
+    static $cache = [];
+    if (isset($cache[$uid])) return $cache[$uid];
+    $p = [];
+    try {
+        if (db_has_column($pdo, 'users', 'prefs')) {
+            $st = $pdo->prepare('SELECT prefs FROM users WHERE id = ?');
+            $st->execute([$uid]);
+            $p = json_decode((string)$st->fetchColumn(), true) ?: [];
+        }
+    } catch (Throwable $e) { $p = []; }
+    return $cache[$uid] = (is_array($p) ? $p : []);
+}
+
+/** Esta pessoa quer esta categoria por este canal ('app' ou 'email')? Por defeito, sim. */
+function user_wants(PDO $pdo, int $uid, string $cat, string $channel = 'app'): bool {
+    $p = user_prefs($pdo, $uid);
+    return !isset($p['notif'][$cat][$channel]) || (int)$p['notif'][$cat][$channel] === 1;
+}
+
+/** A vista com que uma aba abre para esta pessoa ('' = a da aba). */
+function user_start_view(PDO $pdo, int $uid, string $tab): string {
+    return (string)(user_prefs($pdo, $uid)['start'][$tab] ?? '');
 }
 
 // ── settings ────────────────────────────────────────────────
@@ -290,6 +333,14 @@ function settings(PDO $pdo): array {
 function setting(PDO $pdo, string $key, $default = null) {
     $s = settings($pdo);
     return $s[$key] ?? $default;
+}
+
+/** Uma definição em lista (uma linha por item, Definições §20), ou a lista de origem. */
+function setting_lines(PDO $pdo, string $key, array $default): array {
+    $raw = setting($pdo, $key);
+    if ($raw === null) return array_values($default);
+    $out = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', (string)$raw)), fn($x) => $x !== ''));
+    return $out ?: array_values($default);
 }
 
 // ── formatting / input ──────────────────────────────────────

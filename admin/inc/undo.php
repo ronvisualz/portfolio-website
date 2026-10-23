@@ -29,8 +29,10 @@ function undo_push(string $kind, array $data): string {
 
 /** O estado de um negócio antes de mudar de etapa, para o poder repor. */
 function undo_deal_snapshot(array $d): array {
+    require_once __DIR__ . '/xsell.php';
+    $lines = xsell_snapshot($GLOBALS['pdo'], (int)$d['id']);   // as frentes de crosselling (§22)
     return ['id' => (int)$d['id'], 'stage_id' => $d['stage_id'], 'phase' => $d['phase'], 'done_at' => $d['done_at'],
-            'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']];
+            'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']] + ($lines ? ['lines' => $lines] : []);
 }
 
 /** Desfaz. Devolve a mensagem; RuntimeException quando já não dá. */
@@ -75,7 +77,30 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // As tarefas automáticas que a entrada na etapa criou (§19.7) saem, se ainda ninguém lhes mexeu.
             $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
             if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
+            // Crosselling (§22): as frentes voltam como estavam (antes do Kickoff ou do fecho).
+            require_once __DIR__ . '/xsell.php';
+            if (!empty($d['lines'])) xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
             return 'Etapa reposta.';
+
+        case 'row_restore':   // um pacote ou uma regra de crosselling apagados (§22)
+            if (!is_admin() || !in_array($d['table'] ?? '', ['packages', 'xsell_rules'], true)) throw new RuntimeException('Sem permissão.');
+            $row = (array)$d['row'];
+            $cols = array_keys($row);
+            $pdo->prepare('INSERT INTO ' . $d['table'] . ' (' . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')->execute(array_values($row));
+            return (string)$d['msg'];
+
+        case 'line_stage':   // uma frente de crosselling mudou de etapa (§22)
+            $deal = record_get($pdo, (int)$d['id']);
+            if (!$deal || !record_reach($pdo, $deal, PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            require_once __DIR__ . '/xsell.php';
+            $line = xsell_line_get($pdo, (int)$d['line']);
+            if (!$line || (int)$line['stage_id'] !== (int)$d['to_stage']) throw new RuntimeException($changed);
+            xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
+            deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $line['funnel_id'], 'from_stage' => $line['stage_id'], 'to_funnel' => $line['funnel_id'],
+                                                     'to_stage' => array_column((array)$d['lines'], 'stage_id', 'id')[(int)$line['id']] ?? null, 'note' => 'Anulado']);
+            $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
+            if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
+            return $line['funnel_name'] . ': etapa reposta.';
 
         case 'deal_lost':
             $deal = record_get($pdo, (int)$d['id']);
@@ -95,6 +120,13 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
                 ->execute([$d['from'], $d['last_touch'], $d['state_since'] ?? $lead['state_since'], (int)($d['no_answer'] ?? $lead['no_answer']), $d['id']]);
             deal_log($pdo, (int)$d['id'], 'state', ['note' => (LEAD_STATE[$d['to']] ?? $d['to']) . ' → ' . (LEAD_STATE[$d['from']] ?? $d['from']) . ' (anulado)']);
             return 'Estado reposto.';
+
+        case 'lead_spam':
+            if (!can('leads', PERM_EDIT)) throw new RuntimeException('Sem permissão.');
+            if (record_get($pdo, (int)$d['deal']['id'])) throw new RuntimeException($changed);
+            require_once __DIR__ . '/leads.php';
+            lead_spam_restore($pdo, $d);
+            return '«' . lead_display_name($d['deal']) . '» voltou à quarentena.';
 
         case 'lead_archive':
             $lead = record_get($pdo, (int)$d['id']);
@@ -162,6 +194,27 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // A repetição criada ao concluir sai também (se ainda ninguém lhe mexeu).
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
             return 'Tarefa reposta.';
+
+        case 'setting':
+            // Definições (§20): o valor volta ao de antes, se ninguém lhe mexeu entretanto.
+            require_once __DIR__ . '/settings_def.php';
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            $def = setting_def((string)$d['key']);
+            if (!$def || setting_get($pdo, (string)$d['key']) !== (string)$d['to']) throw new RuntimeException($changed);
+            setting_write($pdo, (string)$d['key'], (string)$d['from']);
+            setting_log($pdo, (string)$d['key'], SET_TABS[$def['tab']][0] . ' · ' . $def['label'] . ' (anulado)', (string)$d['to'], (string)$d['from']);
+            return $def['label'] . ' reposto: ' . setting_show($def, (string)$d['from']) . '.';
+
+        case 'setting_row':
+            // Uma célula das listas com tabela (serviços, pilares) volta ao que era.
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            if (!in_array($d['table'], ['services', 'mkt_pillars'], true) || !preg_match('/^[a-z_]+$/', (string)$d['field'])) throw new RuntimeException($changed);
+            $st = $pdo->prepare('SELECT ' . $d['field'] . ' FROM ' . $d['table'] . ' WHERE id = ?');
+            $st->execute([(int)$d['id']]);
+            $cur = $st->fetchColumn();
+            if ($cur === false || (string)$cur !== (string)$d['to']) throw new RuntimeException($changed);
+            $pdo->prepare('UPDATE ' . $d['table'] . ' SET ' . $d['field'] . ' = ? WHERE id = ?')->execute([$d['from'], (int)$d['id']]);
+            return 'Reposto.';
 
         case 'task_due':
             // «Adiar» na lista (§18.3): o prazo volta ao de antes, se ninguém lhe mexeu.

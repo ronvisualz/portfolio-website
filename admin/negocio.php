@@ -273,7 +273,11 @@ $editCost = (int)($_GET['cost'] ?? 0);
 $ec = null; foreach ($costs as $c) if ((int)$c['id'] === $editCost) $ec = $c;
 
 $prodPhase = in_array($deal['phase'], ['production', 'done'], true);
+// Crosselling (§22): as frentes (cada serviço na sua etapa) no lugar das etapas do negócio.
+require_once __DIR__ . '/inc/xsell_view.php';
+$xsLanes   = xsell_is_multi($pdo, $deal) && $prodPhase;
 $steps     = $prodPhase ? deal_steps($pdo, $file) : null;
+if ($xsLanes && $steps && $deal['phase'] === 'production') $steps['now'] = xsell_lanes_short($pdo, $deal);   // onde está cada frente
 $tasks     = deal_task_stats($pdo, $id);
 $check     = deal_checklist($pdo, $deal);
 $delivery  = $prodPhase ? deal_delivery_date($pdo, $deal) : null;
@@ -394,10 +398,10 @@ render_flashes();
 <?php // ── etapas e gates, responsáveis, faturação, rondas, proposta (§19.8) ──
 require_once __DIR__ . '/inc/pipeline_view.php';
 [$flKv, $flForm] = flow_people_html($pdo, $deal, $self);
-$flSide = flow_billing_html($pdo, $deal, $self) . flow_rounds_html($pdo, $deal, $self) . flow_proposal_html($pdo, $deal, $self);
+$flSide = flow_billing_html($pdo, $deal, $self) . ($xsLanes ? '' : flow_rounds_html($pdo, $deal, $self)) . flow_proposal_html($pdo, $deal, $self);
 ?>
 <div class="fl-ficha">
-  <?= flow_stages_html($pdo, $deal, $self) ?>
+  <?= $xsLanes ? xsell_services_html($pdo, $deal, $self) : flow_stages_html($pdo, $deal, $self) . xsell_services_html($pdo, $deal, $self) ?>
   <div class="fl-ficha-side">
     <section class="lv-blk fl-people"><h4>Responsáveis e datas <span class="h-sub">comercial fica até ao fim · execução na produção</span></h4><div class="kv"><?= $flKv ?></div><?= $flForm ?>
       <p class="small"><a class="lnk" href="<?= e(nav_to('/admin/xray.php?id=' . $id)) ?>"><?= icon('checklist') ?> X-Ray<?= !empty($deal['xray_validated_at']) ? ' (validado)' : '' ?></a></p></section>
@@ -727,6 +731,15 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
     <h3 id="mdl-close-t">Concluir <?= e($deal['code']) ?></h3>
     <p class="muted">A checklist de fecho. Pode concluir com itens em falta: o negócio fica assinalado e conta como «Em risco» até fechar.</p>
     <?= deal_checklist_html($check) ?>
+    <?php // Crosselling (§22): as frentes têm de estar prontas (sincronizadas) ou concluídas (timelines diferentes).
+    $xsMiss = $xsLanes ? xsell_close_missing($pdo, $deal) : [];
+    if ($xsLanes): ?>
+      <h4 class="dck-h">Frentes <span class="muted">(<?= e(XSELL_SYNC[$deal['sync_mode']] ?? '') ?>)</span></h4>
+      <?php if ($xsMiss): ?>
+        <ul class="fl-req"><?php foreach ($xsMiss as $m): ?><li class="no"><span class="fl-ck" aria-hidden="true"></span><span><?= e($m) ?></span></li><?php endforeach; ?></ul>
+        <?php if (is_admin()): ?><label class="field"><span class="lbl">Concluir mesmo assim (admins): motivo</span><textarea name="force" rows="2" maxlength="200" placeholder="Fica no histórico do negócio"></textarea></label><?php endif; ?>
+      <?php else: ?><p class="small"><?= icon('check') ?> Todas as frentes estão prontas<?= $deal['sync_mode'] === 'independent' ? '' : ': passam juntas a Concluído' ?>.</p><?php endif; ?>
+    <?php endif; ?>
     <?php if (!$deal['delivered_at']): ?><label class="check dck"><input type="checkbox" name="delivered" value="1"> As entregas ao cliente estão feitas</label><?php endif; ?>
     <h4 class="dck-h">Depois do fecho <span class="muted">(opcional)</span></h4>
     <label class="check dck"><input type="checkbox" name="portfolio" value="1"<?= $deal['portfolio_at'] ? ' disabled checked' : '' ?>> Enviar para o portfólio <small class="muted">· Marketing: cria a tarefa de preparar o material e a ideia «Breakdown»</small></label>

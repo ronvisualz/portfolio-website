@@ -30,7 +30,8 @@ require_once __DIR__ . '/contacts.php';   // serviços, preços, unidades, forne
 require_once __DIR__ . '/finance.php';    // IVA, valor limpo dos custos
 
 const BUDGET_MONTH_DAYS = 21;   // 1 mês = 21 dias úteis (§14.3)
-const BUDGET_SETTINGS = ['budget_mso_pct' => 5, 'budget_margin_pct' => 65, 'budget_day_hours' => 8, 'budget_month_target' => 8000];
+const BUDGET_SETTINGS = ['budget_mso_pct' => 5, 'budget_margin_pct' => 65, 'budget_day_hours' => 8, 'budget_month_target' => 8000,
+                         'budget_occupancy_default' => 0, 'budget_fixed_override' => 0];
 const BUDGET_LINE_KINDS = ['supplier' => 'Fornecedor / freelancer', 'team' => 'Equipa interna', 'other' => 'Outro custo interno'];
 const BUDGET_QTY_UNITS = ['hour' => 'horas', 'day' => 'dias'];
 const BUDGET_OTHER_UNITS = ['fixed' => 'valor fixo', 'unit' => 'unidade', 'hour' => 'hora', 'day' => 'dia'];
@@ -163,7 +164,8 @@ function budget_sheet_by_id(PDO $pdo, int $id): ?array {
 function budget_sheet_ensure(PDO $pdo, array $deal, ?int $by = null): array {
     $s = budget_sheet_get($pdo, (int)$deal['id']);
     if ($s && $pdo->query('SELECT COUNT(*) FROM budget_versions WHERE sheet_id = ' . (int)$s['id'])->fetchColumn()) return $s;
-    $v1 = [BUDGET_MONTH_DAYS, budget_fixed_average($pdo)['avg'], budget_setting($pdo, 'budget_margin_pct'), budget_setting($pdo, 'budget_mso_pct'),
+    $fixedOverride = budget_setting($pdo, 'budget_fixed_override');
+    $v1 = [BUDGET_MONTH_DAYS, $fixedOverride > 0 ? $fixedOverride : budget_fixed_average($pdo)['avg'], budget_setting($pdo, 'budget_margin_pct'), budget_setting($pdo, 'budget_mso_pct'),
            budget_setting($pdo, 'budget_day_hours'), (string)lead_setting($pdo, 'budget_conditions', ''), $by];
     if (!$s) {
         $pdo->prepare('INSERT INTO budget_sheets (deal_id, created_by) VALUES (?, ?)')->execute([$deal['id'], $by]);
@@ -171,6 +173,7 @@ function budget_sheet_ensure(PDO $pdo, array $deal, ?int $by = null): array {
     }
     $pdo->prepare('INSERT INTO budget_versions (sheet_id, num, dur_mode, days, fixed_monthly, margin, mso_pct, day_hours, conditions, created_by)
                    VALUES (?, 1, \'days\', ?, ?, ?, ?, ?, ?, ?)')->execute([$s['id'], ...$v1]);
+    budget_default_validity($pdo, (int)$pdo->lastInsertId());
     budget_log($pdo, (int)$s['id'], 'b_create', 'Folha criada' . ($deal['code'] ? ' · ' . $deal['code'] : ''), $by);
     return $s;
 }
@@ -302,7 +305,7 @@ function budget_calc(PDO $pdo, array $v, array $lines, ?array $capacity = null):
     $capacity ??= budget_capacity($pdo);
     $hours = budget_internal_hours($lines, $dh);
     $suggest = $capacity['hours'] > 0 ? min(100, round($hours / ($capacity['hours'] * $months) * 100, 1)) : null;
-    $occ = $v['occupancy'] !== null ? (float)$v['occupancy'] : ($suggest ?? 0.0);
+    $occ = $v['occupancy'] !== null ? (float)$v['occupancy'] : ($suggest ?? budget_setting($pdo, 'budget_occupancy_default'));
     $structure = round((float)$v['fixed_monthly'] * $months * $occ / 100, 2);
     $base = round($direct + $mso + $structure, 2);
     // Opção B (§19.3): a sua margem, se tiver uma própria.
@@ -416,6 +419,14 @@ function budget_freeze(PDO $pdo, array $v): void {
     budget_recalc($pdo, (int)$v['id']);
 }
 
+/** Uma versão nova começa com a validade por defeito das propostas (Definições › Pipeline). */
+function budget_default_validity(PDO $pdo, int $vid): void {
+    if (!$vid || !db_has_column($pdo, 'budget_versions', 'valid_until')) return;
+    $days = max(1, min(365, (int)setting($pdo, 'proposal_valid_days', 30)));
+    $pdo->prepare('UPDATE budget_versions SET valid_until = ? WHERE id = ? AND valid_until IS NULL')
+        ->execute([(new DateTimeImmutable(today_lisbon()))->modify('+' . $days . ' days')->format('Y-m-d'), $vid]);
+}
+
 /** Nova versão a partir de outra (copia tudo menos a aceitação). Devolve o id. */
 function budget_version_new(PDO $pdo, array $sheet, array $from, ?int $by = null, string $why = ''): int {
     budget_freeze($pdo, $from);
@@ -427,8 +438,10 @@ function budget_version_new(PDO $pdo, array $sheet, array $from, ?int $by = null
     $pdo->prepare('INSERT INTO budget_versions (sheet_id, num, ' . implode(',', $cols) . ', created_by) VALUES (?, ?, ' . implode(',', array_fill(0, count($cols), '?')) . ', ?)')
         ->execute([$sheet['id'], $num, ...array_map(fn($c) => $from[$c], $cols), $by]);
     $vid = (int)$pdo->lastInsertId();
+    budget_default_validity($pdo, $vid);
     $lc = ['line_key', 'position', 'kind', 'service_id', 'contact_id', 'user_id', 'label', 'price_unit', 'unit_price', 'qty', 'qty_unit', 'cost', 'note'];
     if (budget_has_options($pdo)) $lc[] = 'opt';
+    if (db_has_column($pdo, 'budget_lines', 'funnel_id')) $lc[] = 'funnel_id';   // o serviço da linha (crosselling)
     $ins = $pdo->prepare('INSERT INTO budget_lines (version_id, ' . implode(',', $lc) . ') VALUES (?, ' . implode(',', array_fill(0, count($lc), '?')) . ')');
     foreach (budget_lines($pdo, (int)$from['id'], '*') as $l) $ins->execute([$vid, ...array_map(fn($c) => $l[$c], $lc)]);
     budget_log($pdo, (int)$sheet['id'], 'b_version', 'v' . $num . ' criada a partir da v' . $from['num'] . ($why !== '' ? ' · ' . $why : ''), $by);
@@ -599,6 +612,17 @@ function budget_template_apply(PDO $pdo, array $sheet, array $tpl, ?int $by = nu
     budget_log($pdo, (int)$sheet['id'], 'b_model', 'Modelo «' . $tpl['name'] . '» na v' . $v['num'] . ($skipped ? ' · ' . count($skipped) . ' linha(s) de fora' : ''), $by);
     budget_recalc($pdo, $vid);
     return ['version_id' => $vid, 'skipped' => $skipped];
+}
+
+/** Num negócio sem folha de orçamento: cria-a e aplica o modelo. Devolve a mensagem. */
+function budget_apply_template_new(PDO $pdo, array $deal, int $tplId): string {
+    $st = $pdo->prepare('SELECT * FROM budget_templates WHERE id = ?');
+    $st->execute([$tplId]);
+    $tpl = $st->fetch();
+    if (!$tpl) return '';
+    $sheet = budget_sheet_ensure($pdo, $deal, current_user()['id'] ?? null);
+    $r = budget_template_apply($pdo, $sheet, $tpl, current_user()['id'] ?? null);
+    return 'Folha de orçamento criada com o modelo «' . $tpl['name'] . '»' . ($r['skipped'] ? ' (' . count($r['skipped']) . ' linha(s) de fora)' : '') . '.';
 }
 
 // ── resultado: orçado vs real (§14.5) ──────────────────────

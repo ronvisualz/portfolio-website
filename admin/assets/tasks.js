@@ -23,7 +23,7 @@
     return fetch(API, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf } })
       .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Não foi possível concluir. Tente outra vez.' }; }); },
             function () { return { ok: false, error: 'Sem ligação. Tente outra vez.' }; })
-      .then(function (j) { if (!j.ok) throw new Error(j.error || 'Não foi possível concluir.'); return j; });
+      .then(function (j) { if (!j.ok) { var er = new Error(j.error || 'Não foi possível concluir.'); er.lead = j.lead; throw er; } return j; });
   }
   // Um aviso que sobrevive a recarregar a página (com «Anular»).
   function later(j) { try { sessionStorage.setItem('task-toast', JSON.stringify({ m: j.msg, u: j.undo || '' })); } catch (x) { /* só recarrega */ } location.reload(); }
@@ -55,7 +55,16 @@
         return;
       }
       later(j);
-    }).catch(function (er) { b.disabled = false; T().toast(er.message, { err: true }); });
+    }).catch(function (er) {
+      b.disabled = false;
+      // A chamada de uma lead fica feita com o resultado: abre a lead, onde está o «Como correu?».
+      if (er.lead) {
+        T().toast('Registe como correu a chamada na ficha da lead.');
+        if (T().openPanel) T().openPanel('lead:' + er.lead); else location.href = '/admin/lead.php?id=' + er.lead;
+        return;
+      }
+      T().toast(er.message, { err: true });
+    });
   });
 
   // ── filtros «Tipo de tarefa» e «Origem»: uma caixa aberta de cada vez; fecha ao clicar fora ou Esc ──
@@ -161,6 +170,8 @@
     // Local: reunião presencial, almoço, jantar e evento.
     $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0); });
     $$('[data-not="block"]', form).forEach(function (n) { n.hidden = k === 'block' || k === 'personal'; });
+    // Participantes: só em Reunião, Gravação e Visita.
+    $$('[data-only="guests"]', form).forEach(function (n) { n.hidden = ['meeting', 'shoot', 'visit'].indexOf(k) < 0; });
     var who = $('#tk-who', form); if (who) who.closest('.field').hidden = k === 'block' || k === 'personal';
     var busy = form.querySelector('input[name=busy][value="1"]');
     if (busy && (k === 'block' || k === 'personal')) busy.checked = true;
