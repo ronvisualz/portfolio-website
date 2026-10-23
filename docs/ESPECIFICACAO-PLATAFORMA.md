@@ -2492,8 +2492,6 @@ Todas as alterações verificadas no servidor (só superadmin/admins).
 3. **Participantes (formulário de tarefa, §18.7):** o campo só aparece quando o tipo é
    **Reunião, Gravação ou Visita**. Texto do rótulo: «Participantes — recebem o convite no
    chat». **Nunca mostrar referências à especificação (ex.: «§17.7») na interface** — regra geral.
-<<<<<<< HEAD
-=======
 
 ---
 
@@ -2544,16 +2542,15 @@ opção «Combinar funis» sai das Definições › Funis.
      cliente ainda não tiver esse serviço, e fica uma oportunidade.
    - **Serviços comprados** na ficha do contacto: o que já comprou, o que falta oferecer e as
      oportunidades abertas, com atalho para um negócio novo.
->>>>>>> origin/main
 
 ---
 
-## 22. Centro Criativo (decidido 23 out 2026; 22.3 a confirmar)
+## 23. Centro Criativo (decidido 23 out 2026; 23.3 a confirmar)
 
 Espaço de trabalho criativo da equipa de execução — «Milanote com esteroides» ligado ao
 negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a §11.
 
-### 22.1 Separadores
+### 23.1 Separadores
 **Projetos · Biblioteca · Caixa de entrada · Review.**
 - **Projetos:** um quadro por negócio, com sub-quadros por etapa (Brief · Referências ·
   Conceito · Tratamento · Styleframes · Storyboard · Lista de planos · Review), a partir de um
@@ -2574,12 +2571,12 @@ negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a �
   (styleframes, animatic, picture lock…); conta rondas (§19.6 D) e avisa o Comercial quando se
   passa das incluídas.
 
-### 22.2 Quadro do projeto
-Criado no **Kickoff**. Se existir pré-criativo (22.3), o quadro nasce a partir dele: a opção
+### 23.2 Quadro do projeto
+Criado no **Kickoff**. Se existir pré-criativo (23.3), o quadro nasce a partir dele: a opção
 escolhida pelo cliente passa a ser o sub-quadro **Conceito**; a outra fica guardada dentro do
 quadro como «Rota não escolhida». O brief vem do X-Ray.
 
-### 22.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
+### 23.3 Pré-criativo (fase comercial, X-Ray → Proposta) — proposta a confirmar
 - **Nasce sozinho** quando o X-Ray é validado: cria o quadro «Pré-criativo · <negócio>» com o
   brief do X-Ray e **duas faixas: Opção A (Pedido) e Opção B (Proposta de valor)**; cria a
   tarefa «Pré-criativo · <cliente>» para o responsável de execução (prazo por defeito +2 d.u.,
@@ -2597,9 +2594,9 @@ quadro como «Rota não escolhida». O brief vem do X-Ray.
 - Na etapa Proposta, o pré-criativo é **recomendado, não obrigatório** (configurável por
   funil nas Definições) para não travar orçamentos rápidos.
 - Negócio **perdido/arquivado** → pré-criativo arquivado com ele (reaberto se o negócio reabrir).
-  Negócio em **Kickoff** → vira a base do quadro do projeto (22.2).
+  Negócio em **Kickoff** → vira a base do quadro do projeto (23.2).
 
-### 22.4 Portal do cliente (feedback sem conta)
+### 23.4 Portal do cliente (feedback sem conta)
 - Um **link por negócio** (token longo, revogável, com validade; abrir não altera nada — POST
   para ações, §19.4). O cliente identifica-se com nome e email na primeira ação.
 - Mostra só o que a topper. partilha: proposta e pré-criativo (fase comercial); quadros
@@ -2609,7 +2606,7 @@ quadro como «Rota não escolhida». O brief vem do X-Ray.
   uma ronda. Aprovar pelo portal pede confirmação com nome escrito e fica registado.
 - O responsável comercial e o de execução são notificados de cada ação do cliente.
 
-### 22.5 IA (qualidade premium)
+### 23.5 IA (qualidade premium)
 - Análise por referência (uma vez, guardada): legenda, estilo, técnica, ambiente, luz,
   composição, movimento de câmara, cor, **«porque funciona»**; vocabulário controlado da
   topper. + etiquetas livres; confiança e edição humana.
@@ -2623,19 +2620,19 @@ quadro como «Rota não escolhida». O brief vem do X-Ray.
   (não modelo local) para «mais como este» e referências para o brief. Chaves só no servidor;
   uso e custo visíveis em Definições › Integrações.
 
-### 22.6 Fluidez
+### 23.6 Fluidez
 Colar/arrastar qualquer coisa (imagem/ficheiro → cartão; link → pré-visualização; texto →
 nota; código de cor → amostra). Atalhos (N nota, C coluna, ⌘K, «/» IA, espaço para mover;
 documentados em Conhecimento › Navegação). Miniaturas por nível de zoom, carregamento só do
 visível, vídeo só reproduz ao passar o cursor. 60 fps a mover e fazer zoom; funciona no iPad
 (arrastar com o dedo).
 
-### 22.7 Importação
+### 23.7 Importação
 Sem importar nada agora, mas criar o **mecanismo de importação**: aceitar um ZIP/PDF/Markdown
 (formatos de exportação do Milanote) ou pasta de imagens → cria um quadro com os cartões em
 grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com análise da IA).
 
-### 22.8 Fases
+### 23.8 Fases
 1. Quadros, Biblioteca, Caixa de entrada, IA de análise e ângulos, **pré-criativo**.
 2. Review com comentários no frame e **portal do cliente**.
 3. Edição em tempo real por várias pessoas e extensão do browser.
