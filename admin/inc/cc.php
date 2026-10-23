@@ -161,13 +161,14 @@ function cc_store_delete(string $key): void {
  *   sem quadro           → «Biblioteca criativa/Caixa de entrada/» ou «Biblioteca criativa/Sem quadro/»
  * Devolve as opções para files_adopt (deal_id + prefix).
  */
-function cc_drive_place(PDO $pdo, ?array $board, bool $inbox): array {
+function cc_drive_place(PDO $pdo, ?array $board, bool $inbox, bool $create = true): array {
     require_once __DIR__ . '/files.php';
     if (!$board) return ['prefix' => FILES_LIBRARY . ($inbox ? 'Caixa de entrada/' : 'Sem quadro/')];
     $path = cc_board_path($pdo, $board);
     $names = array_map(fn($b) => r2_clean_name(trim(preg_replace('/^Pré-criativo · /u', '', (string)$b['title']))) ?: 'Quadro', $path);
     $dealId = (int)($path[0]['deal_id'] ?? 0);
-    if ($dealId && ($d = files_deal_row($pdo, $dealId)) && ($f = files_folder($pdo, $d))) {
+    // sem $create (a pré-visualização): a pasta que vai ter, sem a criar
+    if ($dealId && ($d = files_deal_row($pdo, $dealId)) && ($f = files_folder($pdo, $d, $create) ?? ($create ? null : files_place($d) . files_leaf($d) . '/'))) {
         $sub = array_slice($names, 1);
         return ['deal_id' => $dealId, 'section' => 'criativo', 'prefix' => $f . 'Criativo/' . ($sub ? implode('/', $sub) : 'Referências') . '/'];
     }

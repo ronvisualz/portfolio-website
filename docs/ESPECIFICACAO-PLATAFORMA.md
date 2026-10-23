@@ -1561,10 +1561,20 @@ guardados noutras tabelas passam a 600 caracteres. Modelo em `inc/files.php`, li
   (painel e envio no browser), páginas do pré-criativo e tratamento em PDF; anexar no browser com
   progresso; «Mostrar no Drive» com o ficheiro selecionado; faturação escondida e protegida para um
   colaborador; cron; claro/escuro e telemóvel.
-- **Fase 2 (por pedido):** «Reorganizar o Drive» para o que já existe (negócios já perdidos e
-  arquivados, ficheiros do Centro Criativo já carregados, `Faturas/` antigas), com pré-visualização.
+- **Fase 2 — «Reorganizar o Drive»** (Definições › Drive, só administradores; `reorganizar.php`,
+  `inc/files_reorg.php`, base **v26** com `file_jobs`): passa o que já existia para a estrutura nova.
+  Pré-visualização, sem mexer em nada, agrupada por tipo e com caixas para escolher: documentos que
+  passam a ficar registados (propostas e faturas que já estavam no Drive — não mudam de sítio),
+  pastas `Faturas/` antigas → `Faturação/` (para `Faturação/Anteriores/` se já houver), peças de
+  marketing de um negócio → pasta do negócio, negócios perdidos e leads arquivadas → `Arquivo/` (também
+  pastas antigas encontradas pelo ID e ainda sem ligação), originais do Centro Criativo guardados no
+  sistema → o seu sítio no Drive (agrupados por destino). A execução corre em segundo plano pela mesma
+  fila das pastas — a página mostra o progresso enquanto está aberta e o cron continua — e termina com
+  um relatório (feito, resultado de cada item, erros). Nada é apagado; links, favoritos, partilhas e
+  caminhos guardados acompanham. Testado na bancada com um cenário antigo completo.
 
-Ficheiros novos: `inc/migrate_files.php`, `inc/files.php`, `inc/files_view.php`, `files_api.php`.
+Ficheiros novos: `inc/migrate_files.php`, `inc/files.php`, `inc/files_view.php`, `files_api.php`,
+`inc/files_reorg.php`, `reorganizar.php` (fase 2; também `inc/settings_def.php`).
 Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_store.php`,
 `drive_api.php`, `ai_api.php`, `assets/drive/app.js`, `inc/leads.php`, `leads.php`, `inc/undo.php`,
 `inc/pipeline.php`, `inc/pipeline_flow.php`, `inc/pipeline_view.php`, `inc/budget_pdf.php`,
@@ -2805,4 +2815,6 @@ que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depress
 - **Fora do Drive (de propósito):** fotografias de perfil, miniaturas e pré-visualizações, cópias de
   segurança da base de dados.
 - **Autorizado mexer no Drive** para: as pastas de topo fixas, o aviso ao registo quando algo muda de
-  sítio à mão, e a regra da faturação. **Reorganizar o que já existe** fica para a fase 2.
+  sítio à mão, e a regra da faturação.
+- **Fase 2 (decidido 23 out 2026):** «Reorganizar o Drive» para o que já existia, com pré-visualização
+  do que vai mudar antes de executar e relatório no fim.

@@ -45,8 +45,15 @@ try {
         $t0 = microtime(true);
         $out = '';
         if (files_ready($pdo) && files_on()) {
-            $fm = files_moves_run($pdo, (float)min(90, $sec / 2));
-            $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
+            require_once __DIR__ . '/files_reorg.php';
+            if (files_reorg_ready($pdo)) {
+                // a reorganização (se houver) e as pastas na fila
+                $rs = files_reorg_run($pdo, (float)min(90, $sec / 2));
+                $out .= 'Drive: ' . files_moves_pending($pdo) . ' pastas na fila' . (!empty($rs['queued']) ? ' · reorganização: ' . $rs['queued'] . ' itens por fazer' : '') . "\n";
+            } else {
+                $fm = files_moves_run($pdo, (float)min(90, $sec / 2));
+                $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
+            }
         }
         $left = max(5.0, $sec - (microtime(true) - $t0));
         $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";

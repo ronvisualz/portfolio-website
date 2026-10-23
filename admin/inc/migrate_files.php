@@ -9,6 +9,7 @@
  *  · file_moves: a fila das pastas a mudar de sítio (lead convertida, arquivada, negócio
  *    perdido, reaberto). Corre em segundo plano (cron) e no próprio pedido, por pouco tempo.
  *  · Os caminhos do Drive crescem: deals.drive_folder e cc_assets.file_key passam a 600.
+ *  · file_jobs (passo 26): «Reorganizar o Drive» — os itens escolhidos na pré-visualização.
  *
  * Idempotente: corre de novo sem duplicar.
  */
@@ -54,6 +55,22 @@ function migrate_files(PDO $pdo): void {
         done_at     DATETIME     NULL,
         INDEX idx_fmoves_status (status, id),
         INDEX idx_fmoves_deal (deal_id)");
+
+    // passo 26 · «Reorganizar o Drive» (§24, fase 2): o que foi escolhido na pré-visualização, um por linha
+    db_create($pdo, 'file_jobs', "
+        id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        run_id      INT UNSIGNED NOT NULL,
+        item        VARCHAR(80)  NOT NULL,
+        kind        VARCHAR(12)  NOT NULL,
+        label       VARCHAR(255) NOT NULL DEFAULT '',
+        payload     TEXT         NULL,
+        status      VARCHAR(8)   NOT NULL DEFAULT 'queued',
+        result      VARCHAR(255) NOT NULL DEFAULT '',
+        created_by  INT UNSIGNED NULL,
+        created_at  DATETIME     NOT NULL,
+        done_at     DATETIME     NULL,
+        INDEX idx_fjobs_run (run_id, status),
+        INDEX idx_fjobs_status (status, id)");
 
     if (!db_is_sqlite($pdo)) {
         // caminhos como «Arquivo/Negócios/ID2610-03_…/Criativo/Referências/…» passam os 160/255 de antes

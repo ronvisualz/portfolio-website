@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -296,6 +296,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     //
     // Cada ficheiro que entra ou é gerado fica uma vez no Drive, na pasta do negócio, da
     // lead ou da origem; a fila das pastas que mudam de sítio (arquivar, reabrir, converter).
+    // ── 26 · Reorganizar o Drive (§24, fase 2): a fila do que já existia ──
     require_once __DIR__ . '/migrate_files.php';
     migrate_files($pdo);
 
