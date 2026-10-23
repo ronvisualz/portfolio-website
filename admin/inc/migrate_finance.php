@@ -438,3 +438,53 @@ function migrate_finance_legacy(PDO $pdo, string $now): void {
         }
     }
 }
+
+/**
+ * Passo 31 da base de dados: Tesouraria e reservas dos sócios.
+ *  · fin_accounts: responsável próprio (opcional; senão o de Definições), quem e quando atualizou o saldo;
+ *    fin_balance_log guarda cada atualização. Nasce a «Conta principal» se ainda não houver nenhuma.
+ *  · fin_reserve_rules: por negócio, a parte da faturação reservada a um sócio (% ou valor fixo) — conta
+ *    como custo do negócio e acumula à medida que o cliente paga; fin_reserve_payouts: o que já lhe foi
+ *    transferido, com data e comprovativo. O que está reservado não conta no saldo disponível.
+ */
+function migrate_finance_31(PDO $pdo): void {
+    db_add_column($pdo, 'fin_accounts', 'owner_id', 'INT UNSIGNED NULL', 'INTEGER NULL');
+    db_add_column($pdo, 'fin_accounts', 'balance_by', 'INT UNSIGNED NULL', 'INTEGER NULL');
+    db_add_column($pdo, 'fin_accounts', 'balance_at', 'DATETIME NULL', 'TEXT NULL');
+    db_create($pdo, 'fin_balance_log', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        account_id   INT UNSIGNED NOT NULL,
+        balance      DECIMAL(14,2) NOT NULL,
+        balance_date DATE         NOT NULL,
+        user_id      INT UNSIGNED NULL,
+        at           DATETIME     NOT NULL,
+        INDEX idx_fbl (account_id, at)");
+    db_create($pdo, 'fin_reserve_rules', "
+        id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        deal_id     INT UNSIGNED NOT NULL,
+        user_id     INT UNSIGNED NOT NULL,
+        mode        VARCHAR(6)   NOT NULL DEFAULT 'pct',
+        value       DECIMAL(12,2) NOT NULL DEFAULT 0,
+        note        VARCHAR(200) NOT NULL DEFAULT '',
+        created_by  INT UNSIGNED NULL,
+        created_at  DATETIME     NOT NULL,
+        deleted_at  DATETIME     NULL,
+        INDEX idx_frr (deal_id), INDEX idx_frr_u (user_id)");
+    db_create($pdo, 'fin_reserve_payouts', "
+        id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        user_id     INT UNSIGNED NOT NULL,
+        amount      DECIMAL(12,2) NOT NULL,
+        paid_on     DATE         NOT NULL,
+        account_id  INT UNSIGNED NULL,
+        proof_key   VARCHAR(400) NOT NULL DEFAULT '',
+        proof_name  VARCHAR(200) NOT NULL DEFAULT '',
+        note        VARCHAR(255) NOT NULL DEFAULT '',
+        created_by  INT UNSIGNED NULL,
+        created_at  DATETIME     NOT NULL,
+        deleted_at  DATETIME     NULL,
+        INDEX idx_frp (user_id, paid_on)");
+    if (!(int)$pdo->query('SELECT COUNT(*) FROM fin_accounts')->fetchColumn()) {
+        $now = date('Y-m-d H:i:s');
+        $pdo->prepare("INSERT INTO fin_accounts (name, kind, iban, balance, balance_date, active, position, created_at, updated_at) VALUES ('Conta principal', 'bank', '', 0, NULL, 1, 1, ?, ?)")->execute([$now, $now]);
+    }
+}

@@ -17,6 +17,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/fin.php';
+require_once __DIR__ . '/fin_res.php';
 
 // ── contas ──────────────────────────────────────────────────
 
@@ -32,16 +33,22 @@ function fin_account(PDO $pdo, int $id): ?array {
     return $st->fetch() ?: null;
 }
 
-function fin_account_input(array $src): array {
+function fin_account_input(array $src, bool $new): array {
     $name = mb_substr(trim((string)($src['name'] ?? '')), 0, 120);
     if ($name === '') throw new RuntimeException('Dê um nome à conta.');
     $iban = strtoupper(preg_replace('/\s+/', '', (string)($src['iban'] ?? '')));
     if ($iban !== '' && !preg_match('/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/', $iban)) throw new RuntimeException('IBAN inválido.');
-    $date = (string)($src['balance_date'] ?? '');
-    if ($date !== '' && !fin_date_ok($date)) throw new RuntimeException('Data do saldo inválida.');
-    return ['name' => $name, 'kind' => isset(FIN_ACC_KINDS[$src['kind'] ?? '']) ? (string)$src['kind'] : 'bank', 'iban' => $iban,
-            'balance' => round(money_in($src['balance'] ?? 0) * (str_starts_with(trim((string)($src['balance'] ?? '')), '-') ? -1 : 1), 2),
-            'balance_date' => $date !== '' ? $date : today_lisbon(), 'active' => !isset($src['active']) || !empty($src['active']) ? 1 : 0];
+    $v = ['name' => $name, 'kind' => isset(FIN_ACC_KINDS[$src['kind'] ?? '']) ? (string)$src['kind'] : 'bank', 'iban' => $iban,
+          'active' => !isset($src['active']) || !empty($src['active']) ? 1 : 0];
+    // o saldo inicial só na conta nova; depois, «Atualizar saldo» (fica registado)
+    if ($new && trim((string)($src['balance'] ?? '')) !== '') {
+        $b = fin_amount_parse((string)$src['balance']);
+        if ($b === null) throw new RuntimeException('O saldo não é um valor válido.');
+        $date = (string)($src['balance_date'] ?? '') ?: today_lisbon();
+        if (!fin_date_ok($date) || $date > today_lisbon()) throw new RuntimeException('Data do saldo inválida.');
+        $v['balance'] = $b; $v['balance_date'] = $date;
+    }
+    return $v;
 }
 
 // ── extratos ────────────────────────────────────────────────
@@ -61,8 +68,8 @@ function fin_amount_parse(string $s): ?float {
         $s = $lc > $ld ? str_replace(['.', ','], ['', '.'], $s) : str_replace(',', '', $s);
     } elseif ($lc !== false) {
         $s = strlen($s) - $lc === 4 && substr_count($s, ',') > 1 ? str_replace(',', '', $s) : str_replace(',', '.', $s);
-    } elseif ($ld !== false && substr_count($s, '.') > 1) {
-        $s = str_replace('.', '', $s);
+    } elseif ($ld !== false && (substr_count($s, '.') > 1 || preg_match('/^[1-9]\d{0,2}\.\d{3}$/', $s))) {
+        $s = str_replace('.', '', $s);          // «1.234.567» e «2.500» (milhares, como se escreve cá)
     }
     if (!is_numeric($s)) return null;
     return round(($neg ? -1 : 1) * (float)$s, 2);
@@ -177,7 +184,7 @@ function fin_import(PDO $pdo, int $accountId, string $bytes, string $fname, ?int
     }
     $pdo->prepare('UPDATE fin_imports SET n_new = ?, n_dup = ? WHERE id = ?')->execute([$new, $dup, $imp]);
     if ($p['balance'] !== null) {
-        $pdo->prepare('UPDATE fin_accounts SET balance = ?, balance_date = ?, updated_at = ? WHERE id = ?')->execute([$p['balance'], $p['balance_date'] ?: today_lisbon(), fin_now(), $accountId]);
+        fin_balance_write($pdo, $accountId, (float)$p['balance'], min((string)($p['balance_date'] ?: today_lisbon()), today_lisbon()), $by);
     }
     return ['new' => $new, 'dup' => $dup, 'balance' => $p['balance'], 'fmt' => $isOfx ? 'OFX' : 'CSV', 'import' => $imp];
 }
@@ -312,6 +319,12 @@ function fin_series(PDO $pdo, array $months): array {
                           AND issue_date BETWEEN ? AND ? AND NOT EXISTS (SELECT 1 FROM fin_payments p WHERE p.doc_id = f.id AND p.deleted_at IS NULL)");
     $st->execute([$from, $to]);
     foreach ($st->fetchAll() as $d) { $k = substr($d['issue_date'], 0, 7); if (isset($out[$k])) $out[$k]['cash_out'] += (float)$d['total']; }
+    // levantamentos das reservas dos sócios
+    if (fin_res_ready($pdo)) {
+        $st = $pdo->prepare('SELECT paid_on, amount FROM fin_reserve_payouts WHERE deleted_at IS NULL AND paid_on BETWEEN ? AND ?');
+        $st->execute([$from, $to]);
+        foreach ($st->fetchAll() as $p) { $k = substr($p['paid_on'], 0, 7); if (isset($out[$k])) $out[$k]['cash_out'] += (float)$p['amount']; }
+    }
     foreach ($out as &$r) foreach ($r as &$v) $v = round($v, 2);
     return $out;
 }
@@ -392,11 +405,15 @@ function fin_pipeline(PDO $pdo): array {
 /**
  * O saldo disponível: a soma das contas ativas menos o que já se sabe que sai até ao fim do mês — faturas e
  * custos por pagar vencidos ou a vencer este mês (inclui IRS e SS dos salários) e o IVA a entregar que vença
- * até lá.
+ * até lá — e menos o que está reservado aos sócios (não é da empresa).
  */
 function fin_cash(PDO $pdo): array {
-    $acc = 0.0; $n = 0; $oldest = null;
-    foreach (fin_accounts($pdo, true) as $a) { $acc += (float)$a['balance']; $n++; if ($a['balance_date'] && ($oldest === null || $a['balance_date'] < $oldest)) $oldest = $a['balance_date']; }
+    $acc = 0.0; $n = 0; $oldest = null; $stale = 0;
+    foreach (fin_accounts($pdo, true) as $a) {
+        $acc += (float)$a['balance']; $n++;
+        if ($a['balance_date'] && ($oldest === null || $a['balance_date'] < $oldest)) $oldest = $a['balance_date'];
+        if (fin_balance_stale($a)) $stale++;
+    }
     $eom = date('Y-m-t', strtotime(today_lisbon()));
     $commit = 0.0; $parts = ['payables' => 0.0, 'payroll' => 0.0, 'vat' => 0.0];
     foreach (fin_payables($pdo) as $d) {
@@ -408,8 +425,9 @@ function fin_cash(PDO $pdo): array {
     $vat = fin_vat_due_between($pdo, today_lisbon(), $eom);
     $parts['vat'] = max(0.0, $vat);
     $commit = array_sum($parts);
-    return ['accounts' => round($acc, 2), 'n_accounts' => $n, 'balance_date' => $oldest, 'commit' => round($commit, 2), 'parts' => array_map(fn($v) => round($v, 2), $parts),
-            'available' => round($acc - $commit, 2)];
+    $reserved = fin_res_total($pdo);
+    return ['accounts' => round($acc, 2), 'n_accounts' => $n, 'balance_date' => $oldest, 'stale' => $stale, 'commit' => round($commit, 2), 'parts' => array_map(fn($v) => round($v, 2), $parts),
+            'reserved' => $reserved, 'available' => round($acc - $commit - $reserved, 2)];
 }
 
 /**

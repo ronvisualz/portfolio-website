@@ -629,7 +629,9 @@ function fin_deal_cost_rows(PDO $pdo, int $dealId): array {
                   'notes' => trim(fin_doc_label($d) . ($d['description'] !== '' && $d['party_name'] !== '' ? ' · ' . $d['description'] : '')), 'budget_key' => null,
                   'net' => $net, 'vat' => round($vat, 2), 'total' => round($net + $vat, 2), 'year' => null, 'month' => null];
     }
-    return $out;
+    // as reservas dos sócios (parte da faturação guardada para um sócio) também são custo do negócio
+    require_once __DIR__ . '/fin_res.php';
+    return array_merge($out, fin_res_cost_rows($pdo, $dealId));
 }
 
 /** Quando todas as faturas do negócio estão pagas e cobrem o valor, o negócio fica pago (e correm as regras «ao validar um pagamento»). */
@@ -891,8 +893,14 @@ function fin_alerts(PDO $pdo, array $me): array {
         $out[] = ['key' => 'finob:' . $o['key'], 'kind' => 'invoice', 'icon' => 'financeiro', 'sev' => $o['date'] <= today_lisbon() ? 'bad' : 'warn', 'date' => $o['date'],
                   'title' => $o['name'], 'sub' => 'Até ' . fin_date_pt($o['date']) . ($o['amount'] > 0 ? ' · ' . eur($o['amount']) : ''), 'url' => '/admin/financeiro.php?tab=impostos'];
     }
+    // saldos das contas com mais de uma semana (ou nunca atualizados)
+    require_once __DIR__ . '/fin_cash.php';
+    $old = array_values(array_filter(fin_accounts($pdo, true), 'fin_balance_stale'));
+    if ($old) $out[] = ['key' => 'finbal:' . count($old) . ':' . fin_balance_week($pdo)['key'], 'kind' => 'invoice', 'icon' => 'financeiro', 'sev' => 'warn', 'date' => today_lisbon(),
+                        'title' => count($old) === 1 ? 'O saldo de ' . $old[0]['name'] . ' está desatualizado' : count($old) . ' contas com o saldo desatualizado',
+                        'sub' => 'Atualizar uma vez por semana · ' . implode(', ', array_map(fn($a) => $a['name'] . ' ' . fin_age_label(fin_balance_age($a)), array_slice($old, 0, 3))),
+                        'url' => '/admin/financeiro.php?tab=tesouraria'];
     if (role_is_admin((string)$me['role'])) {
-        require_once __DIR__ . '/fin_cash.php';
         $rw = fin_runway($pdo);
         if ($rw['burn'] > 0 && $rw['useful'] !== null && $rw['useful'] < fin_p($pdo, 'runway_alert', 6)) {
             $in = $rw['useful'] <= 0;
@@ -910,15 +918,36 @@ function fin_tick(PDO $pdo): string {
     $n = fin_fixed_tick($pdo);
     require_once __DIR__ . '/fin_tax.php';
     $t = fin_obligation_tasks($pdo);
-    return 'Financeiro: ' . $n . ' lançamentos de custos fixos · ' . $t . ' tarefas do calendário fiscal';
+    require_once __DIR__ . '/fin_res.php';
+    $b = fin_balance_tick($pdo);
+    return 'Financeiro: ' . $n . ' lançamentos de custos fixos · ' . $t . ' tarefas do calendário fiscal · ' . $b . ' tarefas de saldos';
 }
 
 // ── anular ──────────────────────────────────────────────────
 
 /** Repõe o que uma ação do Financeiro mudou (undo.php → 'fin'). */
 function fin_undo_apply(PDO $pdo, array $d): string {
+    if ($d['op'] === 'balance') {   // o responsável pela conta também anula a sua atualização
+        require_once __DIR__ . '/fin_res.php';
+        $row = (array)$d['row'];
+        $acc = fin_account($pdo, (int)$row['id']);
+        if (!$acc || !fin_can_balance($pdo, $acc, current_user())) throw new RuntimeException('Sem permissão.');
+        $pdo->prepare('UPDATE fin_accounts SET balance = ?, balance_date = ?, balance_by = ?, balance_at = ? WHERE id = ?')
+            ->execute([$row['balance'], $row['balance_date'], $row['balance_by'] ?? null, $row['balance_at'] ?? null, (int)$row['id']]);
+        $pdo->prepare('DELETE FROM fin_balance_log WHERE id = ?')->execute([(int)$d['log']]);
+        return 'Saldo reposto.';
+    }
     require_perm('financeiro', PERM_EDIT);
+    if (in_array($d['op'], ['res_rule', 'payout'], true) && !role_is_admin((string)(current_user()['role'] ?? ''))) throw new RuntimeException('Sem permissão.');
     switch ($d['op']) {
+        case 'res_rule':  // uma reserva: a nova sai, a apagada volta, a mudada fica como era
+            if (!empty($d['new'])) { $pdo->prepare('UPDATE fin_reserve_rules SET deleted_at = ? WHERE id = ?')->execute([fin_now(), (int)$d['id']]); return 'Reserva retirada.'; }
+            $row = (array)$d['row'];
+            $pdo->prepare('UPDATE fin_reserve_rules SET mode = ?, value = ?, note = ?, deleted_at = NULL WHERE id = ?')->execute([$row['mode'], $row['value'], $row['note'], (int)$row['id']]);
+            return 'Reserva reposta.';
+        case 'payout':
+            $pdo->prepare('UPDATE fin_reserve_payouts SET deleted_at = ' . (!empty($d['new']) ? '?' : 'NULL') . ' WHERE id = ?')->execute(!empty($d['new']) ? [fin_now(), (int)$d['id']] : [(int)$d['id']]);
+            return !empty($d['new']) ? 'Levantamento retirado.' : 'Levantamento reposto.';
         case 'doc':       // um lançamento volta a ser o que era (campos e estado)
             $row = (array)$d['row'];
             $id = (int)$row['id'];

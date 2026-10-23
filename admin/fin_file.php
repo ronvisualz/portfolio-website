@@ -34,6 +34,14 @@ if (isset($_GET['pay'])) {
     if (!$p || $p['proof_key'] === '') $deny();
     fin_file_send((string)$p['proof_key'], (string)$p['proof_name'] ?: 'comprovativo.pdf', $dl);
 }
+if (isset($_GET['payout'])) {   // levantamentos das reservas dos sócios: só superadmin e admins
+    if (!role_is_admin((string)$user['role'])) $deny();
+    $st = $pdo->prepare('SELECT * FROM fin_reserve_payouts WHERE id = ?');
+    $st->execute([(int)$_GET['payout']]);
+    $p = $st->fetch();
+    if (!$p || $p['proof_key'] === '') $deny();
+    fin_file_send((string)$p['proof_key'], (string)$p['proof_name'] ?: 'comprovativo.pdf', $dl);
+}
 if (isset($_GET['mail'])) {
     $st = $pdo->prepare('SELECT att FROM fin_mail WHERE id = ?');
     $st->execute([(int)$_GET['mail']]);

@@ -61,7 +61,7 @@ function fin_kpis(PDO $pdo): string {
     $useful = $rw['useful'];
     $h = '<div class="stats fin-kpis">';
     $h .= '<a class="stat" href="' . e(fin_url(['tab' => 'tesouraria'])) . '"><div class="k">Saldo disponível</div><div class="v' . ($cash['available'] < 0 ? ' neg' : '') . '">' . eur0($cash['available']) . '</div>'
-        . '<div class="n">' . ($cash['n_accounts'] ? 'contas ' . eur0($cash['accounts']) . ' − compromissos até ao fim do mês ' . eur0($cash['commit']) : 'Sem contas: junte-as em Tesouraria') . '</div></a>';
+        . '<div class="n">' . ($cash['n_accounts'] ? 'contas ' . eur0($cash['accounts']) . ' − compromissos até ao fim do mês ' . eur0($cash['commit']) . ($cash['reserved'] > 0 ? ' − reservas dos sócios ' . eur0($cash['reserved']) : '') . ($cash['stale'] ? ' · ' . $cash['stale'] . ($cash['stale'] === 1 ? ' saldo por atualizar' : ' saldos por atualizar') : '') : 'Sem contas: junte-as em Tesouraria') . '</div></a>';
     $h .= '<a class="stat' . ($nLate ? ' risk' : '') . '" href="' . e(fin_url(['tab' => 'receber'])) . '"><div class="k">Por receber</div><div class="v">' . eur0($tot) . '</div>'
         . '<div class="n">' . ($nLate ? '<span class="neg">' . eur0($late) . ' em atraso (' . $nLate . ')</span>' : count($recv) . ' em aberto · nada em atraso') . '</div></a>';
     $h .= '<a class="stat" href="' . e(fin_url(['tab' => 'pagar', 'v' => 'month'])) . '"><div class="k">A pagar · 30 dias</div><div class="v">' . eur0($pay) . '</div><div class="n">' . $nPay . ($nPay === 1 ? ' pagamento' : ' pagamentos') . ' até ' . fin_date_pt($until) . '</div></a>';

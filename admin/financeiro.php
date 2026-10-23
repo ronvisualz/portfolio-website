@@ -10,7 +10,7 @@ require_once __DIR__ . '/inc/fin.php';
 require_once __DIR__ . '/inc/fin_view.php';
 require_once __DIR__ . '/inc/charts.php';
 $user = require_login();
-require_page('financeiro');
+require_perm('financeiro');   // ver; cada ação pede o nível dela (calcular no simulador e o saldo do responsável não pedem «editar»)
 
 // Financeiro (§28): Visão geral · A receber · A pagar · Custos fixos · Salários · Tesouraria · Simulador · Impostos.
 // Acesso: superadmin, admins e quem tem a aba Financeiro (require_page acima; cada ação vê o nível de novo).
@@ -61,6 +61,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $kind = (string)($_POST['kind'] ?? '');
         if (isset(FIN_SIM_KINDS[$kind])) $_SESSION['fin_sim'][$kind] = fin_sim_inputs($kind, $_POST);
         redirect(fin_url(['tab' => 'simulador', 'kind' => $kind]));
+    }
+    if ($do === 'acc_balance') {   // o saldo semanal: quem edita o Financeiro ou o responsável pela conta
+        require_once __DIR__ . '/inc/fin_cash.php';
+        try {
+            $acc = fin_account($pdo, (int)($_POST['id'] ?? 0));
+            if (!$acc) throw new RuntimeException('Essa conta já não existe.');
+            if (!fin_can_balance($pdo, $acc, $user)) { http_response_code(403); exit('Sem permissão para esta conta.'); }
+            $old = fin_balance_set($pdo, $acc, $_POST['balance'] ?? '', (string)($_POST['balance_date'] ?? ''), $uid);
+            $log = (int)$pdo->query('SELECT MAX(id) FROM fin_balance_log WHERE account_id = ' . (int)$acc['id'])->fetchColumn();
+            flash('Saldo de ' . $acc['name'] . ' atualizado.', 'ok', undo_push('fin', ['op' => 'balance', 'log' => $log,
+                  'row' => array_intersect_key($old, array_flip(['id', 'balance', 'balance_date', 'balance_by', 'balance_at']))]));
+        } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect(fin_url(['tab' => 'tesouraria']));
     }
     require_perm('financeiro', PERM_EDIT);
     try {
@@ -277,21 +290,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'acc_save': {
                 require_once __DIR__ . '/inc/fin_cash.php';
                 $id = (int)($_POST['id'] ?? 0);
-                $v = fin_account_input($_POST);
+                $old = $id ? fin_account($pdo, $id) : null;
+                if ($id && !$old) throw new RuntimeException('Essa conta já não existe.');
+                $v = fin_account_input($_POST, !$old);
+                // o responsável pela conta só o mudam superadmin e admins
+                if (role_is_admin((string)$user['role']) && isset($_POST['owner_id'])) {
+                    $o = (int)$_POST['owner_id'];
+                    $v['owner_id'] = $o && fin_user_active($pdo, $o) ? $o : null;
+                }
                 $v['updated_at'] = fin_now();
-                if ($id) {
-                    $old = fin_account($pdo, $id);
-                    if (!$old) throw new RuntimeException('Essa conta já não existe.');
+                $bal = isset($v['balance']) ? [$v['balance'], $v['balance_date']] : null;
+                unset($v['balance'], $v['balance_date']);
+                if ($old) {
                     $pdo->prepare('UPDATE fin_accounts SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($v))) . ' WHERE id = ?')->execute([...array_values($v), $id]);
-                    flash('Conta guardada.', 'ok', undo_push('fin', ['op' => 'account', 'row' => $old]));
+                    flash('Conta guardada.', 'ok', undo_push('fin', ['op' => 'account', 'row' => array_intersect_key($old, $v + ['id' => 1])]));
                 } else {
                     $v['created_at'] = fin_now();
                     $v['position'] = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) + 1 FROM fin_accounts')->fetchColumn();
                     $cols = array_keys($v);
                     $pdo->prepare('INSERT INTO fin_accounts (' . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')->execute(array_values($v));
-                    flash('Conta criada.');
+                    $id = (int)$pdo->lastInsertId();
+                    if ($bal) fin_balance_write($pdo, $id, (float)$bal[0], (string)$bal[1], $uid);
+                    flash('Conta criada: ' . $v['name'] . '.');
                 }
                 redirect(fin_url(['tab' => 'tesouraria']));
+            }
+            case 'res_rule': case 'res_rule_del': case 'payout_add': case 'payout_del': {
+                // reservas dos sócios: só superadmin e admins
+                if (!role_is_admin((string)$user['role'])) { http_response_code(403); exit('Só superadmin e admins.'); }
+                require_once __DIR__ . '/inc/fin_res.php';
+                if ($do === 'res_rule') {
+                    [$rid, $old] = fin_res_rule_save($pdo, fin_res_rule_input($pdo, $_POST), $uid);
+                    flash($old ? 'Reserva atualizada.' : 'Reserva criada: entra como custo do negócio e acumula à medida que o cliente paga.', 'ok',
+                          undo_push('fin', $old ? ['op' => 'res_rule', 'row' => $old] : ['op' => 'res_rule', 'new' => 1, 'id' => $rid]));
+                } elseif ($do === 'res_rule_del') {
+                    $r = fin_res_rule($pdo, (int)($_POST['id'] ?? 0));
+                    if (!$r || $r['deleted_at']) throw new RuntimeException('Essa reserva já não existe.');
+                    $pdo->prepare('UPDATE fin_reserve_rules SET deleted_at = ? WHERE id = ?')->execute([fin_now(), (int)$r['id']]);
+                    flash('Reserva apagada.', 'ok', undo_push('fin', ['op' => 'res_rule', 'row' => $r]));
+                } elseif ($do === 'payout_add') {
+                    $pid = fin_res_payout_add($pdo, $_POST, fin_upload($_FILES['proof'] ?? null), $uid);
+                    flash('Levantamento registado.', 'ok', undo_push('fin', ['op' => 'payout', 'new' => 1, 'id' => $pid]));
+                } else {
+                    $pid = (int)($_POST['id'] ?? 0);
+                    $pdo->prepare('UPDATE fin_reserve_payouts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')->execute([fin_now(), $pid]);
+                    flash('Levantamento anulado.', 'ok', undo_push('fin', ['op' => 'payout', 'id' => $pid]));
+                }
+                redirect(fin_url(['tab' => 'tesouraria']) . '#reservas');
             }
             case 'import': {
                 require_once __DIR__ . '/inc/fin_cash.php';

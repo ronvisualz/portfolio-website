@@ -1820,7 +1820,8 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
   Financeiro edita-os (só superadmin/admins, com «Anular» e registo); lá estão também o email do
   contabilista, o IBAN, o prazo de pagamento, o responsável financeiro, as categorias e as **tabelas I–VII
   do Despacho n.º 233-A/2026** (continente, guardadas como dados; «Importar tabelas novas» por ano/região).
-- **Acesso:** `require_page('financeiro')` + nível por ação; ficheiros e exportações por `fin_file.php`
+- **Acesso:** ver a aba Financeiro + nível por ação (calcular no simulador e o saldo semanal do responsável
+  pedem só «ver»; tudo o resto «editar» ou mais); ficheiros e exportações por `fin_file.php`
   (só Financeiro; o recibo de vencimento também à própria pessoa); `fin_api.php` idem. O papel «Chefe de
   equipa» deixa de ver o Financeiro por omissão. A pasta da Drive `Empresa/Financeiro/AAAA/MM/` conta como
   faturação (só Financeiro). A ficha de salário na Equipa só aparece a quem tem Financeiro.
@@ -1889,6 +1890,36 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
 - **Para ligar em produção:** criar a caixa `faturas@` no Hostinger e o ficheiro `inc/fin_mail_config.php`;
   indicar o email do contabilista e o IBAN em Definições › Financeiro; a taxa do seguro de acidentes; a IA
   de leitura de PDFs usa a mesma chave do assistente (`ai_config.php`) — sem ela, preenche-se à mão.
+
+### 10.20 Tesouraria semanal e reservas dos sócios — §28.7 e §28.15 (24 out 2026)
+
+Base de dados **v31** (`migrate_finance_31`, idempotente): `fin_accounts.owner_id / balance_by /
+balance_at`; `fin_balance_log` (cada atualização de saldo: valor, data, quem, quando); `fin_reserve_rules`
+(negócio, sócio, % ou valor fixo, nota) e `fin_reserve_payouts` (levantamentos com data, conta e
+comprovativo). Sem contas, cria uma «Conta principal» sem saldo (o nome muda-se em Editar).
+- **Saldos (`inc/fin_res.php`):** Definições › Financeiro › Tesouraria tem o **responsável pelos saldos**
+  (só quem vê o Financeiro; vazio = responsável financeiro) e o **dia da atualização** (segunda a domingo).
+  Cada conta pode ter um responsável próprio (só superadmin/admins o escolhem). No dia, o cron dá a cada
+  responsável com contas por atualizar a tarefa «Atualizar os saldos das contas» (uma por semana,
+  `fin_done` `bal:<utilizador>:<semana ISO>`); a tarefa conclui sozinha quando as contas dele ficam em dia
+  (saldo do dia ou da véspera). Saldo com mais de 7 dias, ou nunca atualizado: aviso na Tesouraria e no sino.
+  «Atualizar saldo» (modal: valor e data, sem extrato) pode o responsável da conta mesmo só com «ver», e
+  quem edita o Financeiro; importar um extrato com saldo conta como atualização. «Anular» repõe o saldo.
+- **Contas:** «Nova conta» e «Editar» em modal (nome, tipo, IBAN, ativa, responsável; saldo inicial só na
+  conta nova). «Importar extrato» também em modal. Os valores aceitam «2.500» e «2.500,00» como milhares.
+- **Reservas:** só superadmin/admins criam, apagam e registam levantamentos (servidor: 403 aos outros).
+  % sobre o que o cliente pagou (sem IVA, pelos pagamentos; negócios de antes das faturas: o «pago») ou
+  valor fixo que acumula na proporção do pago. Entram em `deal_costs()` como custo sem IVA (margem da ficha,
+  Orçamentação, Relatórios); na ficha do negócio, só leitura («Reserva · sócio» para admins, «Reserva da
+  equipa» para os outros). `fin_cash()` tira o reservado por levantar do saldo disponível e, por isso, do
+  runway; os levantamentos contam como saída de caixa. Comprovativo obrigatório (`fin_file.php?payout=`,
+  só admins). Os outros veem só o total reservado.
+- **Também:** formulário dos custos fixos passou a modal («Novo custo fixo», tecla N); as tabelas de «A
+  receber» e «A pagar» ocupam a largura toda quando não há documento aberto, com margem nas pontas.
+- **Testado na bancada:** migração (conta principal, idempotente), validações, tarefa semanal (dia,
+  repetição, responsável da conta, conclusão automática), alertas, reservas (%, fixo, substituição,
+  acumulação, margem, total, disponível e runway), levantamentos (comprovativo, limite, «Anular»), permissões
+  pelo HTTP (só ver + responsável, editar sem ser admin, admin), claro/escuro, iPad e telemóvel.
 
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
@@ -3338,9 +3369,10 @@ Ficha de colaborador (Equipa §17) passa a ter, só visível a quem tem Financei
 - Custo anual mostrado na ficha: 14 meses × (bruto × 1,2375) + refeição + seguro.
 
 ### 28.7 Tesouraria
-- Contas: bancos, cartões, caixa — saldo atual atualizado por **importação do extrato (CSV/OFX)** ou manualmente (com data).
+- Contas: bancos, cartões, caixa — criadas e nomeadas na plataforma (começa com uma, «Conta principal»); saldo atual atualizado por **importação do extrato (CSV/OFX)** ou manualmente (valor e data).
+- **Atualização semanal (decidido 24 out 2026):** uma vez por semana, no dia escolhido em Definições › Financeiro (editável), o responsável pelos saldos recebe a tarefa de atualizar o saldo de cada conta. O responsável geral é nomeado por superadmin ou admin; cada conta pode ter um responsável próprio, que fica com as tarefas dessa conta. Cada atualização fica registada (valor, data, quem); saldos com mais de 7 dias aparecem como desatualizados.
 - **Conciliação:** cada movimento do extrato é emparelhado com uma fatura/custo/salário (sugestão automática por valor, data e NIF; o utilizador confirma). Conciliar conta como comprovativo de pagamento.
-- Saldo disponível = soma das contas − compromissos já conhecidos até ao fim do mês (IVA a entregar, IRS e SS dos salários, faturas a pagar vencidas).
+- Saldo disponível = soma das contas − compromissos já conhecidos até ao fim do mês (IVA a entregar, IRS e SS dos salários, faturas a pagar vencidas) − reservas dos sócios por levantar (§28.15).
 - Previsão de tesouraria 6/12 meses: saldo + recebimentos esperados (faturas emitidas por vencimento, prestações dos negócios ganhos) − custos fixos − pagamentos previstos.
 
 ### 28.8 Runway
@@ -3403,3 +3435,11 @@ Hoje a topper. não tem programa de faturação: envia os dados ao contabilista 
 - Leitura IMAP em PHP com uma biblioteca pura (ex.: webklex/php-imap) para não depender da extensão `imap` do PHP (removida do núcleo a partir do PHP 8.4).
 - Mensagens lidas são movidas para uma pasta «Processadas» na caixa; nada é apagado.
 - Quando houver programa de faturação certificado, este circuito é substituído pela integração direta (§28.13), mantendo os mesmos estados.
+
+### 28.15 Reservas dos sócios (decidido 24 out 2026)
+Em certos serviços reserva-se uma parte da faturação como «salário» para a equipa de execução (hoje, os sócios). Esse capital pertence ao sócio e não conta como saldo real da empresa.
+- Superadmin ou admin cria a reserva num negócio: sócio + **% do que o cliente pagar** (sem IVA) ou **valor fixo**. É automática: acumula à medida que o cliente paga (o valor fixo na proporção do que foi pago).
+- Conta como **custo do negócio** e entra na margem de lucro.
+- O que está reservado e ainda não foi levantado **sai do saldo disponível e do runway** e aparece à parte («Reservado aos sócios»).
+- Cada levantamento fica registado com **data e comprovativo** (e a conta de onde saiu); conta como saída de caixa.
+- Só superadmin e admins veem e mudam o detalhe por sócio; quem tem o Financeiro sem ser admin vê apenas o total reservado.

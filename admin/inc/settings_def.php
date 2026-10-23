@@ -43,12 +43,17 @@ const SET_TABS = [
 const FIN_CATS_DEFAULT_LIST = ['Software', 'Equipamento', 'Renda', 'Telecomunicações', 'Contabilidade', 'Seguros', 'Viaturas', 'Deslocações',
                                'Freelancers', 'Fornecedores de produção', 'Marketing', 'Formação', 'Impostos', 'Salários', 'Outros'];
 
-/** As pessoas ativas como opções de uma definição ('' = o valor por omissão, com o rótulo dado). */
-function settings_user_opts(string $none): array {
+/** As pessoas ativas como opções de uma definição ('' = o valor por omissão, com o rótulo dado); com $tab, só quem vê essa aba. */
+function settings_user_opts(string $none, string $tab = ''): array {
     global $pdo;
     $o = ['' => $none];
     if ($pdo instanceof PDO) {
-        try { foreach ($pdo->query('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name')->fetchAll() as $u) $o[(string)$u['id']] = (string)$u['name']; } catch (Throwable $e) {}
+        try {
+            foreach ($pdo->query('SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY name')->fetchAll() as $u) {
+                if ($tab !== '' && (perm_grid($pdo, $u)[$tab]['level'] ?? PERM_NONE) < PERM_VIEW) continue;
+                $o[(string)$u['id']] = (string)$u['name'];
+            }
+        } catch (Throwable $e) {}
     }
     return $o;
 }
@@ -241,8 +246,13 @@ function settings_defs(): array {
                                'help' => 'Vai nos emails das faturas enviadas ao cliente e nos lembretes de pagamento.'],
         'fin_terms_days'   => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Prazo de pagamento por omissão', 'type' => 'int', 'min' => 0, 'max' => 180, 'unit' => 'dias', 'default' => 30,
                                'help' => 'O vencimento proposto nas faturas novas e nos pedidos ao contabilista (data da fatura + este prazo).'],
-        'fin_owner'        => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Responsável financeiro', 'type' => 'select', 'opts' => settings_user_opts('O primeiro superadmin'), 'default' => '',
+        'fin_owner'        => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Responsável financeiro', 'type' => 'select', 'opts' => settings_user_opts('O primeiro superadmin', 'financeiro'), 'default' => '',
                                'help' => 'Recebe as tarefas do calendário fiscal (DMR, Segurança Social, IVA, IRC, IES, Modelo 10), 10 dias antes de cada prazo.'],
+        'fin_cash_owner'   => ['tab' => 'financeiro', 'group' => 'Tesouraria', 'label' => 'Responsável pelos saldos', 'type' => 'select', 'opts' => settings_user_opts('O responsável financeiro', 'financeiro'), 'default' => '',
+                               'help' => 'Atualiza uma vez por semana o saldo das contas da empresa e recebe a tarefa no dia escolhido abaixo. Uma conta pode ter um responsável próprio (em Tesouraria › Contas), que fica com as tarefas dessa conta.'],
+        'fin_cash_day'     => ['tab' => 'financeiro', 'group' => 'Tesouraria', 'label' => 'Dia da atualização', 'type' => 'select',
+                               'opts' => ['1' => 'Segunda-feira', '2' => 'Terça-feira', '3' => 'Quarta-feira', '4' => 'Quinta-feira', '5' => 'Sexta-feira', '6' => 'Sábado', '7' => 'Domingo'], 'default' => '1',
+                               'help' => 'Nesse dia, quem é responsável recebe a tarefa «Atualizar os saldos das contas». Um saldo com mais de 7 dias aparece como desatualizado na Tesouraria e nos alertas.'],
         'fin_categories'   => ['tab' => 'financeiro', 'group' => 'Categorias', 'label' => 'Categorias de despesa', 'type' => 'list', 'default' => implode("\n", FIN_CATS_DEFAULT_LIST),
                                'help' => 'As categorias dos lançamentos e dos custos fixos (os já lançados guardam a sua). Os custos fixos aparecem agrupados por elas na Visão geral.'],
         'fin_params'       => ['tab' => 'financeiro', 'group' => 'Taxas, limites e prazos', 'label' => 'Parâmetros legais e da empresa', 'type' => 'fin_params',

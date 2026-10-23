@@ -201,7 +201,7 @@ elseif ($tab === 'receber'):
     $doc = $docId ? fin_doc($pdo, $docId) : null;
     $pg = paginate($rows, 'pr');
 ?>
-<div class="fin-split">
+<div class="fin-split<?= ($doc && $doc['direction'] === 'in') || ($dealQ && !$req && !$new) ? ' has-doc' : '' ?>">
   <div class="tablewrap"><table class="fin-t">
     <thead><tr><th>Nº</th><th>Cliente</th><th class="hide-sm">Negócio</th><th class="hide-sm">Vencimento</th><th class="num">Total</th><th class="num">Em falta</th><th>Estado</th></tr></thead>
     <tbody>
@@ -278,7 +278,7 @@ elseif ($tab === 'pagar'):
     $pg = paginate($rows, 'pp');
 ?>
 <p class="small muted"><?= count($rows) ?> nesta vista · em falta <b><?= eur($sum) ?></b></p>
-<div class="fin-split">
+<div class="fin-split<?= $doc && $doc['direction'] === 'out' ? ' has-doc' : '' ?>">
   <div class="tablewrap"><table class="fin-t">
     <thead><tr><th>Fornecedor</th><th class="hide-sm hide-md">Nº</th><th class="hide-sm hide-md">Categoria</th><th>Âmbito</th><th class="hide-sm">Vencimento</th><th class="num">Total</th><th class="num">Em falta</th><th>Estado</th></tr></thead>
     <tbody>
@@ -323,6 +323,7 @@ elseif ($tab === 'fixos'):
     <?php if (!$changes): ?><p class="muted small">Sem mudanças nos últimos 6 meses.</p><?php endif; ?>
     <ul class="fin-changes"><?php foreach ($changes as $c): ?><li class="<?= $c['delta'] > 0 ? 'up' : 'down' ?>"><?= e($c['text']) ?></li><?php endforeach; ?></ul></section>
 </div>
+<?php if ($canEdit): ?><div class="bar fin-bar"><button type="button" class="btn sm" data-new="#mdl-fixo" aria-keyshortcuts="N"><?= icon('plus') ?> Novo custo fixo <span class="kbd">N</span></button></div><?php endif; ?>
 <div class="tablewrap"><table class="fin-t">
   <thead><tr><th>Custo</th><th>Categoria</th><th class="hide-sm">Fornecedor</th><th class="num">Valor</th><th class="hide-sm">Periodicidade</th><th class="num">Por mês</th><th class="hide-sm">Início · fim</th><th></th></tr></thead>
   <tbody>
@@ -332,7 +333,7 @@ elseif ($tab === 'fixos'):
       <td class="num"><?= eur((float)$f['amount']) ?><?= (float)$f['vat_rate'] > 0 ? '<div class="muted small">+ IVA ' . e(fin_num((float)$f['vat_rate'])) . '%' . ((int)$f['vat_deductible'] ? '' : ' (não dedutível)') . '</div>' : '' ?></td>
       <td class="hide-sm"><?= e(FIN_PERIODS[(int)$f['period_months']] ?? '') ?> · dia <?= (int)$f['due_day'] ?></td><td class="num b"><?= eur(fin_fixed_monthly($f)) ?></td>
       <td class="hide-sm nowrap"><?= fin_date_pt($f['start_date']) ?><?= $f['end_date'] ? ' → ' . fin_date_pt($f['end_date']) : '' ?></td>
-      <td class="num nowrap"><?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'fixos', 'edit' => (int)$f['id']])) ?>#fixo">Editar</a>
+      <td class="num nowrap"><?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'fixos', 'edit' => (int)$f['id']])) ?>">Editar</a>
         <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="fixed_toggle"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="btn ghost sm" type="submit"><?= (int)$f['active'] ? 'Desligar' : 'Ligar' ?></button></form><?php endif; ?></td></tr>
   <?php endforeach; ?>
   <?php foreach (fin_employees($pdo) as $e): if (!(int)$e['active']) continue; $a = fin_employee_annual($pdo, $e); ?>
@@ -341,8 +342,10 @@ elseif ($tab === 'fixos'):
   <?php endforeach; ?>
   </tbody></table></div>
 <?php if ($canEdit): $fv = $ef ?? ['name' => '', 'category' => 'Software', 'party_name' => '', 'party_nif' => '', 'amount' => '', 'vat_rate' => fin_p($pdo, 'vat_normal', 23), 'vat_deductible' => 1, 'wh_rate' => 0, 'period_months' => 1, 'due_day' => 1, 'start_date' => date('Y-m-01'), 'end_date' => '', 'pay_method' => 'transfer', 'active' => 1, 'notes' => '']; ?>
-<h2 id="fixo"><?= $ef ? 'Editar custo fixo' : 'Novo custo fixo' ?></h2>
-<form method="post" class="fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="fixed_save"><?= $ef ? '<input type="hidden" name="id" value="' . (int)$ef['id'] . '">' : '' ?>
+<div class="mdl<?= $ef ? ' open' : '' ?>" id="mdl-fixo" role="dialog" aria-modal="true" aria-labelledby="mdl-fixo-t"<?= $ef ? '' : ' hidden' ?> data-clear="edit">
+  <div class="mdl-back" data-mdl-close></div>
+<form method="post" class="mdl-card wide fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="fixed_save"><?= $ef ? '<input type="hidden" name="id" value="' . (int)$ef['id'] . '">' : '' ?>
+  <h3 id="mdl-fixo-t"><?= icon('plus') ?> <?= $ef ? 'Editar custo fixo · ' . e($ef['name']) : 'Novo custo fixo' ?></h3>
   <div class="grid">
     <div class="field"><label for="fx-n">Custo</label><input type="text" id="fx-n" name="name" required maxlength="160" value="<?= e((string)$fv['name']) ?>" placeholder="Adobe Creative Cloud"></div>
     <div class="field"><label for="fx-c">Categoria</label><select id="fx-c" name="category"><?= fin_opts(array_combine($cats, $cats), $fv['category']) ?></select></div>
@@ -360,7 +363,8 @@ elseif ($tab === 'fixos'):
     <div class="field wide"><label for="fx-no">Notas</label><input type="text" id="fx-no" name="notes" maxlength="500" value="<?= e((string)$fv['notes']) ?>"></div>
   </div>
   <p class="small muted">Âmbito: sempre Empresa (interno). Gera o lançamento «Por pagar» em cada vencimento (junte o PDF quando chegar).</p>
-  <div class="actions"><button class="btn" type="submit"><?= $ef ? 'Guardar' : 'Adicionar' ?></button><?= $ef ? ' <a class="btn ghost" href="' . e(fin_url(['tab' => 'fixos'])) . '">Cancelar</a>' : '' ?></div></form>
+  <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit"><?= $ef ? 'Guardar' : 'Adicionar' ?></button></div></form>
+</div>
 <?php endif; ?>
 
 <?php
@@ -445,38 +449,148 @@ elseif ($tab === 'tesouraria'):
     $open = fin_txs($pdo, 'open');
     $fc = fin_forecast($pdo, (int)($_GET['h'] ?? 6) === 12 ? 12 : 6);
     $cats = fin_categories($pdo);
+    $isAdmin = role_is_admin((string)$user['role']);
+    $week = fin_balance_week($pdo);
+    $people = $pdo->query('SELECT id, name, role, is_partner FROM users WHERE is_active = 1 ORDER BY is_partner DESC, name')->fetchAll();
+    $names = array_column($people, 'name', 'id');
+    $finPeople = array_filter($people, fn($u) => (perm_grid($pdo, $u)['financeiro']['level'] ?? PERM_NONE) >= PERM_VIEW);
+    $defOwner = fin_cash_owner_id($pdo);
+    $myAccs = array_values(array_filter($accs, fn($a) => (int)$a['active'] && fin_can_balance($pdo, $a, $user)));
 ?>
 <div class="stats">
-  <div class="stat"><div class="k">Nas contas</div><div class="v"><?= eur0($cash['accounts']) ?></div><div class="n"><?= $cash['n_accounts'] ?> <?= $cash['n_accounts'] === 1 ? 'conta' : 'contas' ?><?= $cash['balance_date'] ? ' · saldo mais antigo de ' . fin_date_pt($cash['balance_date']) : '' ?></div></div>
+  <div class="stat"><div class="k">Nas contas</div><div class="v"><?= eur0($cash['accounts']) ?></div><div class="n"><?= $cash['n_accounts'] ?> <?= $cash['n_accounts'] === 1 ? 'conta' : 'contas' ?><?= $cash['stale'] ? ' · <span class="stale">' . $cash['stale'] . ' por atualizar</span>' : ($cash['balance_date'] ? ' · saldos de ' . fin_date_pt($cash['balance_date']) : '') ?></div></div>
   <div class="stat"><div class="k">Compromissos até ao fim do mês</div><div class="v"><?= eur0($cash['commit']) ?></div><div class="n">faturas <?= eur0($cash['parts']['payables']) ?> · salários, IRS e SS <?= eur0($cash['parts']['payroll']) ?> · IVA <?= eur0($cash['parts']['vat']) ?></div></div>
-  <div class="stat hero<?= $cash['available'] < 0 ? ' neg' : '' ?>"><div class="k">Saldo disponível</div><div class="v"><?= eur0($cash['available']) ?></div></div>
+  <div class="stat"><div class="k">Reservado aos sócios</div><div class="v"><?= eur0($cash['reserved']) ?></div><div class="n">não conta no disponível nem no runway</div></div>
+  <div class="stat hero<?= $cash['available'] < 0 ? ' neg' : '' ?>"><div class="k">Saldo disponível</div><div class="v"><?= eur0($cash['available']) ?></div><div class="n">contas − compromissos − reservas</div></div>
 </div>
-<h2>Contas</h2>
-<div class="tablewrap"><table class="fin-t"><thead><tr><th>Conta</th><th class="hide-sm">IBAN</th><th class="num">Saldo</th><th>Data</th><th class="num">Por conciliar</th><th></th></tr></thead><tbody>
-  <?php if (!$accs): ?><tr><td colspan="6" class="empty">Sem contas. Junte o banco, os cartões e a caixa.</td></tr><?php endif; ?>
-  <?php foreach ($accs as $a): ?><tr class="<?= (int)$a['active'] ? '' : 'off' ?>"><td class="b"><?= e($a['name']) ?> <span class="chip"><?= e(FIN_ACC_KINDS[$a['kind']] ?? '') ?></span></td><td class="hide-sm mono small"><?= e($a['iban']) ?></td>
-    <td class="num b<?= (float)$a['balance'] < 0 ? ' neg' : '' ?>"><?= eur((float)$a['balance']) ?></td><td><?= fin_date_pt($a['balance_date']) ?></td><td class="num"><?= (int)$a['open_tx'] ?: '—' ?></td>
-    <td class="num"><?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'tesouraria', 'acc' => (int)$a['id']])) ?>#conta">Editar / saldo</a><?php endif; ?></td></tr><?php endforeach; ?>
+<div class="bar fin-bar fin-hbar">
+  <h2>Contas</h2>
+  <?php if ($canEdit): ?><span class="spacer"></span>
+  <button type="button" class="btn sm" data-new="#mdl-acc" aria-keyshortcuts="N"><?= icon('plus') ?> Nova conta <span class="kbd">N</span></button>
+  <?php if ($accs): ?><button type="button" class="btn ghost sm" data-new="#mdl-import"><?= icon('upload') ?> Importar extrato</button><?php endif; ?><?php endif; ?>
+</div>
+<p class="small muted">Os saldos atualizam-se uma vez por semana, à <?= e(FIN_WEEKDAYS[$week['day']]) ?>: <?= $defOwner ? e($names[$defOwner] ?? '—') : 'o responsável financeiro' ?> recebe a tarefa (cada conta pode ter um responsável próprio). Dia e responsável em Definições › Financeiro.</p>
+<div class="tablewrap"><table class="fin-t fin-acc"><thead><tr><th>Conta</th><th class="hide-sm">IBAN</th><th class="num">Saldo</th><th>Atualizado</th><th class="hide-sm">Responsável</th><th class="num hide-sm">Por conciliar</th><th></th></tr></thead><tbody>
+  <?php if (!$accs): ?><tr><td colspan="7" class="empty">Sem contas. Junte o banco, os cartões e a caixa.</td></tr><?php endif; ?>
+  <?php foreach ($accs as $a): $age = fin_balance_age($a); $st = (int)$a['active'] && fin_balance_stale($a); $own = fin_cash_owner_id($pdo, $a); ?>
+  <tr class="<?= (int)$a['active'] ? '' : 'off' ?>"><td class="b"><?= e($a['name']) ?> <span class="chip"><?= e(FIN_ACC_KINDS[$a['kind']] ?? '') ?></span><?= (int)$a['active'] ? '' : ' <span class="chip">inativa</span>' ?></td><td class="hide-sm mono small"><?= e($a['iban']) ?></td>
+    <td class="num b<?= (float)$a['balance'] < 0 ? ' neg' : '' ?>"><?= $a['balance_date'] ? eur((float)$a['balance']) : '—' ?></td>
+    <td class="nowrap"><?= $a['balance_date'] ? '<span class="hide-sm">' . fin_date_pt($a['balance_date']) . ' </span>' : '' ?><span class="chip<?= $st ? ' wait' : '' ?>"><?= e(fin_age_label($age)) ?></span></td>
+    <td class="hide-sm small"><?= $own ? e($names[$own] ?? '—') : '—' ?><?= $a['owner_id'] ? '' : ' <span class="muted">(geral)</span>' ?></td>
+    <td class="num hide-sm"><?= (int)$a['open_tx'] ?: '—' ?></td>
+    <td class="num nowrap"><?php if ((int)$a['active'] && fin_can_balance($pdo, $a, $user)): ?><button type="button" class="btn <?= $st ? '' : 'ghost ' ?>sm" data-new="#mdl-bal-<?= (int)$a['id'] ?>">Atualizar<span class="hide-sm"> saldo</span></button><?php endif; ?>
+      <?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'tesouraria', 'acc' => (int)$a['id']])) ?>">Editar</a><?php endif; ?></td></tr>
+  <?php endforeach; ?>
 </tbody></table></div>
-<?php if ($canEdit): $av = $ea ?? ['name' => '', 'kind' => 'bank', 'iban' => '', 'balance' => '', 'balance_date' => today_lisbon(), 'active' => 1]; ?>
-<div class="fin-grid">
-  <section class="flow" id="conta"><h3><?= $ea ? 'Conta · ' . e($ea['name']) : 'Nova conta' ?></h3>
-    <form method="post" class="fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="acc_save"><?= $ea ? '<input type="hidden" name="id" value="' . (int)$ea['id'] . '">' : '' ?>
-      <div class="grid"><div class="field"><label for="ac-n">Nome</label><input type="text" id="ac-n" name="name" required maxlength="120" value="<?= e((string)$av['name']) ?>" placeholder="Banco · conta à ordem"></div>
-        <div class="field"><label for="ac-k">Tipo</label><select id="ac-k" name="kind"><?= fin_opts(FIN_ACC_KINDS, $av['kind']) ?></select></div>
-        <div class="field"><label for="ac-i">IBAN</label><input type="text" id="ac-i" name="iban" maxlength="40" value="<?= e((string)$av['iban']) ?>"></div>
-        <div class="field"><label for="ac-b">Saldo (€)</label><input type="text" id="ac-b" name="balance" inputmode="decimal" value="<?= $av['balance'] !== '' ? e(number_format((float)$av['balance'], 2, ',', '')) : '' ?>"></div>
-        <div class="field"><label for="ac-d">Saldo em</label><input type="date" id="ac-d" name="balance_date" value="<?= e((string)$av['balance_date']) ?>"></div>
-        <div class="field"><input type="hidden" name="active" value="0"><label class="check" style="margin-top:1.6rem"><input type="checkbox" name="active" value="1"<?= (int)$av['active'] ? ' checked' : '' ?>> Ativa</label></div></div>
-      <div class="actions"><button class="btn sm" type="submit">Guardar</button><?= $ea ? ' <a class="btn ghost sm" href="' . e(fin_url(['tab' => 'tesouraria'])) . '">Cancelar</a>' : '' ?></div></form></section>
-  <section class="flow"><h3>Importar extrato</h3>
-    <?php if ($accs): ?><form method="post" enctype="multipart/form-data" class="fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="import">
-      <div class="field"><label for="im-a">Conta</label><select id="im-a" name="account"><?php foreach ($accs as $a) if ((int)$a['active']): ?><option value="<?= (int)$a['id'] ?>"><?= e($a['name']) ?></option><?php endif; ?></select></div>
-      <div class="field"><label for="im-f">Ficheiro CSV ou OFX do banco</label><input type="file" id="im-f" name="statement" accept=".csv,.ofx,.qfx,.txt,text/csv" required></div>
-      <p class="small muted">Os movimentos que já estavam não se repetem. Se o extrato trouxer o saldo, a conta fica com ele.</p>
-      <div class="actions"><button class="btn sm" type="submit"><?= icon('upload') ?> Importar</button></div></form>
-    <?php else: ?><p class="muted small">Crie primeiro a conta.</p><?php endif; ?></section>
+<?php foreach ($myAccs as $a): $log = fin_balance_log($pdo, (int)$a['id']); ?>
+<div class="mdl" id="mdl-bal-<?= (int)$a['id'] ?>" role="dialog" aria-modal="true" aria-labelledby="mdl-bal-<?= (int)$a['id'] ?>-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form method="post" class="mdl-card fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="acc_balance"><input type="hidden" name="id" value="<?= (int)$a['id'] ?>">
+    <h3 id="mdl-bal-<?= (int)$a['id'] ?>-t">Atualizar saldo · <?= e($a['name']) ?></h3>
+    <p class="small muted">O saldo que o banco mostra agora (ou no dia indicado). <?= $a['balance_date'] ? 'Último: ' . eur((float)$a['balance']) . ' em ' . fin_date_pt($a['balance_date']) . '.' : 'Ainda sem saldo.' ?></p>
+    <div class="grid"><div class="field"><label for="bl-v-<?= (int)$a['id'] ?>">Saldo (€)</label><input type="text" id="bl-v-<?= (int)$a['id'] ?>" name="balance" inputmode="decimal" required placeholder="0,00"></div>
+      <div class="field"><label for="bl-d-<?= (int)$a['id'] ?>">Saldo em</label><input type="date" id="bl-d-<?= (int)$a['id'] ?>" name="balance_date" value="<?= e(today_lisbon()) ?>" max="<?= e(today_lisbon()) ?>" required></div></div>
+    <?php if ($log): ?><details class="small"><summary>Últimas atualizações</summary><ul class="fin-log"><?php foreach ($log as $l): ?><li><?= fin_date_pt($l['balance_date']) ?> · <b><?= eur((float)$l['balance']) ?></b> <span class="muted">· <?= e((string)($l['who'] ?? '—')) ?>, <?= e(fin_date_pt(substr((string)$l['at'], 0, 10))) ?></span></li><?php endforeach; ?></ul></details><?php endif; ?>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit">Guardar saldo</button></div>
+  </form>
 </div>
+<?php endforeach; ?>
+<?php if ($canEdit): $av = $ea ?? ['name' => '', 'kind' => 'bank', 'iban' => '', 'active' => 1, 'owner_id' => null]; ?>
+<div class="mdl<?= $ea ? ' open' : '' ?>" id="mdl-acc" role="dialog" aria-modal="true" aria-labelledby="mdl-acc-t"<?= $ea ? '' : ' hidden' ?> data-clear="acc">
+  <div class="mdl-back" data-mdl-close></div>
+  <form method="post" class="mdl-card fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="acc_save"><?= $ea ? '<input type="hidden" name="id" value="' . (int)$ea['id'] . '">' : '' ?>
+    <h3 id="mdl-acc-t"><?= $ea ? 'Editar conta · ' . e($ea['name']) : 'Nova conta' ?></h3>
+    <div class="grid"><div class="field wide"><label for="ac-n">Nome</label><input type="text" id="ac-n" name="name" required maxlength="120" value="<?= e((string)$av['name']) ?>" placeholder="Banco · conta à ordem"></div>
+      <div class="field"><label for="ac-k">Tipo</label><select id="ac-k" name="kind"><?= fin_opts(FIN_ACC_KINDS, $av['kind']) ?></select></div>
+      <div class="field"><label for="ac-i">IBAN</label><input type="text" id="ac-i" name="iban" maxlength="40" value="<?= e((string)$av['iban']) ?>"></div>
+      <?php if (!$ea): ?>
+      <div class="field"><label for="ac-b">Saldo inicial (€)</label><input type="text" id="ac-b" name="balance" inputmode="decimal" placeholder="Opcional"></div>
+      <div class="field"><label for="ac-d">Saldo em</label><input type="date" id="ac-d" name="balance_date" value="<?= e(today_lisbon()) ?>" max="<?= e(today_lisbon()) ?>"></div>
+      <?php endif; ?>
+      <?php if ($isAdmin): ?>
+      <div class="field wide"><label for="ac-o">Responsável pelo saldo</label><select id="ac-o" name="owner_id"><option value="">O geral (<?= e($names[(int)setting($pdo, 'fin_cash_owner', 0)] ?? 'responsável financeiro') ?>)</option>
+        <?php foreach ($finPeople as $u): ?><option value="<?= (int)$u['id'] ?>"<?= (int)$av['owner_id'] === (int)$u['id'] ? ' selected' : '' ?>><?= e($u['name']) ?></option><?php endforeach; ?></select>
+        <p class="small muted">Recebe a tarefa semanal desta conta em vez do responsável geral. Só quem tem acesso ao Financeiro.</p></div>
+      <?php endif; ?>
+      <div class="field"><input type="hidden" name="active" value="0"><label class="check"><input type="checkbox" name="active" value="1"<?= (int)$av['active'] ? ' checked' : '' ?>> Ativa</label></div></div>
+    <?php if ($ea): ?><p class="small muted">O saldo muda-se em «Atualizar saldo» (fica registado com a data e quem o atualizou).</p><?php endif; ?>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit"><?= $ea ? 'Guardar' : 'Criar conta' ?></button></div>
+  </form>
+</div>
+<?php if ($accs): ?>
+<div class="mdl" id="mdl-import" role="dialog" aria-modal="true" aria-labelledby="mdl-import-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form method="post" enctype="multipart/form-data" class="mdl-card fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="import">
+    <h3 id="mdl-import-t">Importar extrato</h3>
+    <div class="field"><label for="im-a">Conta</label><select id="im-a" name="account"><?php foreach ($accs as $a) if ((int)$a['active']): ?><option value="<?= (int)$a['id'] ?>"><?= e($a['name']) ?></option><?php endif; ?></select></div>
+    <div class="field"><label for="im-f">Ficheiro CSV ou OFX do banco</label><input type="file" id="im-f" name="statement" accept=".csv,.ofx,.qfx,.txt,text/csv" required></div>
+    <p class="small muted">Os movimentos que já estavam não se repetem. Se o extrato trouxer o saldo, a conta fica com ele (conta como atualização da semana).</p>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit"><?= icon('upload') ?> Importar</button></div>
+  </form>
+</div>
+<?php endif; ?>
+<?php endif; ?>
+
+<h2 id="reservas">Reservas dos sócios</h2>
+<?php if (!$isAdmin): ?>
+<p class="small">Reservado aos sócios: <b><?= eur($cash['reserved']) ?></b> <span class="muted">— parte da faturação de alguns negócios guardada para os sócios. Não conta no saldo disponível nem no runway. O detalhe só o veem superadmin e admins.</span></p>
+<?php else:
+    $resB = fin_res_balances($pdo);
+    $rules = fin_res_rules($pdo);
+    $pays = fin_res_payouts($pdo, 30);
+?>
+<div class="bar fin-bar fin-hbar"><p class="small muted">Parte da faturação de um negócio guardada para um sócio: entra como custo do negócio (margem), acumula à medida que o cliente paga e sai do saldo disponível e do runway até ser levantada.</p>
+  <span class="spacer"></span><button type="button" class="btn sm" data-new="#mdl-res"><?= icon('plus') ?> Nova reserva</button>
+  <?php if ($resB): ?><button type="button" class="btn ghost sm" data-new="#mdl-payout">Registar levantamento</button><?php endif; ?></div>
+<div class="tablewrap"><table class="fin-t"><thead><tr><th>Sócio</th><th class="num">Previsto</th><th class="num">Reservado</th><th class="num">Levantado</th><th class="num">Por levantar</th></tr></thead><tbody>
+  <?php if (!$resB): ?><tr><td colspan="5" class="empty">Sem reservas.</td></tr><?php endif; ?>
+  <?php foreach ($resB as $b): ?><tr><td class="b"><?= e($b['name']) ?> <span class="muted small">· <?= (int)$b['rules'] ?> <?= (int)$b['rules'] === 1 ? 'negócio' : 'negócios' ?></span></td><td class="num"><?= eur($b['planned']) ?></td><td class="num"><?= eur($b['accrued']) ?></td><td class="num"><?= eur($b['paid']) ?></td><td class="num b"><?= eur(max(0, $b['balance'])) ?></td></tr><?php endforeach; ?>
+  <?php if (count($resB) > 1): ?><tr class="tot"><td>Total</td><td class="num"><?= eur(array_sum(array_column($resB, 'planned'))) ?></td><td class="num"><?= eur(array_sum(array_column($resB, 'accrued'))) ?></td><td class="num"><?= eur(array_sum(array_column($resB, 'paid'))) ?></td><td class="num b"><?= eur($cash['reserved']) ?></td></tr><?php endif; ?>
+</tbody></table></div>
+<?php if ($rules): ?>
+<h3>Por negócio</h3>
+<div class="tablewrap"><table class="fin-t"><thead><tr><th>Negócio</th><th>Sócio</th><th class="hide-sm">Regra</th><th class="num">Previsto</th><th class="num">Reservado</th><th></th></tr></thead><tbody>
+  <?php foreach ($rules as $r): ?><tr><td><a class="lnk" href="/admin/negocio.php?id=<?= (int)$r['deal_id'] ?>#custos"><?= e($r['deal_code'] . ' · ' . shorten((string)$r['deal_name'], 40)) ?></a><?= $r['note'] !== '' ? '<div class="muted small">' . e($r['note']) . '</div>' : '' ?></td><td><?= e((string)$r['user_name']) ?></td>
+    <td class="hide-sm small"><?= e(fin_res_rule_label($r)) ?></td><td class="num"><?= eur($r['planned']) ?></td><td class="num"><?= eur($r['accrued']) ?></td>
+    <td class="num"><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="res_rule_del"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn ghost sm" type="submit">Apagar</button></form></td></tr><?php endforeach; ?>
+</tbody></table></div>
+<?php endif; ?>
+<?php if ($pays): ?>
+<h3>Levantamentos</h3>
+<div class="tablewrap"><table class="fin-t"><thead><tr><th>Data</th><th>Sócio</th><th class="num">Valor</th><th class="hide-sm">Conta</th><th>Comprovativo</th><th></th></tr></thead><tbody>
+  <?php foreach ($pays as $p): ?><tr><td><?= fin_date_pt($p['paid_on']) ?></td><td><?= e((string)$p['user_name']) ?><?= $p['note'] !== '' ? '<div class="muted small">' . e($p['note']) . '</div>' : '' ?></td><td class="num b"><?= eur((float)$p['amount']) ?></td><td class="hide-sm"><?= e((string)($p['account_name'] ?? '—')) ?></td>
+    <td><?= $p['proof_key'] !== '' ? '<a class="lnk" href="' . e(fin_file_href('payout', (int)$p['id'])) . '" target="_blank" rel="noopener">' . e(shorten((string)$p['proof_name'], 30)) . '</a>' : '—' ?></td>
+    <td class="num"><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="payout_del"><input type="hidden" name="id" value="<?= (int)$p['id'] ?>"><button class="btn ghost sm" type="submit">Anular</button></form></td></tr><?php endforeach; ?>
+</tbody></table></div>
+<?php endif; ?>
+<div class="mdl" id="mdl-res" role="dialog" aria-modal="true" aria-labelledby="mdl-res-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form method="post" class="mdl-card fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="res_rule">
+    <h3 id="mdl-res-t">Nova reserva</h3>
+    <div class="grid"><div class="field wide"><label for="rs-d">Negócio</label><select id="rs-d" name="deal_id" required><?= fin_deal_options($pdo, null) ?></select></div>
+      <div class="field wide"><label for="rs-u">Sócio</label><select id="rs-u" name="user_id" required><option value="">— escolher —</option><?php foreach ($people as $u): ?><option value="<?= (int)$u['id'] ?>"><?= e($u['name']) ?></option><?php endforeach; ?></select></div>
+      <div class="field"><label for="rs-m">Como</label><select id="rs-m" name="mode"><?= fin_opts(FIN_RES_MODES, 'pct') ?></select></div>
+      <div class="field"><label for="rs-v">Valor (% ou €)</label><input type="text" id="rs-v" name="value" inputmode="decimal" required placeholder="20"></div>
+      <div class="field wide"><label for="rs-n">Nota</label><input type="text" id="rs-n" name="note" maxlength="200" placeholder="Opcional · ex.: salário da execução"></div></div>
+    <p class="small muted">Em %: guarda essa parte de cada pagamento do cliente (sem IVA). Valor fixo: acumula na proporção do que o cliente já pagou do budget. Uma segunda reserva do mesmo sócio no mesmo negócio substitui a primeira.</p>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit">Criar reserva</button></div>
+  </form>
+</div>
+<?php if ($resB): ?>
+<div class="mdl" id="mdl-payout" role="dialog" aria-modal="true" aria-labelledby="mdl-payout-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form method="post" enctype="multipart/form-data" class="mdl-card fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="payout_add">
+    <h3 id="mdl-payout-t">Registar levantamento</h3>
+    <div class="grid"><div class="field wide"><label for="po-u">Sócio</label><select id="po-u" name="user_id" required><?php foreach ($resB as $b): ?><option value="<?= (int)$b['user_id'] ?>"><?= e($b['name']) ?> · por levantar <?= e(eur(max(0, $b['balance']))) ?></option><?php endforeach; ?></select></div>
+      <div class="field"><label for="po-a">Valor (€)</label><input type="text" id="po-a" name="amount" inputmode="decimal" required></div>
+      <div class="field"><label for="po-d">Data</label><input type="date" id="po-d" name="paid_on" value="<?= e(today_lisbon()) ?>" max="<?= e(today_lisbon()) ?>" required></div>
+      <div class="field"><label for="po-c">Da conta</label><select id="po-c" name="account_id"><option value="">—</option><?php foreach ($accs as $a) if ((int)$a['active']): ?><option value="<?= (int)$a['id'] ?>"><?= e($a['name']) ?></option><?php endif; ?></select></div>
+      <div class="field wide"><label for="po-f">Comprovativo (PDF ou imagem)</label><input type="file" id="po-f" name="proof" accept="application/pdf,image/jpeg,image/png" required></div>
+      <div class="field wide"><label for="po-n">Nota</label><input type="text" id="po-n" name="note" maxlength="255"></div></div>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit">Registar</button></div>
+  </form>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 <h2 id="conciliar">Conciliação <?= $open ? '· ' . count($open) . ' por conciliar' : '' ?></h2>
 <?php if (!$open): ?><p class="muted small">Nada por conciliar.</p><?php endif; ?>
@@ -508,7 +622,7 @@ elseif ($tab === 'tesouraria'):
 <?php endforeach; ?>
 </div>
 <h2>Previsão de tesouraria</h2>
-<p class="small muted">Saldo das contas + recebimentos esperados (faturas emitidas pelo vencimento, negócios ganhos por faturar) − custos fixos − pagamentos previstos. <a class="lnk" href="<?= e(fin_url(['tab' => 'tesouraria', 'h' => count($fc) === 12 ? 6 : 12])) ?>">Ver <?= count($fc) === 12 ? '6' : '12' ?> meses</a></p>
+<p class="small muted">Saldo das contas + recebimentos esperados (faturas emitidas pelo vencimento, negócios ganhos por faturar) − custos fixos − pagamentos previstos.<?= $cash['reserved'] > 0 ? ' Inclui ' . eur0($cash['reserved']) . ' reservados aos sócios.' : '' ?> <a class="lnk" href="<?= e(fin_url(['tab' => 'tesouraria', 'h' => count($fc) === 12 ? 6 : 12])) ?>">Ver <?= count($fc) === 12 ? '6' : '12' ?> meses</a></p>
 <div class="tablewrap"><table class="fin-t"><thead><tr><th>Mês</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Saldo no fim do mês</th></tr></thead><tbody>
   <?php foreach ($fc as $k => $r): ?><tr><td><?= e(month_year((int)substr($k, 5, 2), (int)substr($k, 0, 4))) ?></td><td class="num"><?= eur0($r['in']) ?></td><td class="num"><?= eur0($r['out']) ?></td><td class="num b<?= $r['balance'] < 0 ? ' neg' : '' ?>"><?= eur0($r['balance']) ?></td></tr><?php endforeach; ?>
 </tbody></table></div>

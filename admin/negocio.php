@@ -623,7 +623,10 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
       <td><?= e(VAT_MODES[$c['vat_mode']] ?? $c['vat_mode']) ?></td>
       <td class="num hide-sm"><?= eur($c['net']) ?></td>
       <td class="num hide-sm"><?= eur($c['vat']) ?></td>
-      <?php if (!empty($c['fin_id'])): // lançada no Financeiro (§28.2): estado e edição lá ?>
+      <?php if (!empty($c['res_id'])): // reserva de um sócio (Financeiro › Tesouraria): só superadmin e admins a mudam ?>
+      <td><span data-tip="<?= e($c['notes']) ?>" tabindex="0"><?= (int)$c['is_closed'] ? 'Reservada' : 'A acumular · ' . eur((float)$c['accrued']) ?></span></td>
+      <td class="num nowrap"><?= role_is_admin((string)$user['role']) ? '<a class="lnk" href="/admin/financeiro.php?tab=tesouraria#reservas">Na Tesouraria</a>' : '<span class="muted small">Financeiro</span>' ?></td>
+      <?php elseif (!empty($c['fin_id'])): // lançada no Financeiro (§28.2): estado e edição lá ?>
       <td><?= (int)$c['is_closed'] ? 'Paga' : 'Por pagar' ?></td>
       <td class="num nowrap"><?= can('financeiro') ? '<a class="lnk" href="/admin/financeiro.php?tab=pagar&amp;doc=' . (int)$c['fin_id'] . '">No Financeiro</a>' : '<span class="muted small">Financeiro</span>' ?></td>
       <?php else: ?>

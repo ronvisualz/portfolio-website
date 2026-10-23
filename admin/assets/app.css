@@ -2969,3 +2969,21 @@ div.xs-ind:empty { display: none; }
 }
 @media (max-width: 1500px) { .fin-split .fin-t .hide-md { display: none; } }
 @media (max-width: 600px) { .fin-kpis { grid-template-columns: 1fr 1fr; gap: 8px; } .fin-kpis .stat { padding: 12px; } .fin-kpis .stat .v { font-size: 20px; } .fin-kpis .stat .n { font-size: 11.5px; } }
+.fin-split:not(.has-doc) { grid-template-columns: minmax(0, 1fr); }
+.fin-split:not(.has-doc) > .doc-wrap { display: none; }
+.fin-t th:first-child, .fin-t td:first-child { padding-left: 16px; }
+.fin-t th:last-child, .fin-t td:last-child { padding-right: 16px; }
+/* Tesouraria: saldos semanais e reservas dos sócios */
+.fin-hbar { margin: 26px 0 6px; }
+.fin-hbar h2 { margin: 0; }
+.fin-hbar > p { margin: 0; flex: 1 1 320px; }
+.stat .n .stale { color: var(--warn-fg); font-weight: 600; }
+.fin-log { list-style: none; margin: 6px 0 0; padding: 0; }
+.fin-log li { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.fin-t tr.tot td { border-top: 2px solid var(--fg); font-weight: 600; }
+#reservas ~ h3 { margin: 22px 0 8px; }
+@media (max-width: 600px) {
+  .fin-acc th, .fin-acc td { padding-left: 6px; padding-right: 6px; }
+  .fin-acc th:first-child, .fin-acc td:first-child { padding-left: 12px; }
+  .fin-acc th:last-child, .fin-acc td:last-child { padding-right: 10px; }
+}
