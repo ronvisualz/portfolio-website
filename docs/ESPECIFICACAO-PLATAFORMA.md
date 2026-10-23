@@ -1714,10 +1714,15 @@ Modelo em `inc/cc_rt.php` e `inc/capture.php`.
   guardadas por quadro) e Captura (destino por defeito: Caixa de entrada ou o último quadro usado);
   Integrações › Tempo real (estado, custo 0 €, uso do dia, endereço do serviço, ligar/desligar e o
   comando para publicar) e Captura (tokens de todos, com Revogar; link do Atalho do iOS).
-- **Para pôr em produção:** publicar o Worker uma vez na conta Cloudflare da topper. —
-  `cd rt && npm ci && npx wrangler deploy` (também em Definições › Integrações › Tempo real) — e colar o
-  endereço que o wrangler mostra (…workers.dev, ou rt.topperhub.xyz se o domínio passar para a
-  Cloudflare) em «Endereço do serviço». Sem isso, tudo o resto funciona e os quadros atualizam como antes.
+- **Publicado a 23 out 2026:** Worker `topper-rt` em `https://topper-rt.topperhub.workers.dev`
+  (subdomínio workers.dev da conta: `topperhub`), Durable Object `Board` com SQLite; «Endereço do
+  serviço» já preenchido. Verificado a partir do servidor da topper: `/health` 200, token válido 101,
+  token de outro quadro e assinatura errada 401, origem estranha 403 (a chave pública lida de
+  `/admin/rt_key.php` funciona).
+- **Para publicar de novo (só se o código de `rt/` mudar):** `cd rt && npm ci && npx wrangler deploy`
+  (também em Definições › Integrações › Tempo real). Se o endereço mudar (ex.: rt.topperhub.xyz, se o
+  domínio passar para a Cloudflare), atualizar «Endereço do serviço». Sem o serviço, tudo o resto
+  funciona e os quadros atualizam como antes.
 
 Ficheiros novos: `rt/` (Worker: `src/index.js`, `wrangler.toml`, `client/entry.js`, `package.json`),
 `admin/assets/vendor/rt/topper-rt.js` (Yjs + y-partyserver + y-indexeddb, MIT), `inc/migrate_rt.php`,
