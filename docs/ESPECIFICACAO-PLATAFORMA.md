@@ -2433,3 +2433,53 @@ Todas as alterações verificadas no servidor (só superadmin/admins).
 3. **Participantes (formulário de tarefa, §18.7):** o campo só aparece quando o tipo é
    **Reunião, Gravação ou Visita**. Texto do rótulo: «Participantes — recebem o convite no
    chat». **Nunca mostrar referências à especificação (ex.: «§17.7») na interface** — regra geral.
+
+---
+
+## 22. Crosselling: um negócio, várias frentes (decidido 23 out 2026)
+
+Substitui os «funis combinados» da §9.1 (cópias de etapas que não acompanhavam os funis de
+origem). Não chegou a ser criado nenhum funil combinado, por isso não há nada a converter; a
+opção «Combinar funis» sai das Definições › Funis.
+
+1. **Modelo.** Um negócio de crosselling tem **um serviço principal** (o funil do negócio) e um
+   ou mais **serviços adicionais**. A fase comercial é **uma só** (X-Ray → Proposta → Aguardar
+   feedback → Kickoff, iguais em todos os funis): o X-Ray junta as perguntas dos serviços (sem
+   repetir), há uma proposta e as automações das etapas comerciais dos vários funis juntam-se
+   (a mesma tarefa não se cria duas vezes). No **Kickoff** abre-se uma **frente** por serviço
+   (o principal incluído). Cada frente segue as etapas, gates e automações **do funil do seu
+   serviço** — sem cópias: mudar o funil de VFX muda todas as frentes de VFX — e tem o seu
+   responsável de execução. O comercial continua dono do negócio inteiro (§19.10).
+2. **Sincronização — escolha obrigatória** num negócio de crosselling, requisito para enviar
+   a proposta (e portanto para o Kickoff):
+   - **Sincronizadas:** todas as frentes arrancam no Kickoff, partilham a data de entrega e
+     **entregam juntas** — nenhuma frente passa a Concluído sozinha; o negócio conclui (com a
+     checklist de fecho) quando todas estão na última etapa de produção com os requisitos
+     cumpridos, e aí todas passam a Concluído.
+   - **Timelines diferentes:** cada frente adicional tem o seu **arranque** (no Kickoff, depois
+     de outra frente concluir, ou numa data) e a sua **data de entrega**, e conclui sozinha
+     (com as automações de Concluído do seu funil). O negócio conclui quando todas as frentes
+     estão concluídas. Sempre **vinculadas** ao mesmo negócio, proposta e plano de pagamento.
+3. **Um único plano de pagamento.** A proposta, o orçamento e a faturação são do negócio. As
+   tarefas de fatura e de pagamento vêm só do funil principal; as das frentes adicionais não se
+   criam (não há faturas em duplicado).
+4. **Marketing Buddy em pacote** (por enquanto): a frente Buddy é uma avença; o negócio pode
+   concluir quando as outras frentes terminam e a frente Buddy continua «Ativa», ligada ao
+   negócio.
+5. **Medir.** Cada frente guarda o seu valor (s/ IVA): as linhas da folha de orçamento podem
+   ser marcadas por serviço e o preço divide-se pelo custo de cada serviço. Cada negócio guarda
+   como nasceu o crosselling: **pacote** (na mesma proposta) ou **posterior** (negócio novo de
+   um cliente que já comprou, ligado ao negócio anterior). **Relatórios › Crosselling:** matriz
+   serviço × serviço (negócios ganhos e valor), % de negócios de cada serviço com um segundo
+   serviço, taxa de fecho das propostas com pacote vs. isoladas, tempo médio até ao crosselling
+   posterior, combinações que mais vendem e o resultado das oportunidades.
+6. **Também na primeira versão:**
+   - **Pacotes** pré-definidos (Definições › Pipeline): nome, serviços, sincronização por defeito
+     e modelo de orçamento opcional; escolher um pacote preenche os serviços (e o orçamento).
+   - **Oportunidades no X-Ray:** os serviços falados com o cliente e não incluídos ficam
+     registados como oportunidade (proposto e não vendido conta nos relatórios).
+   - **Crosselling depois da entrega:** regras nas Definições (ex.: VFX → propor Ads e Marketing
+     Buddy, 30 dias depois); ao concluir, o comercial recebe a tarefa «Propor … a {cliente}» se o
+     cliente ainda não tiver esse serviço, e fica uma oportunidade.
+   - **Serviços comprados** na ficha do contacto: o que já comprou, o que falta oferecer e as
+     oportunidades abertas, com atalho para um negócio novo.
