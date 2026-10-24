@@ -2,249 +2,177 @@
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/leads.php';
+require_once __DIR__ . '/inc/metrics_view.php';
+require_once __DIR__ . '/inc/settings_def.php';   // setting_log (registo de alterações das metas)
 $user = require_login();
-require_page('relatorios');
+require_perm('relatorios');
 
-// Relatórios por segmento (§11.16): o mesmo período visto por funil, por
-// origem da lead ou mês a mês. Mudar o agrupamento não sai da página.
-// Os valores em euros só aparecem a quem vê o Financeiro.
-//
-//   Entradas   registos criados no período (leads, incluindo as que já
-//              são negócio; as que estão em quarentena não contam)
-//   Convertidas  leads convertidas em negócio no período
-//   Ganhos     negócios que chegaram a Kickoff no período (os importados
-//              da folha contam no mês do trabalho)
-//   Perdidos   negócios marcados como perdidos no período
-
-const SEGMENTS = ['funil' => 'Por funil', 'origem' => 'Por origem da lead', 'periodo' => 'Por mês'];
+// Relatórios (§29): o micro — onde está o problema, quem, que registo, o que fazer. Separadores Atenção (abre aqui)
+// · Metas · Funil comercial · Velocidade · Origens · Atividade · Equipa · Operacional · Financeiro. Um período com
+// comparação ao anterior e os filtros globais (funil, origem, pessoa, serviço) mantêm-se entre separadores. Cada
+// número abre os registos que o compõem; ⓘ diz a fórmula; cada separador sai em CSV ou PDF (imprimir). Os euros só
+// aparecem a quem vê o Financeiro. As contas estão todas em inc/metrics.php (as mesmas do Dashboard e dos alertas).
 
 $money = can('financeiro');
-$years = array_values(array_unique(array_merge([(int)date('Y')],
-    array_map('intval', $pdo->query('SELECT DISTINCT ' . (db_is_sqlite($pdo) ? "CAST(strftime('%Y', created_at) AS INTEGER)" : 'YEAR(created_at)')
-                                    . ' FROM deals UNION SELECT DISTINCT year FROM deals WHERE year IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN)))));
-rsort($years);
-$year = (int)($_GET['year'] ?? date('Y'));
-if (!in_array($year, $years, true)) $year = (int)date('Y');
-$q = (int)($_GET['t'] ?? 0);
-if ($q < 0 || $q > 4) $q = 0;
-$seg = isset(SEGMENTS[$_GET['por'] ?? '']) ? (string)$_GET['por'] : 'funil';
+$admin = role_is_admin((string)$user['role']);
+$uid = (int)$user['id'];
 
-$from = sprintf('%04d-%02d-01', $year, $q ? ($q - 1) * 3 + 1 : 1);
-$to   = $q ? (new DateTimeImmutable($from))->modify('+3 months')->format('Y-m-d') : sprintf('%04d-01-01', $year + 1);
-$in   = fn(?string $d) => $d !== null && $d !== '' && substr($d, 0, 10) >= $from && substr($d, 0, 10) < $to;
+const REP_TABS = ['atencao' => 'Atenção', 'metas' => 'Metas', 'funil' => 'Funil comercial', 'velocidade' => 'Velocidade', 'origens' => 'Origens',
+                  'atividade' => 'Atividade', 'equipa' => 'Equipa', 'operacional' => 'Operacional', 'financeiro' => 'Financeiro'];
+$tabs = REP_TABS;
+if (!$money) unset($tabs['financeiro']);
+$tab = isset($tabs[$_GET['tab'] ?? '']) ? (string)$_GET['tab'] : 'atencao';
 
 $funnels = $pdo->query('SELECT id, name FROM funnels ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
-$deals = $pdo->query('SELECT id, code, phase, funnel_id, origin_funnel_id, origin, created_at, converted_at, lost_at, budget, value_estimate, year, month, is_quarantined FROM deals')->fetchAll();
-$wonAt = $pdo->query("SELECT h.deal_id, MIN(h.created_at) FROM deal_history h JOIN funnel_stages s ON s.id = h.to_stage_id
-                       WHERE h.event = 'stage' AND s.kind = 'kickoff' GROUP BY h.deal_id")->fetchAll(PDO::FETCH_KEY_PAIR);
+$people = mx_people($pdo);
 
-$empty = ['in' => 0, 'conv' => 0, 'won' => 0, 'lost' => 0, 'value' => 0.0];
-$groups = ['funil' => [], 'origem' => [], 'periodo' => []];
-for ($m = ($q ? ($q - 1) * 3 + 1 : 1); $m <= ($q ? $q * 3 : 12); $m++) $groups['periodo'][$m] = $empty;
-foreach ($deals as $d) {
-    $won = $d['phase'] === 'production' || $d['phase'] === 'done' || isset($wonAt[$d['id']]);
-    $wonDate = $wonAt[$d['id']] ?? ($won && $d['year'] ? sprintf('%04d-%02d-01', (int)$d['year'], (int)($d['month'] ?: 1)) : ($won ? $d['converted_at'] : null));
-    $hits = [
-        'in'   => !(int)$d['is_quarantined'] && $in($d['created_at']) ? $d['created_at'] : null,
-        'conv' => $in($d['converted_at']) ? $d['converted_at'] : null,
-        'won'  => $won && in_array($d['phase'], ['production', 'done'], true) && $in($wonDate) ? $wonDate : null,
-        'lost' => $d['phase'] === 'lost' && $in($d['lost_at']) ? $d['lost_at'] : null,
-    ];
-    if (!array_filter($hits)) continue;
-    $f = (int)($d['origin_funnel_id'] ?: $d['funnel_id']);
-    $keys = [
-        'funil'  => $f ? ($funnels[$f] ?? 'Funil removido') : 'Ainda lead (sem funil)',
-        'origem' => LEAD_ORIGIN[$d['origin']] ?? 'Manual',
-    ];
-    foreach ($hits as $metric => $date) {
-        if ($date === null) continue;
-        foreach ($keys as $g => $k) {
-            $groups[$g][$k] ??= $empty;
-            $groups[$g][$k][$metric]++;
+// ── período e filtros (mantêm-se entre separadores) ──
+$p = isset(MX_PERIODS[$_GET['p'] ?? '']) ? (string)$_GET['p'] : 'mes';
+$per = mx_period($p, (int)($_GET['n'] ?? 0), (string)($_GET['de'] ?? ''), (string)($_GET['ate'] ?? ''));
+$f = [
+    'fu' => isset($funnels[(int)($_GET['fu'] ?? 0)]) ? (int)$_GET['fu'] : 0,
+    'or' => isset(LEAD_ORIGIN[$_GET['or'] ?? '']) ? (string)$_GET['or'] : '',
+    'pe' => isset($people[(int)($_GET['pe'] ?? 0)]) ? (int)$_GET['pe'] : 0,
+    'sv' => isset($funnels[(int)($_GET['sv'] ?? 0)]) ? (int)$_GET['sv'] : 0,
+];
+// os operadores só filtram por si próprios (os números dos colegas não aparecem com nome)
+if (!$admin && $f['pe'] && $f['pe'] !== $uid) $f['pe'] = 0;
+$q = ['tab' => $tab, 'p' => $p, 'n' => $per['n'] ?: null, 'de' => $p === 'custom' ? $per['from'] : null,
+      'ate' => $p === 'custom' ? date('Y-m-d', strtotime($per['to'] . ' -1 day')) : null] + $f;
+mx_ctx(['q' => $q, 'per' => $per]);
+
+// ── metas: gravar (só superadmin e admins) ──
+$goalMsg = '';
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    csrf_check();
+    if (!$admin) { http_response_code(403); exit('Só os administradores definem metas.'); }
+    $do = (string)($_POST['do'] ?? '');
+    $scope = (string)($_POST['scope'] ?? 'company');
+    $sid = $scope === 'funnel' ? (int)($_POST['scope_funnel'] ?? 0) : ($scope === 'user' ? (int)($_POST['scope_user'] ?? 0) : 0);
+    $period = ($_POST['period'] ?? 'month') === 'quarter' ? 'quarter' : 'month';
+    $start = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_POST['start'] ?? '')) ? (string)$_POST['start'] : today_lisbon();
+    try {
+        if ($scope === 'funnel' && !isset($funnels[$sid])) throw new RuntimeException('Escolha o funil.');
+        if ($scope === 'user' && !isset($people[$sid])) throw new RuntimeException('Escolha a pessoa.');
+        if ($do === 'save') {
+            $n = 0;
+            foreach (MX_GOAL_METRICS as $m => [$label, $unit]) {
+                if ($unit === 'eur' && !$money) continue;
+                $raw = trim((string)($_POST['g'][$m] ?? ''));
+                if ($raw === '' && !isset($_POST['had'][$m])) continue;
+                mx_goal_save($pdo, $scope, $sid, $period, $start, $m, (float)str_replace(',', '.', $raw), !empty($_POST['auto'][$m]), $uid);
+                $n++;
+            }
+            setting_log($pdo, 'metas', 'Relatórios · Metas', '', ($scope === 'company' ? 'Empresa' : ($scope === 'funnel' ? $funnels[$sid] : $people[$sid])) . ' · ' . mx_goal_period_label($period, mx_goal_bounds($period, $start)[0]));
+            flash($n ? 'Metas gravadas.' : 'Nada para gravar.');
+            redirect(mx_href(['tab' => 'metas', 'gs' => $scope, 'gi' => $sid ?: null, 'gp' => $period, 'gd' => mx_goal_bounds($period, $start)[0]]));
         }
-        $m = (int)substr($date, 5, 2);
-        if (isset($groups['periodo'][$m])) $groups['periodo'][$m][$metric]++;
-        if ($metric === 'won') {
-            $v = (float)($d['budget'] ?: $d['value_estimate']);
-            foreach ($keys as $g => $k) $groups[$g][$k]['value'] += $v;
-            if (isset($groups['periodo'][$m])) $groups['periodo'][$m]['value'] += $v;
-        }
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'err');
+        redirect(mx_href(['tab' => 'metas']));
     }
 }
-foreach (['funil', 'origem'] as $g) uasort($groups[$g], fn($a, $b) => [$b['won'], $b['in']] <=> [$a['won'], $a['in']]);
-$tot = $empty;
-foreach ($groups['funil'] as $r) foreach ($r as $k => $v) $tot[$k] += $v;
 
-/** O que a barra mede: valor ganho (quem vê o Financeiro) ou n.º de ganhos. */
-$metric = $money ? 'value' : 'won';
-$fmt = fn($v) => $money ? eur0((float)$v) : (string)(int)$v;
-$pct = fn(int $a, int $b) => $b > 0 ? round($a / $b * 100) . '%' : '—';
-$url = fn(array $p) => '/admin/relatorios.php?' . http_build_query(array_filter($p + ['year' => $year, 't' => $q ?: null, 'por' => $seg]));
+// ── a lista de registos por trás de um número ──
+if (isset($_GET['lista'])) {
+    $kind = in_array($_GET['lista'], ['d', 't', 'f', 'i', 'h'], true) ? (string)$_GET['lista'] : 'd';
+    [$rows, $hidden] = mx_list_rows($pdo, $kind, array_slice(explode(',', (string)($_GET['ids'] ?? '')), 0, 400));
+    $title = mb_substr(trim((string)($_GET['lt'] ?? 'Registos')), 0, 120);
+    $head = ['ID', 'Nome', 'Estado', 'Funil', 'Origem', 'Responsável', 'Nota / motivo', 'Data'];
+    $showMoney = $money && $kind !== 't' && $kind !== 'i' && $kind !== 'h';
+    if (($_GET['export'] ?? '') === 'csv') {
+        $GLOBALS['MX_CSV'] = [[$title, $showMoney ? array_merge($head, ['#Valor']) : $head, array_map(fn($r) => $showMoney ? array_merge($r['cells'], [number_format((float)($r['money'] ?? 0), 2, ',', '')]) : $r['cells'], $rows), []]];
+        mx_csv_send('relatorios-' . $title);
+        exit;
+    }
+    $table = '<div class="tablewrap"><table class="mx-list"><thead><tr>';
+    foreach ($head as $h) $table .= '<th>' . e($h) . '</th>';
+    $table .= ($showMoney ? '<th class="num">Valor</th>' : '') . '<th></th></tr></thead><tbody>';
+    foreach ($rows as $r) {
+        $table .= '<tr>';
+        foreach ($r['cells'] as $i => $c) $table .= '<td' . ($i === 0 ? ' class="mono small"' : '') . '>' . e((string)$c) . '</td>';
+        $table .= ($showMoney ? '<td class="num">' . (isset($r['money']) ? eur0((float)$r['money']) : '') . '</td>' : '') . '<td><a class="btn sm ghost" href="' . e($r['url']) . '">Abrir</a></td></tr>';
+    }
+    if (!$rows) $table .= '<tr><td colspan="' . (count($head) + 2) . '" class="empty">Nenhum registo que possa abrir.</td></tr>';
+    $table .= '</tbody></table></div>' . ($hidden ? '<p class="small muted">' . $hidden . ($hidden === 1 ? ' registo de outra pessoa conta para o número' : ' registos de outras pessoas contam para o número') . ', mas não estão no seu acesso.</p>' : '');
+    $csv = mx_href(['lista' => $kind, 'ids' => (string)($_GET['ids'] ?? ''), 'lt' => $title, 'export' => 'csv']);
+    if (!empty($_GET['frag'])) {
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<div class="mx-listhead"><h2>' . e($title) . ' <span class="muted small">· ' . count($rows) . '</span></h2><a class="btn sm ghost" href="' . e($csv) . '">' . icon('download') . ' CSV</a></div>' . $table;
+        exit;
+    }
+    render_header('Relatórios', 'relatorios', '', [$title]);
+    echo '<div class="mx-listhead"><h1>' . e($title) . ' <span class="muted">· ' . count($rows) . '</span></h1><div class="fin-tools"><a class="btn sm ghost" href="' . e(mx_href(['lista' => null, 'ids' => null, 'lt' => null])) . '">← Relatórios</a><a class="btn sm ghost" href="' . e($csv) . '">' . icon('download') . ' CSV</a></div></div>' . $table;
+    render_footer();
+    exit;
+}
 
-render_header('Relatórios', 'relatorios');
+// ── o separador ──
+require_once __DIR__ . '/inc/report_tabs.php';
+$all = metrics_deals($pdo);
+$c = ['pdo' => $pdo, 'all' => $all, 'deals' => mx_filter($all, $f), 'per' => $per, 'f' => $f, 'money' => $money, 'admin' => $admin, 'uid' => $uid,
+      'funnels' => $funnels, 'people' => $people, 'user' => $user];
+$GLOBALS['MX_CSV'] = [];
+ob_start();
+$fn = 'rep_' . $tab;
+$fn($c);
+$body = ob_get_clean();
+if (($_GET['export'] ?? '') === 'csv') {
+    mx_csv_send('relatorios-' . $tab . '-' . $per['from']);
+    exit;
+}
+
+$att = rep_attention_items($c);
+render_header('Relatórios', 'relatorios', 'mx-page', [$tabs[$tab]]);
 render_flashes();
+$nav = fn(int $d) => mx_href(['n' => min(0, $per['n'] + $d) ?: null]);
 ?>
-<h1>Relatórios</h1>
-<div class="sub"><?= $q ? 'T' . $q . ' de ' . $year : 'Ano de ' . $year ?> · entradas, conversões, ganhos e perdas<?= $money ? ', com o valor ganho' : '' ?></div>
+<div class="fin-head">
+  <h1>Relatórios</h1>
+  <div class="fin-tools mx-noprint">
+    <a class="btn sm ghost" href="<?= e(mx_href(['export' => 'csv'])) ?>"><?= icon('download') ?> CSV</a>
+    <button class="btn sm ghost" type="button" data-mx-print><?= icon('file') ?> PDF</button>
+  </div>
+</div>
+<div class="sub"><?= e($per['label']) ?> · comparado com <?= e($per['prev_label']) ?><?= array_filter($f) ? ' · com filtros' : '' ?></div>
 
-<form class="bar" method="get" data-auto>
-  <input type="hidden" name="por" value="<?= e($seg) ?>">
-  <select name="year" aria-label="Ano"><?php foreach ($years as $y): ?><option <?= $y === $year ? 'selected' : '' ?>><?= $y ?></option><?php endforeach; ?></select>
-  <select name="t" aria-label="Trimestre">
-    <option value="0">Todo o ano</option>
-    <?php for ($i = 1; $i <= 4; $i++): ?><option value="<?= $i ?>" <?= $q === $i ? 'selected' : '' ?>><?= $i ?>.º trimestre</option><?php endfor; ?>
-  </select>
+<form class="bar mx-bar mx-noprint" method="get" data-auto>
+  <input type="hidden" name="tab" value="<?= e($tab) ?>">
+  <?php if ($p !== 'custom'): ?>
+  <a class="btn sm ghost icon-only" href="<?= e($nav(-1)) ?>" aria-label="Período anterior" data-tip="Período anterior"><?= icon('chev-left') ?></a>
+  <?php endif; ?>
+  <select name="p" aria-label="Período"><?php foreach (MX_PERIODS as $k => $l): ?><option value="<?= $k ?>" <?= $p === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select>
+  <?php if ($p !== 'custom'): ?>
+  <a class="btn sm ghost icon-only<?= $per['n'] >= 0 ? ' disabled' : '' ?>" href="<?= e($nav(1)) ?>" aria-label="Período seguinte" data-tip="Período seguinte"<?= $per['n'] >= 0 ? ' aria-disabled="true" tabindex="-1"' : '' ?>><?= icon('chev-right') ?></a>
+  <?php else: ?>
+  <input type="date" name="de" value="<?= e($per['from']) ?>" aria-label="De"> <input type="date" name="ate" value="<?= e(date('Y-m-d', strtotime($per['to'] . ' -1 day'))) ?>" aria-label="Até">
+  <?php endif; ?>
+  <select name="fu" aria-label="Funil"><option value="">Todos os funis</option><?php foreach ($funnels as $id => $n): ?><option value="<?= (int)$id ?>" <?= $f['fu'] === (int)$id ? 'selected' : '' ?>><?= e($n) ?></option><?php endforeach; ?></select>
+  <select name="or" aria-label="Origem"><option value="">Todas as origens</option><?php foreach (LEAD_ORIGIN as $k => $l): ?><option value="<?= e($k) ?>" <?= $f['or'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select>
+  <select name="pe" aria-label="Pessoa"><option value="">Todas as pessoas</option>
+    <?php foreach ($admin ? $people : [$uid => $people[$uid] ?? 'Eu'] as $id => $n): ?><option value="<?= (int)$id ?>" <?= $f['pe'] === (int)$id ? 'selected' : '' ?>><?= e($admin ? $n : 'Só eu') ?></option><?php endforeach; ?></select>
+  <select name="sv" aria-label="Serviço"><option value="">Todos os serviços</option><?php foreach ($funnels as $id => $n): ?><option value="<?= (int)$id ?>" <?= $f['sv'] === (int)$id ? 'selected' : '' ?>><?= e($n) ?></option><?php endforeach; ?></select>
+  <?php if (array_filter($f) || $p !== 'mes' || $per['n']): ?><a class="btn sm ghost" href="/admin/relatorios.php?tab=<?= e($tab) ?>">Limpar</a><?php endif; ?>
   <button class="btn sm apply" type="submit">Ver</button>
 </form>
 
-<div class="stats">
-  <div class="stat hero"><div class="k"><?= $money ? 'Valor ganho' : 'Ganhos' ?></div><div class="v"><?= $fmt($tot[$metric]) ?></div><div class="n"><?= $tot['won'] ?> negócios chegaram a Kickoff</div></div>
-  <div class="stat"><div class="k">Entradas</div><div class="v"><?= $tot['in'] ?></div><div class="n">leads novas</div></div>
-  <div class="stat"><div class="k">Conversão</div><div class="v"><?= $pct($tot['conv'], $tot['in']) ?></div><div class="n"><?= $tot['conv'] ?> convertidas em negócio</div></div>
-  <div class="stat"><div class="k">Taxa de ganho</div><div class="v"><?= $pct($tot['won'], $tot['won'] + $tot['lost']) ?></div><div class="n"><?= $tot['lost'] ?> perdidos</div></div>
-</div>
-
-<nav class="views" aria-label="Agrupar">
-  <?php foreach (SEGMENTS as $k => $label): ?>
-    <a href="<?= e($url(['por' => $k])) ?>" data-seg="<?= $k ?>" class="<?= $seg === $k ? 'on' : '' ?>"<?= $seg === $k ? ' aria-current="true"' : '' ?>><?= e($label) ?></a>
+<nav class="tabs fin-tabs mx-tabs mx-noprint" aria-label="Separadores dos Relatórios">
+  <?php foreach ($tabs as $k => $label): ?>
+    <a href="<?= e(mx_href(['tab' => $k])) ?>" class="<?= $tab === $k ? 'on' : '' ?>"<?= $tab === $k ? ' aria-current="page"' : '' ?>><?= e($label) ?><?= $k === 'atencao' && $att ? ' <span class="cnt">' . count($att) . '</span>' : '' ?></a>
   <?php endforeach; ?>
 </nav>
+<h2 class="mx-printonly"><?= e($tabs[$tab]) ?> · <?= e($per['label']) ?></h2>
 
-<?php foreach (SEGMENTS as $g => $label):
-    $rows = $groups[$g];
-    $max = max(1, ...array_values(array_map(fn($r) => (float)$r[$metric], $rows ?: [$empty]))); ?>
-<section class="seg-pane" data-pane="<?= $g ?>"<?= $seg === $g ? '' : ' hidden' ?>>
-  <div class="panel">
-    <h3><?= e($money ? 'Valor ganho' : 'Negócios ganhos') ?> · <?= e(mb_strtolower($label)) ?></h3>
-    <?php if (!array_filter($rows, fn($r) => $r['in'] || $r['won'] || $r['lost'] || $r['conv'])): ?>
-      <p class="empty">Sem movimento neste período.</p>
-    <?php else: foreach ($rows as $k => $r): $name = $g === 'periodo' ? month_name((int)$k) : $k; ?>
-      <div class="hbar" data-tip="<?= e($name . ' · ' . $fmt($r[$metric]) . ' · ' . $r['won'] . ' ganhos') ?>" tabindex="0" aria-label="<?= e($name . ': ' . $fmt($r[$metric])) ?>">
-        <span><?= e($name) ?></span>
-        <span class="track"><i style="width:<?= round((float)$r[$metric] / $max * 100, 1) ?>%"></i></span>
-        <span class="num"><?= $fmt($r[$metric]) ?></span>
-      </div>
-    <?php endforeach; endif; ?>
-  </div>
-  <div class="tablewrap" style="margin-top:12px"><table>
-    <thead><tr><th><?= $g === 'periodo' ? 'Mês' : ($g === 'funil' ? 'Funil' : 'Origem') ?></th><th class="num">Entradas</th><th class="num">Convertidas</th><th class="num">Conversão</th>
-      <th class="num">Ganhos</th><th class="num">Perdidos</th><th class="num">Taxa de ganho</th><?= $money ? '<th class="num">Valor ganho</th>' : '' ?></tr></thead>
-    <tbody>
-    <?php foreach ($rows as $k => $r): ?>
-      <tr><td><?= e($g === 'periodo' ? month_name((int)$k) : $k) ?></td><td class="num"><?= $r['in'] ?></td><td class="num"><?= $r['conv'] ?></td>
-        <td class="num"><?= $pct($r['conv'], $r['in']) ?></td><td class="num"><?= $r['won'] ?></td><td class="num"><?= $r['lost'] ?></td>
-        <td class="num"><?= $pct($r['won'], $r['won'] + $r['lost']) ?></td><?= $money ? '<td class="num">' . eur0($r['value']) . '</td>' : '' ?></tr>
-    <?php endforeach; ?>
-    </tbody>
-    <tfoot><tr><td>Total</td><td class="num"><?= $tot['in'] ?></td><td class="num"><?= $tot['conv'] ?></td><td class="num"><?= $pct($tot['conv'], $tot['in']) ?></td>
-      <td class="num"><?= $tot['won'] ?></td><td class="num"><?= $tot['lost'] ?></td><td class="num"><?= $pct($tot['won'], $tot['won'] + $tot['lost']) ?></td><?= $money ? '<td class="num">' . eur0($tot['value']) . '</td>' : '' ?></tr></tfoot>
-  </table></div>
-</section>
-<?php endforeach; ?>
-
-<?php // ── crosselling (§22.5) ──
-require_once __DIR__ . '/inc/xsell.php';
-$xr = xsell_report($pdo, $from, $to);
-$xf = $xr['funnels'];
-$rate = fn(array $p) => $p[0] + $p[1] ? round($p[0] / ($p[0] + $p[1]) * 100) . '%' : '—';
-$avg = fn(float $v, int $n) => $n ? eur0($v / $n) : '—';
-$oppTot = ['open' => 0, 'won' => 0, 'lost' => 0, 'dropped' => 0, 'bundled' => 0];
-foreach ($xr['opps'] as $o) $oppTot[$o['status']] = ($oppTot[$o['status']] ?? 0) + (int)$o['n'];
-$oppAll = array_sum($oppTot);
-?>
-<h2 id="crosselling">Crosselling <span class="muted small">· negócios com vários serviços (pacote) e serviços vendidos depois a clientes</span></h2>
-<div class="stats">
-  <div class="stat hero"><div class="k">Ganhos com 2+ serviços</div><div class="v"><?= $pct($xr['won_multi'], $xr['won']) ?></div><div class="n"><?= $xr['won_multi'] ?> de <?= $xr['won'] ?> negócios ganhos</div></div>
-  <div class="stat"><div class="k">Taxa de fecho</div><div class="v"><?= $rate($xr['dec_multi']) ?></div><div class="n">com pacote · isoladas <?= $rate($xr['dec_single']) ?></div></div>
-  <?php if ($money): ?><div class="stat"><div class="k">Valor médio</div><div class="v"><?= $avg($xr['value_multi'], $xr['won_multi']) ?></div><div class="n">com pacote · isolado <?= $avg($xr['value_single'], $xr['n_single']) ?></div></div><?php endif; ?>
-  <div class="stat"><div class="k">Crosselling posterior</div><div class="v"><?= $xr['later'] ?></div><div class="n"><?= $xr['later_days'] ? 'em média ' . (int)round(array_sum($xr['later_days']) / count($xr['later_days'])) . ' dias depois' : 'clientes que voltaram para outro serviço' ?><?= $money && $xr['later'] ? ' · ' . eur0($xr['later_value']) : '' ?></div></div>
-  <div class="stat"><div class="k">Oportunidades</div><div class="v"><?= $oppAll ?></div><div class="n"><?= $oppTot['won'] + $oppTot['bundled'] ?> vendidas · <?= $oppTot['open'] ?> abertas · <?= $oppTot['lost'] + $oppTot['dropped'] ?> não</div></div>
+<div class="mx-body">
+<?= $body ?>
 </div>
-<?php $used = array_keys(array_filter($xf, fn($n, $id) => isset($xr['pairs'][$id]) || isset($xr['later_pairs'][$id]) || array_filter($xr['pairs'], fn($row) => isset($row[$id])) || array_filter($xr['later_pairs'], fn($row) => isset($row[$id])), ARRAY_FILTER_USE_BOTH)); ?>
-<div class="flow-grid">
-  <div class="tablewrap">
-    <?php if (!$used): ?><p class="empty">Ainda não há negócios de crosselling ganhos neste período.</p>
-    <?php else: ?>
-    <table class="xs-matrix"><caption class="muted small" style="text-align:left">Serviço × serviço: negócios ganhos em pacote<?= $xr['later_pairs'] ? ' (+ posteriores: comprou a linha, depois a coluna)' : '' ?></caption>
-      <thead><tr><th></th><?php foreach ($used as $b): ?><th class="num"><?= e($xf[$b]) ?></th><?php endforeach; ?></tr></thead>
-      <tbody><?php foreach ($used as $a): ?><tr><th><?= e($xf[$a]) ?></th>
-        <?php foreach ($used as $b): $n = $xr['pairs'][$a][$b][0] ?? 0; $l = $xr['later_pairs'][$a][$b] ?? 0; ?>
-          <td class="num<?= $a === $b ? ' muted' : '' ?>"><?= $a === $b ? '·' : ($n || $l ? '<b>' . $n . '</b>' . ($l ? ' <small class="muted">+' . $l . '</small>' : '') : '<span class="muted">0</span>') ?></td>
-        <?php endforeach; ?></tr><?php endforeach; ?></tbody>
-    </table>
-    <?php endif; ?>
-  </div>
-  <div class="tablewrap">
-    <table><thead><tr><th>Serviço principal</th><th class="num">Ganhos</th><th class="num">Com outro serviço</th></tr></thead><tbody>
-    <?php if (!$xr['anchor']): ?><tr><td colspan="3" class="empty">Sem negócios ganhos neste período.</td></tr><?php endif; ?>
-    <?php foreach ($xr['anchor'] as $fid => $a): ?><tr><td><?= e($xf[$fid] ?? '—') ?></td><td class="num"><?= $a['won'] ?></td><td class="num"><?= $pct($a['multi'], $a['won']) ?> <small class="muted">(<?= $a['multi'] ?>)</small></td></tr><?php endforeach; ?>
-    </tbody></table>
+
+<div class="mdl" id="mdl-mx" role="dialog" aria-modal="true" aria-label="Registos" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <div class="mdl-card wide mx-mdl">
+    <div class="mx-mdl-body"></div>
+    <div class="actions"><button class="btn ghost" type="button" data-mdl-close>Fechar</button></div>
   </div>
 </div>
-<div class="tablewrap" style="margin-top:12px">
-  <table><thead><tr><th>Combinações</th><th class="num">Ganhos</th><th class="num">Perdidos</th><th class="num">Taxa de fecho</th><?= $money ? '<th class="num">Valor ganho</th>' : '' ?></tr></thead><tbody>
-  <?php if (!$xr['combos']): ?><tr><td colspan="5" class="empty">Ainda não há propostas com vários serviços decididas neste período.</td></tr><?php endif; ?>
-  <?php foreach (array_slice($xr['combos'], 0, 10) as $c): ?>
-    <tr><td><?= e(implode(' + ', array_map(fn($f) => $xf[$f] ?? '?', $c['set']))) ?></td><td class="num"><?= $c['won'] ?></td><td class="num"><?= $c['lost'] ?></td><td class="num"><?= $rate([$c['won'], $c['lost']]) ?></td><?= $money ? '<td class="num">' . eur0($c['value']) . '</td>' : '' ?></tr>
-  <?php endforeach; ?>
-  </tbody></table>
-</div>
-<?php if ($xr['opps']):
-    $op = [];
-    foreach ($xr['opps'] as $o) { $op[(int)$o['funnel_id']] ??= ['open' => 0, 'won' => 0, 'lost' => 0, 'dropped' => 0, 'bundled' => 0]; $op[(int)$o['funnel_id']][$o['status']] += (int)$o['n']; } ?>
-<div class="tablewrap" style="margin-top:12px">
-  <table><thead><tr><th>Oportunidades (serviço proposto)</th><th class="num">Abertas</th><th class="num">No pacote</th><th class="num">Ganhas depois</th><th class="num">Perdidas / descartadas</th></tr></thead><tbody>
-  <?php foreach ($op as $fid => $o): ?><tr><td><?= e($xf[$fid] ?? '—') ?></td><td class="num"><?= $o['open'] ?></td><td class="num"><?= $o['bundled'] ?></td><td class="num"><?= $o['won'] ?></td><td class="num"><?= $o['lost'] + $o['dropped'] ?></td></tr><?php endforeach; ?>
-  </tbody></table>
-</div>
-<?php endif; ?>
-
-<?php if ($money && can('orcamentacao')):
-    require_once __DIR__ . '/inc/budget_view.php';
-    $br = budget_reports($pdo, $year);
-    $mt = function (array $rows, string $label) use ($year) {
-        if (!$rows) return '<p class="empty">Ainda não há negócios concluídos com Resultado em ' . $year . '.</p>';
-        $h = '<table><thead><tr><th>' . e($label) . '</th><th class="num">Concluídos</th><th class="num">Margem orçada</th><th class="num">Margem real</th><th class="num">Lucro/mês real</th></tr></thead><tbody>';
-        foreach ($rows as $k => $r) {
-            $d = $r['gm_r_avg'] - $r['gm_b_avg'];
-            $h .= '<tr><td>' . e((string)$k) . '</td><td class="num">' . $r['n'] . '</td><td class="num">' . e(budget_pct($r['gm_b_avg'])) . '</td>'
-                . '<td class="num ' . ($d < -0.05 ? 'neg b' : '') . '">' . e(budget_pct($r['gm_r_avg'])) . ($d < -0.05 ? ' <small>(' . e(budget_n(round($d, 1), 1)) . ' pp)</small>' : '') . '</td>'
-                . '<td class="num">' . e(budget_eur($r['pm_r_avg'])) . '</td></tr>';
-        }
-        return $h . '</tbody></table>';
-    }; ?>
-<h2 id="orcamentacao">Orçamentação · orçado vs real <?= budget_ii('margin', 'Aqui: médias dos Resultados fechados (negócios concluídos em ' . $year . ').') ?></h2>
-<div class="flow-grid">
-  <div class="tablewrap"><?= $mt($br['funnel'], 'Funil') ?></div>
-  <div class="tablewrap"><?= $mt($br['type'], 'Tipo de trabalho') ?></div>
-</div>
-<div class="tablewrap" style="margin-top:12px">
-  <?php if (!$br['over']): ?><p class="empty">Ainda não há custos ligados a linhas de fornecedores nos Resultados de <?= $year ?>.</p>
-  <?php else: ?>
-  <table><thead><tr><th>Serviço (linhas de fornecedores)</th><th class="num">Linhas</th><th class="num">Orçado</th><th class="num">Real</th><th class="num">Derrapagem</th><th class="num">Linhas acima</th></tr></thead><tbody>
-  <?php foreach ($br['over'] as $k => $o): ?>
-    <tr><td><?= e($k) ?></td><td class="num"><?= $o['lines'] ?></td><td class="num"><?= e(budget_eur($o['budget'])) ?></td><td class="num"><?= e(budget_eur($o['real'])) ?></td>
-      <td class="num <?= ($o['pct'] ?? 0) > 2 ? 'neg b' : (($o['pct'] ?? 0) < -2 ? 'pos' : '') ?>"><?= $o['pct'] === null ? '—' : (($o['pct'] > 0 ? '+' : '') . e(budget_pct($o['pct']))) ?></td>
-      <td class="num"><?= $o['over'] ?></td></tr>
-  <?php endforeach; ?>
-  </tbody></table>
-  <?php endif; ?>
-</div>
-<?php endif; ?>
-
-<script>
-// Mudar o agrupamento sem sair da página (sem JavaScript, os separadores são links).
-(function () {
-  var nav = document.querySelector('.views[aria-label="Agrupar"]');
-  nav.addEventListener('click', function (e) {
-    var a = e.target.closest('[data-seg]'); if (!a || e.metaKey || e.ctrlKey) return;
-    e.preventDefault();
-    var k = a.getAttribute('data-seg');
-    nav.querySelectorAll('[data-seg]').forEach(function (x) { x.classList.toggle('on', x === a); if (x === a) x.setAttribute('aria-current', 'true'); else x.removeAttribute('aria-current'); });
-    document.querySelectorAll('.seg-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== k; });
-    document.querySelector('form.bar input[name=por]').value = k;
-    history.replaceState(null, '', a.getAttribute('href'));
-  });
-})();
-</script>
+<script src="<?= asset_url('reports.js') ?>" defer></script>
 <?php render_footer();

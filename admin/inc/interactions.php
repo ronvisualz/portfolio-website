@@ -19,6 +19,7 @@ const INTERACTION_KINDS = [
     'call'    => ['Chamada', 'phone'],
     'email'   => ['Email', 'mail'],
     'meeting' => ['Reunião', 'meeting'],
+    'whatsapp' => ['WhatsApp', 'whatsapp'],
     'note'    => ['Nota', 'bubble'],
 ];
 
@@ -153,6 +154,9 @@ function interaction_add(PDO $pdo, ?int $dealId, ?int $contactId, string $kind, 
             ->execute([$date, $dealId, $date]);
         $pdo->prepare('UPDATE deals SET last_contact_at = ? WHERE id = ?')->execute([now_php(), $dealId]);
         $pdo->prepare("UPDATE deals SET state_since = ? WHERE id = ? AND phase = 'lead' AND lead_state = 'follow_up'")->execute([now_php(), $dealId]);
+        // a primeira interação de saída conta como primeira resposta (Relatórios › Velocidade)
+        require_once __DIR__ . '/metrics.php';
+        metrics_first_response($pdo, $dealId, $kind, $date === today_lisbon() ? now_php() : $date . ' ' . date('H:i:s'), (int)current_user()['id']);
     }
     return $id;
 }

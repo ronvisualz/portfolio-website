@@ -446,6 +446,8 @@ if ($canEdit):
         <?= contact_pick_html($pdo, 'brought_by', 'brought_by_id', (int)($old['brought_by_id'] ?? 0) ?: ((int)($_GET['trazido'] ?? 0) ?: null), 'nl-bb', 'Quem originou (agência, parceiro…)') ?></div>
       <div class="field"><label for="nl-or">Origem</label>
         <select id="nl-or" name="origin"><?php foreach (LEAD_ORIGIN as $k => $lab): ?><option value="<?= $k ?>" <?= ($old['origin'] ?? 'manual') === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?></select></div>
+      <div class="field"><label for="nl-src">Fonte</label>
+        <input id="nl-src" name="source" maxlength="160" value="<?= e((string)($old['source'] ?? '')) ?>" placeholder="Qual parceiro, campanha, evento…"></div>
       <?php if ($canAssign): ?>
       <div class="field"><label for="nl-ow">Responsável</label>
         <select id="nl-ow" name="owner_id">

@@ -111,6 +111,8 @@ function settings_defs(): array {
                                          'help' => 'Uma mensagem com mais links do que isto entra em quarentena.'],
         'form_rate_hour'             => ['tab' => 'leads', 'group' => 'Quarentena (formulário do site)', 'label' => 'Envios por hora (mesmo IP)', 'type' => 'int', 'min' => 1, 'max' => 100, 'default' => 5,
                                          'help' => 'Acima deste número de envios numa hora a partir do mesmo endereço, o formulário recusa até passar a hora.'],
+        'sla_hours'                  => ['tab' => 'leads', 'group' => 'Prazo da primeira resposta (horas úteis)', 'label' => 'Geral', 'type' => 'num', 'min' => 0.25, 'max' => 200, 'unit' => 'h úteis', 'default' => 4,
+                                         'help' => 'Do registo da lead até à primeira chamada, email, WhatsApp ou reunião, contado no horário de trabalho (Geral › Horário). Fora do prazo, a lead aparece em Relatórios › Atenção.'],
 
         // ── Pipeline ──
         'flow_editor'        => ['tab' => 'pipeline', 'group' => 'Funis, etapas e automações', 'label' => 'Funis, etapas, gates, automações e X-Ray', 'type' => 'link', 'href' => '/admin/funis.php',
@@ -119,6 +121,16 @@ function settings_defs(): array {
                                  'show' => 'Abrir', 'help' => 'Os pacotes pré-definidos (serviços, sincronização das frentes e modelo de orçamento) e as regras «depois de entregar X, propor Y ao fim de N dias».'],
         'lost_reasons'       => ['tab' => 'pipeline', 'group' => 'Propostas e perdas', 'label' => 'Motivos de perda', 'type' => 'list', 'default' => implode("\n", LOST_REASONS),
                                  'help' => 'Os motivos a escolher ao marcar um negócio como perdido. «Outro» deixa escrever o detalhe.'],
+        'prob_xray'          => ['tab' => 'pipeline', 'group' => 'Relatórios', 'label' => 'Probabilidade de fecho em X-Ray', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 15,
+                                 'help' => 'Para o pipeline ponderado (valor × probabilidade da etapa) nos Relatórios e no Dashboard.'],
+        'prob_proposta'      => ['tab' => 'pipeline', 'group' => 'Relatórios', 'label' => 'Probabilidade de fecho em Proposta', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 35,
+                                 'help' => 'Para o pipeline ponderado (valor × probabilidade da etapa).'],
+        'prob_feedback'      => ['tab' => 'pipeline', 'group' => 'Relatórios', 'label' => 'Probabilidade de fecho em Aguardar feedback', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 55,
+                                 'help' => 'Para o pipeline ponderado (valor × probabilidade da etapa).'],
+        'feedback_days'      => ['tab' => 'pipeline', 'group' => 'Relatórios', 'label' => 'Proposta sem seguimento ao fim de', 'type' => 'int', 'min' => 1, 'max' => 90, 'unit' => 'dias', 'default' => 7,
+                                 'help' => 'Uma proposta em «Aguardar feedback» há mais destes dias, sem nenhuma interação registada desde que lá entrou, aparece em Relatórios › Atenção.'],
+        'review_wait_days'   => ['tab' => 'pipeline', 'group' => 'Relatórios', 'label' => 'Review à espera do cliente ao fim de', 'type' => 'int', 'min' => 1, 'max' => 90, 'unit' => 'dias', 'default' => 5,
+                                 'help' => 'Uma peça enviada ao cliente no Review sem resposta há mais destes dias aparece em Relatórios › Atenção.'],
         'proposal_valid_days'=> ['tab' => 'pipeline', 'group' => 'Propostas e perdas', 'label' => 'Validade das propostas', 'type' => 'int', 'min' => 1, 'max' => 365, 'unit' => 'dias', 'default' => 30,
                                  'help' => 'A validade com que uma versão nova do orçamento começa. Muda-se em cada proposta, na folha de orçamento.'],
         'pay_terms_default'  => ['tab' => 'pipeline', 'group' => 'Condições de pagamento', 'label' => 'Até ao limite', 'type' => 'text', 'max' => 500, 'default' => '50% na adjudicação, 50% na entrega.',
@@ -173,6 +185,8 @@ function settings_defs(): array {
                                'help' => 'Dias desde a fatura até um valor por receber aparecer nos avisos (para quem vê o Financeiro).'],
 
         // ── Tarefas ──
+        'invoice_request_days' => ['tab' => 'negocios', 'group' => 'Avisos «Precisa de atenção»', 'label' => 'Fatura pedida sem resposta', 'type' => 'int', 'min' => 1, 'max' => 60, 'unit' => 'dias', 'default' => 3,
+                                   'help' => 'Uma fatura pedida ao contabilista sem resposta há mais destes dias aparece em Relatórios › Atenção (só para quem vê o Financeiro).'],
         'task_types'       => ['tab' => 'tarefas', 'group' => 'Tipos e origens', 'label' => 'Tipos (ícone e cor)', 'type' => 'types',
                                'help' => 'Cada tipo tem um ícone e uma cor, afinada para o modo claro e para o escuro (é o que mantém a lista legível de relance).'],
         'task_origins'     => ['tab' => 'tarefas', 'group' => 'Tipos e origens', 'label' => 'Cores das origens', 'type' => 'origins',
@@ -312,6 +326,15 @@ function settings_defs(): array {
         'two_factor'       => ['tab' => 'seguranca', 'group' => 'Entrada', 'label' => 'Autenticação de dois passos', 'type' => 'info', 'show' => 'Não usada',
                                'help' => 'Decisão da empresa: a entrada é só com email e palavra-passe.'],
     ];
+    // o prazo da primeira resposta por canal (os formulários e os anúncios respondem-se mais depressa)
+    $ch = [];
+    foreach (LEAD_ORIGIN as $k => $label) {
+        if ($k === 'talento') continue;
+        $ch['sla_hours_' . $k] = ['tab' => 'leads', 'group' => 'Prazo da primeira resposta (horas úteis)', 'label' => $label, 'type' => 'num', 'min' => 0.25, 'max' => 200,
+                                  'unit' => 'h úteis', 'default' => LEAD_SLA_DEFAULT[$k] ?? 4, 'help' => 'O prazo da primeira resposta às leads deste canal (Relatórios › Velocidade e Atenção).'];
+    }
+    $pos = array_search('sla_hours', array_keys($d), true) + 1;
+    $d = array_slice($d, 0, $pos, true) + $ch + array_slice($d, $pos, null, true);
     return $d;
 }
 

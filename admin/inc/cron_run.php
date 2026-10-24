@@ -11,6 +11,8 @@
  *                                          converter), as caixas de email do Financeiro (IMAP, só leitura), os
  *                                          custos fixos e o calendário fiscal, e a fila da IA do Centro
  *                                          Criativo (análises, embeddings, importações) durante [seg] segundos (240)
+ *   php …/admin/inc/cron_run.php metrics [semana]  a fotografia diária dos Relatórios e o resumo semanal (também
+ *                                          correm na tarefa «cc»); «semana» gera já o resumo desta semana
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -65,6 +67,9 @@ try {
             try { $out .= fin_mail_poll($pdo, (float)min(60, $sec / 4)) . "\n"; } catch (Throwable $e) { $out .= 'Caixas de email: ' . $e->getMessage() . "\n"; }
             try { $out .= fin_tick($pdo) . "\n"; } catch (Throwable $e) { $out .= 'Financeiro: ' . $e->getMessage() . "\n"; }
         }
+        // Relatórios (§29): a fotografia diária das métricas (uma vez por dia) e o resumo semanal (segunda, 9h)
+        require_once __DIR__ . '/metrics.php';
+        try { if (($m = metrics_tick($pdo)) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Métricas: ' . $e->getMessage() . "\n"; }
         // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)
         require_once __DIR__ . '/cc_review.php';
         if (cc_rv_ready($pdo)) {
@@ -81,6 +86,11 @@ try {
             $out .= 'Tempo real: ' . (cc_rt_url($pdo) ?: 'por publicar') . ' · ' . $u['pct'] . '% do plano gratuito hoje · chave pública ' . $k[1] . "\n";
         }
         $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
+    } elseif ($job === 'metrics') {
+        // só as métricas: fotografia diária em falta e o resumo semanal; «metrics semana» gera já o resumo desta semana
+        require_once __DIR__ . '/metrics.php';
+        $out = metrics_tick($pdo) . "\n";
+        if (($argv[2] ?? '') === 'semana') $out .= metrics_weekly_tick($pdo, true) . "\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {

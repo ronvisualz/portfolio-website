@@ -40,6 +40,7 @@ function inline_fields(?array $lead = null): array {
             'lead_state' => ['select', LEAD_STATE],
             'origin'     => ['select', LEAD_ORIGIN],
             'campaign'   => ['text', 160],
+            'source'     => ['text', 160],
             'detail'     => ['textarea', 4000],
             'why'        => ['textarea', 4000],
             'notes'      => ['textarea', 8000],

@@ -1963,6 +1963,72 @@ comprovativo). Sem contas, cria uma «Conta principal» sem saldo (o nome muda-s
   acumulação, margem, total, disponível e runway), levantamentos (comprovativo, limite, «Anular»), permissões
   pelo HTTP (só ver + responsável, editar sem ser admin, admin), claro/escuro, iPad e telemóvel.
 
+### 10.21 Relatórios — §29 (24 out 2026)
+
+Base de dados **v33** (`inc/migrate_metrics.php`, idempotente): `stage_events` (registo, etapa, funil, de/para,
+quando, quem, motivo, `live`/`rebuilt`), `deals.first_response_at / first_response_channel / first_response_by /
+source / utm`, `deals.origin` passa a texto curto (canais novos), `fin_docs.acq_channel / acq_source`,
+`funnel_stages.max_days`, `metric_goals`, `metrics_daily` e `metrics_weekly`. A migração reconstrói uma vez o
+histórico de etapas a partir do `deal_history`, das interações e dos campos dos negócios (os importados da folha
+contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de cliente» às leads com «Trazido por».
+- **Uma só biblioteca (`inc/metrics.php`)** para Relatórios, Dashboard e alertas: `metrics_deals()` lê leads e
+  negócios uma vez (sem quarentena nem spam) com a data de chegada a cada etapa (Lead → Abordada → X-Ray →
+  Proposta → Aguardar feedback → Kickoff; etapas saltadas ficam com a data da seguinte), o fim (aberto, ganho,
+  perdido) e o motivo. `deal_log` escreve cada passagem em `stage_events` (criar, converter, etapa, funil,
+  perder, arquivar, reabrir); a primeira chamada, email, WhatsApp ou reunião registada é a primeira resposta
+  (as notas e as reuniões internas não contam). WhatsApp passou a tipo de interação.
+- **Página (`relatorios.php`, `inc/report_tabs.php`, `inc/metrics_view.php`, `assets/reports.js`):** separadores
+  Atenção (abre aqui) · Metas · Funil comercial · Velocidade · Origens · Atividade · Equipa · Operacional ·
+  Financeiro (só com Financeiro). Período (semana, mês, trimestre, ano, personalizado, ‹ › para recuar) com
+  comparação ao anterior até ao mesmo ponto; filtros funil, origem, pessoa, serviço mantidos entre separadores.
+  Cada número abre a lista dos registos numa janela (com o acesso de quem vê: os de colegas contam mas não
+  aparecem), com CSV; ⓘ com a fórmula; «pouco fiável» abaixo de 10 casos; CSV de todas as tabelas do separador
+  e PDF pela impressão (estilo próprio). Euros só com Financeiro; operadores filtram só por si e veem os seus
+  números e a média da equipa, sem nomes.
+- **Atenção:** leads sem primeira resposta fora do prazo do canal (horas úteis), parados acima do limite da
+  etapa (Definições › Funis, «Parado ao fim de») ou da média histórica × 1,5, propostas em «Aguardar feedback»
+  sem interação há N dias, gates e tarefas atrasadas, kickoffs sem data de entrega, reviews à espera do
+  cliente, faturas em atraso e pedidas sem resposta (Financeiro), metas em risco. «Só as minhas»; o mesmo
+  número no menu lateral (guardado 5 min na sessão). Mostra 40 e «Mostrar todas».
+- **Metas** (só superadmin/admins gravam; registo de alterações): por mês ou trimestre, empresa, funil ou
+  pessoa: leads, abordadas, pipeline, propostas, kickoffs, valor ganho, % lead → pipeline, % pipeline → kickoff.
+  Cascata a partir dos kickoffs com as taxas reais dos últimos 6 meses (editável antes de gravar). Bullet com
+  o ritmo esperado e a previsão a tracejado; estados Cumprida · Em linha · Em risco · Atrás; histórico.
+- **Funil comercial:** por coorte (por defeito) ou por período; por etapa (entraram, passaram, perdidas,
+  abertas, dias média/mediana), motivos de perda por etapa, coortes mensais em mapa de calor, funis lado a
+  lado (a partir do X-Ray). Mantém «Valor ganho · por funil / origem / mês» + tabela (agora a partir do X-Ray;
+  as leads sem funil numa nota fora do total; «sem perdas registadas» em vez de 100%), com barras de valor e
+  gross profit sobreposto ordenadas por gross profit, o desempenho financeiro por funil (ticket médio, gross
+  profit e margem, faturado e recebido, pipeline aberto e ponderado, ciclo, valor por mês de ciclo) e o
+  Crosselling. Probabilidades por etapa em Definições › Pipeline › Relatórios.
+- **Velocidade:** mediana, p90 e % no prazo (Definições › Leads › Prazo da primeira resposta, por canal: site e
+  anúncio 1 h, redes 2 h, os outros 4 h úteis), por canal e por pessoa; velocidade × conversão com frase só
+  com amostra; tendência mensal do prazo, do ciclo e do tempo por etapa.
+- **Origens:** canal (formulário do site, anúncio, redes, parceiro, indicação de cliente, evento, prospeção
+  ativa, manual) + fonte + campanha + quem trouxe; o site guarda os UTM da primeira visita 30 dias e um
+  `utm_medium` pago faz a lead entrar como «Anúncio». Dispersão volume × % para pipeline (tamanho = valor) em
+  quadrantes; qualidade (0–100); custo por lead/kickoff e retorno pelas despesas marcadas no Financeiro com
+  «Custo de aquisição».
+- **Atividade, Equipa, Operacional, Financeiro:** contactos por semana (barras empilhadas) e mapa dia × hora;
+  ranking com mini-barras e o traço da média; em execução por etapa, entregas no prazo, kickoff → entrega,
+  rondas usadas vs incluídas, aprovação à 1.ª ronda, tarefas atrasadas por etapa, carga por pessoa; margem por
+  negócio, funil, serviço e cliente, custos orçados → reais, prazo de recebimento, atraso por cliente
+  (antiguidade), custos por categoria vs anterior, margem orçada vs real da Orçamentação.
+- **Fotografia diária e resumo semanal (cron `cc`, ou `cron_run.php metrics [semana]`):** `metrics_daily`
+  (empresa e por funil: leads, abordadas, pipeline, propostas, kickoffs, valor ganho, perdidos, pipeline aberto e
+  ponderado, leads abertas, prazo e mediana de resposta a 30 dias; da primeira vez, os últimos 90 dias). À segunda
+  a partir das 9h: resumo da equipa (metas, melhorou/piorou, «3 coisas a fazer esta semana» pela IA a partir da
+  Atenção, ou as 3 mais graves sem IA) e de cada pessoa; aparece no topo de Atenção e no sino (categoria «Resumo
+  semanal» no Perfil) e vai por email aos sócios e a quem não o desligou. Não há chat de equipa (o chat é 1:1).
+- **Dashboard:** linha «Comercial» lida da fotografia (pipeline ponderado com mini-linha de 30 dias, metas em
+  semáforo, respostas no prazo, o que pede atenção), com ligação aos Relatórios.
+- **Corrigido:** o formulário de contacto do site dava erro 500 desde 22 out (`setting()` sem o bootstrap).
+- **Testado na bancada:** migração e reconstrução (sem duplicar), ganchos em uso real (lead, WhatsApp,
+  conversão, etapa, perda com motivo, reabrir), horas úteis, períodos e comparação, cascata, coorte vs período,
+  as 9 páginas sem avisos nem «§», CSV, lista por trás dos números (acesso), metas (admin grava, operador 403),
+  Equipa sem nomes para operadores, sem euros sem Financeiro, UTM do site, fotografia e resumo (com e sem IA),
+  claro/escuro, telemóvel e impressão.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
@@ -3495,6 +3561,8 @@ Em certos serviços reserva-se uma parte da faturação como «salário» para a
 **Princípio:** Relatórios = **micro** (onde está o problema, quem, que registo, o que fazer). Dashboard Executivo = **macro** (Revenue, Gross Profit e margem, EBITDA, margem operacional, Net Profit e margem, runway, saúde geral — já interpretados). Os dois leem a **mesma camada de métricas** (§29.11), para os números baterem sempre certo.
 
 **Ponto de partida (verificado no main):** `admin/relatorios.php` já mostra entradas / convertidas / ganhos / perdidos por funil, por origem e por mês. Mantém-se e passa a ser parte do separador «Funil».
+
+**Estado (24 out 2026):** implementado — ver §10.21.
 
 ### 29.1 Regras comuns a todos os separadores
 - **Período** no topo (Esta semana · Este mês · Trimestre · Ano · Personalizado) com **comparação automática ao período anterior** (▲▼ e %).

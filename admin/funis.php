@@ -218,6 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($rounds !== '' && (!ctype_digit($rounds) || (int)$rounds > 20)) throw new RuntimeException('Rondas incluídas: um número de 0 a 20 (ou vazio).');
                 $pdo->prepare('UPDATE funnel_stages SET name = ?, rounds_included = ?, gate_on = ? WHERE id = ?')
                     ->execute([$name !== '' ? $name : $s['name'], $rounds === '' ? null : (int)$rounds, $canRules ? (int)!empty($_POST['gate_on']) : (int)$s['gate_on'], $s['id']]);
+                // o limite de dias na etapa (Relatórios › Atenção: «parado»); vazio = média histórica × 1,5
+                $max = trim((string)($_POST['max_days'] ?? ''));
+                if (array_key_exists('max_days', $_POST) && db_has_column($pdo, 'funnel_stages', 'max_days')) {
+                    if ($max !== '' && (!ctype_digit($max) || (int)$max < 1 || (int)$max > 365)) throw new RuntimeException('Limite na etapa: de 1 a 365 dias (ou vazio).');
+                    $pdo->prepare('UPDATE funnel_stages SET max_days = ? WHERE id = ?')->execute([$max === '' ? null : (int)$max, $s['id']]);
+                }
                 flash('Etapa guardada.');
                 redirect($sback);
             case 'move_stage':
@@ -411,6 +417,7 @@ render_flashes();
   </header>
   <form method="post" class="ar-sform"><?= csrf_field() ?><input type="hidden" name="do" value="save_stage"><input type="hidden" name="funnel_id" value="<?= (int)$ef['id'] ?>"><input type="hidden" name="stage_id" value="<?= (int)$s['id'] ?>">
     <label>Nome<input type="text" name="name" maxlength="120" value="<?= e($s['name']) ?>"></label>
+    <?php if (in_array($s['kind'], ['xray', 'commercial', 'kickoff', 'production'], true) && array_key_exists('max_days', $s)): ?><label>Parado ao fim de (dias)<input type="number" name="max_days" min="1" max="365" value="<?= $s['max_days'] !== null ? (int)$s['max_days'] : '' ?>" placeholder="normal × 1,5" title="Acima disto, o negócio aparece em Relatórios › Atenção. Vazio: a média histórica da etapa × 1,5."></label><?php endif; ?>
     <?php if ($s['kind'] === 'production'): ?><label>Rondas de revisão incluídas<input type="number" name="rounds" min="0" max="20" value="<?= $s['rounds_included'] !== null ? (int)$s['rounds_included'] : '' ?>" placeholder="não conta"></label><?php endif; ?>
     <?php if ($builtIn !== ''): ?>
       <label class="ck"><input type="checkbox" name="gate_on" value="1"<?= (int)$s['gate_on'] ? ' checked' : '' ?><?= $canRules ? '' : ' disabled' ?>> <span>Requisito da etapa: <?= e($builtIn) ?></span></label>

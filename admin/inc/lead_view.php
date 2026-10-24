@@ -163,6 +163,7 @@ function lead_edit_form_html(PDO $pdo, array $l): string {
          . $select('service', 'Serviço')
          . $select('priority', 'Prioridade')
          . $select('origin', 'Origem')
+         . $text('source', 'Fonte', ['ph' => 'Qual parceiro, formulário, evento…'])
          . $text('campaign', 'Campanha', ['list' => 'dl-campaigns-' . $id])
          . '<datalist id="dl-campaigns-' . $id . '">' . implode('', array_map(fn($c) => '<option value="' . e($c) . '">', setting_lines($pdo, 'lead_campaigns', []))) . '</datalist>'
          . '<div class="field"><label for="' . $f('brought_by') . '">Trazido por</label>'
@@ -224,7 +225,9 @@ function lead_view(PDO $pdo, array $l, string $mode = 'panel', string $back = '/
         . $row('Tipo', 'types')
         . $row('Prioridade', 'priority')
         . $row('Origem', 'origin', $l['origin'] === 'rede' && trim((string)$l['campaign']) !== '' ? ['html' => e($l['campaign']) . ' <span class="muted small">· redes sociais</span>'] : [])
+        . $row('Fonte', 'source')
         . $row('Campanha', 'campaign')
+        . (trim((string)($l['utm'] ?? '')) !== '' ? '<span>UTM</span><div class="small mono">' . e(implode(' · ', array_map(fn($k, $v) => $k . '=' . $v, array_keys((array)json_decode((string)$l['utm'], true)), (array)json_decode((string)$l['utm'], true)))) . '</div>' : '')
         . '<span>Trazido por</span><div>' . deal_people_link($pdo, $l['brought_by_id']) . '</div>'
         . '<span>Último contacto</span><div data-last>' . e(lead_ago($l['last_contact_at'])) . '</div>'
         . '<span>Criada</span><div><span class="mono">' . e(lisbon_fmt(strtotime((string)$l['created_at']), 'd/m/Y')) . '</span>'

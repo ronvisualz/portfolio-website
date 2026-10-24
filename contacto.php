@@ -39,6 +39,14 @@ require __DIR__ . '/admin/inc/perm.php';
 require __DIR__ . '/admin/inc/deals.php';
 require __DIR__ . '/admin/inc/leads.php';
 function current_user(): ?array { return null; }   // ninguém tem sessão aqui
+// As Definições (limites anti-spam) sem carregar o bootstrap do admin (sessão, login…).
+if (!function_exists('setting')) {
+    function setting(PDO $pdo, string $key, $default = null) {
+        static $c = null;
+        if ($c === null) { $c = []; foreach ($pdo->query('SELECT skey, svalue FROM settings') as $r) $c[$r['skey']] = $r['svalue']; }
+        return $c[$key] ?? $default;
+    }
+}
 
 try {
     $dsn = (IS_LOCAL && !empty($CONFIG['db_dsn']))
@@ -105,6 +113,21 @@ if (preg_match('/^[a-z0-9]{6,12}$/', $src)) {
         // Antes do passo 18 da base de dados não há publicações: fica «Site».
     }
 }
+// UTM (Relatórios › Origens): o site guarda os utm_* da primeira visita (30 dias) e envia-os com o formulário.
+// Um anúncio pago (utm_medium cpc/paid…) entra com o canal «Anúncio»; a fonte é o utm_source.
+$utm = [];
+foreach (['source', 'medium', 'campaign', 'content', 'term'] as $k) {
+    $v = preg_replace('/[^\p{L}\p{N} ._\-+\/:]/u', '', $in('utm_' . $k, 120));
+    if ($v !== '') $utm[$k] = $v;
+}
+$source = 'Formulário de contacto';
+if ($utm) {
+    $medium = strtolower($utm['medium'] ?? '');
+    if ($origin === 'site' && preg_match('/^(cpc|ppc|paid|paid[_-]?social|ads?|display|sponsored)$/', $medium)) $origin = 'anuncio';
+    elseif ($origin === 'site' && preg_match('/^(social|organic[_-]?social|rede)$/', $medium)) $origin = 'rede';
+    if (isset($utm['source'])) $source = mb_substr($utm['source'], 0, 160);
+    if ($campaign === '' && isset($utm['campaign'])) $campaign = mb_substr($utm['campaign'], 0, 160);
+}
 // Carreiras (employer branding): o formulário de carreiras do site, quando existir, envia form=careers.
 if (($_POST['form'] ?? '') === 'careers') $origin = 'talento';
 
@@ -114,6 +137,7 @@ $id = lead_create($pdo, [
     'company' => $company, 'person' => $name, 'types' => '', 'links' => '', 'phone' => $phone, 'email' => $email,
     'service' => $services[$service] ?? '', 'priority' => 'media', 'detail' => $message, 'why' => '',
     'notes' => implode("\n", $notes), 'origin' => $origin, 'campaign' => $campaign,
+    'source' => $source, 'utm' => $utm ? json_encode($utm, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '',
 ], null, null, (bool)$why);
 if ($postId) $pdo->prepare('UPDATE deals SET mkt_post_id = ? WHERE id = ?')->execute([$postId, $id]);
 

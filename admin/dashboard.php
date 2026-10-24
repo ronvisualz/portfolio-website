@@ -110,6 +110,31 @@ render_flashes();
   <div class="stat"><div class="k">Por receber</div><div class="v"><?= eur0($t['unpaid']) ?></div><div class="n">s/ IVA<?= can('financeiro') ? ' · <a href="/admin/financeiro.php?tab=receber">antiguidade</a>' : '' ?></div></div>
 </div>
 
+<?php
+// ── Comercial: lido da fotografia diária dos Relatórios (a mesma camada de métricas, inc/metrics.php) ──
+if (can('relatorios')):
+    require_once __DIR__ . '/inc/metrics_view.php';
+    if (metrics_ready($pdo)):
+        $snapDay = (string)$pdo->query("SELECT MAX(day) FROM metrics_daily WHERE scope = ''")->fetchColumn();
+        $snap = $snapDay !== '' ? array_map('floatval', $pdo->query("SELECT mkey, value FROM metrics_daily WHERE scope = '' AND day = " . $pdo->quote($snapDay))->fetchAll(PDO::FETCH_KEY_PAIR)) : [];
+        $wk = $snapDay !== '' ? metrics_series($pdo, 'pipeline_ponderado', (new DateTimeImmutable($snapDay))->modify('-29 days')->format('Y-m-d'), (new DateTimeImmutable($snapDay))->modify('+1 day')->format('Y-m-d')) : [];
+        $gs = mx_goals_status($pdo, metrics_deals($pdo), can('financeiro'));
+        $gs = array_filter($gs, fn($g) => $g['scope'] !== 'user');
+        $gc = ['ok' => 0, 'risk' => 0, 'behind' => 0];
+        foreach ($gs as $g) $gc[in_array($g['state'], ['done', 'ok'], true) ? 'ok' : ($g['state'] === 'risk' ? 'risk' : 'behind')]++;
+        $att = mx_attention_count($pdo); ?>
+<div class="bar" style="margin:18px 0 10px"><h2 style="margin:0">Comercial</h2><a class="lnk" style="margin-left:auto" href="/admin/relatorios.php">Relatórios →</a></div>
+<div class="stats">
+  <?php if (can('financeiro') && $snap): ?>
+  <a class="stat" href="/admin/relatorios.php?tab=funil#valor"><div class="k">Pipeline ponderado</div><div class="v"><?= eur0($snap['pipeline_ponderado'] ?? 0) ?></div><div class="n">de <?= eur0($snap['pipeline_aberto'] ?? 0) ?> em aberto · fotografia de <?= e(date('d/m', strtotime($snapDay))) ?></div><?= chart_spark(array_values($wk), 'Pipeline ponderado, 30 dias') ?></a>
+  <?php endif; ?>
+  <a class="stat" href="/admin/relatorios.php?tab=metas"><div class="k">Metas do período</div><div class="v"><?= count($gs) ? $gc['ok'] . '/' . count($gs) : '—' ?></div><div class="n"><?= count($gs) ? 'em linha · ' . $gc['risk'] . ' em risco · ' . $gc['behind'] . ' atrás' : 'sem metas definidas' ?></div></a>
+  <?php if ($snap): ?>
+  <a class="stat" href="/admin/relatorios.php?tab=velocidade"><div class="k">Respostas no prazo (30 dias)</div><div class="v"><?= (int)round($snap['sla_30d'] ?? 0) ?>%</div><div class="n">mediana <?= e(mx_h($snap['resposta_mediana_30d'] ?? null)) ?> úteis</div></a>
+  <?php endif; ?>
+  <a class="stat" href="/admin/relatorios.php"><div class="k">Pedem atenção</div><div class="v"><?= $att ?></div><div class="n">no separador Atenção dos Relatórios</div></a>
+</div>
+<?php endif; endif; ?>
 <?php if ($hot): ?>
 <h2>Pedem atenção agora</h2>
 <div class="hot">

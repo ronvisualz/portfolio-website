@@ -85,6 +85,11 @@ function deal_log(PDO $pdo, int $dealId, string $event, array $d = []): void {
         $d['user_id'] ?? ($u['id'] ?? null),
     ]);
     if (in_array($event, ['convert', 'stage', 'lost', 'reopen', 'funnel'], true)) budget_follow_deal($pdo, $dealId);
+    // o histórico de etapas estruturado e a primeira resposta (Relatórios, §29.11)
+    if (in_array($event, ['create', 'convert', 'stage', 'funnel', 'reopen', 'lost', 'archive', 'reactivate', 'call_ok', 'call_miss', 'email'], true)) {
+        require_once __DIR__ . '/metrics.php';
+        metrics_on_log($pdo, $dealId, $event, $d + ['user_id' => $d['user_id'] ?? ($u['id'] ?? null)]);
+    }
 }
 
 /**

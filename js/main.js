@@ -157,7 +157,23 @@
   /* ── contact form: real POST on topperdigital.xyz, a dry run anywhere else ── */
   var form = $('#cform'), st = $('#cstatus');
   form.elements.ts.value = Date.now();
-  var src = new URLSearchParams(location.search).get('src'); if (src) form.elements.src.value = src;
+  var qs = new URLSearchParams(location.search);
+  var src = qs.get('src'); if (src) form.elements.src.value = src;
+  // UTM: a primeira visita com utm_* fica guardada 30 dias e vai com o formulário (origem da lead no Hub)
+  var UTM = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'], utm = null;
+  try {
+    if (UTM.some(function (k) { return qs.get(k); })) {
+      utm = { t: Date.now() }; UTM.forEach(function (k) { if (qs.get(k)) utm[k] = qs.get(k).slice(0, 120); });
+      localStorage.setItem('tp_utm', JSON.stringify(utm));
+    } else {
+      utm = JSON.parse(localStorage.getItem('tp_utm') || 'null');
+      if (utm && Date.now() - utm.t > 30 * 864e5) { utm = null; localStorage.removeItem('tp_utm'); }
+    }
+  } catch (e) { utm = null; }
+  if (utm) UTM.forEach(function (k) {
+    if (!utm[k]) return;
+    var i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = utm[k]; form.appendChild(i);
+  });
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (!form.elements.name.value.trim() || !/^\S+@\S+\.\S+$/.test(form.elements.email.value) || !form.elements.message.value.trim()) {

@@ -20,6 +20,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/leads.php';   // LEAD_ORIGIN (canal do custo de aquisição)
 
 const FIN_CATS_DEFAULT = ['Software', 'Equipamento', 'Renda', 'Telecomunicações', 'Contabilidade', 'Seguros', 'Viaturas', 'Deslocações',
                           'Freelancers', 'Fornecedores de produção', 'Marketing', 'Formação', 'Impostos', 'Salários', 'Outros'];
@@ -319,7 +320,11 @@ function fin_doc_input(PDO $pdo, array $src, ?array $old = null): array {
         'vat_note' => mb_substr(trim((string)($src['vat_note'] ?? '')), 0, 190), 'total' => $total, 'wh_rate' => $whRate, 'withholding' => $wh, 'currency' => $cur,
         'issue_date' => $issue !== '' ? $issue : null, 'due_date' => $due !== '' ? $due : null,
         'installment' => mb_substr(trim((string)($src['installment'] ?? '')), 0, 60), 'notes' => mb_substr(trim((string)($src['notes'] ?? '')), 0, 2000),
-    ];
+    ] + ($dir === 'out' && db_has_column($pdo, 'fin_docs', 'acq_channel') ? [
+        // custo de aquisição (Relatórios › Origens): o canal e a campanha/fonte que esta despesa pagou
+        'acq_channel' => isset(LEAD_ORIGIN[$src['acq_channel'] ?? '']) ? (string)$src['acq_channel'] : '',
+        'acq_source'  => mb_substr(trim((string)($src['acq_source'] ?? '')), 0, 160),
+    ] : []);
 }
 
 /** Cria um lançamento. $v: o resultado de fin_doc_input mais status, pdf_key… Devolve o id. */

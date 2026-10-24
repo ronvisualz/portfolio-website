@@ -297,6 +297,7 @@ const NOTIF_CATS = [
     'deal'    => ['Pipeline e negócios', 'Negócios parados, respostas de clientes, gates de produção e rondas esgotadas', true],
     'invoice' => ['Por receber', 'Valores em atraso (quem vê o Financeiro)', false],
     'team'    => ['Equipa', 'Mensagens, pedidos de reunião, pedidos de ajuda e férias', true],
+    'report'  => ['Resumo semanal', 'À segunda às 9h: metas, o que melhorou e piorou e as 3 coisas a fazer (Relatórios)', true],
 ];
 
 /** As preferências pessoais (users.prefs em JSON): notificações e vista inicial de cada aba. */

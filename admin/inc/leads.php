@@ -21,7 +21,11 @@ const LEAD_PRIORITY    = ['alta' => 'Alta', 'media' => 'Média', 'baixa' => 'Bai
 const LEAD_STATE       = ['novo' => 'Novo', 'sem_resposta' => 'Sem resposta', 'follow_up' => 'Follow-Up'];
 // «rede»: veio de uma publicação (link com rastreio, Marketing §16.8) — a campanha diz «<rede> · <peça>».
 // «talento»: candidatura ou contacto de talento (employer branding; a página de carreiras do site está por fazer).
-const LEAD_ORIGIN      = ['manual' => 'Manual', 'site' => 'Site', 'anuncio' => 'Anúncio', 'rede' => 'Redes sociais', 'talento' => 'Talento'];
+/** O canal de origem (§29.7): a fonte (qual parceiro, campanha, formulário) vai em «Fonte» e «Campanha»; os UTM vêm do site. */
+const LEAD_ORIGIN      = ['site' => 'Formulário do site', 'anuncio' => 'Anúncio', 'rede' => 'Redes sociais', 'parceiro' => 'Parceiro', 'indicacao' => 'Indicação de cliente',
+                          'evento' => 'Evento', 'prospecao' => 'Prospeção ativa', 'manual' => 'Manual', 'talento' => 'Talento'];
+/** Prazo da primeira resposta por canal, em horas úteis (Relatórios › Velocidade); os outros usam o geral (4 h). */
+const LEAD_SLA_DEFAULT = ['site' => 1, 'anuncio' => 1, 'rede' => 2];
 const ARCHIVE_REASONS  = [
     'sem_interesse' => 'Sem interesse',
     'sem_resposta'  => 'Sem resposta',
@@ -282,6 +286,7 @@ function lead_input(array $src): array {
         'notes'    => mb_substr($notes, 0, 8000),
         'origin'   => isset(LEAD_ORIGIN[$origin]) ? $origin : 'manual',
         'campaign' => $txt('campaign', 160),
+        'source'   => $txt('source', 160),
     ];
 }
 
@@ -392,6 +397,10 @@ function lead_create(PDO $pdo, array $v, ?int $owner, ?int $createdBy, bool $qua
         $owner, $createdBy, today_lisbon(), now_php(), now_php(),
     ]);
     $id = (int)$pdo->lastInsertId();
+    // a fonte e os UTM do site (Relatórios › Origens), quando a base já os tem
+    if ((($v['source'] ?? '') !== '' || ($v['utm'] ?? '') !== '') && db_has_column($pdo, 'deals', 'utm')) {
+        $pdo->prepare('UPDATE deals SET source = ?, utm = ? WHERE id = ?')->execute([mb_substr((string)($v['source'] ?? ''), 0, 160), mb_substr((string)($v['utm'] ?? ''), 0, 600), $id]);
+    }
     deal_log($pdo, $id, 'create', ['note' => LEAD_ORIGIN[$v['origin']] ?? '', 'user_id' => $createdBy]);
     if (!$quarantine) lead_start($pdo, $id, $useContactId, $createdBy);
     return $id;

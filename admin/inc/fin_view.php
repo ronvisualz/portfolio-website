@@ -111,6 +111,9 @@ function fin_doc_form(PDO $pdo, string $dir, array $v, string $back, bool $edit)
         $h .= '<div class="field"><label for="fd-pe">Email do cliente</label><input type="email" id="fd-pe" name="party_email" maxlength="190" value="' . e((string)($v['party_email'] ?? '')) . '"></div>';
     }
     $h .= '<div class="field"><label for="fd-cat">Categoria</label><select id="fd-cat" name="category"' . ($dir === 'out' ? ' required' : '') . '><option value="">—</option>' . fin_opts(array_combine($cats, $cats), $v['category'] ?? '') . '</select></div>'
+        . ($dir === 'out' && db_has_column($pdo, 'fin_docs', 'acq_channel')
+            ? '<div class="field"><label for="fd-acq">Custo de aquisição</label><select id="fd-acq" name="acq_channel"><option value="">Não</option>' . fin_opts(LEAD_ORIGIN, $v['acq_channel'] ?? '') . '</select></div>'
+            . '<div class="field"><label for="fd-acqs">Campanha / fonte paga</label><input type="text" id="fd-acqs" name="acq_source" maxlength="160" value="' . e((string)($v['acq_source'] ?? '')) . '" placeholder="Ex.: Meta outono"></div>' : '')
         . '<div class="field"><label for="fd-num">Número</label><input type="text" id="fd-num" name="number" maxlength="60" value="' . e((string)($v['number'] ?? '')) . '" placeholder="FT 2026/142"></div>'
         . '<div class="field wide"><label for="fd-desc">Descrição</label><input type="text" id="fd-desc" name="description" maxlength="500" value="' . e((string)($v['description'] ?? '')) . '"></div>'
         . '<div class="field"><label for="fd-iss">Emissão</label><input type="date" id="fd-iss" name="issue_date" value="' . e((string)($v['issue_date'] ?? today_lisbon())) . '"></div>'

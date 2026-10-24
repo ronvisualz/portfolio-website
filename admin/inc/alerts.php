@@ -111,11 +111,23 @@ function aging_bucket(int $age): string {
 function my_alerts(PDO $pdo): array {
     static $out = null;
     if ($out !== null) return $out;
-    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => [], 'team' => []];
+    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => [], 'team' => [], 'report' => []];
     $me = current_user();
     if ($me === null) return $out;
     $uid = (int)$me['id'];
     $lim = alert_limits($pdo);
+
+    // O resumo semanal (Relatórios, segunda às 9h): as 3 coisas a fazer, durante a semana.
+    if (can('relatorios') && db_has_table($pdo, 'metrics_weekly')) {
+        $st = $pdo->prepare('SELECT week, todo FROM metrics_weekly WHERE user_id = 0 AND week >= ? ORDER BY week DESC LIMIT 1');
+        $st->execute([date('Y-m-d', strtotime(today_lisbon() . ' -6 days'))]);
+        if ($w = $st->fetch()) {
+            $todo = json_decode((string)$w['todo'], true) ?: [];
+            $out['report'][] = ['key' => 'wk:' . $w['week'], 'kind' => 'report', 'icon' => 'relatorios', 'sev' => 'warn', 'date' => $w['week'],
+                                'title' => 'Resumo da semana: 3 coisas a fazer', 'sub' => mb_strimwidth((string)($todo[0] ?? ''), 0, 110, '…'),
+                                'url' => '/admin/relatorios.php?tab=atencao#resumo'];
+        }
+    }
 
     // Os follow-ups de relação que chegaram à data entram nas tarefas de quem as acompanha (§13.5).
     require_once __DIR__ . '/contacts.php';
@@ -385,6 +397,13 @@ function nav_badges(PDO $pdo): array {
     $abs = count(array_filter($a['team'], fn($t) => $t['kind'] === 'absence'));
     if ($abs) $out['equipa'] = ['n' => $abs, 'al' => false, 'tip' => $abs === 1 ? '1 pedido de férias por aprovar' : "$abs pedidos de férias por aprovar"];
     if ($a['invoice']) $out['financeiro'] = ['n' => count($a['invoice']), 'al' => true, 'tip' => count($a['invoice']) . ' por receber em atraso'];
+    // Relatórios › Atenção (§29.3): o mesmo número do separador
+    if (can('relatorios')) {
+        try {
+            require_once __DIR__ . '/metrics_view.php';
+            if ($n = mx_attention_count($pdo)) $out['relatorios'] = ['n' => $n, 'al' => true, 'tip' => $n === 1 ? '1 coisa pede atenção' : "$n coisas pedem atenção"];
+        } catch (Throwable $e) { error_log('nav relatorios: ' . $e->getMessage()); }
+    }
     return $out;
 }
 
