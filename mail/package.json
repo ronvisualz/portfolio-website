@@ -1,0 +1,13 @@
+{
+  "name": "topper-mail",
+  "private": true,
+  "description": "topper. — entrada dos emails do Financeiro pela Cloudflare (Email Routing → Email Worker → plataforma)",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "secret": "wrangler secret put INBOUND_SECRET"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}

@@ -23,6 +23,9 @@ require_once __DIR__ . '/cc.php';
 require_once __DIR__ . '/cc_review.php';
 
 /** Os separadores (um por aba com campos editáveis). Nova aba com definições = novo separador aqui. */
+/** Como saem os emails (o mesmo que MAIL_SEND_MODES em inc/mailer.php). */
+const MAIL_SEND_MODES_DEF = ['api' => 'Serviço de envio, sem palavras-passe (Resend ou Brevo)', 'smtp' => 'SMTP do Hostinger (palavra-passe de cada caixa)'];
+
 const SET_TABS = [
     'geral'        => ['Geral', 'dashboard'],
     'leads'        => ['Leads', 'leads'],
@@ -310,6 +313,10 @@ function settings_defs(): array {
                                'help' => 'Pré-visualização do que vai mudar (negócios perdidos para o Arquivo, faturas antigas, peças de marketing, originais do Centro Criativo) e execução em segundo plano. Só administradores.'],
 
         // ── Integrações ──
+        'int_google'       => ['tab' => 'integracoes', 'group' => 'Google', 'label' => 'Ligação à Google', 'type' => 'google_int',
+                               'help' => 'Um cliente OAuth da Google serve para «Entrar com Google», para cada pessoa ligar o seu Google Calendar e para criar Google Meet. As credenciais ficam só no servidor.'],
+        'gcal_push'        => ['tab' => 'integracoes', 'group' => 'Google', 'label' => 'Mudanças do Google para a plataforma', 'type' => 'select', 'opts' => ['0' => 'Desligado (a plataforma atualiza o Google)', '1' => 'Ligado: o Google avisa quando algo muda (respostas dos convidados)'], 'default' => '0',
+                               'help' => 'Segunda fase: o Google avisa a plataforma quando um evento muda (canal por calendário, renovado pelo cron). Para já trazem-se as respostas dos convidados; mudanças de hora feitas no Google ainda não voltam para a plataforma.'],
         'int_meet'         => ['tab' => 'integracoes', 'group' => 'Reuniões', 'label' => 'Google Meet', 'type' => 'info', 'show' => '',
                                'help' => 'Cria o link do Meet nas reuniões. As credenciais da Google ficam só no servidor, fora do Git, e nunca vão para o browser.'],
         'discord_invite_url' => ['tab' => 'integracoes', 'group' => 'Reuniões', 'label' => 'Discord (link do canal)', 'type' => 'url', 'max' => 300, 'default' => '', 'pattern' => '~^https://(discord\.gg|discord\.com)/\S+$~',
@@ -318,10 +325,18 @@ function settings_defs(): array {
                                'help' => 'Só nos emails que a plataforma envia sozinha (recuperar a palavra-passe, confirmações ao cliente, avisos do cron). Os que alguém envia pela plataforma levam o nome dessa pessoa e saem do email dela ou do email geral (escolha no Perfil).'],
         'mail_from'        => ['tab' => 'integracoes', 'group' => 'Emails automáticos', 'label' => 'Endereço dos emails automáticos', 'type' => 'email', 'max' => 190, 'default' => 'no-reply@topperdigital.xyz', 'domain' => 'topperdigital.xyz',
                                'help' => 'Tem de ser um endereço @topperdigital.xyz (o servidor só envia em nome do domínio).'],
+        'int_mail_cf'      => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Email sem palavras-passe', 'type' => 'mail_cf',
+                               'help' => 'Os emails com faturas chegam por reencaminhamento (Cloudflare) e os que a plataforma envia saem por um serviço de envio com chave API: nenhuma palavra-passe de email fica guardada. O guia mostra o que falta fazer.'],
+        'fin_mail_mode'    => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Como chegam as faturas', 'type' => 'select', 'opts' => ['cloudflare' => 'Reencaminhamento pela Cloudflare (sem palavras-passe)', 'imap' => 'Modo IMAP: a plataforma entra nas caixas (palavra-passe de cada uma)'], 'default' => 'cloudflare',
+                               'help' => 'Por defeito, cada caixa ligada reencaminha uma cópia para o endereço de entrada. O modo IMAP é a alternativa antiga: precisa da palavra-passe de cada caixa e lê-as de 5 em 5 minutos.'],
+        'mail_send_mode'   => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Como saem os emails', 'type' => 'select', 'opts' => MAIL_SEND_MODES_DEF, 'default' => 'api',
+                               'help' => 'Pelo serviço de envio (Resend ou Brevo, domínio verificado, chave API), sem palavras-passe; o remetente continua a ser a pessoa e as respostas vão para o email geral. O SMTP do Hostinger precisa da palavra-passe de cada caixa.'],
+        'mail_inbound_address' => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Endereço de entrada', 'type' => 'email', 'max' => 190, 'default' => 'entrada@topperhub.xyz', 'domain' => 'topperhub.xyz',
+                               'help' => 'O endereço do Cloudflare Email Routing para onde as caixas reencaminham as cópias. Tem de ser do domínio que está na Cloudflare.'],
         'mail_general'     => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Email geral', 'type' => 'email', 'max' => 190, 'default' => 'info@topperdigital.xyz', 'domain' => 'topperdigital.xyz',
                                'help' => 'O email da empresa. Quem envia pela plataforma escolhe (no Perfil, ou em cada envio) se o email sai do seu próprio email ou deste; o nome é sempre o da pessoa. A palavra-passe escreve-se em «Estado das caixas» e fica só no servidor.'],
-        'fin_mail_boxes'   => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Caixas a ler', 'type' => 'list', 'default' => '', 'empty_ok' => true, 'emails' => true,
-                               'help' => 'As caixas de email existentes da topper. no Hostinger onde chegam faturas (ex.: info@topperdigital.xyz), uma por linha. São lidas a cada 5 minutos, só para leitura: nada é marcado como lido, movido ou apagado. A palavra-passe de cada uma escreve-se em «Estado das caixas»: é testada e fica só no servidor (nunca na base de dados nem nesta página).'],
+        'fin_mail_boxes'   => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Caixas ligadas', 'type' => 'list', 'default' => '', 'empty_ok' => true, 'emails' => true,
+                               'help' => 'As caixas de email existentes da topper. no Hostinger onde chegam faturas (ex.: info@topperdigital.xyz), uma por linha. Pela Cloudflare: cada uma reencaminha uma cópia para o endereço de entrada e os emails de outras caixas são ignorados. No modo IMAP: são lidas a cada 5 minutos, só para leitura (nada é marcado como lido, movido ou apagado).'],
         'int_fin_mail'     => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Estado das caixas', 'type' => 'fin_mail',
                                'help' => 'Só se analisam as mensagens com anexo PDF, XML ou imagem: primeiro o QR code fiscal / ATCUD (sem custo), a IA só quando não há QR claro. Faturas passadas à topper. entram em «A pagar» por confirmar; as emitidas pela topper. ligam-se ao pedido «Fatura pedida»; o resto é ignorado. O corpo dos emails nunca é guardado.'],
         'fin_mail_ignore'  => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Remetentes a ignorar', 'type' => 'list', 'default' => '', 'empty_ok' => true,
@@ -350,8 +365,11 @@ function settings_defs(): array {
                                'help' => 'Mesmo com atividade, a sessão termina ao fim deste tempo.'],
         'login_max_attempts' => ['tab' => 'seguranca', 'group' => 'Entrada', 'label' => 'Bloquear após', 'type' => 'int', 'min' => 3, 'max' => 20, 'unit' => 'tentativas falhadas', 'default' => (int)($GLOBALS['CONFIG']['max_attempts'] ?? 6),
                                'help' => 'Depois deste número de palavras-passe erradas seguidas, a entrada fica bloqueada por um período.'],
-        'two_factor'       => ['tab' => 'seguranca', 'group' => 'Entrada', 'label' => 'Autenticação de dois passos', 'type' => 'info', 'show' => 'Não usada',
-                               'help' => 'Decisão da empresa: a entrada é só com email e palavra-passe.'],
+        'passkey_required' => ['tab' => 'seguranca', 'group' => 'Entrada', 'label' => 'Chave de acesso obrigatória', 'type' => 'select',
+                               'opts' => ['' => 'Para ninguém (cada um escolhe)', 'admins' => 'Superadmin e admins', 'leads' => 'Admins e chefes de equipa', 'all' => 'Toda a equipa'], 'default' => '',
+                               'help' => 'Quem tem de entrar com a chave de acesso (Face ID, impressão digital ou PIN do aparelho). Quem ainda não tem chave entra como antes e é levado ao Perfil para a criar; depois disso, a palavra-passe e o Google deixam de servir para entrar.'],
+        'two_factor'       => ['tab' => 'seguranca', 'group' => 'Entrada', 'label' => 'Outras formas de entrar', 'type' => 'info', 'show' => 'Palavra-passe, chave de acesso e Google',
+                               'help' => 'A palavra-passe continua como recurso. Cada pessoa cria as suas chaves de acesso no Perfil › Segurança; «Entrar com Google» só deixa entrar quem já tem utilizador com o mesmo email (nunca cria contas).'],
     ];
     // o prazo da primeira resposta por canal (os formulários e os anúncios respondem-se mais depressa)
     $ch = [];
@@ -499,7 +517,7 @@ function setting_impact(PDO $pdo, string $key, string $old, string $new): string
 function setting_save(PDO $pdo, string $key, string $raw, bool $confirm = false, string $why = ''): array {
     if (!is_admin()) throw new RuntimeException('Só superadmin e admins mudam as Definições.');
     $d = setting_def($key);
-    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
+    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types', 'mail_cf', 'google_int'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
     $old = setting_get($pdo, $key);
     $new = setting_clean($d, $raw);
     if ($new === $old) return ['Sem alterações.', setting_show($d, $new), ''];

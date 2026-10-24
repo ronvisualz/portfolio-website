@@ -189,18 +189,79 @@
     var fd = new FormData(); fd.append('box', b.getAttribute('data-fin-mail-pass-del'));
     post('/admin/fin_api.php?a=mail_pass_del', fd).then(function (j) { passOut(b, j.error || j.msg, !!j.error); if (!j.error) setTimeout(function () { location.reload(); }, 700); });
   });
-  // Definições › Integrações › Email: «Testar» cada caixa (só leitura)
+  // Definições › Integrações › Email: «Testar» cada caixa — pela Cloudflare, um email com código que se vê chegar;
+  // no modo IMAP, entra só para ler
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-fin-mail-test]');
     if (!b) return;
     var outRow = boxOut(b), out = outRow && outRow.querySelector('td');
+    var show = function (t, cls) { if (out) { out.textContent = t; out.className = 'small ' + (cls || ''); } };
     if (outRow) outRow.hidden = false;
-    b.disabled = true; if (out) { out.textContent = 'A testar…'; out.className = 'small'; }
+    b.disabled = true; show('A testar…');
     var fd = new FormData(); fd.append('box', b.getAttribute('data-fin-mail-test'));
     post('/admin/fin_api.php?a=mail_test', fd).then(function (j) {
+      if (j.error || !j.wait) { b.disabled = false; show(j.error || j.msg, j.error ? 'neg' : 'pos'); return; }
+      show(j.msg);
+      var tries = 0;
+      (function poll() {
+        var f2 = new FormData(); f2.append('code', j.code);
+        post('/admin/fin_api.php?a=mail_test_seen', f2).then(function (r) {
+          if (r.seen) { b.disabled = false; show(r.msg, 'pos'); return; }
+          if (++tries > 45) { b.disabled = false; show('Não chegou em 3 minutos. Confirme o reencaminhamento (com cópia) desta caixa para o endereço de entrada, a regra do Email Routing e o Worker.', 'neg'); return; }
+          setTimeout(poll, 4000);
+        }).catch(function () { setTimeout(poll, 6000); });
+      })();
+    }).catch(function () { b.disabled = false; show('Sem ligação.', 'neg'); });
+  });
+  // o guia do email sem palavras-passe: segredo do Worker, chave do serviço de envio, email de teste
+  function cfOut(el, txt, bad) {
+    var box = el.closest('.set-f') || document, o = box.querySelector('.cf-out');
+    if (!o) return;
+    o.hidden = false; o.textContent = txt; o.className = 'small cf-out ' + (bad ? 'neg' : 'pos');
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-mail-secret]');
+    if (!b) return;
+    if (b.hasAttribute('data-again') && !confirm('Gerar um segredo novo? O atual deixa de valer até o pôr no Worker (npx wrangler secret put INBOUND_SECRET).')) return;
+    b.disabled = true;
+    post('/admin/fin_api.php?a=mail_secret', new FormData()).then(function (j) {
       b.disabled = false;
-      if (out) { out.textContent = j.error || j.msg; out.className = 'small ' + (j.error ? 'neg' : 'pos'); }
-    }).catch(function () { b.disabled = false; if (out) out.textContent = 'Sem ligação.'; });
+      var wrap = b.closest('.cf-secret'), o = wrap && wrap.querySelector('.cf-secret-out');
+      if (j.error) { cfOut(b, j.error, true); return; }
+      if (o) { o.hidden = false; o.querySelector('code').textContent = j.secret; }
+      cfOut(b, j.msg, false);
+    }).catch(function () { b.disabled = false; cfOut(b, 'Sem ligação.', true); });
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-copy-secret]');
+    if (!b) return;
+    var t = b.parentNode.querySelector('code').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copiado'; }, function () { b.textContent = 'Selecione e copie'; });
+  });
+  document.addEventListener('submit', function (e) {
+    var f = e.target.closest && e.target.closest('form[data-mail-api]');
+    if (!f) return;
+    e.preventDefault();
+    var btn = f.querySelector('button[type=submit]'), inp = f.querySelector('input[name=key]');
+    var fd = new FormData(); fd.append('provider', f.querySelector('select[name=provider]').value); fd.append('key', inp.value);
+    btn.disabled = true; cfOut(f, 'A confirmar a chave no serviço…', false);
+    post('/admin/fin_api.php?a=mail_api', fd).then(function (j) {
+      btn.disabled = false; inp.value = '';
+      cfOut(f, j.error || j.msg, !!j.error);
+      if (!j.error) setTimeout(function () { location.reload(); }, 1400);
+    }).catch(function () { btn.disabled = false; cfOut(f, 'Sem ligação.', true); });
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-mail-api-del]');
+    if (!b || !confirm('Tirar a chave do serviço de envio do servidor? Os emails deixam de sair por ele.')) return;
+    post('/admin/fin_api.php?a=mail_api_del', new FormData()).then(function (j) { cfOut(b, j.error || j.msg, !!j.error); if (!j.error) setTimeout(function () { location.reload(); }, 700); });
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-mail-send-test]');
+    if (!b) return;
+    b.disabled = true; cfOut(b, 'A enviar…', false);
+    post('/admin/fin_api.php?a=mail_send_test', new FormData()).then(function (j) { b.disabled = false; cfOut(b, j.error || j.msg, !!j.error); })
+      .catch(function () { b.disabled = false; cfOut(b, 'Sem ligação.', true); });
   });
 })();
 

@@ -8,7 +8,7 @@
  *   php …/admin/inc/cron_run.php pipeline  só as automações de data e mensais do Pipeline (§19.7);
  *                                          também correm todas as noites, com a cópia
  *   php …/admin/inc/cron_run.php cc [seg]  as pastas do Drive a mudar de sítio (arquivar, reabrir,
- *                                          converter), as caixas de email do Financeiro (IMAP, só leitura), os
+ *                                          converter), as caixas de email do Financeiro (só no modo IMAP), o Google Calendar, os
  *                                          custos fixos e o calendário fiscal, e a fila da IA do Centro
  *                                          Criativo (análises, embeddings, importações) durante [seg] segundos (240)
  *   php …/admin/inc/cron_run.php metrics [semana]  a fotografia diária dos Relatórios e o resumo semanal (também
@@ -76,6 +76,10 @@ try {
         // (pódio, recorde, fecho do mês no dia 1) e a leitura do mês de manhã
         require_once __DIR__ . '/exec.php';
         try { if (($m = exec_tick($pdo)) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Dashboard: ' . $e->getMessage() . "\n"; }
+        // Google Calendar e Meet (§31.4): tarefas mudadas → Google, espelhos de quem ligou o calendário, ocupado/livre e
+        // (fase 2, quando ligada em Definições) os canais de notificações e as mudanças vindas do Google
+        require_once __DIR__ . '/gcal.php';
+        try { if (($m = gcal_tick($pdo, (float)min(45, $sec / 5))) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Google Calendar: ' . $e->getMessage() . "\n"; }
         // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)
         require_once __DIR__ . '/cc_review.php';
         if (cc_rv_ready($pdo)) {

@@ -799,6 +799,14 @@ body.is-dragging .board { scroll-snap-type: none; }
 .login-views { position: relative; display: grid; }
 .login-views > section { grid-area: 1 / 1; transition: opacity .28s ease, transform .28s ease, visibility 0s; }
 .login-views > section[aria-hidden="true"] { opacity: 0; transform: translateX(14px); pointer-events: none; visibility: hidden; transition: opacity .28s ease, transform .28s ease, visibility 0s linear .28s; }
+/* outras formas de entrar (§31.2): chave de acesso e Google */
+.login-alt { display: grid; gap: 0; margin: 2px 0 6px; }
+.login-or { display: flex; align-items: center; gap: 10px; color: var(--lg-mute); font-size: 12px; margin: 2px 0 8px; }
+.login-or::before, .login-or::after { content: ""; flex: 1; height: 1px; background: var(--lg-line); }
+.login-card .login-alt .btn.ghost { background: transparent; color: var(--lg-fg); border: 1px solid var(--lg-in-line); display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 8px; }
+.login-card .login-alt .btn.ghost:hover { border-color: var(--lg-mute); background: rgba(255,255,255,.06); }
+.login-alt .g-logo { width: 18px; height: 18px; }
+.login-alt .ico { width: 18px; height: 18px; }
 
 /* ── Drive: correções de cor para o modo escuro ─────────── */
 /* O Drive usa os tokens acima; estas regras só trocam as poucas cores fixas que tem. */
@@ -3365,3 +3373,36 @@ a.xmini:hover { border-color: var(--line-2); color: var(--fg); }
 .is-team .chat-acts { display: none; }
 .xcharts > .xcounts { align-self: start; margin: 0; }
 .set-t[data-table="fin_cat_types"] select { min-width: 160px; }
+
+/* ── §31: email sem palavras-passe, segurança e calendário ── */
+.cf-steps { margin: 4px 0 12px; padding-left: 20px; display: grid; gap: 10px; }
+.cf-steps li { line-height: 1.5; }
+.cf-steps code, .gm-hint code { font-size: 12px; }
+.cf-cmd { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--chip); font: 12px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; }
+.cf-secret { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.cf-secret-out { display: flex; gap: 8px; align-items: center; width: 100%; }
+.cf-secret-out code { padding: 6px 8px; border-radius: 6px; background: var(--hi-soft); word-break: break-all; font-size: 12.5px; }
+.cf-send { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+.cf-send h4 { margin: 0 0 4px; font-size: 14px; }
+.cf-api { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cf-api input { flex: 1 1 220px; min-width: 0; }
+.sec-card h3, .gcal-card h3 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 18px 0 6px; }
+.sec-card h3 .ico, .gcal-card h3 .ico { width: 18px; height: 18px; }
+.pk-new { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-top: 10px; }
+.pk-new .field { flex: 1 1 220px; }
+.pk-new p { width: 100%; margin: 0; }
+.pk-name { display: flex; gap: 6px; align-items: center; }
+.pk-name input { min-width: 0; width: 100%; max-width: 240px; }
+.gcal-prefs { display: grid; gap: 6px; margin: 8px 0; }
+.gmeet .lbl { display: flex; align-items: center; gap: 6px; }
+.gmeet .lbl .ico { width: 16px; height: 16px; }
+.gm-now { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 2px 0 6px; }
+.gm-link { font-weight: 600; word-break: break-all; }
+.gm-resp { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+.gm-make { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gm-make input[type=text] { flex: 1 1 240px; min-width: 0; }
+.gm-hint { margin: 4px 0 0; }
+.gm-manual summary { cursor: pointer; margin: 6px 0 4px; }
+.gslots { margin-top: -4px; }
+.gslots .chips-wrap { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gslots p { margin: 4px 0; }

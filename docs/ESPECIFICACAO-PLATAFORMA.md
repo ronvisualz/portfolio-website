@@ -2120,6 +2120,63 @@ Relatórios › Metas, o formulário «Definir metas» fica atrás de um botão 
 o pedido de fatura ao contabilista mostra o destinatário (o email do contabilista de Definições › Financeiro) à
 parte do email do cliente, que vai na fatura.
 
+### 10.24 Email sem palavras-passe, login rápido e calendário — §31 (24 out 2026)
+
+Passo 35 da base de dados (`inc/migrate_auth.php`): `mail_inbound` (só remetente, assunto, caixa e resultado — nunca o
+corpo; serve também contra repetições), `user_passkeys`, `login_log`, `user_google` (token cifrado, cache do
+ocupado/livre, syncToken e canal push), `calendar_links`, `users.google_sub` e `tasks.call_link`. Quem já tinha o
+leitor IMAP a funcionar fica no «Modo IMAP» e no envio por SMTP até mudar em Definições (para não perder emails
+pelo caminho); instalações novas começam pela Cloudflare e pelo serviço de envio.
+
+**31.1 Email.** Worker próprio em `mail/` (`topper-mail`, mesma conta do `rt/`): `email()` recusa > 25 MB e faz POST
+do email em bruto para `admin/fin_inbound.php` com `X-Topper-Ts`, `X-Topper-Id` (Message-ID), `X-Topper-From`
+(envelope) e `X-Topper-Sig` = HMAC-SHA256(segredo, «ts.id.sha256(corpo)»); 5xx → erro temporário (o servidor que
+reencaminhou volta a tentar), 4xx → não repete. `inc/mail_inbound.php`: assinatura, 5 minutos, repetições pelo
+Message-ID, caixa de origem pelos cabeçalhos do reencaminhamento (Delivered-To, X-Original-To, X-Forwarded-*, To/Cc,
+SRS do envelope); caixas fora de «Caixas ligadas» são ignoradas sem guardar nada; depois `fin_mail_handle` (as
+regras de sempre: só anexos, QR/ATCUD, IA só sem QR, NIF, código no assunto). Envio: `inc/mailer.php` — Resend ou
+Brevo (chave confirmada no serviço e gravada só em `inc/fin_mail_config.php`), remetente = a pessoa, «Responder para»
+= o email geral; os emails automáticos (recuperar palavra-passe, convites, avisos) também saem por aqui quando está
+pronto. Definições › Integrações › Email: guia em 5 passos (MX do domínio, Email Routing, `wrangler deploy` +
+«Gerar o segredo», reencaminhamento em cada caixa, «Testar»), «Como chegam as faturas» (Cloudflare | Modo IMAP),
+«Como saem os emails» (serviço | SMTP), estado por caixa com a data do último email e «Testar» (manda um email com
+um código e mostra-o a chegar), e «Enviar um email de teste para mim». O Perfil › Email de envio deixa de pedir
+palavra-passe no modo do serviço. Testado na bancada com o próprio código do Worker (Node): teste, caixa não ligada,
+sem anexos, fatura (por confirmar), repetição, assinatura errada (401), carimbo antigo (409).
+
+**31.2 Login rápido.** Chaves de acesso com verificação própria (`inc/webauthn.php`: CBOR, ES256/RS256/Ed25519,
+desafio na sessão, origem, rpId, presença e verificação do utilizador, contador) — a biblioteca lbuchs/WebAuthn não
+se pôde descarregar neste ambiente. `admin/passkey.php` + `assets/passkey.js`: criar em Perfil › Segurança (várias,
+com nome, último uso, Remover), entrar pelo botão ou pela proposta automática do browser no campo do email.
+«Entrar com Google» (`inc/google_oauth.php`, `admin/google_auth.php`): OpenID Connect com state, PKCE e nonce; só
+entra quem já tem utilizador com o mesmo email verificado; nunca cria contas; fica ligada a conta Google da primeira
+vez (`google_sub`). Definições › Segurança › «Chave de acesso obrigatória» (ninguém | admins | admins e chefes |
+todos): quem já tem chave deixa de entrar com palavra-passe ou Google; quem não tem é levado ao Perfil para a criar.
+Registo de entradas (método, aparelho, rede parcial, data) em Perfil › Segurança. Testado com um autenticador
+virtual do Chromium (criar, entrar pela proposta automática e pelo botão, contador) e com uma Google simulada
+(entrar, email sem conta recusado).
+
+**31.3 / 31.4 Calendário.** Camada única `inc/gcal.php` (nada mais fala com a API do Google Calendar): contas
+«topper» (`inc/meet_config.php`) e «user:<id>» (Perfil › Ligações › «Ligar Google Calendar», scopes
+`calendar.events` + `calendar.freebusy`, token cifrado com a chave do servidor `inc/app_key.php`, revogável).
+«Criar Google Meet» no formulário de qualquer tarefa com hora (que é como leads, negócios, kickoff, review, Agenda e
+Equipa abrem os eventos), com convidados externos; organizador = quem marca se tiver o calendário ligado, senão a
+conta da topper.; o link fica na tarefa, no histórico, no negócio e no chat. `calendar_links` liga evento ↔ registo:
+mudar a hora ou apagar na plataforma atualiza ou cancela no Google, sem duplicados. Espelho no calendário de cada
+pessoa ligada (reuniões, gravações, visitas e prazos com hora), sem convites, e sem cópia para quem já é convidado do
+Meet. Os pedidos de reunião da Equipa criam o Meet pela mesma camada e partilham o evento com as tarefas dos dois.
+Ao marcar: quem está ocupado nessa hora (plataforma + Google) e os 3 próximos horários livres em comum
+(`gcal_api.php?a=slots`). Opção por pessoa de mostrar o «ocupado» do Google na Agenda e na disponibilidade da equipa.
+Respostas dos convidados lidas ao abrir. Fase 2 preparada: `gcal_push.php`, canais renovados pelo cron (Definições ›
+Integrações › Google › «Mudanças do Google para a plataforma»), syncToken e `gcal_pull` (por agora traz as respostas;
+as mudanças de hora feitas no Google ainda não voltam). Cron «cc»: `gcal_tick` (tarefas mudadas, apagadas, primeira
+sincronização, ocupado/livre, canais). Definições › Integrações › Google: guia, URI de redirecionamento e o cliente
+OAuth (gravado em `inc/auth_config.php`, fora do Git). Sem credenciais, tudo funciona como antes (link colado à mão).
+Testado com uma Google simulada só na bancada (variável `TOPPER_API_MOCK`, ignorada fora de localhost): criar Meet
+com convidado externo, mudar a hora, espelho, apagar, sugestões com o ocupado do Google, reunião da Equipa, cron,
+aviso push e desligar (revoga e retira as cópias). Mudanças feitas noutros sítios (arrastar no quadro, concluir)
+chegam ao Google pelo cron em até 5 minutos.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

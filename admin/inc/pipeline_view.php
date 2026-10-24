@@ -387,7 +387,8 @@ function flow_task_modal_html(PDO $pdo, array $deal, string $back): string {
     foreach ($members as $m) if ($m['user_id'] !== null && (int)$m['user_id'] !== $me) $participants[(int)$m['user_id']] = $m['name'];
     $html = task_modal_html($pdo, null, $assignable, isset($members[$myMember]) ? $myMember : null, $participants, $back, false, ['deal_id' => (int)$deal['id']]);
     // No painel ao lado, gravar volta à página de onde se abriu, com o painel aberto (app.js).
-    return preg_replace('~(<input type="hidden" name="back" value="[^"]*")~', '$1 data-back-here', $html, 1);
+    return preg_replace('~(<input type="hidden" name="back" value="[^"]*")~', '$1 data-back-here', $html, 1)
+         . '<script src="' . e(asset_url('gcal.js')) . '" defer></script>';   // Meet e sugestões de horário (§31.4)
 }
 
 /** Responsáveis (comercial e execução: só admins mudam) e datas do negócio: [linhas do resumo, formulário]. */

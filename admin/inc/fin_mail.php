@@ -24,11 +24,17 @@
  *
  * Credenciais: só no servidor, em inc/fin_mail_config.php (fora do Git; ver fin_mail_config.example.php),
  * uma palavra-passe por caixa.
+ *
+ * Desde a §31.1, por defeito, nada disto precisa de palavras-passe: os emails chegam pela Cloudflare (Email Routing →
+ * Worker → admin/fin_inbound.php, ver inc/mail_inbound.php) e saem por um serviço de envio com chave API
+ * (inc/mailer.php). O leitor IMAP e o SMTP ficam como alternativa («Modo IMAP» / «SMTP do Hostinger»).
  */
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/fin.php';
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/mail_inbound.php';
 
 const FIN_MAIL_FIRST_DAYS = 7;              // primeira leitura de uma caixa: só os últimos dias
 const FIN_MAIL_MAX_FETCH = 15;              // mensagens descarregadas por caixa e por volta do cron
@@ -134,6 +140,14 @@ function fin_mail_as_options(PDO $pdo, ?array $u): array {
     $dom = substr($gen, strpos($gen, '@'));
     $own = strtolower(trim((string)($u['email'] ?? '')));
     $out = [];
+    // pelo serviço de envio (§31.1) não há palavras-passe: basta o endereço ser do domínio da empresa
+    if (mailer_mode($pdo) === 'api') {
+        $api = mailer_api() !== null;
+        $why = $api ? '' : 'falta a chave do serviço de envio (Definições › Integrações › Email)';
+        if ($own !== '' && $own !== $gen) $out['own'] = ['addr' => $own, 'ok' => $api && str_ends_with($own, $dom), 'why' => !str_ends_with($own, $dom) ? 'não é um email ' . $dom : $why];
+        $out['general'] = ['addr' => $gen, 'ok' => $api, 'why' => $why];
+        return $out;
+    }
     if ($own !== '' && $own !== $gen) {
         $okDom = str_ends_with($own, $dom);
         $out['own'] = ['addr' => $own, 'ok' => $okDom && $srv && isset($srv['boxes'][$own]),
@@ -165,14 +179,17 @@ function fin_mail_use(?string $as): ?string {
  */
 function fin_mail_config(): ?array {
     global $pdo;
-    $c = fin_mail_server();
-    if (!$c || !$c['boxes'] || !$pdo instanceof PDO) return null;
+    if (!$pdo instanceof PDO) return null;
+    $api = mailer_mode($pdo) === 'api';
+    $c = $api ? [] : fin_mail_server();
+    if (!$api && (!$c || !$c['boxes'])) return null;
     $u = function_exists('current_user') ? current_user() : null;
     $opts = fin_mail_as_options($pdo, $u);
     $want = fin_mail_use('__get') ?? fin_mail_pref($pdo, $u);
     $name = $u ? trim(preg_replace('/[\r\n"<>]/', '', (string)($u['name'] ?? ''))) : '';
     if ($name === '') $name = trim(preg_replace('/[\r\n"<>]/', '', (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
     foreach (array_unique([$want, 'own', 'general']) as $k) {
+        if ($api) { if (!empty($opts[$k]['ok'])) return ['api' => true, 'user' => $opts[$k]['addr'], 'from_name' => $name, 'as' => $k]; continue; }
         if (!empty($opts[$k]['ok'])) return array_merge($c, ['user' => $opts[$k]['addr'], 'pass' => $c['boxes'][$opts[$k]['addr']], 'from_name' => $name, 'as' => $k]);
     }
     return null;
@@ -259,7 +276,13 @@ function fin_mail_hdr(string $s): string {
  */
 function fin_smtp_send(string $to, string $subject, string $body, array $att = [], array $o = []): string {
     $c = $o['cred'] ?? fin_mail_config();
-    if (!$c) throw new RuntimeException('Não há de onde enviar: falta a palavra-passe do seu email (Perfil › Email de envio) ou do email geral (Definições › Integrações › Email).');
+    if (!$c) throw new RuntimeException('Não há de onde enviar: ' . (isset($GLOBALS['pdo']) && mailer_mode($GLOBALS['pdo']) === 'api' ? 'falta a chave do serviço de envio (Definições › Integrações › Email).' : 'falta a palavra-passe do seu email (Perfil › Email de envio) ou do email geral (Definições › Integrações › Email).'));
+    if (!empty($c['api'])) {
+        // pelo serviço de envio: as respostas vão para o email geral (info@), que chega ao Financeiro pela Cloudflare
+        global $pdo;
+        if (empty($o['reply_to']) && $pdo instanceof PDO && $c['user'] !== mail_general($pdo)) $o['reply_to'] = mail_general($pdo);
+        return mailer_api_send($c, $to, $subject, $body, $att, $o);
+    }
     if (empty($o['test']) && !filter_var($to, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Endereço de email inválido: ' . $to);
     $s = fin_sock($c['smtp_host'], $c['smtp_port'], $c['smtp_tls'], $c['verify_peer']);
     try {
@@ -414,6 +437,8 @@ final class FinImap {
 
 /** Descodifica um cabeçalho (RFC 2047) para UTF-8. */
 function fin_mime_hdr(string $v): string {
+    // sem palavras codificadas: o texto já vem em UTF-8 (SMTPUTF8) ou, nos servidores antigos, em Latin-1
+    if (!str_contains($v, '=?')) return mb_check_encoding($v, 'UTF-8') ? $v : mb_convert_encoding($v, 'UTF-8', 'ISO-8859-1');
     $v = preg_replace('/\?=\s+=\?/', '?==?', $v);
     if (function_exists('iconv_mime_decode')) {
         $d = @iconv_mime_decode($v, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
@@ -623,6 +648,7 @@ function fin_mail_state_save(PDO $pdo, array $st): void {
 /** Lê as caixas escolhidas (só leitura). Devolve o resumo para o registo do cron. */
 function fin_mail_poll(PDO $pdo, float $seconds = 40.0): string {
     if (!fin_ready($pdo)) return '';
+    if (fin_mail_mode($pdo) !== 'imap') return '';   // por defeito chegam pela Cloudflare (§31.1): o leitor IMAP fica desligado
     $srv = fin_mail_server();
     $boxes = fin_mail_boxes($pdo);
     if (!$boxes) return 'Caixas de email: nenhuma escolhida';
@@ -987,13 +1013,14 @@ function fin_mail_status(PDO $pdo): array {
     $read = fin_mail_boxes($pdo);
     $gen = mail_general($pdo);
     $boxes = [];
+    $lastIn = mail_inbound_last($pdo);
     foreach (array_unique(array_merge($read, [$gen])) as $b) {
         $st = $state[$b] ?? [];
-        $boxes[] = ['addr' => $b, 'pass' => $srv && isset($srv['boxes'][$b]), 'read' => in_array($b, $read, true), 'general' => $b === $gen,
+        $boxes[] = ['last_in' => (string)($lastIn[$b] ?? ''), 'addr' => $b, 'pass' => $srv && isset($srv['boxes'][$b]), 'read' => in_array($b, $read, true), 'general' => $b === $gen,
                     'last' => (string)($st['last'] ?? ''), 'error' => in_array($b, $read, true) ? (string)($st['error'] ?? '') : '', 'uid' => (int)($st['uid'] ?? 0),
                     'seen' => (int)($st['seen'] ?? 0), 'docs' => (int)($st['docs'] ?? 0), 'since' => (string)($st['since'] ?? '')];
     }
-    return ['server' => $srv !== null, 'boxes' => $boxes, 'general' => $gen, 'company_nif' => fin_our_nif($pdo), 'accountant' => fin_accountant_email($pdo),
+    return ['mode' => fin_mail_mode($pdo), 'send' => mailer_mode($pdo), 'server' => $srv !== null, 'boxes' => $boxes, 'general' => $gen, 'company_nif' => fin_our_nif($pdo), 'accountant' => fin_accountant_email($pdo),
             'pending' => fin_ready($pdo) ? (int)$pdo->query("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'")->fetchColumn() : 0];
 }
 

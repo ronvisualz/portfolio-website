@@ -270,8 +270,23 @@ function team_busy(PDO $pdo, array $u, string $from, string $to): array {
         $out[] = [team_ts($ab['start_date'] . ' 00:00'), team_ts($ab['end_date'] . ' 00:00') + 86400, 'absence', ABSENCE_KINDS[$ab['kind']] ?? 'Ausência'];
     }
     if ($f = team_focus_until($u)) $out[] = [time(), $f, 'focus', 'Foco'];
+    // o «ocupado» do Google Calendar (§31.3): de quem o mostra (Perfil) ou, ao marcar, de todos os que o ligaram
+    if (db_has_table($pdo, 'user_google')) {
+        require_once __DIR__ . '/gcal.php';
+        $gc = gcal_conn($pdo, (int)$u['id']);
+        if ($gc && (team_busy_google() || (int)$gc['show_busy'])) {
+            foreach (gcal_busy_blocks($pdo, (int)$u['id'], team_ts($from . ' 00:00'), team_ts($to . ' 00:00'), team_busy_google()) as [$a, $b]) $out[] = [$a, $b, 'gbusy', 'Ocupado (Google)'];
+        }
+    }
     usort($out, fn($x, $y) => $x[0] <=> $y[0]);
     return $out;
+}
+
+/** Ao marcar uma reunião, a disponibilidade conta o Google Calendar de todos os que o ligaram (não só de quem o mostra). */
+function team_busy_google(?bool $on = null): bool {
+    static $v = false;
+    if ($on !== null) $v = $on;
+    return $v;
 }
 
 /** O estado da agenda agora (§17.5): [key, label]. key: absent | focus | busy | off | free. */
@@ -398,15 +413,10 @@ function team_mail(string $to, string $subject, string $body): bool {
             catch (Throwable $e) { error_log('[topper] envio pelo email da pessoa falhou (' . $e->getMessage() . '): vai pelo envio automático'); }
         }
     }
-    // Automático (ou sem caixa pronta): o remetente vem de Definições › Integrações (sempre um endereço @topperdigital.xyz).
-    $from = (string)setting($pdo, 'mail_from', 'no-reply@topperdigital.xyz');
-    if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !str_ends_with(strtolower($from), '@topperdigital.xyz')) $from = 'no-reply@topperdigital.xyz';
-    $name = trim(preg_replace('/[\r\n"<>]/', '', (string)(current_user()['name'] ?? '') ?: (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
-    $headers = 'From: =?UTF-8?B?' . base64_encode($name) . "?= <$from>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
-    $sent = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
-    if (defined('IS_LOCAL') && IS_LOCAL) error_log('[topper] email para ' . $to . ' (só na bancada): ' . $subject . "\n" . $body);
-    elseif (!$sent) error_log('[topper] o email «' . $subject . '» não saiu para ' . $to);
-    return (bool)$sent;
+    // Automático (ou sem caixa pronta): pelo serviço de envio, se estiver pronto, ou pelo mail() do servidor (§31.1);
+    // o remetente vem de Definições › Integrações (sempre um endereço @topperdigital.xyz).
+    require_once __DIR__ . '/mailer.php';
+    return app_mail($pdo, $to, $subject, $body, (string)(current_user()['name'] ?? ''));
 }
 
 /** O convite (§17.8): um link para definir a palavra-passe, válido 7 dias. */
@@ -748,34 +758,13 @@ function team_meeting_link(array $m, string $manual): string {
     if ($m['platform'] === 'local') return '';   // presencial: sem link, segue o local
     $cfg = team_meet_settings();
     if ($m['platform'] === 'discord' && $cfg['discord']) return $cfg['discord']['invite_url'];
-    if ($m['platform'] === 'meet' && $cfg['google']) return team_google_meet($cfg['google'], $m);
+    if ($m['platform'] === 'meet') {
+        // pela camada única do calendário (§31.4): organizador = quem pediu, se tiver o Google Calendar ligado; senão a conta da topper.
+        global $pdo;
+        require_once __DIR__ . '/gcal.php';
+        if ($pdo instanceof PDO && gcal_can_meet($pdo, (int)$m['requester_id'])) return gcal_meet_for_meeting($pdo, $m);
+    }
     throw new RuntimeException('Cole o link da chamada (' . MEETING_PLATFORMS[$m['platform']] . '): a integração ainda não está configurada.');
-}
-
-/** Cria o evento com Google Meet pela API do Google Calendar (credenciais só no servidor). Devolve o link. */
-function team_google_meet(array $g, array $m): string {
-    if (!function_exists('curl_init')) throw new RuntimeException('Este servidor não tem o cURL do PHP.');
-    $post = function (string $url, $body, array $headers) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $headers, CURLOPT_TIMEOUT => 20]);
-        $r = curl_exec($ch);
-        $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
-        return [$code, json_decode((string)$r, true)];
-    };
-    [$c, $tok] = $post('https://oauth2.googleapis.com/token', http_build_query(['client_id' => $g['client_id'], 'client_secret' => $g['client_secret'],
-                       'refresh_token' => $g['refresh_token'], 'grant_type' => 'refresh_token']), ['Content-Type: application/x-www-form-urlencoded']);
-    if ($c !== 200 || empty($tok['access_token'])) throw new RuntimeException('O Google recusou as credenciais (meet_config.php). Cole o link à mão.');
-    $a = new DateTimeImmutable((string)$m['starts_at'], team_tz());
-    $ev = ['summary' => (string)$m['subject'], 'start' => ['dateTime' => $a->format(DATE_RFC3339), 'timeZone' => 'Europe/Lisbon'],
-           'end' => ['dateTime' => $a->modify('+' . (int)$m['duration_min'] . ' minutes')->format(DATE_RFC3339), 'timeZone' => 'Europe/Lisbon'],
-           'attendees' => [['email' => (string)$m['requester_email']], ['email' => (string)$m['invitee_email']]],
-           'conferenceData' => ['createRequest' => ['requestId' => 'topper-' . (int)$m['id'] . '-' . bin2hex(random_bytes(4)), 'conferenceSolutionKey' => ['type' => 'hangoutsMeet']]]];
-    [$c, $res] = $post('https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($g['calendar_id']) . '/events?conferenceDataVersion=1',
-                       json_encode($ev), ['Authorization: Bearer ' . $tok['access_token'], 'Content-Type: application/json']);
-    $link = (string)($res['hangoutLink'] ?? '');
-    if ($c >= 300 || $link === '') throw new RuntimeException('O Google não criou a chamada. Cole o link à mão.');
-    return $link;
 }
 
 /** Aceitar (§17.7): tarefa «Ocupado» nos dois, histórico do negócio e email com o link. Devolve [mensagem, tarefas]. */
@@ -808,6 +797,12 @@ function team_meeting_accept(PDO $pdo, array $m, int $by, string $manualLink): a
     $it = $mk((int)$m['invitee_id']);
     $pdo->prepare("UPDATE meetings SET status = 'accepted', link = ?, decided_at = ?, requester_task_id = ?, invitee_task_id = ? WHERE id = ?")
         ->execute([$link, now_php(), $rt, $it, $m['id']]);
+    // o Meet criado para o pedido fica ligado às tarefas dos dois: mudar a hora numa atualiza o Google (§31.4)
+    if (db_has_table($pdo, 'calendar_links')) {
+        require_once __DIR__ . '/gcal.php';
+        try { gcal_link_alias($pdo, 'meeting', (int)$m['id'], [$rt, $it]); foreach ([$rt, $it] as $tid) gcal_task_sync($pdo, (int)$tid); }
+        catch (Throwable $e) { error_log('[topper] gcal accept: ' . $e->getMessage()); }
+    }
     if ($m['deal_id'] && function_exists('deal_log')) deal_log($pdo, (int)$m['deal_id'], 'meeting', ['note' => 'Reunião interna: ' . $m['subject'] . ' · ' . team_when((string)$m['starts_at'], (int)$m['duration_min'])]);
     $body = "Reunião: " . $m['subject'] . "\nQuando: " . team_when((string)$m['starts_at'], (int)$m['duration_min']) . " (hora de Lisboa)\n"
           . "Com: " . $m['requester_name'] . ' e ' . $m['invitee_name'] . "\n" . ($m['deal_code'] ? 'Negócio: ' . $m['deal_code'] . ' · ' . $m['deal_name'] . "\n" : '')

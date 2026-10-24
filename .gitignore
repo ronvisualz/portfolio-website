@@ -26,3 +26,7 @@ admin/inc/cc_files/
 admin/inc/fin_mail_config.php
 # Documentos do Financeiro quando o Drive (R2) não está ligado.
 admin/inc/fin_files/
+# Login rápido e calendário (cliente OAuth da Google) — escrito pela plataforma ou copiado de auth_config.example.php.
+admin/inc/auth_config.php
+# A chave da plataforma que cifra os tokens guardados na base (criada sozinha no servidor).
+admin/inc/app_key.php

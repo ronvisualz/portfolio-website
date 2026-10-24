@@ -226,7 +226,7 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
     $edit = $t !== null;
     $v = $t ?? array_merge(['id' => 0, 'kind' => 'task', 'title' => '', 'description' => '', 'due_date' => '', 'due_time' => null, 'duration_min' => null, 'member_id' => $myMember,
                             'deal_id' => null, 'contact_id' => null, 'priority' => 'media', 'checklist' => null, 'attachments' => null, 'repeat_rule' => '', 'busy' => 1,
-                            'platform' => '', 'location' => '', 'participants' => '', 'private' => 0], $pre);
+                            'platform' => '', 'location' => '', 'participants' => '', 'private' => 0, 'call_link' => ''], $pre);
     $type = task_type($v);
     $types = '';
     foreach (TASK_TYPES as $k => [$l, $i]) {
@@ -248,6 +248,26 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
     $parts = array_filter(array_map('intval', explode(',', (string)($v['participants'] ?? ''))));
     $pp = '';
     foreach ($participants as $uid => $name) $pp .= '<label class="chk"><input type="checkbox" name="participants[]" value="' . $uid . '"' . (in_array($uid, $parts, true) ? ' checked' : '') . '><span>' . e($name) . '</span></label>';
+    // a chamada (§31.4): o link (Meet criado pela plataforma ou colado à mão) e «Criar Google Meet»
+    require_once __DIR__ . '/gcal.php';
+    $meUid = (int)(current_user()['id'] ?? 0);
+    $canMeet = gcal_can_meet($pdo, $meUid);
+    $hasMeet = $edit && gcal_link($pdo, 'task', (int)$v['id'], 'meet') !== null;
+    $guestDef = '';
+    if (!empty($v['contact_id'])) { $cst = $pdo->prepare('SELECT email FROM contacts WHERE id = ?'); $cst->execute([(int)$v['contact_id']]); $guestDef = (string)$cst->fetchColumn(); }
+    $link = (string)($v['call_link'] ?? '');
+    $meet = '<div class="field wide gmeet" data-gmeet data-task="' . (int)$v['id'] . '"' . ($hasMeet ? ' data-linked' : '') . '><span class="lbl">' . icon('video') . ' Chamada</span>'
+          . ($link !== '' ? '<div class="gm-now"><a class="gm-link" href="' . e($link) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $link)) . '</a>' . ($hasMeet ? ' <span class="chip ok">Google Meet</span>' : '') . '</div><div class="gm-resp small" data-gm-resp></div>' : '');
+    if ($canMeet && !$hasMeet) {
+        $meet .= '<div class="gm-make"><input type="text" name="gmeet_guests" value="' . e($guestDef) . '" placeholder="Convidados externos (emails, separados por vírgulas)" aria-label="Convidados externos">'
+               . ($edit ? '<button type="button" class="btn sm" data-gmeet-create>' . icon('video') . ' Criar Google Meet</button>'
+                        : '<label class="check"><input type="checkbox" name="gmeet" value="1"> Criar Google Meet ao gravar</label>')
+               . '</div><p class="small muted gm-hint">Precisa de dia e hora. Os participantes da equipa e estes convidados recebem o convite do Google (o cliente também). Contas Google gratuitas: chamadas com 3+ pessoas param aos 60 min.</p>';
+    }
+    $meet .= '<details class="gm-manual"' . ($link !== '' && !$hasMeet ? ' open' : '') . '><summary class="small">' . ($canMeet ? 'Ou colar um link à mão' : 'Colar o link da chamada') . '</summary>'
+           . '<input type="url" name="call_link" maxlength="500" value="' . e($link) . '" placeholder="https://meet.google.com/… ou outro link" aria-label="Link da chamada"></details>'
+           . (!$canMeet ? '<p class="small muted">' . (is_admin() ? 'Para criar o Meet daqui: <a href="/admin/definicoes.php?t=integracoes#set-int_google">Ligar Google</a> (ou cada pessoa liga o seu calendário no Perfil).' : 'Para criar o Meet daqui, ligue o seu Google Calendar no <a href="/admin/conta.php#ligacoes">Perfil</a>.') . '</p>' : '')
+           . '<p class="small" data-gm-out hidden aria-live="polite"></p></div>';
     $hist = '';
     if ($edit) {
         foreach (task_history($pdo, (int)$v['id']) as $h) {
@@ -270,12 +290,14 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
       <div class="field"><label for="tk-day">Data</label><input type="date" id="tk-day" name="due_date" value="' . e((string)$v['due_date']) . '"></div>
       <div class="field"><label for="tk-time">Hora</label><input type="time" id="tk-time" name="due_time" step="900" value="' . e(substr((string)($v['due_time'] ?? ''), 0, 5)) . '"></div>
       <div class="field"><label for="tk-dur">Duração</label><select id="tk-dur" name="duration_min">' . $dur . '</select></div>
+      <div class="field wide gslots" data-gslots hidden aria-live="polite"></div>
       <div class="field"><span class="lbl">Na agenda <span class="ii" tabindex="0" role="img" aria-label="Ajuda: com hora, «Ocupado» bloqueia o bloco na disponibilidade (Equipa); «Livre» fica só como lembrete. Pessoal e Bloqueio são sempre Ocupado e privados." data-tip="Com hora, «Ocupado» bloqueia o bloco na disponibilidade (Equipa); «Livre» fica só como lembrete. Pessoal e Bloqueio são sempre Ocupado e privados.">i</span></span>
         <div class="chips-check"><label class="rb"><input type="radio" name="busy" value="1"' . ((int)($v['busy'] ?? 1) === 1 ? ' checked' : '') . '><span>Ocupado</span></label><label class="rb"><input type="radio" name="busy" value="0"' . ((int)($v['busy'] ?? 1) === 0 ? ' checked' : '') . '><span>Livre</span></label></div></div>
       <div class="field tmeet wide" data-only="meeting"><span class="lbl">Reunião via <span class="muted">(nenhuma = presencial)</span></span>
         <div class="chips-check"><label class="rb"><input type="radio" name="platform" value="meet"' . ($plat === 'meet' ? ' checked' : '') . '><span>' . icon('video') . ' Google Meet</span></label>
           <label class="rb"><input type="radio" name="platform" value="discord"' . ($plat === 'discord' ? ' checked' : '') . '><span>' . icon('video') . ' Discord</span></label>
           <label class="rb"><input type="radio" name="platform" value=""' . ($plat === '' ? ' checked' : '') . '><span>' . icon('pin') . ' Presencial</span></label></div></div>
+      ' . $meet . '
       <div class="field wide" data-only="local"><label for="tk-loc">Local</label><input type="text" id="tk-loc" name="location" maxlength="200" value="' . e((string)($v['location'] ?? '')) . '" placeholder="Estúdio, morada do cliente…"></div>
       <div class="field"><label for="tk-who">Responsável</label><select id="tk-who" name="member_id">' . $who . '</select></div>
       <div class="field"><label for="tk-deal">Negócio ou lead</label><select id="tk-deal" name="deal_id">' . $deals . '</select></div>

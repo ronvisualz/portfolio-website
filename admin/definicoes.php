@@ -46,6 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
         redirect('/admin/definicoes.php?t=financeiro#set-fin_irs');
     }
+    if (isset($_POST['google_client'])) {   // o cliente OAuth da Google (§31): testado no formato e gravado só no servidor
+        require_once __DIR__ . '/inc/secrets.php';
+        try {
+            google_client_save((string)($_POST['client_id'] ?? ''), (string)($_POST['client_secret'] ?? ''));
+            setting_log($pdo, 'int_google', 'Ligação à Google', null, 'cliente OAuth guardado no servidor');   // nunca o segredo
+            flash('Cliente OAuth da Google guardado no servidor. Experimente «Entrar com Google» e «Ligar Google Calendar» no Perfil.');
+        } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect('/admin/definicoes.php?t=integracoes#set-int_google');
+    }
     redirect('/admin/definicoes.php?t=orcamentacao#set-budget_templates');
 }
 
@@ -95,7 +104,7 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
     }
     $editable = in_array($d['type'], ['int', 'num', 'text', 'email', 'url', 'time', 'textarea', 'list', 'select'], true);
     $reset = $editable ? '<button type="button" class="set-reset" data-reset="' . e($key) . '" data-def="' . e($def) . '"' . ($v === $def ? ' hidden' : '') . ' data-tip="Repor o valor de origem">Repor (' . e(setting_show($d, $def)) . ')</button>' : '';
-    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types'], true);
+    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types', 'mail_cf', 'google_int'], true);
     return '<div class="set-row' . ($wide ? ' wide' : '') . '" id="' . $id . '" data-row="' . e($key) . '">' . $label . '<div class="set-f">' . $field . '</div>' . $reset
          . '<div class="set-warn" hidden role="alert"><p></p><div class="actions"><button type="button" class="btn sm" data-impact-ok>Confirmar</button><button type="button" class="btn ghost sm" data-impact-no>Cancelar</button></div></div></div>';
 }
@@ -162,31 +171,102 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                 . '<div class="actions"><button class="btn sm" type="submit">Importar</button></div></form>'
                 . '<p class="small muted">Substitui as tabelas desse ano e região que vierem no texto. Para as usar, mude «Ano das tabelas em uso» nos parâmetros.</p></details>';
             return $h;
+        case 'google_int':
+            require_once __DIR__ . '/inc/gcal.php';
+            $gcl = google_client();
+            $top = gcal_topper();
+            $nConn = gcal_ready($pdo) ? (int)$pdo->query('SELECT COUNT(*) FROM user_google')->fetchColumn() : 0;
+            $nSub = db_has_column($pdo, 'users', 'google_sub') ? (int)$pdo->query('SELECT COUNT(*) FROM users WHERE google_sub IS NOT NULL')->fetchColumn() : 0;
+            $chip = fn(bool $b, string $y, string $n) => '<span class="chip ' . ($b ? 'ok' : 'wait') . '">' . e($b ? $y : $n) . '</span>';
+            $h = '<p>' . $chip((bool)$gcl, 'Cliente OAuth ligado', 'Cliente OAuth por ligar') . ' ' . $chip((bool)$top, 'Conta da topper. ligada (Meet)', 'Conta da topper. por ligar')
+               . ' <span class="small muted">' . $nConn . ($nConn === 1 ? ' pessoa com o calendário ligado' : ' pessoas com o calendário ligado') . ' · ' . $nSub . ' já entraram com Google</span></p>';
+            $h .= '<ol class="cf-steps"><li>Em <b>console.cloud.google.com</b>: crie um projeto (ex.: «topper.»), ative a <b>Google Calendar API</b> (APIs e serviços › Biblioteca).</li>'
+                . '<li><b>Ecrã de consentimento OAuth</b>: tipo «Externo», nome «topper.», domínio autorizado <code>' . e(parse_url(app_base_url(), PHP_URL_HOST) ?: 'topperhub.xyz') . '</code>, scopes <code>openid</code>, <code>email</code>, <code>calendar.events</code> e <code>calendar.freebusy</code>; publique a app (ou junte cada pessoa como utilizador de teste).</li>'
+                . '<li><b>Credenciais › Criar ID de cliente OAuth › Aplicação Web</b>, com o URI de redirecionamento autorizado:<pre class="cf-cmd">' . e(google_redirect_uri()) . '</pre></li>'
+                . '<li>Cole aqui o ID e o segredo do cliente:</li></ol>'
+                . '<form method="post" class="fin-pass cf-api" autocomplete="off">' . csrf_field() . '<input type="hidden" name="google_client" value="1">'
+                . '<input type="text" name="client_id" maxlength="200" required placeholder="' . ($gcl ? e(substr($gcl['client_id'], 0, 12)) . '… (guardado)' : '…apps.googleusercontent.com') . '" aria-label="ID de cliente">'
+                . '<input type="password" name="client_secret" maxlength="200" required autocomplete="new-password" placeholder="' . ($gcl ? '•••••••• guardado no servidor' : 'Segredo do cliente') . '" aria-label="Segredo do cliente">'
+                . '<button class="btn sm" type="submit">' . ($gcl ? 'Mudar' : 'Guardar') . '</button></form>'
+                . '<p class="small muted">Fica só no servidor (admin/inc/auth_config.php), nunca na base de dados nem nesta página. O mesmo cliente serve para entrar, para o calendário de cada pessoa e para o Meet.'
+                . ($top ? '' : ' Para criar Meet também por quem não liga o calendário, a conta da topper. continua em admin/inc/meet_config.php (o refresh_token dessa conta).') . '</p>';
+            return $h;
+        case 'mail_cf':
+            require_once __DIR__ . '/inc/mail_inbound.php';
+            $g = mail_inbound_guide($pdo);
+            $ok = fn(bool $b, string $yes, string $no) => '<span class="chip ' . ($b ? 'ok' : 'wait') . '">' . e($b ? $yes : $no) . '</span>';
+            $agoT = function (string $t): string {
+                if ($t === '') return '';
+                $m = max(0, (int)round((time() - strtotime($t)) / 60));
+                return $m < 1 ? 'agora mesmo' : 'há ' . ($m < 60 ? $m . ' min' : ($m < 2880 ? round($m / 60) . ' h' : round($m / 1440) . ' dias'));
+            };
+            $boxes = fin_mail_boxes_safe($pdo);
+            $h = '<ol class="cf-steps">';
+            $h .= '<li><b>O domínio ' . e($g['domain']) . ' na Cloudflare.</b> ' . ($g['mx'] ? $ok($g['mx_ok'], 'MX da Cloudflare', 'MX ainda não é da Cloudflare') . ' <span class="muted small">' . e(implode(', ', $g['mx'])) . '</span>' : '<span class="muted small">Ative o Email Routing e confirme aqui que os MX passam a ser *.mx.cloudflare.net.</span>')
+                . '<div class="small muted">Cloudflare › ' . e($g['domain']) . ' › DNS: os servidores de nomes do domínio têm de ser os da Cloudflare.</div></li>';
+            $h .= '<li><b>Email Routing.</b> Cloudflare › ' . e($g['domain']) . ' › Email › Email Routing › <i>Enable</i>. Em <i>Routing rules</i> › <i>Custom address</i>: <code>' . e($g['address']) . '</code> com a ação <i>Send to a Worker</i> › <code>topper-mail</code>.</li>';
+            $h .= '<li><b>Publicar o Worker</b> (uma vez; na mesma conta do tempo real):<pre class="cf-cmd">cd mail &amp;&amp; npm ci &amp;&amp; npx wrangler deploy' . "\n" . 'npx wrangler secret put INBOUND_SECRET</pre>'
+                . '<div class="cf-secret">' . ($g['secret'] ? $ok(true, 'Segredo gerado', '') . ' <button type="button" class="btn ghost sm" data-mail-secret data-again="1">Gerar outro</button> <span class="muted small">(o anterior deixa de valer: volte a pôr o novo no Worker)</span>'
+                                                         : '<button type="button" class="btn sm" data-mail-secret>Gerar o segredo</button> <span class="muted small">É o que o comando <code>secret put</code> pede. Aparece uma vez.</span>')
+                . '<div class="cf-secret-out" hidden><code></code> <button type="button" class="btn ghost sm" data-copy-secret>Copiar</button></div></div>'
+                . '<div class="small">' . ($g['last'] !== '' ? $ok(true, 'A funcionar', '') . ' último email recebido ' . e($agoT($g['last'])) : '<span class="muted">Ainda não chegou nenhum email pela Cloudflare.</span>') . '</div></li>';
+            $h .= '<li><b>Em cada caixa ligada do Hostinger:</b> hPanel › Emails › a caixa › <i>Reencaminhamento</i> › para <code>' . e($g['address']) . '</code>, com <i>manter uma cópia</i> na caixa. '
+                . ($boxes ? '<span class="small">Caixas ligadas: ' . e(implode(', ', $boxes)) . '.</span>' : '<span class="small neg">Ainda não há caixas ligadas (campo «Caixas ligadas», abaixo).</span>') . '</li>';
+            $h .= '<li><b>Testar:</b> em «Estado das caixas», abaixo, «Testar» manda um email com um código para a caixa e mostra-o a chegar.</li>';
+            $h .= '</ol>';
+            // envio pelo serviço transacional
+            $api = $g['api'];
+            $po = '';
+            foreach (MAILER_PROVIDERS as $k => $l) $po .= '<option value="' . $k . '"' . (($api['provider'] ?? 'resend') === $k ? ' selected' : '') . '>' . e($l) . '</option>';
+            $h .= '<div class="cf-send"><h4>Serviço de envio</h4>'
+                . '<p class="small muted">Crie uma conta no Resend (resend.com) ou no Brevo (brevo.com), verifique o domínio topperdigital.xyz (registos DNS que o serviço indica) e crie uma chave API. A chave é confirmada no serviço e fica só no servidor.</p>'
+                . '<form class="fin-pass cf-api" data-mail-api autocomplete="off"><select name="provider" aria-label="Serviço">' . $po . '</select>'
+                . '<input type="password" name="key" autocomplete="new-password" maxlength="300" required placeholder="' . ($api ? '•••••••• guardada no servidor' : 'A chave API') . '" aria-label="Chave API">'
+                . '<button class="btn sm" type="submit">' . ($api ? 'Mudar' : 'Guardar') . '</button>'
+                . ($api ? '<button class="btn ghost sm" type="button" data-mail-api-del>Tirar</button>' : '') . '</form>'
+                . '<p class="small">' . ($api ? $ok(true, MAILER_PROVIDERS[$api['provider']] . ' ligado', '') : $ok(false, '', 'Sem serviço de envio')) . ' '
+                . ($g['send'] === 'smtp' ? '<span class="muted">Em uso: SMTP do Hostinger («Como saem os emails»).</span>' : '')
+                . ' <button type="button" class="btn ghost sm" data-mail-send-test>Enviar um email de teste para mim</button></p>'
+                . '<p class="small cf-out" aria-live="polite" hidden></p></div>';
+            return $h;
         case 'fin_mail':
             require_once __DIR__ . '/inc/fin_mail.php';
             $s = fin_mail_status($pdo);
-            $ago = function (string $t): string {
-                if ($t === '') return 'ainda não lida';
+            $cf = $s['mode'] === 'cloudflare';
+            $needPass = !$cf || $s['send'] === 'smtp';   // palavras-passe só no modo IMAP ou no envio por SMTP
+            $ago = function (string $t, string $none = 'ainda não lida', string $verb = 'lida'): string {
+                if ($t === '') return $none;
                 $m = max(0, (int)round((time() - strtotime($t)) / 60));
-                return $m < 1 ? 'lida agora mesmo' : 'lida há ' . ($m < 60 ? $m . ' min' : ($m < 2880 ? round($m / 60) . ' h' : round($m / 1440) . ' dias'));
+                return $m < 1 ? $verb . ' agora mesmo' : $verb . ' há ' . ($m < 60 ? $m . ' min' : ($m < 2880 ? round($m / 60) . ' h' : round($m / 1440) . ' dias'));
             };
-            $h = '<div class="tablewrap"><table class="set-t fin-boxes"><thead><tr><th>Caixa</th><th>Estado</th><th class="hide-sm">Lidas</th><th></th></tr></thead><tbody>';
+            $h = '<div class="tablewrap"><table class="set-t fin-boxes"><thead><tr><th>Caixa</th><th>' . ($cf ? 'Último email' : 'Estado') . '</th><th class="hide-sm">' . ($cf ? 'Pela Cloudflare' : 'Lidas') . '</th><th></th></tr></thead><tbody>';
             foreach ($s['boxes'] as $b) {
-                $role = ($b['read'] ? 'lida' : '') . ($b['read'] && $b['general'] ? ' · ' : '') . ($b['general'] ? 'email geral (envio)' : '');
-                $chip = !$b['pass'] ? '<span class="chip wait">sem palavra-passe</span>'
-                      : ($b['error'] !== '' ? '<span class="chip no">erro</span>' : (!$b['read'] ? '<span class="chip ok">pronta a enviar</span>' : '<span class="chip ' . ($b['last'] !== '' ? 'ok' : 'info') . '">' . e($ago($b['last'])) . '</span>'));
+                $role = ($b['read'] ? ($cf ? 'ligada' : 'lida') : '') . ($b['read'] && $b['general'] ? ' · ' : '') . ($b['general'] ? 'email geral (respostas)' : '');
+                if ($cf) {
+                    $chip = !$b['read'] ? '<span class="chip info">não ligada</span>' : '<span class="chip ' . ($b['last_in'] !== '' ? 'ok' : 'wait') . '">' . e($ago($b['last_in'], 'ainda nenhum', 'recebido')) . '</span>';
+                    $mid = $b['read'] ? ($b['last_in'] !== '' ? e(date('d/m H:i', strtotime($b['last_in']))) : '<span class="muted">confirme o reencaminhamento</span>') : '—';
+                    $btn = $b['read'] ? '<button type="button" class="btn ghost sm" data-fin-mail-test="' . e($b['addr']) . '">Testar</button>' : '';
+                } else {
+                    $chip = !$b['pass'] ? '<span class="chip wait">sem palavra-passe</span>'
+                          : ($b['error'] !== '' ? '<span class="chip no">erro</span>' : (!$b['read'] ? '<span class="chip ok">pronta a enviar</span>' : '<span class="chip ' . ($b['last'] !== '' ? 'ok' : 'info') . '">' . e($ago($b['last'])) . '</span>'));
+                    $mid = $b['read'] && $b['last'] !== '' ? $b['seen'] . ' vistas · ' . $b['docs'] . ' com documento' . ($b['uid'] ? ' · UID ' . $b['uid'] : '') : '—';
+                    $btn = $b['pass'] ? '<button type="button" class="btn ghost sm" data-fin-mail-test="' . e($b['addr']) . '">Testar</button>' : '';
+                }
                 $h .= '<tr><td class="b">' . e($b['addr']) . '<div class="muted small">' . e($role) . '</div></td>'
-                    . '<td>' . $chip . ($b['error'] !== '' ? '<div class="small neg">' . e($b['error']) . '</div>' : '') . '</td>'
-                    . '<td class="hide-sm small">' . ($b['read'] && $b['last'] !== '' ? $b['seen'] . ' vistas · ' . $b['docs'] . ' com documento' . ($b['uid'] ? ' · UID ' . $b['uid'] : '') : '—') . '</td>'
-                    . '<td class="num nowrap">' . ($b['pass'] ? '<button type="button" class="btn ghost sm" data-fin-mail-test="' . e($b['addr']) . '">Testar</button>' : '') . '</td></tr>'
-                    . '<tr class="fin-box-pass"><td colspan="4"><form class="fin-pass" data-fin-mail-pass="' . e($b['addr']) . '" autocomplete="off"><label class="small muted" for="fp-' . md5($b['addr']) . '">Palavra-passe</label>'
-                    . '<input type="password" id="fp-' . md5($b['addr']) . '" name="pass" autocomplete="new-password" maxlength="200" required placeholder="' . ($b['pass'] ? '•••••••• guardada no servidor' : 'A palavra-passe desta caixa') . '">'
-                    . '<button class="btn sm" type="submit">' . ($b['pass'] ? 'Mudar' : 'Guardar') . '</button>'
-                    . ($b['pass'] ? '<button class="btn ghost sm" type="button" data-fin-mail-pass-del="' . e($b['addr']) . '">Tirar</button>' : '') . '</form></td></tr>'
-                    . '<tr class="fin-box-out" hidden><td colspan="4" class="small" aria-live="polite"></td></tr>';
+                    . '<td>' . $chip . (!$cf && $b['error'] !== '' ? '<div class="small neg">' . e($b['error']) . '</div>' : '') . '</td>'
+                    . '<td class="hide-sm small">' . $mid . '</td>'
+                    . '<td class="num nowrap">' . $btn . '</td></tr>';
+                if ($needPass) {
+                    $h .= '<tr class="fin-box-pass"><td colspan="4"><form class="fin-pass" data-fin-mail-pass="' . e($b['addr']) . '" autocomplete="off"><label class="small muted" for="fp-' . md5($b['addr']) . '">Palavra-passe' . ($cf ? ' (só para o envio por SMTP)' : '') . '</label>'
+                        . '<input type="password" id="fp-' . md5($b['addr']) . '" name="pass" autocomplete="new-password" maxlength="200" required placeholder="' . ($b['pass'] ? '•••••••• guardada no servidor' : 'A palavra-passe desta caixa') . '">'
+                        . '<button class="btn sm" type="submit">' . ($b['pass'] ? 'Mudar' : 'Guardar') . '</button>'
+                        . ($b['pass'] ? '<button class="btn ghost sm" type="button" data-fin-mail-pass-del="' . e($b['addr']) . '">Tirar</button>' : '') . '</form></td></tr>';
+                }
+                $h .= '<tr class="fin-box-out" hidden><td colspan="4" class="small" aria-live="polite"></td></tr>';
             }
             $h .= '</tbody></table></div>';
-            $h .= '<p class="small muted">A palavra-passe é testada (entra na caixa só para ler) e, se estiver certa, fica só no servidor, no ficheiro admin/inc/fin_mail_config.php: nunca na base de dados, no registo nem nesta página. Cada pessoa põe a do seu próprio email no Perfil › Email de envio.</p>';
+            $h .= $needPass ? '<p class="small muted">A palavra-passe é testada e, se estiver certa, fica só no servidor, no ficheiro admin/inc/fin_mail_config.php: nunca na base de dados, no registo nem nesta página.' . (!$cf ? ' Cada pessoa põe a do seu próprio email no Perfil › Email de envio.' : '') . '</p>'
+                            : '<p class="small muted">Sem palavras-passe: cada caixa ligada reencaminha uma cópia; os emails de caixas que não estão ligadas são ignorados e o corpo dos emails nunca é guardado.</p>';
             $h .= '<p class="small">' . ($s['pending'] ? '<a class="chip info" href="/admin/financeiro.php?tab=receber">' . $s['pending'] . ' por confirmar</a> ' : '')
                 . 'Contabilista: ' . ($s['accountant'] !== '' ? e($s['accountant']) : '<span class="muted">por indicar em Definições › Financeiro</span>') . '</p>';
             if ($s['company_nif'] === '') $h .= '<p class="small neg">Falta o NIF da empresa em Definições › Geral: sem ele não sei se um documento é despesa (o nosso NIF como adquirente) ou receita (como emitente), e fica tudo por confirmar.</p>';
@@ -194,7 +274,7 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
         case 'info':
             $show = (string)$d['show'];
             if ($key === 'mkt_templates') { require_once __DIR__ . '/inc/marketing.php'; $show = implode(' · ', MKT_FORMATS); }
-            if ($key === 'int_meet') { require_once __DIR__ . '/inc/team.php'; $show = team_meet_config()['google'] ? 'Ligado (cria o link do Meet)' : 'Por ligar: as reuniões levam o link escrito à mão'; }
+            if ($key === 'int_meet') { require_once __DIR__ . '/inc/gcal.php'; $show = gcal_topper() ? 'Conta da topper. ligada: cria o Meet quando quem marca não tem o Google Calendar ligado' : 'Conta da topper. por ligar: o Meet só é criado por quem tem o Google Calendar ligado; senão, link colado à mão'; }
             return '<span class="set-info">' . e($show) . '</span>';
         case 'services':
             $rows = services_list($pdo, false);
