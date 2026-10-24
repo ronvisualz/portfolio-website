@@ -126,12 +126,12 @@ elseif ($tab === 'receber'):
     foreach ($recv as $r) { $parts[$r['bucket']]['value'] += $r['gross']; $parts[$r['bucket']]['n']++; }
 ?>
 <?php if ($mails && $canEdit): ?>
-<section class="panel fin-inbox" aria-labelledby="h-inb"><h3 id="h-inb">Por confirmar · caixa das faturas</h3>
+<section class="panel fin-inbox" aria-labelledby="h-inb"><h3 id="h-inb">Por confirmar · emails</h3>
   <?php foreach ($mails as $m): $sug = json_decode((string)$m['suggestions'], true) ?: []; $ai = json_decode((string)$m['ai'], true) ?: []; $att = json_decode((string)$m['att'], true) ?: []; ?>
   <div class="fin-mail">
-    <div><b><?= e($m['subject']) ?></b> <span class="muted small">de <?= e($m['from_addr']) ?> · <?= e($m['received_at'] ? date('d/m H:i', strtotime((string)$m['received_at'])) : '') ?></span>
+    <div><b><?= e($m['subject']) ?></b> <span class="muted small">de <?= e($m['from_addr']) ?><?= ($m['box'] ?? '') !== '' ? ' · em ' . e($m['box']) : '' ?> · <?= e($m['received_at'] ? date('d/m H:i', strtotime((string)$m['received_at'])) : '') ?></span>
       <?php foreach ($att as $i => $a): ?> · <a class="lnk" href="<?= e(fin_file_href('mail', (int)$m['id']) . '&n=' . $i) ?>" target="_blank" rel="noopener"><?= e($a['name']) ?></a><?php endforeach; ?>
-      <?php if ($ai): ?><div class="small muted">A IA leu: <?= e(trim(($ai['number'] ?? '') . ' · ' . ($ai['client_name'] ?? '') . ' · NIF ' . ($ai['client_nif'] ?? '—') . ' · ' . eur((float)($ai['total'] ?? 0)) . ' · ' . fin_date_pt($ai['issue_date'] ?? ''))) ?> (confiança <?= round((float)($ai['confidence'] ?? 0) * 100) ?>%)</div><?php endif; ?>
+      <?php if ($ai): $src = ['qr' => 'Lido do QR fiscal', 'xml' => 'Lido do XML'][$ai['source'] ?? ''] ?? 'A IA leu'; ?><div class="small muted"><?= e($src) ?>: <?= e(trim(($ai['number'] ?? '') . ' · emitente NIF ' . (($ai['issuer_nif'] ?? '') ?: '—') . ' → adquirente NIF ' . (($ai['client_nif'] ?? '') ?: '—') . ' · ' . eur((float)($ai['total'] ?? 0)) . ' · ' . fin_date_pt($ai['issue_date'] ?? ''))) ?><?= ($ai['source'] ?? '') === 'ai' || !isset($ai['source']) ? ' (confiança ' . round((float)($ai['confidence'] ?? 0) * 100) . '%)' : '' ?><?= !empty($ai['atcud']) ? ' · ATCUD ' . e($ai['atcud']) : '' ?></div><?php endif; ?>
       <div class="small"><?= e($m['note']) ?></div></div>
     <div class="fin-mail-act">
       <?php if ($sug): ?><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="mail_confirm"><input type="hidden" name="mail" value="<?= (int)$m['id'] ?>">
@@ -161,8 +161,8 @@ elseif ($tab === 'receber'):
     $cfg = fin_mail_config(); $acc = fin_accountant_email($pdo);
 ?>
 <section class="panel"><h2>Pedir fatura ao contabilista</h2>
-  <?php if (!$cfg || $acc === ''): ?><div class="flash err">Para pedir faturas por email falta <?= !$cfg ? 'configurar a caixa das faturas no servidor (inc/fin_mail_config.php)' : '' ?><?= !$cfg && $acc === '' ? ' e ' : '' ?><?= $acc === '' ? 'o email do contabilista em Definições › Financeiro' : '' ?>.</div><?php endif; ?>
-  <p class="small muted">Sai da caixa das faturas para <?= e($acc ?: 'o contabilista') ?> com o código no assunto. A resposta com o PDF é lida sozinha e liga-se a este pedido.</p>
+  <?php if (!$cfg || $acc === ''): ?><div class="flash err">Para pedir faturas por email falta <?= !$cfg ? 'escolher a caixa de envio em Definições › Integrações › Email (com a palavra-passe no servidor)' : '' ?><?= !$cfg && $acc === '' ? ' e ' : '' ?><?= $acc === '' ? 'o email do contabilista em Definições › Financeiro' : '' ?>.</div><?php endif; ?>
+  <p class="small muted">Sai de <?= e($cfg['user'] ?? 'a caixa de envio') ?> para <?= e($acc ?: 'o contabilista') ?> com o código no assunto. A resposta com o PDF é lida sozinha (pelo código ou pelo QR fiscal) e liga-se a este pedido.</p>
   <form method="post" class="fin-form" data-fin-req><?= csrf_field() ?><input type="hidden" name="do" value="request_invoice"><input type="hidden" name="back" value="<?= e(fin_url(['tab' => 'receber'])) ?>">
     <div class="grid">
       <fieldset class="field fin-scope"><legend>Âmbito</legend><label class="check"><input type="radio" name="scope" value="deal"<?= ($vals['scope'] ?? '') === 'deal' ? ' checked' : '' ?>> Negócio</label> <label class="check"><input type="radio" name="scope" value="company"<?= ($vals['scope'] ?? '') !== 'deal' ? ' checked' : '' ?>> Empresa</label></fieldset>

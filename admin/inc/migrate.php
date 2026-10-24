@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -317,6 +317,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     migrate_finance($pdo);
     // ── 31 · Tesouraria (saldo semanal, responsável por conta) e reservas dos sócios por negócio ──
     migrate_finance_31($pdo);
+    migrate_finance_32($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

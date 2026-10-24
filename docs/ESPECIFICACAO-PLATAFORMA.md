@@ -1801,7 +1801,7 @@ Ficheiros novos: `inc/migrate_audio.php`, `inc/cc_stt.php`, `assets/cc_audio.js`
 Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_params` + `fin_param_log`
 (parâmetros), `fin_irs` (tabelas de retenção), `fin_docs` (todos os lançamentos), `fin_payments`,
 `fin_fixed` (custos fixos), `fin_accounts` / `fin_imports` / `fin_bank_tx` (tesouraria), `fin_employees`
-/ `fin_payroll` (salários), `fin_scenarios` (simulador), `fin_mail` (caixa das faturas), `fin_done`
+/ `fin_payroll` (salários), `fin_scenarios` (simulador), `fin_mail` (documentos que chegam por email), `fin_done`
 (obrigações já com tarefa); `contacts.wh_exempt` e `contacts.vat_exempt`.
 
 - **Migração dos dados atuais, sem perder nada:** os custos da empresa viviam em `costs` (sem negócio)
@@ -1868,15 +1868,39 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
   as datas de declaração e pagamento; calendário fiscal (DMR, SS, retenções, IVA, anuais) com tarefa ao
   responsável financeiro 10 dias antes; ZIP do mês (PDFs + CSV dos lançamentos e dos salários).
 - **Contabilista (`inc/fin_mail.php`, §28.14):** «Pedir fatura» (no Financeiro e na tarefa «Emitir
-  fatura») envia por SMTP `[topper FAT-2026-0001] Pedido de fatura — ID…` e cria «Fatura pedida». O cron
-  `cc` (5 min) lê a caixa por IMAP (cliente em PHP puro, SSL): liga pelo código; sem código, a IA lê o PDF e
-  só liga sozinha com confiança alta e um candidato claro — senão «Por confirmar» com as sugestões;
-  compara valores e NIF (avisa), passa a «Emitida», conclui a tarefa e avisa o responsável e o comercial
-  («A fatura … do … está pronta para enviar ao cliente»). «Enviar ao cliente» (PDF, IBAN, vencimento) fica
-  no histórico do negócio e do contacto. Recibos («Pedir recibo», REC-…) e faturas de fornecedores pelo
-  mesmo leitor; duplicados detetados; as mensagens passam para «Processadas» (nada apagado). Credenciais só
-  em `inc/fin_mail_config.php` no servidor (fora do Git; exemplo em `fin_mail_config.example.php`).
-  Definições › Integrações › Email mostra a última leitura, o último erro e «Testar a ligação».
+  fatura») envia por SMTP `[topper FAT-2026-0001] Pedido de fatura — ID…` e cria «Fatura pedida». Liga
+  pelo código; sem código, pelos dados (NIF do cliente, total, data) e só sozinho com confiança alta e um
+  candidato claro — senão «Por confirmar» com as sugestões; compara valores e NIF (avisa), passa a
+  «Emitida», conclui a tarefa e avisa o responsável e o comercial («A fatura … do … está pronta para enviar
+  ao cliente»). «Enviar ao cliente» (PDF, IBAN, vencimento) fica no histórico do negócio e do contacto.
+  Recibos («Pedir recibo», REC-…) pelo mesmo circuito.
+- **Leitura das caixas (revista a 24 out 2026, §28.14 ponto 2; base de dados v32: `fin_mail.box` e
+  `fin_mail.source`):**
+  - **Caixas existentes, várias:** Definições › Integrações › Email › «Caixas a ler» (ex.:
+    info@topperdigital.xyz), uma por linha; cada uma com a sua palavra-passe só em `inc/fin_mail_config.php`
+    no servidor (`boxes` → endereço => palavra-passe; exemplo em `fin_mail_config.example.php`). A primeira
+    da lista com palavra-passe envia os pedidos ao contabilista. Não é precisa uma caixa dedicada.
+  - **Só leitura:** `EXAMINE` (nunca `SELECT`) e `BODY.PEEK` — não marca `\Seen`, não move, não apaga;
+    o cliente IMAP não tem comandos de escrita. Guarda por caixa o último UID visto e o UIDVALIDITY
+    (`settings.fin_mail_state`); na primeira leitura, ou se o UIDVALIDITY mudar, olha só os últimos 7 dias.
+    A mesma mensagem em duas caixas (Message-ID) trata-se uma vez.
+  - **Filtro barato primeiro:** cabeçalhos e tamanho primeiro; remetentes a ignorar (lista editável:
+    endereço ou @domínio) e mensagens sem anexos nem chegam a ser descarregadas. Só os anexos PDF, XML e
+    imagem (≥ 30 KB) são analisados; até 15 mensagens por caixa e volta do cron, máx. 25 MB cada.
+  - **QR fiscal primeiro, IA depois (`inc/fin_qr.php`, PHP puro, sem bibliotecas):** lê o QR code da
+    Portaria n.º 195/2020 — no PDF (texto do QR, quadrados vetoriais, imagens Flate/DCT/máscara, páginas
+    digitalizadas) ou na imagem — e tira NIF do emitente e do adquirente, tipo, número, ATCUD, data, bases
+    e IVA por taxa, total e retenção; descodificador próprio (localização, amostragem, Reed-Solomon).
+    Faturas eletrónicas XML (UBL 2.1 / CIUS-PT) também sem IA. A IA só lê os anexos sem QR claro.
+  - **Classificação pelo NIF da empresa (Definições › Geral):** adquirente = topper. → despesa em «A
+    pagar», por confirmar (nome pelo contacto com esse NIF; recibos «RC» juntam-se à fatura do
+    fornecedor); emitente = topper. → receita, ligada ao pedido «Fatura pedida». Documentos entre
+    terceiros, orçamentos e anulados: ignorados, nada fica guardado. Sem o NIF da empresa, fica tudo por
+    confirmar (com aviso em Definições).
+  - **Privacidade:** o corpo dos emails nunca é guardado (o código FAT/REC lê-se em memória); fica só o
+    anexo financeiro (Drive, Empresa/Financeiro) e o remetente, o assunto, a data e a caixa.
+  - **Estado e «Testar» por caixa** em Definições › Integrações › Email: última leitura, erro, mensagens
+    vistas e com documento, UID; «Testar» entra só para ler (e autentica o SMTP na caixa que envia).
 - **Gráficos (`inc/charts.php`):** runway (barra com reserva tracejada), fluxo de caixa 12 meses (entradas/
   saídas + saldo, previsão tracejada), antiguidade empilhada, custos fixos por categoria, receita com
   tendência; dicas com valores exatos, animação de entrada (desligada com «reduzir movimento»), claro/escuro.
@@ -1886,9 +1910,15 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
 - **Testado na bancada:** migração (8 custos → lançamentos), cálculos do IRS/SS contra contas à mão,
   circuito do contabilista com SMTP/IMAP simulados e a IA simulada, pagamentos parciais e comprovativo,
   conciliação CSV/OFX, custos fixos, salários, permissões (colaborador, outro colaborador, API),
-  claro/escuro e telemóvel (390 px sem deslocamento horizontal).
-- **Para ligar em produção:** criar a caixa `faturas@` no Hostinger e o ficheiro `inc/fin_mail_config.php`;
-  indicar o email do contabilista e o IBAN em Definições › Financeiro; a taxa do seguro de acidentes; a IA
+  claro/escuro e telemóvel (390 px sem deslocamento horizontal). Leitura revista: o descodificador nas 40
+  versões × 4 níveis de correção e com erros; QR em PNG/JPEG, rodado, desfocado, página digitalizada, PDF
+  com imagem, JPEG, 1 píxel por módulo, máscara de 1 bit, vetorial e em texto; duas caixas simuladas que
+  registam todos os comandos (só EXAMINE/PEEK, ficheiros intactos, UID por caixa, segunda volta sem nada
+  novo), despesa, receita ligada ao pedido pelo QR, código, XML, recibo, foto, ignorados (antigos,
+  remetente, sem anexo, terceiros, orçamento), IA só sem QR/XML, corpo nunca guardado.
+- **Para ligar em produção:** pôr no servidor `inc/fin_mail_config.php` com a palavra-passe de cada caixa
+  existente a ler (ex.: info@); escolher as caixas em Definições › Integrações › Email; confirmar o NIF da
+  empresa em Definições › Geral; indicar o email do contabilista e o IBAN em Definições › Financeiro; a taxa do seguro de acidentes; a IA
   de leitura de PDFs usa a mesma chave do assistente (`ai_config.php`) — sem ela, preenche-se à mão.
 
 ### 10.20 Tesouraria semanal e reservas dos sócios — §28.7 e §28.15 (24 out 2026)

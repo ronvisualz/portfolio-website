@@ -152,14 +152,30 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
         case 'fin_mail':
             require_once __DIR__ . '/inc/fin_mail.php';
             $s = fin_mail_status($pdo);
-            $ago = $s['last'] !== '' ? max(0, (int)round((time() - strtotime($s['last'])) / 60)) : null;
-            $h = '<div class="set-ai"><span class="chip ' . ($s['configured'] ? 'ok' : 'wait') . '">' . ($s['configured'] ? 'Configurada · ' . e($s['user']) : 'Por configurar no servidor') . '</span> '
-               . ($ago !== null ? '<span class="chip ' . ($s['error'] !== '' ? 'no' : 'info') . '">' . ($ago < 1 ? 'última leitura agora mesmo' : 'última leitura há ' . ($ago < 60 ? $ago . ' min' : round($ago / 60) . ' h')) . '</span> ' : '')
-               . ($s['pending'] ? '<a class="chip info" href="/admin/financeiro.php?tab=receber">' . $s['pending'] . ' por confirmar</a>' : '') . '</div>';
-            if ($s['error'] !== '') $h .= '<p class="small neg">Último erro: ' . e($s['error']) . '</p>';
-            $h .= '<p class="small">Contabilista: ' . ($s['accountant'] !== '' ? e($s['accountant']) : '<span class="muted">por indicar em Definições › Financeiro</span>') . '</p>';
-            if ($s['configured']) $h .= '<p><button type="button" class="btn ghost sm" data-fin-mail-test>Testar a ligação</button> <span class="fin-mail-out small" aria-live="polite"></span></p>';
-            else $h .= '<p class="small muted">Para ligar: criar a caixa (ex.: faturas@topperdigital.xyz) no Hostinger e pôr o endereço e a palavra-passe no servidor, em admin/inc/fin_mail_config.php (como no fin_mail_config.example.php). Nunca no código, na base de dados nem nesta página. IMAP: imap.hostinger.com:993 (SSL) · SMTP: smtp.hostinger.com:465 (SSL).</p>';
+            $ago = function (string $t): string {
+                if ($t === '') return 'ainda não lida';
+                $m = max(0, (int)round((time() - strtotime($t)) / 60));
+                return $m < 1 ? 'lida agora mesmo' : 'lida há ' . ($m < 60 ? $m . ' min' : ($m < 2880 ? round($m / 60) . ' h' : round($m / 1440) . ' dias'));
+            };
+            if (!$s['boxes']) $h = '<p class="small muted">Nenhuma caixa escolhida: escreva acima os endereços a ler (ex.: info@topperdigital.xyz).</p>';
+            else {
+                $h = '<div class="tablewrap"><table class="set-t fin-boxes"><thead><tr><th>Caixa</th><th>Estado</th><th class="hide-sm">Lidas</th><th></th></tr></thead><tbody>';
+                foreach ($s['boxes'] as $b) {
+                    $chip = !$b['pass'] ? '<span class="chip wait">sem palavra-passe no servidor</span>'
+                          : ($b['error'] !== '' ? '<span class="chip no">erro</span>' : '<span class="chip ' . ($b['last'] !== '' ? 'ok' : 'info') . '">' . e($ago($b['last'])) . '</span>');
+                    $h .= '<tr><td class="b">' . e($b['addr']) . ($b['sender'] ? ' <span class="chip">envia</span>' : '') . '</td>'
+                        . '<td>' . $chip . ($b['error'] !== '' ? '<div class="small neg">' . e($b['error']) . '</div>' : '') . '</td>'
+                        . '<td class="hide-sm small">' . ($b['last'] !== '' ? $b['seen'] . ' mensagens vistas · ' . $b['docs'] . ' com documento' . ($b['uid'] ? ' · UID ' . $b['uid'] : '') : '—') . '</td>'
+                        . '<td class="num nowrap">' . ($b['pass'] ? '<button type="button" class="btn ghost sm" data-fin-mail-test="' . e($b['addr']) . '">Testar</button>' : '') . '</td></tr>'
+                        . '<tr class="fin-box-out" hidden><td colspan="4" class="small" aria-live="polite"></td></tr>';
+                }
+                $h .= '</tbody></table></div>';
+            }
+            $h .= '<p class="small">' . ($s['pending'] ? '<a class="chip info" href="/admin/financeiro.php?tab=receber">' . $s['pending'] . ' por confirmar</a> ' : '')
+                . 'Contabilista: ' . ($s['accountant'] !== '' ? e($s['accountant']) : '<span class="muted">por indicar em Definições › Financeiro</span>')
+                . ' · Envia: ' . ($s['sender'] !== '' ? e($s['sender']) : '<span class="muted">nenhuma caixa com palavra-passe</span>') . '</p>';
+            if ($s['company_nif'] === '') $h .= '<p class="small neg">Falta o NIF da empresa em Definições › Geral: sem ele não sei se um documento é despesa (o nosso NIF como adquirente) ou receita (como emitente), e fica tudo por confirmar.</p>';
+            if (!$s['server'] || array_filter($s['boxes'], fn($b) => !$b['pass'])) $h .= '<p class="small muted">A palavra-passe de cada caixa fica só no servidor, em admin/inc/fin_mail_config.php (como no fin_mail_config.example.php): nunca no código, na base de dados nem nesta página. IMAP: imap.hostinger.com:993 (SSL) · SMTP: smtp.hostinger.com:465 (SSL).</p>';
             return $h;
         case 'info':
             $show = (string)$d['show'];

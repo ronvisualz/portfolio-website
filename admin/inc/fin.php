@@ -883,7 +883,7 @@ function fin_alerts(PDO $pdo, array $me): array {
     $n = (int)$pdo->query("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'")->fetchColumn()
        + (int)$pdo->query("SELECT COUNT(*) FROM fin_docs WHERE status = 'review' AND deleted_at IS NULL")->fetchColumn();
     if ($n) $out[] = ['key' => 'finreview:' . $n, 'kind' => 'invoice', 'icon' => 'financeiro', 'sev' => 'warn', 'date' => today_lisbon(),
-                      'title' => $n . ($n === 1 ? ' documento por confirmar' : ' documentos por confirmar'), 'sub' => 'Chegaram à caixa das faturas ou foram lidos pela IA', 'url' => '/admin/financeiro.php?tab=pagar&v=review'];
+                      'title' => $n . ($n === 1 ? ' documento por confirmar' : ' documentos por confirmar'), 'sub' => 'Chegaram por email (QR fiscal, XML ou IA)', 'url' => '/admin/financeiro.php?tab=pagar&v=review'];
     $late = $pdo->query("SELECT COUNT(*), COALESCE(SUM(total - withholding - paid_amount), 0) FROM fin_docs WHERE direction = 'out' AND status IN ('to_pay','partial')
                           AND due_date < '" . today_lisbon() . "' AND deleted_at IS NULL")->fetch(PDO::FETCH_NUM);
     if ((int)$late[0]) $out[] = ['key' => 'finlate:' . $late[0] . ':' . today_lisbon(), 'kind' => 'invoice', 'icon' => 'financeiro', 'sev' => 'bad', 'date' => today_lisbon(),

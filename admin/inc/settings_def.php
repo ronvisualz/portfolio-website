@@ -241,7 +241,7 @@ function settings_defs(): array {
 
         // ── Financeiro ──
         'fin_accountant_email' => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Email do contabilista', 'type' => 'email', 'max' => 190, 'default' => '',
-                               'help' => 'Para onde vão os pedidos de fatura e de recibo («Pedir fatura»), com o código de referência no assunto. A resposta volta à caixa das faturas e liga-se sozinha ao pedido.'],
+                               'help' => 'Para onde vão os pedidos de fatura e de recibo («Pedir fatura»), com o código de referência no assunto. A resposta é lida nas caixas de email (Definições › Integrações) e liga-se sozinha ao pedido.'],
         'fin_iban'         => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'IBAN para os clientes', 'type' => 'text', 'max' => 40, 'default' => '',
                                'help' => 'Vai nos emails das faturas enviadas ao cliente e nos lembretes de pagamento.'],
         'fin_terms_days'   => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Prazo de pagamento por omissão', 'type' => 'int', 'min' => 0, 'max' => 180, 'unit' => 'dias', 'default' => 30,
@@ -277,8 +277,12 @@ function settings_defs(): array {
                                'help' => 'O nome que aparece nos emails enviados pela plataforma (propostas, convites, reuniões).'],
         'mail_from'        => ['tab' => 'integracoes', 'group' => 'Email de envio', 'label' => 'Endereço do remetente', 'type' => 'email', 'max' => 190, 'default' => 'no-reply@topperdigital.xyz', 'domain' => 'topperdigital.xyz',
                                'help' => 'Tem de ser um endereço @topperdigital.xyz (o servidor só envia em nome do domínio).'],
-        'int_fin_mail'     => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Caixa das faturas (IMAP e SMTP)', 'type' => 'fin_mail',
-                               'help' => 'A caixa dedicada (ex.: faturas@) que envia os pedidos ao contabilista e é lida a cada 5 minutos pelo cron: liga as faturas aos pedidos, junta os recibos e põe as faturas de fornecedores em «A pagar». As credenciais ficam só no servidor (inc/fin_mail_config.php).'],
+        'fin_mail_boxes'   => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Caixas a ler', 'type' => 'list', 'default' => '', 'empty_ok' => true, 'emails' => true,
+                               'help' => 'As caixas de email existentes da topper. no Hostinger onde chegam faturas (ex.: info@topperdigital.xyz), uma por linha. São lidas a cada 5 minutos, só para leitura: nada é marcado como lido, movido ou apagado. A primeira da lista envia os pedidos ao contabilista. A palavra-passe de cada uma fica só no servidor (inc/fin_mail_config.php).'],
+        'int_fin_mail'     => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Estado das caixas', 'type' => 'fin_mail',
+                               'help' => 'Só se analisam as mensagens com anexo PDF, XML ou imagem: primeiro o QR code fiscal / ATCUD (sem custo), a IA só quando não há QR claro. Faturas passadas à topper. entram em «A pagar» por confirmar; as emitidas pela topper. ligam-se ao pedido «Fatura pedida»; o resto é ignorado. O corpo dos emails nunca é guardado.'],
+        'fin_mail_ignore'  => ['tab' => 'integracoes', 'group' => 'Email', 'label' => 'Remetentes a ignorar', 'type' => 'list', 'default' => '', 'empty_ok' => true,
+                               'help' => 'Um endereço (newsletter@loja.pt) ou um domínio (@loja.pt) por linha. As mensagens destes remetentes nem chegam a ser descarregadas.'],
         'int_ai'           => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Claude (Anthropic)', 'type' => 'ai',
                                'help' => 'O estado, o uso e o custo da IA do Estúdio e do assistente do Drive. A chave fica só no servidor.'],
         'int_cc_ai'        => ['tab' => 'integracoes', 'group' => 'IA', 'label' => 'Centro Criativo (Claude + embeddings + transcrição)', 'type' => 'cc_ai',
@@ -378,7 +382,8 @@ function setting_clean(array $d, string $raw): string {
                 $l = trim(mb_substr($l, 0, 80));
                 if ($l !== '' && !in_array(mb_strtolower($l), array_map('mb_strtolower', $lines), true)) $lines[] = $l;
             }
-            if (!$lines) throw new RuntimeException('A lista precisa de pelo menos uma linha.');
+            if (!empty($d['emails'])) foreach ($lines as $l) if (!filter_var($l, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('«' . $l . '» não é um endereço de email.');
+            if (!$lines && empty($d['empty_ok'])) throw new RuntimeException('A lista precisa de pelo menos uma linha.');
             return implode("\n", array_slice($lines, 0, 60));
         case 'email':
             $t = trim($raw);

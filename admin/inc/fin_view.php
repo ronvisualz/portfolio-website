@@ -97,7 +97,7 @@ function fin_doc_form(PDO $pdo, string $dir, array $v, string $back, bool $edit)
     } else {
         $h .= '<p class="small">PDF: <a class="lnk" href="' . e(fin_file_href('doc', $id)) . '" target="_blank" rel="noopener">' . e($v['pdf_name']) . '</a></p>';
     }
-    if ($review) $h .= '<div class="flash">Chegou pela caixa das faturas e foi lido pela IA: confirme os dados e guarde para passar a «Por pagar».</div>';
+    if ($review) $h .= '<div class="flash">Chegou por email e foi lido (QR fiscal, XML ou IA): confirme os dados e guarde para passar a «Por pagar».</div>';
     $h .= '<div class="grid">'
         . '<div class="field"><label for="fd-type">Documento</label><select id="fd-type" name="doc_type">' . fin_opts($dir === 'in' ? array_intersect_key(FIN_TYPES, array_flip(['invoice', 'receipt', 'credit', 'other'])) : array_intersect_key(FIN_TYPES, array_flip(['invoice', 'receipt', 'credit', 'expense', 'tax', 'other'])), $v['doc_type'] ?? 'invoice') . '</select></div>'
         . '<fieldset class="field fin-scope"><legend>Âmbito</legend><label class="check"><input type="radio" name="scope" value="company"' . ($scope === 'company' ? ' checked' : '') . '> Empresa (interno)</label> '
@@ -204,7 +204,7 @@ function fin_doc_panel(PDO $pdo, array $d, bool $canEdit, string $back): string 
             . (fin_mail_config() ? '<form method="post">' . csrf_field() . '<input type="hidden" name="do" value="client_send"><input type="hidden" name="id" value="' . (int)$d['id'] . '"><input type="hidden" name="back" value="' . e($back) . '">'
               . '<div class="field"><label>Para</label><input type="email" name="to" value="' . e($dr['to']) . '" required></div><div class="field"><label>Assunto</label><input type="text" name="subject" value="' . e($dr['subject']) . '" maxlength="200"></div>'
               . '<div class="field"><label>Mensagem (o PDF segue em anexo)</label><textarea name="body" rows="8">' . e($dr['body']) . '</textarea></div><div class="actions"><button class="btn sm" type="submit">' . icon('send') . ' Enviar</button></div></form>'
-              : '<p class="small muted">A caixa das faturas ainda não está configurada no servidor (Definições › Integrações › Email).</p>') . '</details>';
+              : '<p class="small muted">Não há caixa de envio configurada (Definições › Integrações › Email).</p>') . '</details>';
     }
     if ($in && in_array($d['status'], ['issued', 'partial'], true) && fin_overdue_days($d) > -3) {
         $h .= '<details class="fin-act"' . ($d['reminder_draft'] ? ' open' : '') . '><summary>Lembrete ao cliente</summary>';

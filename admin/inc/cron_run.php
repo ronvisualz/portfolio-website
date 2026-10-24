@@ -8,7 +8,7 @@
  *   php …/admin/inc/cron_run.php pipeline  só as automações de data e mensais do Pipeline (§19.7);
  *                                          também correm todas as noites, com a cópia
  *   php …/admin/inc/cron_run.php cc [seg]  as pastas do Drive a mudar de sítio (arquivar, reabrir,
- *                                          converter), a caixa das faturas do Financeiro (IMAP), os
+ *                                          converter), as caixas de email do Financeiro (IMAP, só leitura), os
  *                                          custos fixos e o calendário fiscal, e a fila da IA do Centro
  *                                          Criativo (análises, embeddings, importações) durante [seg] segundos (240)
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
@@ -58,11 +58,11 @@ try {
                 $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
             }
         }
-        // Financeiro (§28): a caixa das faturas (IMAP) e os custos fixos / calendário fiscal
+        // Financeiro (§28): as caixas de email (IMAP, só leitura) e os custos fixos / calendário fiscal
         require_once __DIR__ . '/fin.php';
         if (fin_ready($pdo)) {
             require_once __DIR__ . '/fin_mail.php';
-            try { $out .= fin_mail_poll($pdo, (float)min(60, $sec / 4)) . "\n"; } catch (Throwable $e) { $out .= 'Caixa das faturas: ' . $e->getMessage() . "\n"; }
+            try { $out .= fin_mail_poll($pdo, (float)min(60, $sec / 4)) . "\n"; } catch (Throwable $e) { $out .= 'Caixas de email: ' . $e->getMessage() . "\n"; }
             try { $out .= fin_tick($pdo) . "\n"; } catch (Throwable $e) { $out .= 'Financeiro: ' . $e->getMessage() . "\n"; }
         }
         // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)

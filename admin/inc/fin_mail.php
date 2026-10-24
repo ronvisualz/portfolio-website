@@ -1,32 +1,44 @@
 <?php
 /**
- * topper. admin — Financeiro: faturas pelo contabilista (§28.14)
+ * topper. admin — Financeiro: faturas pelo contabilista e leitura das caixas de email (§28.14)
  *
  * Enquanto não há programa de faturação certificado:
- *  1. «Pedir fatura» — os dados do cliente e do serviço seguem por email (SMTP do Hostinger, da caixa das
- *     faturas) para o contabilista, com o código no assunto: «[topper FAT-2026-0142] Pedido de fatura — NEG-0123».
- *     O lançamento fica «Fatura pedida».
- *  2. O cron lê a caixa por IMAP (imap.hostinger.com:993, SSL) a cada 5 minutos — cliente IMAP em PHP puro,
- *     sem a extensão imap (removida do núcleo no PHP 8.4).
- *  3. Liga a resposta ao pedido pelo código; sem código, a IA lê o PDF (NIF, total, data) e procura o pedido
- *     aberto. Com dúvida fica «Por confirmar» com as opções — nunca liga sozinho com baixa confiança.
+ *  1. «Pedir fatura» — os dados do cliente e do serviço seguem por email (SMTP do Hostinger) para o
+ *     contabilista, com o código no assunto: «[topper FAT-2026-0142] Pedido de fatura — NEG-0123». O
+ *     lançamento fica «Fatura pedida». Sai da primeira caixa da lista (Definições › Integrações › Email).
+ *  2. O cron lê, a cada 5 minutos, as caixas existentes escolhidas em Definições › Integrações › Email
+ *     (ex.: info@topperdigital.xyz), por IMAP (imap.hostinger.com:993, SSL), em PHP puro:
+ *       · só leitura — EXAMINE e BODY.PEEK: não marca como lido, não move, não apaga; guarda o UID da
+ *         última mensagem vista por caixa (na primeira vez, olha só os últimos 7 dias);
+ *       · primeiro os cabeçalhos (remetentes a ignorar, sem anexos → fora); só as mensagens com anexo
+ *         PDF/XML/imagem são descarregadas;
+ *       · lê o QR code fiscal / ATCUD do anexo (ou o XML da fatura eletrónica) sem IA; a IA só entra
+ *         quando não há QR claro;
+ *       · NIF do adquirente = o nosso → despesa («A pagar», por confirmar); NIF do emitente = o nosso →
+ *         receita (liga ao pedido «Fatura pedida»). Os outros documentos são ignorados;
+ *       · não guarda o corpo dos emails: só o anexo financeiro e o remetente, o assunto e a data.
+ *  3. Liga a resposta ao pedido pelo código; sem código, pelos dados (NIF do cliente, total, data). Com dúvida
+ *     fica «Por confirmar» com as opções — nunca liga sozinho com baixa confiança.
  *  4. Regista: o PDF vai para o Drive, compara os valores com o pedido, passa a «Emitida», conclui a tarefa.
- *  5. Avisa o responsável e o comercial; 6. «Enviar ao cliente» (PDF, IBAN, vencimento).
- *  Faturas de fornecedores reencaminhadas para a caixa entram em «A pagar» por confirmar; «Pedir recibo» idem.
- *  As mensagens tratadas passam para a pasta «Processadas»; nada é apagado.
+ *  5. Avisa o responsável e o comercial; 6. «Enviar ao cliente» (PDF, IBAN, vencimento). «Pedir recibo» idem.
  *
- * Credenciais: só no servidor, em inc/fin_mail_config.php (fora do Git; ver fin_mail_config.example.php).
+ * Credenciais: só no servidor, em inc/fin_mail_config.php (fora do Git; ver fin_mail_config.example.php),
+ * uma palavra-passe por caixa.
  */
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/fin.php';
 
-const FIN_MAIL_DONE_FOLDER = 'Processadas';
-const FIN_MAIL_MAX_PER_RUN = 25;
+const FIN_MAIL_FIRST_DAYS = 7;              // primeira leitura de uma caixa: só os últimos dias
+const FIN_MAIL_MAX_FETCH = 15;              // mensagens descarregadas por caixa e por volta do cron
+const FIN_MAIL_MAX_BYTES = 25 * 1048576;    // acima disto não se descarrega
 
-/** [user, pass, smtp_host, smtp_port, imap_host, imap_port, from_name, folder] — ou null se faltar (ou for o exemplo). */
-function fin_mail_config(): ?array {
+/**
+ * A configuração do servidor (inc/fin_mail_config.php): anfitriões, portas e as caixas com a palavra-passe
+ * [endereço => palavra-passe]. Aceita o formato antigo (user/pass de uma caixa). Null se faltar.
+ */
+function fin_mail_server(): ?array {
     static $c = false;
     if ($c !== false) return $c;
     $c = null;
@@ -34,16 +46,57 @@ function fin_mail_config(): ?array {
     if (!is_file($f)) return null;
     $raw = require $f;
     if (!is_array($raw)) return null;
-    $user = trim((string)($raw['user'] ?? ''));
-    $pass = (string)($raw['pass'] ?? '');
-    if (!filter_var($user, FILTER_VALIDATE_EMAIL) || $pass === '' || stripos($pass, 'COLE_') === 0) return null;
+    $boxes = [];
+    foreach ((array)($raw['boxes'] ?? []) as $addr => $pass) {
+        $addr = strtolower(trim((string)$addr)); $pass = (string)$pass;
+        if (filter_var($addr, FILTER_VALIDATE_EMAIL) && $pass !== '' && stripos($pass, 'COLE_') !== 0) $boxes[$addr] = $pass;
+    }
+    $u = strtolower(trim((string)($raw['user'] ?? '')));
+    if (filter_var($u, FILTER_VALIDATE_EMAIL) && ($p = (string)($raw['pass'] ?? '')) !== '' && stripos($p, 'COLE_') !== 0 && !isset($boxes[$u])) $boxes[$u] = $p;
     $host = fn($v, $d) => preg_match('/^[a-z0-9.-]+$/i', (string)$v) ? (string)$v : $d;
-    return $c = ['user' => $user, 'pass' => $pass,
+    return $c = ['boxes' => $boxes,
                  'smtp_host' => $host($raw['smtp_host'] ?? '', 'smtp.hostinger.com'), 'smtp_port' => (int)($raw['smtp_port'] ?? 465),
                  'smtp_tls' => (string)($raw['smtp_tls'] ?? 'ssl'), 'imap_host' => $host($raw['imap_host'] ?? '', 'imap.hostinger.com'),
                  'imap_port' => (int)($raw['imap_port'] ?? 993), 'imap_tls' => (string)($raw['imap_tls'] ?? 'ssl'),
                  'from_name' => mb_substr(trim((string)($raw['from_name'] ?? 'topper. Financeiro')), 0, 80), 'folder' => (string)($raw['folder'] ?? 'INBOX'),
                  'verify_peer' => ($raw['verify_peer'] ?? true) !== false];
+}
+
+/** As caixas escolhidas em Definições › Integrações › Email (endereços, por ordem). */
+function fin_mail_boxes(PDO $pdo): array {
+    $out = [];
+    foreach (preg_split('/\R/', (string)setting($pdo, 'fin_mail_boxes', '')) as $l) {
+        $l = strtolower(trim($l));
+        if (filter_var($l, FILTER_VALIDATE_EMAIL) && !in_array($l, $out, true)) $out[] = $l;
+    }
+    return $out;
+}
+
+/**
+ * A ligação para enviar (pedidos ao contabilista, faturas ao cliente, recibos de vencimento): a configuração
+ * do servidor com o user/pass da primeira caixa escolhida que tem palavra-passe no servidor. Null se não há.
+ */
+function fin_mail_config(): ?array {
+    global $pdo;
+    $c = fin_mail_server();
+    if (!$c || !$c['boxes']) return null;
+    $chosen = $pdo instanceof PDO ? fin_mail_boxes($pdo) : [];
+    foreach ($chosen as $b) if (isset($c['boxes'][$b])) return $c + ['user' => $b, 'pass' => $c['boxes'][$b]];
+    return null;
+}
+
+/** Os remetentes a ignorar (endereços completos ou domínios «@loja.pt» / «loja.pt»). */
+function fin_mail_ignored(PDO $pdo, string $from): bool {
+    $from = strtolower(trim($from));
+    if ($from === '') return false;
+    foreach (preg_split('/\R/', (string)setting($pdo, 'fin_mail_ignore', '')) as $l) {
+        $l = strtolower(trim($l));
+        if ($l === '') continue;
+        if (str_contains($l, '@') && !str_starts_with($l, '@')) { if ($from === $l) return true; continue; }
+        $dom = ltrim($l, '@');
+        if (str_ends_with($from, '@' . $dom) || str_ends_with($from, '.' . $dom)) return true;
+    }
+    return false;
 }
 
 /** O email do contabilista (Definições › Financeiro). */
@@ -90,12 +143,12 @@ function fin_mail_hdr(string $s): string {
 }
 
 /**
- * Envia um email (texto simples, UTF-8) com anexos [['name','mime','bytes']] pela caixa das faturas.
+ * Envia um email (texto simples, UTF-8) com anexos [['name','mime','bytes']] pela caixa de envio (a primeira da lista).
  * $o: reply_to, cc, test (só liga e autentica). Devolve o Message-ID.
  */
 function fin_smtp_send(string $to, string $subject, string $body, array $att = [], array $o = []): string {
     $c = fin_mail_config();
-    if (!$c) throw new RuntimeException('A caixa das faturas ainda não está configurada no servidor (inc/fin_mail_config.php).');
+    if (!$c) throw new RuntimeException('Não há caixa de envio: escolha-a em Definições › Integrações › Email (com a palavra-passe no servidor).');
     if (empty($o['test']) && !filter_var($to, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Endereço de email inválido: ' . $to);
     $s = fin_sock($c['smtp_host'], $c['smtp_port'], $c['smtp_tls'], $c['verify_peer']);
     try {
@@ -155,6 +208,7 @@ final class FinImap {
     private int $n = 0;
     public string $caps = '';
 
+    /** $c: a configuração do servidor com «user» e «pass» da caixa. */
     public function __construct(array $c) {
         $this->s = fin_sock($c['imap_host'], $c['imap_port'], $c['imap_tls'], $c['verify_peer'], 25);
         $greet = fgets($this->s, 4096);
@@ -198,26 +252,45 @@ final class FinImap {
         return [$lines, $lits];
     }
 
-    /** UIDs de uma pasta (todas as mensagens que lá estão — as tratadas saem para «Processadas»). */
-    public function uids(string $folder): array {
-        $this->cmd('SELECT ' . $this->q($folder), 'abrir a pasta');
-        [$lines] = $this->cmd('UID SEARCH ALL');
-        foreach ($lines as $l) if (preg_match('/^\* SEARCH ?(.*)$/', $l, $m)) return array_map('intval', array_filter(explode(' ', trim($m[1])), 'strlen'));
-        return [];
+    /** Abre a pasta só para leitura (EXAMINE: nada muda na caixa). Devolve [mensagens, UIDVALIDITY, UIDNEXT]. */
+    public function examine(string $folder): array {
+        [$lines] = $this->cmd('EXAMINE ' . $this->q($folder), 'abrir a pasta');
+        $r = ['exists' => 0, 'validity' => 0, 'next' => 0];
+        foreach ($lines as $l) {
+            if (preg_match('/^\* (\d+) EXISTS/i', $l, $m)) $r['exists'] = (int)$m[1];
+            if (preg_match('/UIDVALIDITY (\d+)/i', $l, $m)) $r['validity'] = (int)$m[1];
+            if (preg_match('/UIDNEXT (\d+)/i', $l, $m)) $r['next'] = (int)$m[1];
+        }
+        return $r;
     }
 
-    /** A mensagem inteira (sem a marcar como lida). */
+    /** UIDs por um critério de pesquisa (ex.: «UID 120:*», «SINCE 17-Oct-2026»). */
+    public function search(string $criteria): array {
+        [$lines] = $this->cmd('UID SEARCH ' . $criteria);
+        $out = [];
+        foreach ($lines as $l) if (preg_match('/^\* SEARCH ?(.*)$/i', $l, $m)) foreach (preg_split('/\s+/', trim($m[1])) as $u) if ($u !== '') $out[] = (int)$u;
+        sort($out);
+        return $out;
+    }
+
+    /** Só os cabeçalhos e o tamanho de várias mensagens (BODY.PEEK: não marca como lidas). [uid => [size, cabeçalhos]] */
+    public function headers(array $uids): array {
+        if (!$uids) return [];
+        [$lines, $lits] = $this->cmd('UID FETCH ' . implode(',', $uids) . ' (UID RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID CONTENT-TYPE)])');
+        $out = [];
+        foreach ($lines as $l) {
+            if (!preg_match('/FETCH \(.*\bUID (\d+)/i', $l, $m)) continue;
+            $size = preg_match('/RFC822\.SIZE (\d+)/i', $l, $z) ? (int)$z[1] : 0;
+            $hdr = preg_match('/\[literal(\d+)\]/', $l, $x) ? (string)($lits[(int)$x[1]] ?? '') : '';
+            $out[(int)$m[1]] = [$size, $hdr];
+        }
+        return $out;
+    }
+
+    /** A mensagem inteira, sem a marcar como lida. */
     public function fetch(int $uid): string {
         [, $lits] = $this->cmd('UID FETCH ' . $uid . ' (BODY.PEEK[])');
         return $lits[0] ?? '';
-    }
-
-    /** Move para outra pasta (criada se não existir). Sem MOVE, copia e marca como lida — nunca apaga. */
-    public function move(int $uid, string $to): void {
-        try { $this->cmd('CREATE ' . $this->q($to)); } catch (RuntimeException $e) { /* já existe */ }
-        if (stripos($this->caps, 'MOVE') !== false) { $this->cmd('UID MOVE ' . $uid . ' ' . $this->q($to), 'mover'); return; }
-        $this->cmd('UID COPY ' . $uid . ' ' . $this->q($to), 'copiar');
-        $this->cmd('UID STORE ' . $uid . ' +FLAGS (\\Seen)');
     }
 
     public function close(): void {
@@ -304,8 +377,9 @@ function fin_mime_walk(array $h, string $body, array &$out, int $depth): void {
     }
     $disp = (string)($h['content-disposition'] ?? '');
     $name = fin_mime_param($disp, 'filename') ?: fin_mime_param($ct, 'name');
-    if ($name !== '' || stripos($disp, 'attachment') !== false || in_array($type, ['application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream'], true)) {
+    if ($name !== '' || stripos($disp, 'attachment') !== false || in_array($type, ['application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream', 'application/xml', 'text/xml'], true)) {
         $mime = fin_sniff($data) ?: $type;
+        if ($mime !== 'application/pdf' && (preg_match('/\.xml$/i', $name) || in_array($type, ['application/xml', 'text/xml'], true)) && preg_match('/^\s*</', $data)) $mime = 'application/xml';
         $out['att'][] = ['name' => $name ?: 'anexo', 'mime' => $mime, 'bytes' => $data];
         return;
     }
@@ -423,38 +497,100 @@ function fin_request_receipt(PDO $pdo, array $d, ?int $by): string {
     return $code;
 }
 
-// ── 2–5. ler a caixa ────────────────────────────────────────
+// ── 2–5. ler as caixas ──────────────────────────────────────
 
-/** Lê a caixa: cada mensagem nova é tratada e passa para «Processadas». Devolve o resumo. */
+/** O estado de leitura por caixa (UID visto, UIDVALIDITY, última leitura, erro, contagens). */
+function fin_mail_state(PDO $pdo): array {
+    require_once __DIR__ . '/ai.php';
+    return json_decode((string)ai_setting_get($pdo, 'fin_mail_state'), true) ?: [];
+}
+
+function fin_mail_state_save(PDO $pdo, array $st): void {
+    ai_setting_set_safe($pdo, 'fin_mail_state', json_encode($st, JSON_UNESCAPED_UNICODE));
+}
+
+/** Lê as caixas escolhidas (só leitura). Devolve o resumo para o registo do cron. */
 function fin_mail_poll(PDO $pdo, float $seconds = 40.0): string {
     if (!fin_ready($pdo)) return '';
-    $c = fin_mail_config();
-    if (!$c) return 'Caixa das faturas: por configurar';
-    $t0 = microtime(true);
-    $done = 0; $err = '';
-    try {
-        $im = new FinImap($c);
+    $srv = fin_mail_server();
+    $boxes = fin_mail_boxes($pdo);
+    if (!$boxes) return 'Caixas de email: nenhuma escolhida';
+    $deadline = microtime(true) + $seconds;
+    $state = fin_mail_state($pdo);
+    $sum = [];
+    foreach ($boxes as $addr) {
+        if (microtime(true) > $deadline) break;
+        $st = $state[$addr] ?? [];
+        if (!$srv || !isset($srv['boxes'][$addr])) { $st['error'] = 'Falta a palavra-passe no servidor (inc/fin_mail_config.php).'; $state[$addr] = $st; $sum[] = $addr . ': sem palavra-passe'; continue; }
         try {
-            foreach (array_slice($im->uids($c['folder']), 0, FIN_MAIL_MAX_PER_RUN) as $uid) {
-                if (microtime(true) - $t0 > $seconds) break;
+            $r = fin_mail_poll_box($pdo, $srv + ['user' => $addr, 'pass' => $srv['boxes'][$addr]], $st, $deadline);
+            $st['error'] = '';
+            $sum[] = $addr . ': ' . $r['seen'] . ' novas, ' . $r['docs'] . ' com documento';
+        } catch (Throwable $e) {
+            $st['error'] = mb_substr($e->getMessage(), 0, 300);
+            error_log('fin_mail_poll ' . $addr . ': ' . $e->getMessage());
+            $sum[] = $addr . ': erro — ' . $st['error'];
+        }
+        $st['last'] = fin_now();
+        $state[$addr] = $st;
+        fin_mail_state_save($pdo, $state);
+    }
+    fin_mail_state_save($pdo, $state);
+    return 'Caixas de email: ' . implode(' · ', $sum);
+}
+
+/**
+ * Uma caixa: EXAMINE (só leitura), as mensagens depois do último UID visto (na primeira vez ou se a caixa
+ * mudou de UIDVALIDITY, as dos últimos dias), primeiro só os cabeçalhos; descarrega (BODY.PEEK) as que têm
+ * anexos e não vêm de um remetente a ignorar. $st fica com o novo UID e as contagens.
+ */
+function fin_mail_poll_box(PDO $pdo, array $c, array &$st, float $deadline): array {
+    $im = new FinImap($c);
+    $seen = 0; $docs = 0;
+    try {
+        $box = $im->examine($c['folder']);
+        $st['exists'] = $box['exists'];
+        if (empty($st['validity']) || (int)$st['validity'] !== $box['validity'] || !isset($st['uid'])) {
+            $uids = $im->search('SINCE ' . date('j-M-Y', strtotime(today_lisbon() . ' -' . FIN_MAIL_FIRST_DAYS . ' days')));
+            $st = ['validity' => $box['validity'], 'uid' => 0, 'since' => fin_now(), 'seen' => 0, 'docs' => 0] + $st;
+        } else {
+            $uids = (int)$st['uid'] + 1 < max(1, $box['next']) || !$box['next'] ? $im->search('UID ' . ((int)$st['uid'] + 1) . ':*') : [];
+        }
+        $uids = array_values(array_filter($uids, fn($u) => $u > (int)$st['uid']));   // «n:*» devolve a última mesmo se for anterior
+        $fetched = 0;
+        foreach (array_chunk($uids, 40) as $chunk) {
+            if (microtime(true) > $deadline) break;
+            $heads = $im->headers($chunk);
+            foreach ($chunk as $uid) {
+                if (microtime(true) > $deadline || $fetched >= FIN_MAIL_MAX_FETCH) break 2;
+                [$size, $hdr] = $heads[$uid] ?? [0, ''];
+                $seen++;
+                $st['uid'] = $uid;
+                [$h] = fin_mime_split($hdr . "\r\n\r\n");
+                $from = fin_mime_parse($hdr . "\r\n\r\n")['from'];
+                $ct = strtolower((string)($h['content-type'] ?? 'text/plain'));
+                if (fin_mail_ignored($pdo, $from)) continue;
+                if (!str_starts_with($ct, 'multipart/') && !preg_match('#^(application/(pdf|xml|octet-stream)|text/xml|image/(jpeg|png))#', $ct)) continue;   // sem anexos
+                if ($size > FIN_MAIL_MAX_BYTES) continue;
+                $mid = trim((string)($h['message-id'] ?? ''));
+                if ($mid !== '') {
+                    $q = $pdo->prepare('SELECT COUNT(*) FROM fin_mail WHERE message_id = ?');
+                    $q->execute([mb_substr($mid, 0, 255)]);
+                    if ((int)$q->fetchColumn()) continue;   // a mesma mensagem noutra caixa (ou já vista)
+                }
                 $raw = $im->fetch($uid);
+                $fetched++;
                 if ($raw === '') continue;
                 $m = fin_mime_parse($raw);
-                $mid = $m['message_id'] !== '' ? mb_substr($m['message_id'], 0, 255) : 'uid:' . $uid . ':' . sha1($raw);
-                $st = $pdo->prepare('SELECT COUNT(*) FROM fin_mail WHERE message_id = ?');
-                $st->execute([$mid]);
-                if (!(int)$st->fetchColumn()) fin_mail_handle($pdo, $m, $mid, (string)$uid);
-                $im->move($uid, FIN_MAIL_DONE_FOLDER);
-                $done++;
+                unset($raw);
+                $mid = $m['message_id'] !== '' ? mb_substr($m['message_id'], 0, 255) : 'uid:' . $c['user'] . ':' . $box['validity'] . ':' . $uid;
+                if (fin_mail_handle($pdo, $m, $mid, $c['user'], (string)$uid) !== null) $docs++;
             }
-        } finally { $im->close(); }
-    } catch (Throwable $e) {
-        $err = $e->getMessage();
-        error_log('fin_mail_poll: ' . $err);
-    }
-    ai_setting_set_safe($pdo, 'fin_mail_last', fin_now());
-    ai_setting_set_safe($pdo, 'fin_mail_error', $err);
-    return 'Caixa das faturas: ' . $done . ' mensagens tratadas' . ($err !== '' ? ' · erro: ' . $err : '');
+        }
+    } finally { $im->close(); }
+    $st['seen'] = (int)($st['seen'] ?? 0) + $seen;
+    $st['docs'] = (int)($st['docs'] ?? 0) + $docs;
+    return ['seen' => $seen, 'docs' => $docs];
 }
 
 function ai_setting_set_safe(PDO $pdo, string $k, string $v): void {
@@ -462,95 +598,185 @@ function ai_setting_set_safe(PDO $pdo, string $k, string $v): void {
     ai_setting_set($pdo, $k, $v);
 }
 
-/** Os PDFs e imagens de uma mensagem (os logótipos pequenos das assinaturas ficam de fora). */
+/** Os anexos que podem ser documentos: PDF, XML e imagens (os logótipos pequenos das assinaturas ficam de fora). */
 function fin_mail_docs(array $m): array {
-    return array_values(array_filter($m['att'], fn($a) => $a['mime'] === 'application/pdf' || (in_array($a['mime'], ['image/jpeg', 'image/png'], true) && strlen($a['bytes']) > 60000)));
+    return array_values(array_filter($m['att'], fn($a) => in_array($a['mime'], ['application/pdf', 'application/xml'], true)
+        || (in_array($a['mime'], ['image/jpeg', 'image/png'], true) && strlen($a['bytes']) > 30000)));
+}
+
+/** O NIF da empresa (Definições › Geral), só algarismos. */
+function fin_our_nif(PDO $pdo): string {
+    return preg_replace('/\D/', '', preg_replace('/^PT/i', '', trim((string)setting($pdo, 'company_nif', ''))));
+}
+
+/** Sem QR nem IA: parece um documento financeiro? (vem do contabilista, ou o assunto/nome do ficheiro di-lo) */
+function fin_mail_looks_financial(PDO $pdo, array $m, array $a): bool {
+    $acc = fin_accountant_email($pdo);
+    if ($acc !== '' && strtolower($acc) === strtolower($m['from'])) return true;
+    return (bool)preg_match('/\b(fatura|factura|invoice|recibo|nota de cr[eé]dito|ATCUD|FT|FR|NC)\b/iu', $m['subject'] . ' ' . $a['name']);
 }
 
 /**
- * Trata uma mensagem: código no assunto/corpo → o pedido; sem código, a IA lê o PDF e procura o pedido aberto
- * (só liga sozinho com confiança alta e um único candidato); faturas de terceiros → «A pagar» por confirmar.
+ * Lê o documento sem IA (QR fiscal, XML da fatura eletrónica); só sem QR claro, a IA. Devolve
+ * [dados ou null, o anexo a guardar]. Se os dados vierem do XML e houver o PDF, guarda-se o PDF.
  */
-function fin_mail_handle(PDO $pdo, array $m, string $mid, string $uid): int {
+function fin_mail_read(PDO $pdo, array $docs): array {
+    require_once __DIR__ . '/fin_qr.php';
+    foreach ($docs as $a) {
+        $d = fin_doc_scan($a['bytes'], $a['mime']);
+        if ($d === null) continue;
+        if ($a['mime'] === 'application/xml') foreach ($docs as $p) if ($p['mime'] === 'application/pdf') return [$d, $p];
+        return [$d, $a];
+    }
+    foreach ($docs as $a) {
+        if ($a['mime'] === 'application/xml') continue;
+        try {
+            require_once __DIR__ . '/fin_ai.php';
+            if (!fin_ai_on()) break;
+            return [fin_ai_read($pdo, $a['bytes'], $a['mime']) + ['source' => 'ai'], $a];
+        } catch (Throwable $e) { break; }
+    }
+    $pdf = array_values(array_filter($docs, fn($a) => $a['mime'] !== 'application/xml'));
+    return [null, $pdf[0] ?? $docs[0]];
+}
+
+/**
+ * Trata uma mensagem com anexos. Devolve o estado gravado em fin_mail, ou null se não for um documento nosso
+ * (nesse caso nada fica guardado). Ordem: código do pedido no assunto; o QR/XML (ou a IA) diz quem emitiu e
+ * para quem: o nosso NIF como adquirente → despesa; como emitente → receita; os outros documentos, ignorados.
+ */
+function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', string $uid = ''): ?string {
     $code = '';
     if (preg_match('/\b((?:FAT|REC)-\d{4}-\d{4})\b/', $m['subject'] . ' ' . $m['text'], $mm)) $code = $mm[1];
     $docs = fin_mail_docs($m);
-    $attMeta = [];
-    // os anexos ficam já no Drive (pasta do mês), para se poderem ver mesmo antes de confirmar
-    foreach ($docs as $i => $a) {
-        try {
-            [$key, $name] = fin_file_store($pdo, $a['bytes'], date('Y-m-d') . '_Email_' . preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $a['name']), $a['mime'], ['issue_date' => today_lisbon()], 'attach');
-            $attMeta[] = ['name' => $a['name'], 'mime' => $a['mime'], 'key' => $key, 'size' => strlen($a['bytes'])];
-        } catch (Throwable $e) { $attMeta[] = ['name' => $a['name'], 'mime' => $a['mime'], 'key' => '', 'size' => strlen($a['bytes']), 'error' => $e->getMessage()]; }
+    if (!$docs) return null;
+    [$data, $pick] = fin_mail_read($pdo, $docs);
+    $our = fin_our_nif($pdo);
+    $dig = fn($v) => preg_replace('/\D/', '', (string)$v);
+    $role = null;
+    if ($data && $our !== '') {
+        if ($dig($data['issuer_nif']) === $our) $role = 'in';
+        elseif ($dig($data['client_nif']) === $our) $role = 'out';
     }
-    $pdo->prepare('INSERT INTO fin_mail (uid, message_id, from_addr, subject, received_at, code, status, att, created_at) VALUES (?,?,?,?,?,?,\'new\',?,?)')
-        ->execute([$uid, $mid, mb_substr($m['from'], 0, 190), mb_substr($m['subject'], 0, 300), $m['date'], $code, json_encode($attMeta, JSON_UNESCAPED_UNICODE), fin_now()]);
-    $mailId = (int)$pdo->lastInsertId();
-    $set = function (string $status, ?int $doc, string $note, array $extra = []) use ($pdo, $mailId) {
-        $pdo->prepare('UPDATE fin_mail SET status = ?, doc_id = ?, note = ?, suggestions = ?, ai = ? WHERE id = ?')
-            ->execute([$status, $doc, mb_substr($note, 0, 300), isset($extra['sug']) ? json_encode($extra['sug'], JSON_UNESCAPED_UNICODE) : null,
-                       isset($extra['ai']) ? json_encode($extra['ai'], JSON_UNESCAPED_UNICODE) : null, $mailId]);
+    $source = $data['source'] ?? ($code !== '' ? 'code' : '');
+    // o registo da mensagem e do anexo — só quando a mensagem fica (o corpo nunca é guardado)
+    $mailId = 0; $att = null;
+    $keep = function (string $status, ?int $doc, string $note, array $extra = [], bool $store = true) use ($pdo, $m, $mid, $box, $uid, $code, $pick, $data, $source, &$mailId, &$att): string {
+        if ($store && $att === null) {
+            try {
+                [$key, $name] = fin_file_store($pdo, $pick['bytes'], date('Y-m-d') . '_Email_' . preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $pick['name']), $pick['mime'], ['issue_date' => today_lisbon()], 'attach');
+                $att = ['name' => $pick['name'], 'mime' => $pick['mime'], 'key' => $key, 'size' => strlen($pick['bytes'])];
+            } catch (Throwable $e) { $att = ['name' => $pick['name'], 'mime' => $pick['mime'], 'key' => '', 'size' => strlen($pick['bytes']), 'error' => $e->getMessage()]; }
+        }
+        $pdo->prepare('INSERT INTO fin_mail (uid, box, message_id, from_addr, subject, received_at, code, status, doc_id, note, suggestions, att, ai, source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+            ->execute([$uid, mb_substr($box, 0, 190), $mid, mb_substr($m['from'], 0, 190), mb_substr($m['subject'], 0, 300), $m['date'], $code, $status, $doc, mb_substr($note, 0, 300),
+                       isset($extra['sug']) ? json_encode($extra['sug'], JSON_UNESCAPED_UNICODE) : null, json_encode($att ? [$att] : [], JSON_UNESCAPED_UNICODE),
+                       $data ? json_encode($data, JSON_UNESCAPED_UNICODE) : null, $source, fin_now()]);
+        $mailId = (int)$pdo->lastInsertId();
+        return $status;
     };
-    if (!$docs) { $set('noattach', null, 'Sem PDF em anexo'); return $mailId; }
-    $first = $docs[0];
-    $ai = null;
-    try {
-        require_once __DIR__ . '/fin_ai.php';
-        if (fin_ai_on()) $ai = fin_ai_read($pdo, $first['bytes'], $first['mime']);
-    } catch (Throwable $e) { $ai = null; }
+    $attKey = function () use (&$att): string { return (string)($att['key'] ?? ''); };
 
-    // recibo pedido: junta-se à fatura
+    // a) recibo pedido ao contabilista (código REC-…): junta-se à fatura
     if (str_starts_with($code, 'REC-')) {
         $st = $pdo->prepare("SELECT doc_id FROM fin_mail WHERE code = ? AND status = 'waiting' ORDER BY id DESC LIMIT 1");
         $st->execute([$code]);
         if ($docId = (int)$st->fetchColumn()) {
             $d = fin_doc($pdo, $docId);
-            $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attMeta[0]['key'], $first['name'], fin_now(), $docId]);
+            $r = $keep('linked', $docId, 'Recibo junto a ' . fin_doc_label($d));
+            $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
             fin_doc_refresh($pdo, $docId);
             $pdo->prepare("UPDATE fin_mail SET status = 'done' WHERE code = ? AND status = 'waiting'")->execute([$code]);
-            $set('linked', $docId, 'Recibo junto a ' . fin_doc_label($d), ['ai' => $ai]);
-            return $mailId;
+            return $r;
         }
     }
-    // fatura pedida: pelo código
-    $req = null;
+    // b) fatura pedida (código FAT-…)
     if (str_starts_with($code, 'FAT-')) {
-        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE req_code = ? AND deleted_at IS NULL LIMIT 1");
+        $st = $pdo->prepare('SELECT id FROM fin_docs WHERE req_code = ? AND deleted_at IS NULL LIMIT 1');
         $st->execute([$code]);
         $req = ($id = (int)$st->fetchColumn()) ? fin_doc($pdo, $id) : null;
+        if ($req && $req['status'] === 'requested' && (!$data || $role !== 'out')) {
+            $r = $keep('linked', (int)$req['id'], 'Ligado pelo código ' . $code);
+            $warn = fin_mail_register($pdo, $req, $att, $pick, $data, null);
+            if ($warn) $pdo->prepare('UPDATE fin_mail SET note = ? WHERE id = ?')->execute([mb_substr('Ligado pelo código ' . $code . ' · ' . implode(' · ', $warn), 0, 300), $mailId]);
+            return $r;
+        }
     }
-    if ($req && $req['status'] === 'requested') {
-        $warn = fin_mail_register($pdo, $req, $attMeta[0], $first, $ai, null);
-        $set('linked', (int)$req['id'], 'Ligado pelo código ' . $code . ($warn ? ' · ' . implode(' · ', $warn) : ''), ['ai' => $ai]);
-        return $mailId;
+    // c) sem dados (sem QR, sem XML e sem IA): fica por confirmar só se parecer uma fatura
+    if (!$data) {
+        if (!fin_mail_looks_financial($pdo, $m, $pick)) return null;
+        return $keep('review', null, 'Sem QR fiscal legível' . (function_exists('fin_ai_on') && fin_ai_on() ? '' : ' e sem IA') . ': confirme à mão');
     }
-    // sem código: a IA diz se é uma fatura nossa (emitida pelo contabilista) ou de um fornecedor
-    if ($ai && $ai['direction'] === 'in') {
-        $cands = fin_mail_candidates($pdo, $ai);
+    if (in_array($data['kind'], ['other', 'void', 'quote'], true) || ($data['source'] === 'ai' && $data['confidence'] < 0.4 && $role === null)) return null;   // orçamentos, guias, anulados…
+    // d) sem o NIF da empresa não sei de que lado estamos: fica por confirmar
+    if ($our === '') return $keep('review', null, 'Falta o NIF da empresa em Definições › Geral: confirme se é despesa ou receita');
+    if ($role === null) return null;   // documento entre terceiros: ignorado
+    $data['direction'] = $role;
+    $data['party_nif'] = $role === 'in' ? $data['client_nif'] : $data['issuer_nif'];
+    $data['party_name'] = $role === 'in' ? $data['client_name'] : $data['issuer_name'];
+
+    // e) receita: a fatura que o contabilista emitiu em nosso nome
+    if ($role === 'in') {
+        if ($data['kind'] === 'receipt') {
+            $st = $pdo->prepare("SELECT id FROM fin_docs WHERE direction = 'in' AND deleted_at IS NULL AND receipt_key = '' AND REPLACE(party_nif, ' ', '') = ? AND ABS(total - withholding - ?) < 0.02 ORDER BY id DESC LIMIT 1");
+            $st->execute([$data['client_nif'], $data['total']]);
+            if ($docId = (int)$st->fetchColumn()) {
+                $r = $keep('linked', $docId, 'Recibo junto a ' . fin_doc_label(fin_doc($pdo, $docId)));
+                $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
+                fin_doc_refresh($pdo, $docId);
+                return $r;
+            }
+            return $keep('review', null, 'Recibo emitido por nós sem fatura correspondente');
+        }
+        if ($data['kind'] === 'credit_note') return $keep('review', null, 'Nota de crédito emitida por nós: confirme');
+        if ($data['number'] !== '' && ($dup = fin_doc_dup($pdo, $data['client_nif'], $data['number'], 'in'))) return $keep('dup', (int)$dup['id'], 'Já lançada: ' . fin_doc_label($dup), [], false);
+        $cands = fin_mail_candidates($pdo, $data);
         $best = $cands[0] ?? null;
-        $sure = $best && $best['score'] >= 80 && $ai['confidence'] >= 0.8 && (count($cands) === 1 || $cands[1]['score'] < $best['score'] - 20);
+        $sure = $best && $best['score'] >= 80 && $data['confidence'] >= 0.8 && (count($cands) === 1 || $cands[1]['score'] < $best['score'] - 20);
         if ($sure) {
             $d = fin_doc($pdo, $best['id']);
-            $warn = fin_mail_register($pdo, $d, $attMeta[0], $first, $ai, null);
-            $set('linked', (int)$d['id'], 'Ligado pela IA (NIF, total e data)' . ($warn ? ' · ' . implode(' · ', $warn) : ''), ['ai' => $ai, 'sug' => $cands]);
-        } else {
-            $set('review', null, $cands ? 'Por confirmar: escolha o pedido certo' : 'Por confirmar: não encontrei o pedido', ['ai' => $ai, 'sug' => $cands]);
+            $how = $data['source'] === 'qr' ? 'pelo QR fiscal' : ($data['source'] === 'xml' ? 'pelo XML' : 'pela IA');
+            $r = $keep('linked', (int)$d['id'], 'Ligado ' . $how . ' (NIF, total e data)', ['sug' => $cands]);
+            $warn = fin_mail_register($pdo, $d, $att, $pick, $data, null);
+            if ($warn) $pdo->prepare('UPDATE fin_mail SET note = ? WHERE id = ?')->execute([mb_substr('Ligado ' . $how . ' · ' . implode(' · ', $warn), 0, 300), $mailId]);
+            return $r;
         }
-        return $mailId;
+        return $keep('review', null, $cands ? 'Por confirmar: escolha o pedido certo' : 'Fatura emitida sem pedido em aberto: confirme', ['sug' => $cands]);
     }
-    // fatura de fornecedor (ou sem IA): entra em «A pagar» por confirmar
-    $v = ['direction' => 'out', 'doc_type' => ($ai['kind'] ?? '') === 'credit_note' ? 'credit' : 'invoice', 'scope' => $ai['scope'] ?? 'company',
-          'party_kind' => $ai['party_kind'] ?? 'supplier', 'party_name' => $ai['party_name'] ?? ($m['from_name'] ?: $m['from']), 'party_nif' => $ai['party_nif'] ?? '',
-          'party_email' => $m['from'], 'category' => ($ai['category'] ?? '') ?: 'Outros', 'number' => $ai['number'] ?? '', 'description' => $ai['description'] ?? $m['subject'],
-          'base' => $ai['base'] ?? 0, 'vat_rate' => $ai['vat_rate'] ?? 0, 'vat' => $ai['vat'] ?? 0, 'total' => $ai['total'] ?? 0, 'wh_rate' => $ai['wh_rate'] ?? 0,
-          'withholding' => $ai['withholding'] ?? 0, 'issue_date' => ($ai['issue_date'] ?? '') ?: null, 'due_date' => ($ai['due_date'] ?? '') ?: null, 'currency' => $ai['currency'] ?? 'EUR',
-          'contact_id' => ($ai['contact_id'] ?? 0) ?: null, 'status' => 'review', 'needs_review' => 1, 'pdf_key' => $attMeta[0]['key'], 'pdf_name' => $first['name'],
-          'ai_data' => $ai ? json_encode($ai, JSON_UNESCAPED_UNICODE) : null, 'notes' => 'Chegou por email de ' . $m['from'] . ' · ' . $m['subject']];
-    $dup = $v['party_nif'] !== '' && $v['number'] !== '' ? fin_doc_dup($pdo, $v['party_nif'], $v['number']) : null;
-    if ($dup) { $set('dup', (int)$dup['id'], 'Duplicado de ' . fin_doc_label($dup) . ' (mesmo NIF e número)', ['ai' => $ai]); return $mailId; }
+
+    // f) despesa: um documento passado à topper.
+    if ($data['kind'] === 'receipt') {
+        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE direction = 'out' AND deleted_at IS NULL AND receipt_key = '' AND REPLACE(party_nif, ' ', '') = ? AND ABS(total - ?) < 0.02 ORDER BY id DESC LIMIT 1");
+        $st->execute([$data['issuer_nif'], $data['total']]);
+        if ($docId = (int)$st->fetchColumn()) {
+            $r = $keep('linked', $docId, 'Recibo do fornecedor junto a ' . fin_doc_label(fin_doc($pdo, $docId)));
+            $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
+            fin_doc_refresh($pdo, $docId);
+            return $r;
+        }
+        return $keep('review', null, 'Recibo de fornecedor sem fatura correspondente');
+    }
+    if ($data['number'] !== '' && ($dup = fin_doc_dup($pdo, $data['issuer_nif'], $data['number']))) return $keep('dup', (int)$dup['id'], 'Duplicado de ' . fin_doc_label($dup) . ' (mesmo NIF e número)', [], false);
+    require_once __DIR__ . '/fin_ai.php';
+    $sug = fin_ai_suggest($pdo, $data['issuer_nif'], 'out', $data['kind']);
+    $name = $data['issuer_name'];
+    if ($name === '') {
+        $st = $pdo->prepare("SELECT id, name FROM contacts WHERE REPLACE(nif, ' ', '') = ? LIMIT 1");
+        $st->execute([$data['issuer_nif']]);
+        if ($ct = $st->fetch()) { $name = (string)$ct['name']; $sug['contact_id'] ??= (int)$ct['id']; }
+    }
+    if ($name === '') $name = $m['from_name'] ?: $m['from'];
+    $r = $keep('supplier', null, 'Despesa em «A pagar», por confirmar' . ($data['source'] === 'qr' ? ' (lida do QR fiscal)' : ($data['source'] === 'xml' ? ' (lida do XML)' : '')));
+    $v = ['direction' => 'out', 'doc_type' => $data['kind'] === 'credit_note' ? 'credit' : 'invoice', 'scope' => $sug['scope'] ?? 'company',
+          'party_kind' => $sug['party_kind'] ?? 'supplier', 'party_name' => $name, 'party_nif' => $data['issuer_nif'], 'party_email' => $m['from'],
+          'category' => ($sug['category'] ?? '') ?: 'Outros', 'number' => $data['number'], 'description' => $data['description'] ?: $m['subject'],
+          'base' => $data['base'], 'vat_rate' => $data['vat_rate'], 'vat' => $data['vat'], 'total' => $data['total'], 'wh_rate' => $sug['wh_rate'] ?? 0,
+          'withholding' => $data['withholding'], 'issue_date' => $data['issue_date'] ?: null, 'due_date' => $data['due_date'] ?: null, 'currency' => $data['currency'] ?: 'EUR',
+          'contact_id' => ($sug['contact_id'] ?? 0) ?: null, 'status' => 'review', 'needs_review' => 1, 'pdf_key' => $attKey(), 'pdf_name' => $pick['name'],
+          'ai_data' => json_encode($data, JSON_UNESCAPED_UNICODE), 'notes' => 'Chegou por email de ' . $m['from'] . ' · ' . $m['subject'] . ($data['atcud'] ?? '' ? ' · ATCUD ' . $data['atcud'] : '')];
     $id = fin_doc_create($pdo, $v, null);
-    $set('supplier', $id, 'Fatura de fornecedor em «A pagar», por confirmar', ['ai' => $ai]);
-    return $mailId;
+    $pdo->prepare('UPDATE fin_mail SET doc_id = ? WHERE id = ?')->execute([$id, $mailId]);
+    return $r;
 }
 
 /** Os pedidos em aberto que podem corresponder a uma fatura lida pela IA: NIF do cliente, total e data. */
@@ -643,20 +869,31 @@ function fin_client_send(PDO $pdo, array $d, string $to, string $subject, string
     if ($d['contact_id'] && function_exists('contact_log')) contact_log($pdo, (int)$d['contact_id'], 'billing', $what, $by);
 }
 
-/** O estado da ligação para Definições › Integrações › Email. */
+/** O estado por caixa para Definições › Integrações › Email. */
 function fin_mail_status(PDO $pdo): array {
-    require_once __DIR__ . '/ai.php';
-    return ['configured' => fin_mail_config() !== null, 'user' => fin_mail_config()['user'] ?? '', 'last' => ai_setting_get($pdo, 'fin_mail_last') ?: '', 'error' => ai_setting_get($pdo, 'fin_mail_error') ?: '',
-            'accountant' => fin_accountant_email($pdo), 'pending' => fin_ready($pdo) ? (int)$pdo->query("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'")->fetchColumn() : 0];
+    $srv = fin_mail_server();
+    $state = fin_mail_state($pdo);
+    $send = fin_mail_config();
+    $boxes = [];
+    foreach (fin_mail_boxes($pdo) as $b) {
+        $st = $state[$b] ?? [];
+        $boxes[] = ['addr' => $b, 'pass' => $srv && isset($srv['boxes'][$b]), 'sender' => $send && $send['user'] === $b, 'last' => (string)($st['last'] ?? ''),
+                    'error' => (string)($st['error'] ?? ''), 'uid' => (int)($st['uid'] ?? 0), 'seen' => (int)($st['seen'] ?? 0), 'docs' => (int)($st['docs'] ?? 0), 'since' => (string)($st['since'] ?? '')];
+    }
+    return ['server' => $srv !== null, 'boxes' => $boxes, 'sender' => $send['user'] ?? '', 'company_nif' => fin_our_nif($pdo), 'accountant' => fin_accountant_email($pdo),
+            'pending' => fin_ready($pdo) ? (int)$pdo->query("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'")->fetchColumn() : 0];
 }
 
-/** «Testar»: entra no IMAP (conta as mensagens) e no SMTP (autentica, sem enviar). */
-function fin_mail_test(): string {
-    $c = fin_mail_config();
-    if (!$c) throw new RuntimeException('Falta o ficheiro inc/fin_mail_config.php no servidor (ver o exemplo).');
-    $im = new FinImap($c);
-    $n = count($im->uids($c['folder']));
-    $im->close();
-    fin_smtp_send('', '', '', [], ['test' => true]);
-    return 'Ligação OK: IMAP (' . $n . ($n === 1 ? ' mensagem' : ' mensagens') . ' por tratar) e SMTP (autenticado).';
+/** «Testar» uma caixa: entra no IMAP só para ler (EXAMINE) e, se for a que envia, autentica no SMTP sem enviar. */
+function fin_mail_test(PDO $pdo, string $addr): string {
+    $addr = strtolower(trim($addr));
+    if (!in_array($addr, fin_mail_boxes($pdo), true)) throw new RuntimeException('Essa caixa não está na lista.');
+    $srv = fin_mail_server();
+    if (!$srv || !isset($srv['boxes'][$addr])) throw new RuntimeException('Falta a palavra-passe desta caixa no servidor (inc/fin_mail_config.php, ver o exemplo).');
+    $im = new FinImap($srv + ['user' => $addr, 'pass' => $srv['boxes'][$addr]]);
+    try { $box = $im->examine($srv['folder']); } finally { $im->close(); }
+    $msg = 'IMAP OK, só leitura (' . $box['exists'] . ($box['exists'] === 1 ? ' mensagem' : ' mensagens') . ' na caixa de entrada; nada foi mudado)';
+    $send = fin_mail_config();
+    if ($send && $send['user'] === $addr) { fin_smtp_send('', '', '', [], ['test' => true]); $msg .= ' · SMTP OK (os pedidos ao contabilista saem desta caixa)'; }
+    return $msg . '.';
 }

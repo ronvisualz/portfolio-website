@@ -25,7 +25,7 @@ function fin_ai_schema(): array {
     return ['type' => 'object', 'additionalProperties' => false,
         'required' => ['kind', 'issuer_name', 'issuer_nif', 'client_name', 'client_nif', 'number', 'issue_date', 'due_date', 'base', 'vat_rate', 'vat', 'total', 'withholding', 'currency', 'description', 'confidence'],
         'properties' => [
-            'kind' => ['type' => 'string', 'enum' => ['invoice', 'invoice_receipt', 'receipt', 'credit_note', 'green_receipt', 'other']],
+            'kind' => ['type' => 'string', 'enum' => ['invoice', 'invoice_receipt', 'receipt', 'credit_note', 'green_receipt', 'quote', 'other']],
             'issuer_name' => $s, 'issuer_nif' => $s, 'client_name' => $s, 'client_nif' => $s, 'number' => $s,
             'issue_date' => ['type' => 'string', 'description' => 'AAAA-MM-DD ou vazio'], 'due_date' => ['type' => 'string', 'description' => 'AAAA-MM-DD ou vazio'],
             'base' => $n, 'vat_rate' => $n, 'vat' => $n, 'total' => $n, 'withholding' => $n, 'currency' => $s, 'description' => $s,
@@ -45,7 +45,7 @@ function fin_ai_read(PDO $pdo, string $bytes, string $mime): array {
         : ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => base64_encode($bytes)]];
     $co = trim((string)setting($pdo, 'company_name', 'topper.'));
     $nif = trim((string)setting($pdo, 'company_nif', ''));
-    $prompt = 'Este documento é uma fatura, fatura-recibo, recibo, nota de crédito ou recibo verde português (ou estrangeiro). '
+    $prompt = 'Este documento pode ser uma fatura, fatura-recibo, recibo, nota de crédito ou recibo verde português (ou estrangeiro), um orçamento (kind quote) ou outra coisa (kind other). '
             . 'Extraia os dados tal como estão no documento. A nossa empresa é «' . $co . '»' . ($nif !== '' ? ' (NIF ' . $nif . ')' : '') . '. '
             . 'Valores em números (ponto decimal), sem símbolos. base = total sem IVA; vat_rate = taxa de IVA em % (0 se isento); withholding = retenção na fonte de IRS (0 se não houver). '
             . 'Se houver várias taxas de IVA, use a predominante e some o IVA. description = o serviço ou produto em poucas palavras. '

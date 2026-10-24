@@ -1,18 +1,22 @@
 <?php
 /**
- * A caixa das faturas do Financeiro (pedidos ao contabilista, leitura das faturas e recibos).
+ * As caixas de email do Financeiro (leitura das faturas e envio dos pedidos ao contabilista).
  * Copie para fin_mail_config.php NO SERVIDOR e preencha. fin_mail_config.php não vai para o Git.
  *
- * user / pass   o endereço completo da caixa (criada no Hostinger › Emails, ex.: faturas@topperdigital.xyz)
- *               e a palavra-passe dela. Ficam só aqui, no servidor: nunca no código, na base de dados nem no chat.
- * smtp_*        envio — Hostinger: smtp.hostinger.com, porta 465, SSL.
- * imap_*        leitura a cada 5 minutos pelo cron — Hostinger: imap.hostinger.com, porta 993, SSL.
- *               As mensagens tratadas passam para a pasta «Processadas»; nada é apagado.
- * from_name     o nome que aparece como remetente.
+ * boxes        as caixas existentes do Hostinger (Hostinger › Emails), cada uma com a sua palavra-passe.
+ *              Não é preciso criar uma caixa nova. Quais são lidas escolhe-se em Definições › Integrações ›
+ *              Email; a primeira dessa lista envia os pedidos ao contabilista. As palavras-passe ficam só
+ *              aqui, no servidor: nunca no código, na base de dados nem no chat.
+ * imap_*       leitura a cada 5 minutos pelo cron — Hostinger: imap.hostinger.com, porta 993, SSL.
+ *              Só leitura: nada é marcado como lido, movido ou apagado.
+ * smtp_*       envio — Hostinger: smtp.hostinger.com, porta 465, SSL.
+ * from_name    o nome que aparece como remetente.
  */
 return [
-    'user'      => 'faturas@topperdigital.xyz',
-    'pass'      => 'COLE_AQUI_A_PALAVRA_PASSE',
+    'boxes' => [
+        'info@topperdigital.xyz' => 'COLE_AQUI_A_PALAVRA_PASSE',
+        // 'outra@topperdigital.xyz' => 'COLE_AQUI_A_PALAVRA_PASSE',
+    ],
     'smtp_host' => 'smtp.hostinger.com',
     'smtp_port' => 465,
     'smtp_tls'  => 'ssl',

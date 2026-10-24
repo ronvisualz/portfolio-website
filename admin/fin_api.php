@@ -8,7 +8,7 @@ $user = require_login();
 //             com um token para o formulário o juntar quando o utilizador confirmar)
 //   sim       o resultado do simulador para os campos atuais (HTML)
 //   param     mudar um parâmetro (só superadmin e admins)
-//   mail_test «Testar» a caixa das faturas (só superadmin e admins)
+//   mail_test «Testar» uma caixa de email (só leitura; só superadmin e admins)
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -61,7 +61,7 @@ try {
     if ($a === 'mail_test') {
         if (!is_admin()) fj(403, ['error' => 'Só superadmin e admins.']);
         require_once __DIR__ . '/inc/fin_mail.php';
-        fj(200, ['ok' => true, 'msg' => fin_mail_test()]);
+        fj(200, ['ok' => true, 'msg' => fin_mail_test($pdo, (string)($_POST['box'] ?? ''))]);
     }
     fj(400, ['error' => 'Ação desconhecida.']);
 } catch (RuntimeException $e) {

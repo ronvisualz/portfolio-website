@@ -163,12 +163,17 @@
       if (e.key === 'Escape') { el.value = el.getAttribute('data-was'); el.blur(); }
     });
   });
-  var test = $('[data-fin-mail-test]');
-  if (test) test.addEventListener('click', function () {
-    var out = $('.fin-mail-out'); test.disabled = true; if (out) out.textContent = 'A testar…';
-    post('/admin/fin_api.php?a=mail_test', new FormData()).then(function (j) {
-      test.disabled = false;
-      if (out) { out.textContent = j.error || j.msg; out.className = 'fin-mail-out small ' + (j.error ? 'neg' : 'pos'); }
-    }).catch(function () { test.disabled = false; if (out) out.textContent = 'Sem ligação.'; });
+  // Definições › Integrações › Email: «Testar» cada caixa (só leitura)
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-fin-mail-test]');
+    if (!b) return;
+    var row = b.closest('tr'), outRow = row && row.nextElementSibling, out = outRow && outRow.querySelector('td');
+    if (outRow) outRow.hidden = false;
+    b.disabled = true; if (out) { out.textContent = 'A testar…'; out.className = 'small'; }
+    var fd = new FormData(); fd.append('box', b.getAttribute('data-fin-mail-test'));
+    post('/admin/fin_api.php?a=mail_test', fd).then(function (j) {
+      b.disabled = false;
+      if (out) { out.textContent = j.error || j.msg; out.className = 'small ' + (j.error ? 'neg' : 'pos'); }
+    }).catch(function () { b.disabled = false; if (out) out.textContent = 'Sem ligação.'; });
   });
 })();

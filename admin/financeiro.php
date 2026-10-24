@@ -217,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'party_name' => (string)($ai['party_name'] ?? $m['from_addr']), 'party_nif' => (string)($ai['party_nif'] ?? ''), 'category' => $dir === 'out' ? (($ai['category'] ?? '') ?: 'Outros') : '',
                     'number' => (string)($ai['number'] ?? ''), 'description' => (string)($ai['description'] ?? $m['subject']), 'base' => (float)($ai['base'] ?? 0), 'vat_rate' => (float)($ai['vat_rate'] ?? 0),
                     'vat' => (float)($ai['vat'] ?? 0), 'total' => (float)($ai['total'] ?? 0), 'issue_date' => ($ai['issue_date'] ?? '') ?: null, 'due_date' => ($ai['due_date'] ?? '') ?: null,
-                    'pdf_key' => (string)$att['key'], 'pdf_name' => (string)$att['name'], 'status' => 'review', 'needs_review' => 1, 'ai_data' => $m['ai'], 'notes' => 'Da caixa das faturas: ' . $m['subject']], $uid);
+                    'pdf_key' => (string)$att['key'], 'pdf_name' => (string)$att['name'], 'status' => 'review', 'needs_review' => 1, 'ai_data' => $m['ai'], 'notes' => 'Chegou por email (' . ($m['box'] ?: $m['from_addr']) . '): ' . $m['subject']], $uid);
                 $pdo->prepare("UPDATE fin_mail SET status = 'linked', doc_id = ?, done_by = ?, done_at = ? WHERE id = ?")->execute([$id, $uid, fin_now(), $mid]);
                 flash('Lançamento criado a partir do email: confirme os dados.', 'ok', undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null, 'doc_new' => $id]));
                 redirect(fin_url(['tab' => $dir === 'in' ? 'receber' : 'pagar', 'edit' => $id]));

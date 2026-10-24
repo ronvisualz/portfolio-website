@@ -10,7 +10,7 @@
  *    salário, imposto) com sentido, âmbito (empresa ou negócio), contraparte, valores, datas, ficheiros e estado.
  *  · fin_payments (pagamentos, também parciais), fin_fixed (custos fixos), fin_accounts / fin_bank_tx /
  *    fin_imports (tesouraria e extratos), fin_employees / fin_payroll (salários), fin_scenarios (simulador),
- *    fin_mail (o que chega à caixa das faturas), fin_done (obrigações fiscais já lançadas como tarefa).
+ *    fin_mail (os documentos que chegam às caixas de email), fin_done (obrigações fiscais já lançadas como tarefa).
  *  · Os custos da empresa que viviam em `costs` (sem negócio) passam para fin_docs, sem apagar nada
  *    (cada linha fica com a origem, legacy_cost_id, e não se repete). Sem a passagem da versão 10 feita,
  *    também os de company_costs.
@@ -487,4 +487,13 @@ function migrate_finance_31(PDO $pdo): void {
         $now = date('Y-m-d H:i:s');
         $pdo->prepare("INSERT INTO fin_accounts (name, kind, iban, balance, balance_date, active, position, created_at, updated_at) VALUES ('Conta principal', 'bank', '', 0, NULL, 1, 1, ?, ?)")->execute([$now, $now]);
     }
+}
+
+/**
+ * Passo 32 (§28.14, revisto a 24 out 2026): a leitura passa a ser das caixas existentes, várias, só leitura.
+ * fin_mail guarda de que caixa veio cada mensagem e como foi lida (qr, xml, ai, code).
+ */
+function migrate_finance_32(PDO $pdo): void {
+    db_add_column($pdo, 'fin_mail', 'box', "VARCHAR(190) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'fin_mail', 'source', "VARCHAR(4) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
 }
