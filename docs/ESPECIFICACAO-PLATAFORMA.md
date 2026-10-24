@@ -3533,6 +3533,16 @@ Etapas: **Lead → Abordada → X-Ray (entrou em pipeline) → Proposta enviada 
 - Duas leituras: **Por período** (o que aconteceu neste mês) e **Por coorte** (das leads que entraram em março, quantas já chegaram a cada etapa) — a coorte é a leitura correta de conversão; mostrada por defeito.
 - Comparação entre os 6 funis lado a lado.
 
+### 29.5.1 Desempenho financeiro por funil (mantém e alarga o que já existe)
+O bloco atual «Valor ganho · por funil» + tabela (entradas, convertidas, conversão, ganhos, perdidos, taxa de ganho, valor ganho) e o bloco «Crosselling» mantêm-se. Acrescenta-se, por funil (euros só com Financeiro):
+- **Valor ganho, ticket médio, gross profit e margem %** (custos reais dos lançamentos do Financeiro), **valor faturado vs recebido**.
+- **Pipeline aberto** e **pipeline ponderado** (valor × probabilidade da etapa) — o que cada funil deve trazer a seguir.
+- **Ciclo médio** (entrada no funil → kickoff) e **valor ganho por mês de ciclo**.
+- Gráfico: barras horizontais de valor ganho com a margem sobreposta (gross profit a cor forte, resto a cor clara), ordenadas por gross profit — o funil que mais **lucra** nem sempre é o que mais **fatura**.
+Correções de leitura detetadas no ecrã atual (24 out 2026):
+- «Ainda lead (sem funil)» (112) entra no total e baixa a conversão para 6%, enquanto cada funil mostra 100% porque só conta registos que já são negócio. Separar: a conversão lead → negócio lê-se no funil comercial (§29.5); a tabela por funil mede **a partir da entrada em pipeline** (X-Ray → Kickoff), e as leads sem funil aparecem numa linha à parte fora do total.
+- «Taxa de ganho 100% · 0 perdidos»: indica que os negócios perdidos não estão a ser marcados. Com o motivo de perda obrigatório (§29.11) e o aviso de negócios parados (§29.3) a taxa passa a ser real; até lá mostra «sem perdas registadas» em vez de 100%.
+
 ### 29.6 Velocidade
 - **Tempo até à primeira resposta:** do registo da lead (manual ou automática) até à primeira interação de saída registada (chamada, email, WhatsApp, reunião). Mediana e p90, por canal/origem, por pessoa, contado em **horas úteis** (horário de trabalho em Definições).
 - **% dentro do SLA** (ex.: 1 h útil; editável por canal). Leads de formulários e anúncios com SLA mais curto.
