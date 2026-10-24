@@ -369,6 +369,94 @@ elseif ($tab === 'fixos'):
 <?php endif; ?>
 
 <?php
+// ═══ Ativos e empréstimos (Dashboard Executivo: amortizações e juros automáticos) ═══
+elseif ($tab === 'ativos'):
+    require_once __DIR__ . '/exec.php';
+    $assets = exec_assets($pdo);
+    $loans = exec_loans($pdo);
+    $ea = null; $el = null;
+    foreach ($assets as $a) if ((int)$a['id'] === (int)($_GET['asset'] ?? 0)) $ea = $a;
+    foreach ($loans as $l) if ((int)$l['id'] === (int)($_GET['loan'] ?? 0)) $el = $l;
+    $cur = exec_ym();
+    $mDa = array_sum(array_map(fn($a) => exec_asset_month($a, $cur), $assets));
+    $mInt = 0.0; $debt = 0.0;
+    foreach ($loans as $l) { $plan = exec_loan_plan($l); $mInt += $plan[$cur]['interest'] ?? 0; $last = null; foreach ($plan as $ym => $p) { if ($ym > $cur) break; $last = $p; } $debt += $last ? $last['balance'] : (exec_ym($l['start_date']) >= $cur ? (float)$l['principal'] : 0); }
+?>
+<div class="fin-grid">
+  <section class="flow"><h3>Amortizações · <?= eur0($mDa) ?>/mês</h3>
+    <p class="small muted">Cada ativo amortiza o seu valor × a taxa anual ÷ 12, a partir do mês de aquisição, até ao fim. Entra sozinho no EBIT do Dashboard. As taxas por omissão vêm dos parâmetros (Definições › Financeiro › Amortizações).</p></section>
+  <section class="flow"><h3>Empréstimos e leasings · <?= eur0($debt) ?> em dívida</h3>
+    <p class="small muted">Juros deste mês: <?= eur($mInt) ?>. A prestação de cada mês nasce em «A pagar» (categoria «<?= e(EXEC_LOAN_CAT) ?>»); no resultado só conta o juro (o capital não é custo).</p></section>
+</div>
+<?php if ($canEdit): ?><div class="bar fin-bar"><button type="button" class="btn sm" data-new="#mdl-asset"><?= icon('plus') ?> Novo ativo</button><button type="button" class="btn ghost sm" data-new="#mdl-loan"><?= icon('plus') ?> Novo empréstimo ou leasing</button></div><?php endif; ?>
+<h3>Ativos</h3>
+<div class="tablewrap"><table class="fin-t">
+  <thead><tr><th>Ativo</th><th>Tipo</th><th class="num">Valor</th><th class="hide-sm">Aquisição</th><th class="num">Taxa</th><th class="num">Por mês</th><th class="num hide-sm">Já amortizado</th><th class="num">Valor líquido</th><th></th></tr></thead><tbody>
+  <?php if (!$assets): ?><tr><td colspan="9" class="empty">Sem ativos registados (equipamento, viaturas, obras…).</td></tr><?php endif; ?>
+  <?php foreach ($assets as $a): $bk = exec_asset_book($a); ?>
+    <tr class="<?= $a['ended_on'] ? 'off' : '' ?>"><td class="b"><?= e($a['name']) ?><?= $a['kind'] === 'car' && $a['car_motor'] ? '<div class="muted small">' . e(FIN_CAR_MOTORS_EXEC[$a['car_motor']] ?? '') . '</div>' : '' ?></td>
+      <td><?= e(EXEC_ASSET_KINDS[$a['kind']][0] ?? $a['kind']) ?></td><td class="num"><?= eur((float)$a['value']) ?></td><td class="hide-sm"><?= fin_date_pt($a['acquired_on']) ?><?= $a['ended_on'] ? ' → ' . fin_date_pt($a['ended_on']) : '' ?></td>
+      <td class="num"><?= e(fin_num((float)$a['rate_pct'])) ?>%</td><td class="num"><?= eur($bk['monthly']) ?></td><td class="num hide-sm"><?= eur($bk['done']) ?></td><td class="num b"><?= eur($bk['net']) ?></td>
+      <td class="num nowrap"><?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'ativos', 'asset' => (int)$a['id']])) ?>">Editar</a>
+        <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="asset_del"><input type="hidden" name="id" value="<?= (int)$a['id'] ?>"><button class="btn ghost sm" type="submit">Retirar</button></form><?php endif; ?></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+<h3>Empréstimos e leasings</h3>
+<div class="tablewrap"><table class="fin-t">
+  <thead><tr><th>Empréstimo</th><th class="hide-sm">Entidade</th><th class="num">Capital</th><th class="num">TAN</th><th class="num">Prazo</th><th class="num">Prestação</th><th class="num">Juros este mês</th><th class="num">Em dívida</th><th></th></tr></thead><tbody>
+  <?php if (!$loans): ?><tr><td colspan="9" class="empty">Sem empréstimos nem leasings registados.</td></tr><?php endif; ?>
+  <?php foreach ($loans as $l): $plan = exec_loan_plan($l); $first = reset($plan); $last = null; foreach ($plan as $ym => $p) { if ($ym > $cur) break; $last = $p; } ?>
+    <tr><td class="b"><?= e($l['name']) ?><div class="muted small"><?= e(EXEC_LOAN_KINDS[$l['kind']] ?? '') ?> · desde <?= fin_date_pt($l['start_date']) ?><?= (float)$l['residual'] > 0 ? ' · residual ' . eur((float)$l['residual']) : '' ?></div></td>
+      <td class="hide-sm"><?= e($l['lender']) ?></td><td class="num"><?= eur((float)$l['principal']) ?></td><td class="num"><?= e(fin_num((float)$l['rate_pct'], 3)) ?>%</td><td class="num"><?= (int)$l['months'] ?> m</td>
+      <td class="num"><?= $first ? eur($first['payment']) : '—' ?></td><td class="num"><?= eur($plan[$cur]['interest'] ?? 0) ?></td><td class="num b"><?= eur($last ? $last['balance'] : (float)$l['principal']) ?></td>
+      <td class="num nowrap"><?php if ($canEdit): ?><a class="lnk" href="<?= e(fin_url(['tab' => 'ativos', 'loan' => (int)$l['id']])) ?>">Editar</a>
+        <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="loan_del"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><button class="btn ghost sm" type="submit">Retirar</button></form><?php endif; ?></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+<?php if ($canEdit):
+    $av = $ea ?? ['name' => '', 'kind' => 'it', 'value' => '', 'acquired_on' => date('Y-m-d'), 'rate_pct' => '', 'car_motor' => '', 'car_phev_ok' => 0, 'ended_on' => '', 'notes' => ''];
+    $lv = $el ?? ['name' => '', 'kind' => 'loan', 'lender' => '', 'principal' => '', 'rate_pct' => '', 'months' => 60, 'start_date' => date('Y-m-d'), 'due_day' => (int)date('j'), 'residual' => 0, 'gen_docs' => 1, 'notes' => ''];
+    $rates = []; foreach (EXEC_ASSET_KINDS as $k => [$lab, $param]) $rates[$k] = $param !== '' ? fin_p($pdo, $param, 0) : 0; ?>
+<div class="mdl<?= $ea ? ' open' : '' ?>" id="mdl-asset" role="dialog" aria-modal="true" aria-labelledby="mdl-asset-t"<?= $ea ? '' : ' hidden' ?> data-clear="asset">
+  <div class="mdl-back" data-mdl-close></div>
+<form method="post" class="mdl-card wide fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="asset_save"><?= $ea ? '<input type="hidden" name="id" value="' . (int)$ea['id'] . '">' : '' ?>
+  <h3 id="mdl-asset-t"><?= icon('plus') ?> <?= $ea ? 'Editar ativo · ' . e($ea['name']) : 'Novo ativo' ?></h3>
+  <div class="grid">
+    <div class="field"><label for="as-n">Ativo</label><input type="text" id="as-n" name="name" required maxlength="160" value="<?= e((string)$av['name']) ?>" placeholder="Câmara Sony FX6"></div>
+    <div class="field"><label for="as-k">Tipo</label><select id="as-k" name="kind" data-rates="<?= e(json_encode($rates)) ?>"><?= fin_opts(array_map(fn($x) => $x[0], EXEC_ASSET_KINDS), $av['kind']) ?></select></div>
+    <div class="field"><label for="as-v">Valor de aquisição (€)</label><input type="text" id="as-v" name="value" required inputmode="decimal" value="<?= $av['value'] !== '' ? e(number_format((float)$av['value'], 2, ',', '')) : '' ?>"><small class="muted">Sem o IVA dedutível.</small></div>
+    <div class="field"><label for="as-d">Data de aquisição</label><input type="date" id="as-d" name="acquired_on" required value="<?= e((string)$av['acquired_on']) ?>"></div>
+    <div class="field"><label for="as-r">Taxa de amortização anual (%)</label><input type="text" id="as-r" name="rate_pct" inputmode="decimal" value="<?= $av['rate_pct'] !== '' ? e(fin_num((float)$av['rate_pct'])) : '' ?>" placeholder="a do tipo (parâmetros)"></div>
+    <div class="field"><label for="as-e">Abate / venda (opcional)</label><input type="date" id="as-e" name="ended_on" value="<?= e((string)$av['ended_on']) ?>"></div>
+    <div class="field"><label for="as-m">Motorização (viaturas)</label><select id="as-m" name="car_motor"><?= fin_opts(['' => '—'] + FIN_CAR_MOTORS_EXEC, $av['car_motor']) ?></select><small class="muted">Para a tributação autónoma.</small></div>
+    <div class="field"><label class="check" style="margin-top:1.6rem"><input type="checkbox" name="car_phev_ok" value="1"<?= (int)$av['car_phev_ok'] ? ' checked' : '' ?>> Plug-in com os requisitos da taxa reduzida</label></div>
+    <div class="field wide"><label for="as-no">Notas</label><input type="text" id="as-no" name="notes" maxlength="500" value="<?= e((string)$av['notes']) ?>"></div>
+  </div>
+  <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit"><?= $ea ? 'Guardar' : 'Adicionar' ?></button></div></form>
+</div>
+<div class="mdl<?= $el ? ' open' : '' ?>" id="mdl-loan" role="dialog" aria-modal="true" aria-labelledby="mdl-loan-t"<?= $el ? '' : ' hidden' ?> data-clear="loan">
+  <div class="mdl-back" data-mdl-close></div>
+<form method="post" class="mdl-card wide fin-form"><?= csrf_field() ?><input type="hidden" name="do" value="loan_save"><?= $el ? '<input type="hidden" name="id" value="' . (int)$el['id'] . '">' : '' ?>
+  <h3 id="mdl-loan-t"><?= icon('plus') ?> <?= $el ? 'Editar · ' . e($el['name']) : 'Novo empréstimo ou leasing' ?></h3>
+  <div class="grid">
+    <div class="field"><label for="ln-n">Nome</label><input type="text" id="ln-n" name="name" required maxlength="160" value="<?= e((string)$lv['name']) ?>" placeholder="Leasing carrinha"></div>
+    <div class="field"><label for="ln-k">Tipo</label><select id="ln-k" name="kind"><?= fin_opts(EXEC_LOAN_KINDS, $lv['kind']) ?></select></div>
+    <div class="field"><label for="ln-l">Entidade</label><input type="text" id="ln-l" name="lender" maxlength="190" value="<?= e((string)$lv['lender']) ?>" placeholder="Banco / locadora"></div>
+    <div class="field"><label for="ln-p">Capital (€)</label><input type="text" id="ln-p" name="principal" required inputmode="decimal" value="<?= $lv['principal'] !== '' ? e(number_format((float)$lv['principal'], 2, ',', '')) : '' ?>"></div>
+    <div class="field"><label for="ln-r">Taxa de juro anual (TAN, %)</label><input type="text" id="ln-r" name="rate_pct" required inputmode="decimal" value="<?= $lv['rate_pct'] !== '' ? e(fin_num((float)$lv['rate_pct'], 3)) : '' ?>"></div>
+    <div class="field"><label for="ln-m">Prazo (meses)</label><input type="number" id="ln-m" name="months" min="1" max="480" required value="<?= (int)$lv['months'] ?>"></div>
+    <div class="field"><label for="ln-s">Início (contrato)</label><input type="date" id="ln-s" name="start_date" required value="<?= e((string)$lv['start_date']) ?>"><small class="muted">A 1.ª prestação é no mês seguinte.</small></div>
+    <div class="field"><label for="ln-d">Dia da prestação</label><input type="number" id="ln-d" name="due_day" min="1" max="28" value="<?= (int)$lv['due_day'] ?>"></div>
+    <div class="field"><label for="ln-res">Valor residual (leasing)</label><input type="text" id="ln-res" name="residual" inputmode="decimal" value="<?= e(number_format((float)$lv['residual'], 2, ',', '')) ?>"></div>
+    <div class="field"><label class="check" style="margin-top:1.6rem"><input type="checkbox" name="gen_docs" value="1"<?= (int)$lv['gen_docs'] ? ' checked' : '' ?>> Criar a prestação «Por pagar» em cada mês</label></div>
+    <div class="field wide"><label for="ln-no">Notas</label><input type="text" id="ln-no" name="notes" maxlength="500" value="<?= e((string)$lv['notes']) ?>"></div>
+  </div>
+  <p class="small muted">Prestação constante (juro sobre o capital em dívida). Se a entidade usar outro plano, os juros reais do extrato podem lançar-se numa categoria do tipo «Financeiro».</p>
+  <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit"><?= $el ? 'Guardar' : 'Adicionar' ?></button></div></form>
+</div>
+<?php endif; ?>
+
+<?php
 // ═══ Salários ══════════════════════════════════════════════
 elseif ($tab === 'salarios'):
     require_once __DIR__ . '/fin_pay.php';

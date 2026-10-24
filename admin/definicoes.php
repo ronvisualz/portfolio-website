@@ -95,7 +95,7 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
     }
     $editable = in_array($d['type'], ['int', 'num', 'text', 'email', 'url', 'time', 'textarea', 'list', 'select'], true);
     $reset = $editable ? '<button type="button" class="set-reset" data-reset="' . e($key) . '" data-def="' . e($def) . '"' . ($v === $def ? ' hidden' : '') . ' data-tip="Repor o valor de origem">Repor (' . e(setting_show($d, $def)) . ')</button>' : '';
-    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens', 'fin_params', 'fin_irs', 'fin_mail'], true);
+    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types'], true);
     return '<div class="set-row' . ($wide ? ' wide' : '') . '" id="' . $id . '" data-row="' . e($key) . '">' . $label . '<div class="set-f">' . $field . '</div>' . $reset
          . '<div class="set-warn" hidden role="alert"><p></p><div class="actions"><button type="button" class="btn sm" data-impact-ok>Confirmar</button><button type="button" class="btn ghost sm" data-impact-no>Cancelar</button></div></div></div>';
 }
@@ -121,6 +121,19 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                     . '<td class="hide-sm' . ($p['verified_on'] ? '' : ' unv') . '"><input type="date" value="' . e((string)$p['verified_on']) . '" data-fparam="' . e($k) . '" data-ffield="verified_on" aria-label="Verificado em"' . ($p['verified_on'] ? '' : ' title="Por confirmar com o contabilista"') . '></td></tr>';
             }
             return $h . '</tbody></table></div><p class="small muted">Sem data de verificação = por confirmar. Nada disto está escrito no código: os cálculos leem estes valores.</p>';
+        case 'fin_cat_types':
+            // Dashboard Executivo (§30.2): onde cada categoria entra no resultado (grava ao mudar)
+            if (!db_has_table($pdo, 'exec_months')) return '<span class="set-info">Disponível depois do passo 34 da base de dados.</span>';
+            require_once __DIR__ . '/inc/exec.php';
+            $h = '<div class="tablewrap"><table class="set-t" data-table="fin_cat_types"><thead><tr><th>Categoria</th><th>Tipo</th><th class="hide-sm">Entra em</th></tr></thead><tbody>';
+            foreach (exec_cat_types($pdo) as $cat => $t) {
+                $fixed = in_array($cat, ['Salários', EXEC_LOAN_CAT], true);
+                $o = '';
+                foreach (EXEC_TYPES as $k => $l) $o .= '<option value="' . $k . '"' . ($k === $t ? ' selected' : '') . '>' . e($l) . '</option>';
+                $h .= '<tr data-id="' . e($cat) . '"><td>' . e($cat) . '</td><td>' . ($fixed ? '<span class="muted small">Automático</span>' : '<select data-cell="type" aria-label="Tipo de ' . e($cat) . '">' . $o . '</select>') . '</td>'
+                    . '<td class="hide-sm small muted">' . e($fixed ? ($cat === 'Salários' ? 'Operacionais (o tempo declarado na Orçamentação passa a custo direto)' : 'Só o juro conta (Net Profit); o capital não é custo') : EXEC_TYPES_HELP[$t]) . '</td></tr>';
+            }
+            return $h . '</tbody></table></div>';
         case 'fin_irs':
             if (!db_has_table($pdo, 'fin_irs')) return '<span class="set-info">Disponível depois do passo 30 da base de dados.</span>';
             require_once __DIR__ . '/inc/fin_pay.php';

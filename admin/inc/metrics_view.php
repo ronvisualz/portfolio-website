@@ -160,7 +160,7 @@ function mx_list_rows(PDO $pdo, string $kind, array $ids): array {
             require_once __DIR__ . '/fin.php';
             foreach ($pdo->query("SELECT * FROM fin_docs WHERE id IN ($in)")->fetchAll() as $f) {
                 $rows[] = ['url' => '/admin/financeiro.php?tab=' . ($f['direction'] === 'in' ? 'receber' : 'pagar') . '&doc=' . (int)$f['id'], 'cells' => [
-                    fin_doc_label($f), $f['party_name'] ?: $f['description'], FIN_ST[$f['status']][0] ?? $f['status'], $f['category'], '', '', '', $f['issue_date'] ? date('d/m/Y', strtotime($f['issue_date'])) : '—',
+                    fin_doc_label($f), $f['party_name'] ?: $f['description'], FIN_ST[$f['status']] ?? $f['status'], $f['category'], '', '', '', $f['issue_date'] ? date('d/m/Y', strtotime($f['issue_date'])) : '—',
                 ], 'money' => (float)$f['base']];
             }
         } elseif ($k === 'i') {

@@ -543,6 +543,42 @@ function team_absences_between(PDO $pdo, string $from, string $to, string $statu
     return $st->fetchAll();
 }
 
+// ── avisos da equipa no chat (Dashboard Executivo, §30.5) ───
+
+/** Um aviso da equipa (no chat de todos): o texto sem euros e, para quem vê o Financeiro, com euros. */
+function team_post_add(PDO $pdo, string $kind, string $title, string $body, string $bodyFin, string $url = ''): int {
+    if (!db_has_table($pdo, 'team_posts')) return 0;
+    $pdo->prepare('INSERT INTO team_posts (kind, title, body, body_fin, url, created_at) VALUES (?,?,?,?,?,?)')
+        ->execute([$kind, mb_substr($title, 0, 200), $body, $bodyFin !== '' ? $bodyFin : $body, mb_substr($url, 0, 300), date('Y-m-d H:i:s')]);
+    return (int)$pdo->lastInsertId();
+}
+
+/** Os avisos da equipa, do mais recente; $after: só os novos. */
+function team_posts(PDO $pdo, int $after = 0, int $limit = 60): array {
+    if (!db_has_table($pdo, 'team_posts')) return [];
+    $st = $pdo->prepare('SELECT * FROM team_posts WHERE id > ? ORDER BY id DESC LIMIT ' . (int)$limit);
+    $st->execute([$after]);
+    return $st->fetchAll();
+}
+
+/** Quantos avisos da equipa esta pessoa ainda não viu. */
+function team_posts_unread(PDO $pdo, int $uid): int {
+    if (!db_has_table($pdo, 'team_posts')) return 0;
+    $seen = (int)(user_prefs($pdo, $uid)['posts_seen'] ?? 0);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM team_posts WHERE id > ?');
+    $st->execute([$seen]);
+    return (int)$st->fetchColumn();
+}
+
+function team_posts_seen(PDO $pdo, int $uid): void {
+    if (!db_has_column($pdo, 'users', 'prefs')) return;
+    $max = (int)$pdo->query('SELECT COALESCE(MAX(id), 0) FROM team_posts')->fetchColumn();
+    $p = user_prefs($pdo, $uid);
+    if ((int)($p['posts_seen'] ?? 0) >= $max) return;
+    $p['posts_seen'] = $max;
+    $pdo->prepare('UPDATE users SET prefs = ? WHERE id = ?')->execute([json_encode($p, JSON_UNESCAPED_UNICODE), $uid]);
+}
+
 // ── chat privado 1:1 (§17.6) ────────────────────────────────
 
 /** As conversas de $me: a outra pessoa, a última mensagem e as não lidas. */

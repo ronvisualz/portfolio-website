@@ -7,6 +7,7 @@
  *   GET  a=chat_list         conversas e pessoas (com presença)
  *   GET  a=chat_thread&with=&after=   mensagens com essa pessoa (marca as recebidas como lidas)
  *   POST a=chat_send         to, body
+ *   GET  a=team_posts        os avisos da equipa (pódio, recorde, comercial do mês — Dashboard); marca-os como vistos
  *   GET  a=availability&id=&w=aaaa-mm-dd   a semana de uma pessoa (outros veem só «Ocupado»; admins veem o título)
  *   GET  a=find_time&ids=&w=&d=            espaços livres comuns
  *   POST a=meeting_request   to | to[], start («aaaa-mm-dd hh:mm»), duration, subject, deal_id, platform, link
@@ -33,7 +34,7 @@ $post = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 // Os pedidos automáticos (sinal, chat aberto) não contam como atividade: verifica-se a
 // sessão sem a prolongar, para o «sair por inatividade» continuar a valer.
-$passive = !$post && in_array($a, ['ping', 'chat_list', 'chat_thread'], true);
+$passive = !$post && in_array($a, ['ping', 'chat_list', 'chat_thread', 'team_posts'], true);
 if (current_user() === null) tout(401, ['ok' => false, 'error' => 'A sessão terminou. Entre outra vez.']);
 if ($passive) {
     $now = time();
@@ -85,8 +86,11 @@ try {
 
     case 'ping':
         team_ping($pdo, $me);
-        $out = ['ok' => true, 'unread' => team_chat_unread($pdo, $meRow), 'meetings' => count(team_meetings_pending($pdo, $meRow)),
+        $posts = team_focus_until($meRow) ? 0 : team_posts_unread($pdo, $me);
+        $out = ['ok' => true, 'unread' => team_chat_unread($pdo, $meRow) + $posts, 'meetings' => count(team_meetings_pending($pdo, $meRow)),
                 'focus' => ($f = team_focus_until($meRow)) ? lisbon_fmt($f, 'H:i') : ''];
+        // o aviso da equipa mais recente por ver (pódio, recorde, comercial do mês)
+        if ($posts && ($p = team_posts($pdo, 0, 1)[0] ?? null)) $out['post'] = ['id' => (int)$p['id'], 'title' => (string)$p['title']];
         // Quem está online (para os pontos dos cartões). Só sim/não e «visto há».
         $ids = array_slice(array_filter(array_map('intval', explode(',', (string)($_GET['ids'] ?? '')))), 0, 200);
         if ($ids) {
@@ -114,7 +118,9 @@ try {
                        'state' => team_agenda_state($pdo, $u)[1]];
         }
         usort($list, fn($x, $y) => [$y['last_id'] > 0, $y['last_id'], $x['name']] <=> [$x['last_id'] > 0, $x['last_id'], $y['name']]);
-        tout(200, ['ok' => true, 'people' => $list, 'focus' => ($f = team_focus_until($meRow)) ? lisbon_fmt($f, 'H:i') : '']);
+        $last = team_posts($pdo, 0, 1)[0] ?? null;
+        $team = $last ? ['last' => mb_substr((string)$last['title'], 0, 80), 'unread' => team_posts_unread($pdo, $me)] : null;
+        tout(200, ['ok' => true, 'team' => $team, 'people' => $list, 'focus' => ($f = team_focus_until($meRow)) ? lisbon_fmt($f, 'H:i') : '']);
 
     case 'chat_thread':
         $other = person_req($pdo, (int)($_GET['with'] ?? 0));
@@ -123,6 +129,14 @@ try {
         tout(200, ['ok' => true, 'with' => ['id' => (int)$other['id'], 'name' => $other['name'], 'online' => $p['online'], 'presence' => $p['label'],
                    'state' => team_agenda_state($pdo, $other)[1], 'avatar' => team_avatar($other, 'sm'), 'phone' => (string)$other['phone'], 'email' => (string)$other['email']],
                    'messages' => array_map(fn($m) => msg_out($pdo, $m, $me), $rows)]);
+
+    case 'team_posts':
+        // os avisos da equipa (só leitura): o texto com euros só para quem vê o Financeiro
+        $money = can('financeiro');
+        $rows = team_posts($pdo, 0, 60);
+        team_posts_seen($pdo, $me);
+        tout(200, ['ok' => true, 'posts' => array_map(fn($p) => ['id' => (int)$p['id'], 'kind' => $p['kind'], 'title' => $p['title'],
+                   'html' => nl2br(e((string)($money ? $p['body_fin'] : $p['body']))), 'url' => (string)$p['url'], 'at' => lisbon_fmt(strtotime((string)$p['created_at']), 'd/m H:i')], array_reverse($rows))]);
 
     case 'chat_send':
         if (!$post) break;

@@ -1006,6 +1006,20 @@ function fin_undo_apply(PDO $pdo, array $d): string {
             if (!empty($d['doc_row'])) return fin_undo_apply($pdo, ['op' => 'doc', 'row' => $d['doc_row']]);
             if (!empty($d['doc_new'])) return fin_undo_apply($pdo, ['op' => 'doc_new', 'id' => $d['doc_new']]);
             return 'Email por confirmar.';
+        case 'exec_row':   // ativos e empréstimos (Dashboard Executivo): volta a ser o que era
+            $tbl = $d['tbl'] === 'fin_assets' ? 'fin_assets' : 'fin_loans';
+            if (!empty($d['new'])) {
+                $pdo->prepare("UPDATE $tbl SET deleted_at = ? WHERE id = ?")->execute([fin_now(), (int)$d['id']]);
+            } elseif (!empty($d['del'])) {
+                $pdo->prepare("UPDATE $tbl SET deleted_at = NULL WHERE id = ?")->execute([(int)$d['id']]);
+                foreach ((array)($d['docs'] ?? []) as $doc) $pdo->prepare('UPDATE fin_docs SET deleted_at = NULL WHERE id = ?')->execute([(int)$doc]);
+            } else {
+                $row = (array)$d['row']; $id = (int)$row['id']; unset($row['id']);
+                $pdo->prepare("UPDATE $tbl SET " . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($row))) . ' WHERE id = ?')->execute([...array_values($row), $id]);
+            }
+            require_once __DIR__ . '/exec.php';
+            exec_snapshot_refresh($pdo);
+            return $tbl === 'fin_assets' ? 'Ativo reposto.' : 'Empréstimo reposto.';
         case 'employee':
             if (!role_is_admin((string)(current_user()['role'] ?? '')) && !can('financeiro', PERM_EDIT)) throw new RuntimeException('Sem permissão.');
             $row = (array)$d['row'];

@@ -433,6 +433,15 @@ try {
             if (!$c) out(404, ['ok' => false, 'error' => 'Contacto não encontrado.']);
             out(200, ['ok' => true] + panel_contact($pdo, $c));
         }
+        if ($type === 'today') {
+            // «O teu dia» do Dashboard (§30.1): o detalhe de um contador, só com o que a pessoa pode ver
+            require_once __DIR__ . '/inc/alerts.php';
+            $cols = today_columns($pdo);
+            $c = $cols[$id] ?? null;
+            if (!$c) out(404, ['ok' => false, 'error' => 'Nada para mostrar.']);
+            [, $title, $tip, $items, $more, $none] = $c;
+            out(200, ['ok' => true, 'title' => $title . ' · ' . count($items), 'url' => $more, 'html' => '<p class="small muted">' . e($tip) . '.</p>' . today_list_html($items, $more, $none)]);
+        }
         break;
 
 
@@ -1209,6 +1218,23 @@ try {
         require_once __DIR__ . '/inc/settings_def.php';
         if (!is_admin()) out(403, ['ok' => false, 'error' => 'Só superadmin e admins mudam as Definições.']);
         $tbl = (string)($_POST['table'] ?? '');
+        if ($tbl === 'fin_cat_types') {
+            // Financeiro › Categorias: o tipo contabilístico de cada uma (Dashboard Executivo, §30.2)
+            require_once __DIR__ . '/inc/exec.php';
+            $cat = trim((string)($_POST['id'] ?? ''));
+            $val = (string)($_POST['value'] ?? '');
+            $types = exec_cat_types($pdo);
+            if (!isset($types[$cat]) || !isset(EXEC_TYPES[$val]) || in_array($cat, ['Salários', EXEC_LOAN_CAT], true)) throw new RuntimeException('Escolha um tipo.');
+            if ($types[$cat] === $val) out(200, ['ok' => true, 'msg' => 'Sem alterações.']);
+            $old = (string)setting($pdo, 'fin_cat_types', '');
+            $saved = json_decode($old, true) ?: [];
+            $saved[$cat] = $val;
+            $new = json_encode($saved, JSON_UNESCAPED_UNICODE);
+            setting_write($pdo, 'fin_cat_types', $new);
+            setting_log($pdo, 'fin_cat_types', 'Financeiro · Tipo de «' . $cat . '»', EXEC_TYPES[$types[$cat]], EXEC_TYPES[$val]);
+            exec_snapshot_refresh($pdo);
+            out(200, ['ok' => true, 'msg' => '«' . $cat . '» passa a ' . EXEC_TYPES[$val] . '. O resultado do Dashboard já foi recalculado.', 'undo' => undo_push('setting', ['key' => 'fin_cat_types', 'from' => $old, 'to' => $new])]);
+        }
         if ($tbl === 'funnels') {
             // Centro Criativo (§23): pré-criativo por funil e os sub-quadros do projeto
             require_once __DIR__ . '/inc/cc.php';

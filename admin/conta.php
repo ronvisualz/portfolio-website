@@ -128,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings'
         foreach (NOTIF_CATS as $k => [, , $mail]) {
             $p['notif'][$k] = ['app' => !empty($_POST['n'][$k]['app']) ? 1 : 0, 'email' => $mail ? (!empty($_POST['n'][$k]['email']) ? 1 : 0) : 0];
         }
+        $p['today_open'] = ($_POST['today_open'] ?? '') === '1' ? 1 : 0;   // Dashboard: «O teu dia» compacto (por defeito) ou aberto
         $p['start'] = [];
         foreach (PROFILE_START as $tab => [, $opts]) {
             $v = (string)($_POST['start'][$tab] ?? '');
@@ -279,6 +280,11 @@ render_flashes();
         <option value="closed" <?= $prefs['pref_nav'] === 'closed' ? 'selected' : '' ?>>Recolhido (só ícones)</option>
       </select>
       <span class="muted" style="font-size:12px">Também muda na seta do menu ou com a tecla [.</span></div>
+    <div class="field"><label for="pt-today">«O teu dia» no Dashboard</label>
+      <select id="pt-today" name="today_open">
+        <option value="0" <?= empty($up['today_open']) ? 'selected' : '' ?>>Compacto (contadores; o detalhe abre ao lado)</option>
+        <option value="1" <?= !empty($up['today_open']) ? 'selected' : '' ?>>Abrir expandido</option>
+      </select></div>
     <?php foreach (PROFILE_START as $tab => [$tl, $opts]): $cur = (string)($up['start'][$tab] ?? ''); ?>
       <div class="field"><label for="st-<?= $tab ?>"><?= e($tl) ?> abre em</label>
         <select id="st-<?= $tab ?>" name="start[<?= $tab ?>]"><?php foreach ($opts as $k => $l): ?><option value="<?= e($k) ?>"<?= $cur === $k ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></div>

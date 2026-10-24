@@ -23,7 +23,7 @@ if (!fin_ready($pdo)) {
     exit;
 }
 
-const FIN_TABS = ['geral' => 'Visão geral', 'receber' => 'A receber', 'pagar' => 'A pagar', 'fixos' => 'Custos fixos', 'salarios' => 'Salários',
+const FIN_TABS = ['geral' => 'Visão geral', 'receber' => 'A receber', 'pagar' => 'A pagar', 'fixos' => 'Custos fixos', 'ativos' => 'Ativos e empréstimos', 'salarios' => 'Salários',
                   'tesouraria' => 'Tesouraria', 'simulador' => 'Simulador', 'impostos' => 'Impostos'];
 // os separadores de antes (Negócios, Por receber, Fluxo de caixa, Custos, IVA) passaram para dentro destes
 const FIN_TABS_OLD = ['negocios' => 'geral', 'fluxo' => 'tesouraria', 'custos' => 'fixos', 'iva' => 'impostos'];
@@ -258,6 +258,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('UPDATE fin_fixed SET active = 1 - active, updated_at = ? WHERE id = ?')->execute([fin_now(), (int)$old['id']]);
                 flash((int)$old['active'] ? 'Custo fixo desligado (deixa de gerar lançamentos).' : 'Custo fixo ligado.', 'ok', undo_push('fin', ['op' => 'fixed', 'row' => $old]));
                 redirect(fin_url(['tab' => 'fixos']));
+            }
+            case 'asset_save': case 'asset_del': case 'loan_save': case 'loan_del': {
+                // Ativos (amortizações) e empréstimos/leasings (juros): o resultado do Dashboard fica automático (§30.2)
+                require_once __DIR__ . '/inc/exec.php';
+                if (!exec_ready($pdo)) throw new RuntimeException('A base de dados ainda não está no passo 34.');
+                $tbl = str_starts_with($do, 'asset') ? 'fin_assets' : 'fin_loans';
+                $id = (int)($_POST['id'] ?? 0);
+                $old = null;
+                if ($id) {
+                    $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ? AND deleted_at IS NULL");
+                    $st->execute([$id]);
+                    $old = $st->fetch() ?: null;
+                    if (!$old) throw new RuntimeException('Esse registo já não existe.');
+                }
+                if (str_ends_with($do, '_del')) {
+                    $pdo->prepare("UPDATE $tbl SET deleted_at = ? WHERE id = ?")->execute([fin_now(), $id]);
+                    $docs = [];
+                    if ($tbl === 'fin_loans') {   // as prestações por pagar saem com ele (as pagas ficam)
+                        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE loan_id = ? AND status = 'to_pay' AND paid_amount = 0 AND deleted_at IS NULL");
+                        $st->execute([$id]);
+                        $docs = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+                        if ($docs) $pdo->exec('UPDATE fin_docs SET deleted_at = ' . $pdo->quote(fin_now()) . ' WHERE id IN (' . implode(',', $docs) . ')');
+                    }
+                    exec_snapshot_refresh($pdo);
+                    flash(($tbl === 'fin_assets' ? 'Ativo retirado: ' : 'Empréstimo retirado: ') . $old['name'] . '.', 'ok', undo_push('fin', ['op' => 'exec_row', 'tbl' => $tbl, 'id' => $id, 'del' => 1, 'docs' => $docs]));
+                    redirect(fin_url(['tab' => 'ativos']));
+                }
+                $v = $tbl === 'fin_assets' ? exec_asset_input($pdo, $_POST) : exec_loan_input($_POST);
+                if ($old) {
+                    $v['updated_at'] = fin_now();
+                    $pdo->prepare("UPDATE $tbl SET " . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($v))) . ' WHERE id = ?')->execute([...array_values($v), $id]);
+                    $tok = undo_push('fin', ['op' => 'exec_row', 'tbl' => $tbl, 'id' => $id, 'row' => $old]);
+                } else {
+                    $v += ['created_by' => $uid, 'created_at' => fin_now(), 'updated_at' => fin_now()];
+                    $cols = array_keys($v);
+                    $pdo->prepare("INSERT INTO $tbl (" . implode(', ', $cols) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')')->execute(array_values($v));
+                    $id = (int)$pdo->lastInsertId();
+                    $tok = undo_push('fin', ['op' => 'exec_row', 'tbl' => $tbl, 'id' => $id, 'new' => 1]);
+                }
+                if ($tbl === 'fin_loans') exec_loan_tick($pdo);
+                exec_snapshot_refresh($pdo);
+                flash($tbl === 'fin_assets' ? 'Ativo guardado: amortiza ' . eur((float)$v['value'] * (float)$v['rate_pct'] / 1200) . '/mês no resultado.'
+                                            : 'Empréstimo guardado: a prestação «Por pagar» aparece em cada mês; no resultado só conta o juro.', 'ok', $tok);
+                redirect(fin_url(['tab' => 'ativos']));
             }
             case 'emp_save': {
                 require_once __DIR__ . '/inc/fin_pay.php';

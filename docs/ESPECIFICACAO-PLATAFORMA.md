@@ -2039,6 +2039,79 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Concluir outra chamada** (negócio, contacto ou interna) abre «Chamada feita» com uma nota opcional; fica no
   histórico do negócio ou do contacto como chamada (sem nota: «Chamada feita · <título>»).
 
+### 10.23 Dashboard Executivo — §30 (24 out 2026)
+
+**Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
+viaturas, abate), `fin_loans` (empréstimos e leasings: capital, TAN, prazo, início, dia, residual) e
+`fin_docs.loan_id`; `exec_months` (a fotografia mensal do resultado), `exec_reading` (a leitura do mês, com e sem
+euros, e os números em que se baseou), `exec_hof` (pódio por mês, entradas, recordes, negócio do mês, comercial do
+mês, destaque de produção, fecho do mês) e `team_posts` (avisos da equipa no chat). Parâmetro novo «Horas produtivas
+por pessoa e por ano» (1 600 h, só admins). O custo/hora interno de quem tem ficha de salário passa a vir dela.
+
+**O resultado (P&L), `inc/exec.php`** — sem contas próprias: lê o Financeiro e a camada de métricas.
+- Revenue: faturado s/ IVA pela data da fatura (notas de crédito abatem); antes das faturas, o negócio no mês do
+  trabalho. Recebido em nota (pelos pagamentos).
+- Custos diretos: despesas com âmbito «Negócio» e das categorias do tipo «Custo direto» (pela data do documento),
+  custos da equipa da altura da folha (mês do custo/negócio), gastos escritos à mão, reservas dos sócios (na proporção
+  do faturado) e o tempo das pessoas declaradas na Orçamentação.
+- Salários: o custo total do processamento do mês; sem processamento, a estimativa pela ficha (custo anual ÷ 12) a
+  partir da data de entrada; com lançamentos «Salários» feitos à mão nesse mês, contam esses (sem estimativa).
+- **Equipa nos negócios (sem dupla contagem):** horas da Orçamentação (versão e opção que contam; dias × horas do
+  dia) × custo/hora interno (custo anual ÷ horas produtivas), repartidas pelos dias de execução (Kickoff → entrega,
+  prevista ou feita); cada mês, o imputado sai dos salários operacionais e entra nos diretos, nunca mais do que o
+  custo real de cada pessoa nesse mês (aviso quando limita). Quem não tem ficha de salário conta horas, não custo.
+- Operacionais: categorias do tipo «Operacional» (âmbito Empresa) + salários − imputado. Amortizações: ativos
+  (valor × taxa ÷ 12 desde o mês de aquisição, até ao valor ou ao abate) + tipo «Amortização». Juros: plano de cada
+  empréstimo (prestação constante, residual no fim) + tipo «Financeiro». As prestações nascem «Por pagar» (categoria
+  «Empréstimos e leasings», como os custos fixos) e não contam no resultado (só o juro). Tipo «Imposto»: não é custo.
+- IRC estimado sobre o resultado do ano até ao mês (taxa PME até ao limite, taxa geral, derrama — parâmetros),
+  repartido pelos meses; tributação autónoma das viaturas registadas (depreciação × taxa pela motorização e preço) e
+  das despesas «Viaturas» (taxa da viatura principal ou do 1.º escalão). Net Profit marcado «estimativa».
+- A fotografia (`exec_months`, 24 meses + o ano anterior inteiro) refaz-se de hora a hora no cron, ao mudar um tipo
+  de categoria, um ativo ou um empréstimo, e com «atualizar agora»; o Dashboard lê dela.
+
+**Definições:** Financeiro › Categorias › «Tipo contabilístico de cada categoria» (Custo direto · Operacional ·
+Amortização · Financeiro · Imposto; grava ao mudar, com «Anular»; Salários e Empréstimos são automáticos). Geral ›
+Dashboard executivo: meta anual de faturação (a mesma da Visão geral do Financeiro), limites dos semáforos,
+concentração, mínimo do comercial do mês e hora da leitura. Financeiro: separador novo **Ativos e empréstimos**
+(registo, valor líquido, juros do mês, dívida; «Anular» em tudo). Perfil: «O teu dia» compacto ou aberto.
+
+**O Dashboard, de cima para baixo** (`dashboard.php`, `inc/exec_view.php`, `assets/dash.js`):
+1. Saudação e **«O teu dia» numa linha de contadores** (Tarefas a vencer · Leads em atraso · Negócios parados · Por
+   receber em atraso) que abrem o detalhe no painel lateral (`ui_api.php?a=panel&type=today`); Ctrl-clique abre a
+   página. «Abrir expandido» (preferência da pessoa, desligada por defeito) mostra o bloco antigo.
+2. **Leitura do mês:** de manhã (a partir da hora das Definições) o cron escreve 3–4 frases pela IA, só com os números
+   da fotografia (escritos já formatados); se aparecer um número que não está nos dados, o texto da IA cai e fica um
+   texto fixo com os mesmos números. Duas versões: com euros (Financeiro) e sem euros nem margens (os outros).
+   Admins podem «Escrever agora».
+3. **Saúde da empresa:** Finanças (últimos 3 meses: gross margin vs meta e net profit > 0) · Comercial (metas do
+   período e pipeline ponderado vs meta de valor do mês seguinte × 1,5) · Operação (90 dias: entregas no prazo e
+   rondas a mais) · Tesouraria (runway útil e % do por receber em atraso). Cada um diz a razão e abre o relatório.
+4. **Resultados (só Financeiro):** Mês · Trimestre · Ano até hoje · Últimos 12 meses, contra o período anterior e o
+   do ano anterior (▲▼). Cinco cartões (Revenue, Gross Profit, EBITDA, EBIT, Net Profit) com margem, ⓘ com a fórmula
+   e mini-linha de 12 meses; o número abre os documentos/negócios por trás. Cascata do período e barras de Revenue
+   com a linha da gross margin (escala própria, um só eixo). Indicadores: runway útil, saldo disponível, por receber
+   em atraso, receita por pessoa, concentração dos 3 maiores clientes (alerta acima do limite), clientes recorrentes.
+5. **Crescimento e previsão:** Revenue e Gross Profit de 12 meses com a média de 3; previsão do ano = faturado +
+   ganho por faturar + pipeline ponderado + tendência (o que a tendência espera para lá do que já se conhece), banda
+   pessimista/otimista e distância à meta; mix do gross profit por funil e por serviço (barra a 100%). Sem
+   Financeiro: ganhos no ano, kickoffs do mês, negócios em pipeline e o mix em número de negócios.
+6. **Hall of fame:** pódio (1.º amarelo, 2.º azul-céu, 3.º coral) com código, negócio, cliente, funil, mês e equipa;
+   gross profit = valor − custos − tempo da equipa, «provisório» até à entrega; euros só com Financeiro. Negócio do
+   mês com a % do 1.º do mês anterior e do recorde. Quando um negócio entra no pódio pela primeira vez ou passa a 1.º
+   acima do recorde: registo, aviso no chat («Equipa · avisos») e o pódio anima uma vez. No dia 1 (a partir das 9h):
+   pódio do mês, negócio do mês, **comercial do mês** (melhor conversão pipeline → kickoff com pelo menos N negócios
+   em pipeline; desempate pelo gross profit e pela primeira resposta) e **destaque de produção** (entregas no prazo e
+   aprovação à 1.ª ronda), com aviso no chat; histórico de 12 meses.
+7. **Comercial** (o bloco de antes) e **Pedem atenção agora** (com ligação ao separador Atenção).
+
+**Visibilidade:** sem Financeiro, o servidor não envia euros (P&L, previsão, valores do pódio e do «Pedem atenção»
+ficam de fora; verificado: nenhum «€» no HTML). **Chat:** a conversa «Equipa · avisos» (só leitura) aparece no topo
+da lista com as não lidas; o aviso novo chega como notificação com «Ver». **Cron:** `exec_tick` corre na tarefa «cc»
+(prestações, fotografia, hall of fame, leitura); `php admin/inc/cron_run.php exec [leitura | fecho AAAA-MM]` à mão.
+
+**Também:** a lista de documentos por trás de um número (Relatórios) mostra o estado inteiro («Emitida», não «E»).
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
@@ -3667,3 +3740,63 @@ Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação 
 
 ### 29.14 Ligação ao Dashboard Executivo
 O Dashboard (a desenhar) não recalcula nada: lê a fotografia diária e mostra a leitura macro — P&L (Revenue, Gross Profit e margem, EBITDA, margem operacional, Net Profit e margem), runway, pipeline ponderado, metas em semáforo, índice de saúde e um parágrafo da IA «o que mudou e porquê», com ligação ao separador de Relatórios que explica cada número.
+
+## 30. Dashboard Executivo (decidido 24 out 2026)
+
+**Princípio:** leitura **macro** em 30 segundos. Não recalcula nada: lê a camada de métricas e a fotografia diária (`inc/metrics.php`, §29.11) e o Financeiro (§28). Cada número leva ao separador de Relatórios ou Financeiro que o explica.
+
+**Ponto de partida (verificado no main):** `admin/dashboard.php` tem «O teu dia», o resumo do ano (faturação, lucro antes de impostos, gastos, por receber), o bloco Comercial (pipeline ponderado, metas, respostas no prazo, pedem atenção) e «Pedem atenção agora». Mantém-se «O teu dia» no topo; o resto reorganiza-se como abaixo.
+
+### 30.1 Estrutura (de cima para baixo)
+1. **Saudação + barra compacta «O teu dia»** (revisto 24 out 2026): o bloco atual de 4 colunas deixa de abrir expandido no Dashboard — tira os holofotes aos KPIs. Passa a uma linha de contadores clicáveis («Tarefas a vencer 23 · Leads em atraso 23 · Negócios parados 0 · Por receber em atraso 5») que abre o detalhe num painel lateral. O detalhe completo continua em Tarefas, Leads e Relatórios › Atenção. Preferência por utilizador «Abrir expandido» (desligada por defeito).
+2. **Leitura do mês** — um parágrafo da IA (3–4 frases) com o que mudou e porquê, e a ação mais importante. Ex.: «Outubro fecha com gross profit 18% acima de setembro, puxado por CGI / 3D. A margem caiu 3 p.p. por excesso de rondas em 2 negócios. Runway útil estável em 18 meses. Prioridade: 4 propostas sem feedback (31 500 €).» Gerado de manhã a partir da fotografia; nunca inventa números (só usa os da fotografia).
+3. **Saúde da empresa** — 4 semáforos: Finanças · Comercial · Operação · Tesouraria, cada um com uma frase e ligação (regras em §30.4).
+4. **Resultados (P&L)** — só Financeiro (§30.2).
+5. **Crescimento e previsão** (§30.3).
+6. **Hall of fame** — top 3 negócios de sempre por gross profit, recorde a bater e comercial do mês (§30.5).
+7. **Comercial** (bloco atual) e **Pedem atenção agora** (resumo, com ligação ao separador Atenção).
+
+### 30.2 Resultados (P&L) — só com acesso ao Financeiro
+Período: Mês · Trimestre · Ano até hoje · Últimos 12 meses; comparação com o período anterior e com o mesmo período do ano anterior (▲▼).
+Cartões grandes com mini-linha de 12 meses:
+- **Revenue** (faturado s/ IVA, pela data da fatura) — e recebido no período em nota.
+- **Gross Profit** = Revenue − custos diretos dos negócios (freelancers, fornecedores de produção, despesas com âmbito «Negócio»); **Gross Margin %**.
+- **EBITDA** = Gross Profit − custos operacionais da empresa (salários com encargos, renda, software, contabilidade, seguros, marketing… tudo com âmbito «Empresa», exceto amortizações, juros e impostos sobre lucros).
+- **Operating Profit (EBIT)** = EBITDA − amortizações e depreciações; **Operating Margin %**.
+- **Net Profit** = EBIT − encargos financeiros − IRC estimado (taxas dos parâmetros §28: 15%/19% + derrama) − tributação autónoma; **Net Margin %**. Marcado «estimativa» até o contabilista fechar o ano.
+- **Exemplo de leitura (mês):** Revenue 42 300 € − custos diretos 24 950 € = Gross Profit 17 350 € (Gross Margin 41%) − operacionais 8 240 € = EBITDA 9 110 € (21%) − amortizações 600 € = EBIT 8 510 € (Operating Margin 20%) − juros 0 € − IRC e tributação autónoma 1 490 € = Net Profit 7 020 € (Net Margin 17%).
+- **Dados necessários para o cálculo automático:** (1) faturas emitidas registadas (Revenue pela data da fatura); (2) todas as despesas com âmbito e categoria; (3) **tipo contabilístico por categoria**; (4) salários processados pela plataforma (§28.6) com encargos; (5) **registo de ativos** (equipamento, viaturas, obras — valor, data, taxa de amortização dos parâmetros) para as amortizações mensais; (6) empréstimos/leasings com juros; (7) parâmetros de IRC, derrama e tributação autónoma (§28). **Salários (decidido 24 out 2026):** o salário de cada pessoa vem da ficha na aba Equipa (custo total para a empresa, §28.6). Por defeito é **custo operacional** (entra no EBITDA/EBIT). Quando uma pessoa está **declarada na Orçamentação de um negócio** (linha de equipa interna com dias/horas), esse tempo é **custo direto** desse negócio e entra no Gross Profit:
+  - custo/hora interno = custo total anual da pessoa (14 meses × bruto × 1,2375 + refeição + seguro) ÷ horas produtivas por ano (parâmetro, ex.: 1 600 h); atualizado quando o salário muda;
+  - custo direto do negócio = horas declaradas × custo/hora (orçamentado); quando houver horas reais registadas no negócio usam-se essas;
+  - **sem dupla contagem:** o valor imputado aos negócios no mês é retirado aos custos operacionais de salários desse mês (operacional = custo salarial total − imputado aos negócios); se a imputação passar o custo do mês, fica limitada ao custo real e é mostrado aviso;
+  - o mês da imputação é o mês da execução do negócio (kickoff → entrega, repartido pelos meses);
+  - quem não tem Financeiro vê só horas, nunca o custo/hora.
+- Cada categoria de custo do Financeiro tem um **tipo contabilístico** (Custo direto · Operacional · Amortização · Financeiro · Imposto) definido em Definições › Financeiro, para estes cálculos serem automáticos.
+Gráfico: **cascata do P&L** do período (Revenue → custos diretos → Gross Profit → operacionais → EBITDA → amortizações → EBIT → impostos → Net Profit) e **barras mensais de Revenue com a linha de Gross Margin %** (12 meses).
+Outros indicadores macro (pequenos): **Runway útil** (§28.8), **saldo disponível**, **por receber em atraso**, **receita por pessoa** (revenue ÷ equipa), **concentração** (% da receita dos 3 maiores clientes — alerta acima de 50%), **clientes recorrentes** (% da receita de clientes que já tinham comprado).
+
+### 30.3 Crescimento e previsão
+- Revenue e Gross Profit dos últimos 12 meses com a tendência (§28.9).
+- **Previsão até ao fim do ano** = realizado + ganho por faturar (backlog) + pipeline ponderado + tendência; banda pessimista/otimista. Mostra a distância ao objetivo anual (meta anual em Definições, só sócios).
+- **Mix por funil e por serviço** (barra empilhada 100%) — de onde vem o gross profit.
+- Sem Financeiro: mostra só contagens (negócios ganhos, kickoffs, pipeline em nº), sem euros.
+
+### 30.4 Saúde da empresa (regras dos semáforos; limites editáveis em Definições)
+- **Finanças:** verde se Gross Margin ≥ meta (ex. 40%) e Net Profit > 0; amarelo se um falha; vermelho se ambos.
+- **Tesouraria:** verde runway útil ≥ 12 meses e atrasos < 15% do por receber; amarelo 6–12 meses ou atrasos 15–30%; vermelho < 6 meses ou dentro da reserva.
+- **Comercial:** metas do período em linha (verde), alguma em risco (amarelo), alguma atrás ou pipeline ponderado < 1,5× a meta do mês seguinte (vermelho).
+- **Operação:** entregas no prazo ≥ 85% e rondas a mais ≤ 0,5 (verde); senão amarelo/vermelho.
+Cada semáforo diz a razão numa frase e abre o relatório certo.
+
+### 30.5 Hall of fame
+- **Top 3 de sempre por gross profit** em pódio (1.º, 2.º, 3.º): código, nome do negócio, cliente, funil, mês, equipa envolvida. Euros só para quem tem Financeiro; os restantes veem o pódio sem valores.
+- **Recorde a bater:** cartão «Negócio do mês» com o melhor gross profit do mês corrente e a % do 1.º lugar do mês anterior e do recorde de sempre («a 78% do recorde»). Quando um negócio entra no top 3 ou bate o recorde (ao chegar a Kickoff com custos fechados, ou ao fechar contas na entrega — regra: conta o gross profit **real** depois da entrega; até lá aparece como «provisório»): animação discreta no Dashboard, aviso no chat da equipa e registo no histórico do hall of fame (quem esteve no pódio em cada mês).
+- **Comercial do mês:** utilizador com a melhor **conversão pipeline → kickoff** no mês, com mínimo de 5 negócios em pipeline (editável) para contar; desempate por gross profit ganho e depois por tempo de resposta. Mostra foto, taxa, kickoffs e a comparação com a média da equipa. Anunciado no chat no dia 1 do mês seguinte; histórico dos vencedores.
+- Sugestão: **Destaque de produção do mês** (melhor % de entregas no prazo e aprovação à 1.ª ronda) para reconhecer também a equipa de execução.
+
+### 30.6 Visibilidade
+- Sócios (superadmin/admins) e Financeiro: tudo.
+- Restantes: «O teu dia», leitura do mês sem euros, semáforos Comercial e Operação, hall of fame sem valores, comercial do mês, bloco Comercial e atenção. O servidor nunca envia valores financeiros a quem não tem acesso.
+
+### 30.7 Design
+Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação de entrada, dicas com valores exatos). Cartões de KPI com número grande, variação ▲▼ colorida e mini-linha. Pódio com 1.º lugar em amarelo da marca (#FFC718), 2.º em azul-céu, 3.º em coral. Sem gráficos circulares nem velocímetros. Em telemóvel: leitura do mês, semáforos e os 4 KPIs principais primeiro. Interface sem referências «§».

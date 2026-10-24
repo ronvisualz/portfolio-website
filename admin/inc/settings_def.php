@@ -87,6 +87,31 @@ function settings_defs(): array {
                               'help' => 'Converte dias em horas nas folhas de orçamento novas (1 dia = 8 h). As folhas que já existem guardam o seu.'],
         'timezone'        => ['tab' => 'geral', 'group' => 'Horário', 'label' => 'Fuso horário', 'type' => 'info', 'show' => 'Europa/Lisboa',
                               'help' => 'Prazos, agenda e notificações contam na hora de Lisboa (com a mudança de hora de verão e de inverno).'],
+        // ── Dashboard executivo (§30): os limites dos semáforos, a meta anual, o hall of fame e a leitura do mês ──
+        'meta_anual_' . date('Y') => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Meta anual de faturação (' . date('Y') . ')', 'type' => 'num', 'min' => 0, 'max' => 100000000, 'unit' => '€ s/ IVA', 'default' => 0,
+                              'help' => 'O objetivo de Revenue do ano: o Dashboard mostra a previsão até ao fim do ano e a distância a esta meta (só a quem vê o Financeiro). 0 = sem meta. É a mesma meta da Visão geral do Financeiro.'],
+        'exec_gm_target'  => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Finanças: gross margin mínima', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 40,
+                              'help' => 'Semáforo Finanças (últimos 3 meses): verde com a gross margin nesta meta e net profit positivo; amarelo se um falha; vermelho se ambos.'],
+        'exec_runway_green' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Tesouraria: runway útil para verde', 'type' => 'num', 'min' => 0, 'max' => 120, 'unit' => 'meses', 'default' => 12,
+                              'help' => 'Semáforo Tesouraria: verde com pelo menos estes meses de runway útil e atrasos abaixo do limite verde.'],
+        'exec_runway_red' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Tesouraria: vermelho abaixo de', 'type' => 'num', 'min' => 0, 'max' => 120, 'unit' => 'meses', 'default' => 6,
+                              'help' => 'Semáforo Tesouraria: vermelho abaixo destes meses de runway útil ou dentro da reserva de emergência; entre os dois limites fica amarelo.'],
+        'exec_late_green' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Tesouraria: atrasos para verde (abaixo de)', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 15,
+                              'help' => 'A parte do por receber que já está em atraso. Abaixo disto é verde.'],
+        'exec_late_red'   => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Tesouraria: atrasos para vermelho (acima de)', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 30,
+                              'help' => 'Acima desta parte do por receber em atraso, o semáforo fica vermelho; entre os dois limites, amarelo.'],
+        'exec_pipe_cover' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Comercial: pipeline ponderado mínimo', 'type' => 'num', 'min' => 0, 'max' => 20, 'unit' => '× a meta do mês seguinte', 'default' => 1.5,
+                              'help' => 'Semáforo Comercial: vermelho se alguma meta está atrás ou se o pipeline ponderado não cobre este múltiplo da meta de valor do mês seguinte; amarelo com alguma meta em risco.'],
+        'exec_ontime_green' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Operação: entregas no prazo para verde', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 85,
+                              'help' => 'Semáforo Operação (últimos 90 dias): verde com esta % de entregas no prazo e rondas a mais dentro do limite; amarelo se um falha; vermelho se ambos.'],
+        'exec_rounds_max' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Operação: rondas a mais por negócio (máximo)', 'type' => 'num', 'min' => 0, 'max' => 20, 'unit' => 'rondas', 'default' => 0.5,
+                              'help' => 'A média de rondas de revisão acima das incluídas, por negócio com rondas.'],
+        'exec_conc_alert' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Concentração: alerta acima de', 'type' => 'num', 'min' => 0, 'max' => 100, 'unit' => '%', 'default' => 50,
+                              'help' => 'A parte da receita que vem dos 3 maiores clientes. Acima disto o indicador fica a vermelho.'],
+        'exec_seller_min' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Comercial do mês: mínimo de negócios em pipeline', 'type' => 'int', 'min' => 1, 'max' => 100, 'default' => 5,
+                              'help' => 'Para entrar no comercial do mês (melhor conversão pipeline → kickoff), a pessoa tem de ter tido pelo menos estes negócios em pipeline nesse mês.'],
+        'exec_reading_hour' => ['tab' => 'geral', 'group' => 'Dashboard executivo', 'label' => 'Leitura do mês: escrever a partir das', 'type' => 'int', 'min' => 0, 'max' => 23, 'unit' => 'h', 'default' => 7,
+                              'help' => 'A hora (Lisboa) a partir da qual o cron escreve a leitura do dia, com os números da fotografia.'],
 
         // ── Leads ──
         'lead_deadline_novo'         => ['tab' => 'leads', 'group' => 'Prazos por estado', 'label' => 'Novo', 'type' => 'int', 'min' => 1, 'max' => 720, 'unit' => 'h', 'default' => 24, 'impact' => 'lead_deadline',
@@ -269,6 +294,8 @@ function settings_defs(): array {
                                'help' => 'Nesse dia, quem é responsável recebe a tarefa «Atualizar os saldos das contas». Um saldo com mais de 7 dias aparece como desatualizado na Tesouraria e nos alertas.'],
         'fin_categories'   => ['tab' => 'financeiro', 'group' => 'Categorias', 'label' => 'Categorias de despesa', 'type' => 'list', 'default' => implode("\n", FIN_CATS_DEFAULT_LIST),
                                'help' => 'As categorias dos lançamentos e dos custos fixos (os já lançados guardam a sua). Os custos fixos aparecem agrupados por elas na Visão geral.'],
+        'fin_cat_types'    => ['tab' => 'financeiro', 'group' => 'Categorias', 'label' => 'Tipo contabilístico de cada categoria', 'type' => 'fin_cat_types',
+                               'help' => 'Diz onde cada categoria entra no resultado do Dashboard: Custo direto (Gross Profit), Operacional (EBITDA), Amortização (EBIT), Financeiro (juros, Net Profit) ou Imposto (sobre o lucro: não conta como custo, usa-se a estimativa). As despesas com âmbito «Negócio» são sempre custo direto; os salários e as prestações dos empréstimos têm conta própria.'],
         'fin_params'       => ['tab' => 'financeiro', 'group' => 'Taxas, limites e prazos', 'label' => 'Parâmetros legais e da empresa', 'type' => 'fin_params',
                                'help' => 'Todas as taxas e limites que os cálculos usam (Segurança Social, IRS, IVA, IRC, viaturas, amortizações, runway, calendário fiscal), cada um com a fonte legal, o ano e a data da última verificação. O contabilista confirma-os no início de cada ano. Mudam só superadmin e admins, com registo.'],
         'fin_irs'          => ['tab' => 'financeiro', 'group' => 'Tabelas de retenção do IRS', 'label' => 'Tabelas em uso', 'type' => 'fin_irs',
@@ -472,7 +499,7 @@ function setting_impact(PDO $pdo, string $key, string $old, string $new): string
 function setting_save(PDO $pdo, string $key, string $raw, bool $confirm = false, string $why = ''): array {
     if (!is_admin()) throw new RuntimeException('Só superadmin e admins mudam as Definições.');
     $d = setting_def($key);
-    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai', 'fin_params', 'fin_irs', 'fin_mail'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
+    if (!$d || in_array($d['type'], ['info', 'link', 'services', 'templates', 'types', 'origins', 'pillars', 'ai', 'fin_params', 'fin_irs', 'fin_mail', 'fin_cat_types'], true)) throw new RuntimeException('Esta definição não se muda aqui.');
     $old = setting_get($pdo, $key);
     $new = setting_clean($d, $raw);
     if ($new === $old) return ['Sem alterações.', setting_show($d, $new), ''];
