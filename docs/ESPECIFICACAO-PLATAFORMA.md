@@ -2112,6 +2112,14 @@ da lista com as não lidas; o aviso novo chega como notificação com «Ver». *
 
 **Também:** a lista de documentos por trás de um número (Relatórios) mostra o estado inteiro («Emitida», não «E»).
 
+**Ajustes (24 out 2026):** trocar o período dos Resultados (Mês, Trimestre, Ano até hoje, 12 meses) já não recarrega
+a página: o Dashboard pede só as secções Resultados e Crescimento (`?frag=per`, com as mesmas permissões e sem euros
+para quem não tem Financeiro), troca-as no sítio e atualiza o endereço; sem JavaScript continua a ser um link. Em
+Relatórios › Metas, o formulário «Definir metas» fica atrás de um botão (abre sozinho quando se está a escolher
+âmbito, período ou cascata). No Financeiro, os cartões Saldo disponível, Por receber e A pagar mostram os cêntimos, e
+o pedido de fatura ao contabilista mostra o destinatário (o email do contabilista de Definições › Financeiro) à
+parte do email do cliente, que vai na fatura.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

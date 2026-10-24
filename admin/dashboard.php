@@ -16,6 +16,8 @@ require_page('dashboard');
 $uid = (int)$user['id'];
 $money = can('financeiro');
 $admin = role_is_admin((string)$user['role']);
+// ?frag=per: só as secções que dependem do período (Resultados e Crescimento), para trocar de período sem recarregar
+$frag = ($_GET['frag'] ?? '') === 'per' && $_SERVER['REQUEST_METHOD'] === 'GET';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -39,14 +41,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── «O teu dia» ─────────────────────────────────────────────
-$today = today_columns($pdo);
+$today = $frag ? [] : today_columns($pdo);
 $todo = array_sum(array_map(fn($c) => count($c[3]), $today));
 $todayOpen = !empty(user_prefs($pdo, $uid)['today_open']);
 $lim = alert_limits($pdo);
 
 // ── destaques: negócios que pedem atenção agora ─────────────
 $hot = [];
-if (can('pipeline')) {
+if (can('pipeline') && !$frag) {
     [$rs, $ra] = reach_sql($pdo, 'pipeline');
     $st = $pdo->prepare("SELECT d.*, s.name AS stage, f.name AS funnel, u.name AS owner
                            FROM deals d
@@ -63,7 +65,7 @@ if (can('pipeline')) {
         $hot[$d['id']] = ['d' => $d, 'risk' => true, 'why' => 'Sem movimento há ' . $d['idle'] . ' dias', 'val' => $d['value_estimate']];
     }
 }
-if ($money) {
+if ($money && !$frag) {
     foreach (array_slice(array_filter(receivables($pdo), fn($r) => $r['age'] > 0), 0, 2) as $r) {
         $hot[$r['id'] ?: 'f' . $r['doc_id']] = ['d' => $r + ['stage' => 'Por receber', 'funnel' => $r['contact_name'] ?? ''], 'risk' => true,
                           'why' => 'Em atraso há ' . $r['age'] . ' dias', 'val' => $r['net'], 'url' => $r['url']];
@@ -94,9 +96,16 @@ function fin_ready_safe(PDO $pdo): bool {
     return db_has_table($pdo, 'fin_docs') && db_has_table($pdo, 'exec_months');
 }
 
-render_header('Dashboard', 'dashboard');
-render_flashes();
+if ($frag) {
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    if (!$exec) { http_response_code(204); exit; }
+} else {
+    render_header('Dashboard', 'dashboard');
+    render_flashes();
+}
 ?>
+<?php if (!$frag): ?>
 <h1 class="hello" data-greet="<?= e(greet_name()) ?>">Olá, <?= e(greet_name()) ?></h1>
 <p class="hello-sub"><?= e(ucfirst($dateLine)) ?> · <?= $todo ? ($todo === 1 ? '1 coisa a pedir atenção' : $todo . ' coisas a pedir atenção') : 'nada a pedir atenção' ?></p>
 
@@ -133,13 +142,15 @@ render_flashes();
 </section>
 <?php endif; ?>
 <?php endif; ?>
+<?php endif; // !$frag ?>
 
 <?php if ($exec):
     $per = exec_period((string)($_GET['p'] ?? 'mes'));
-    $reading = exec_reading($pdo);
-    $health = exec_health($pdo, $money);
+    $reading = $frag ? null : exec_reading($pdo);
+    $health = $frag ? [] : exec_health($pdo, $money);
     $deals = metrics_deals($pdo);
 ?>
+<?php if (!$frag): ?>
 <?php // ── 2. Leitura do mês ── ?>
 <section class="xread" aria-labelledby="h-read">
   <div class="xread-h"><h2 id="h-read" class="eyebrow">Leitura do mês</h2>
@@ -155,6 +166,7 @@ render_flashes();
   <h2 id="h-health" class="xh">Saúde da empresa <?= mx_ii('Quatro semáforos com regras fixas e limites editáveis em Definições › Geral › Dashboard executivo. Cada um diz a razão e abre o relatório que a explica.') ?></h2>
   <div class="xlights"><?php foreach ($health as $h) echo exec_light_html($h); ?></div>
 </section>
+<?php endif; // !$frag ?>
 
 <?php // ── 4. Resultados (P&L) — só Financeiro ── ?>
 <?php if ($money):
@@ -196,7 +208,7 @@ render_flashes();
 <section class="xsec" id="resultados" aria-labelledby="h-pl">
   <div class="xh-bar"><h2 id="h-pl" class="xh">Resultados <span class="muted">· <?= e($per['label']) ?></span></h2>
     <nav class="views" aria-label="Período">
-      <?php foreach (EXEC_PERIODS as $k => $l): ?><a class="<?= $per['p'] === $k ? 'on' : '' ?>" href="?p=<?= $k ?>#resultados"><?= e($l) ?></a><?php endforeach; ?>
+      <?php foreach (EXEC_PERIODS as $k => $l): ?><a class="<?= $per['p'] === $k ? 'on' : '' ?>" href="?p=<?= $k ?>#resultados" data-per="<?= $k ?>"<?= $per['p'] === $k ? ' aria-current="true"' : '' ?>><?= e($l) ?></a><?php endforeach; ?>
     </nav>
   </div>
   <div class="small muted xh-sub">Comparado com <?= e($per['prev_label']) ?><?= $per['yoy_label'] !== '' ? ' e com ' . e($per['yoy_label']) : '' ?> (▲▼).
@@ -226,7 +238,7 @@ render_flashes();
 <?php endif; ?>
 
 <?php // ── 5. Crescimento e previsão ── ?>
-<section class="xsec" aria-labelledby="h-grow">
+<section class="xsec" id="crescimento" aria-labelledby="h-grow">
   <h2 id="h-grow" class="xh">Crescimento e previsão</h2>
   <?php
   $fromP = $per['from']; $toP = $per['to'];
@@ -276,6 +288,7 @@ render_flashes();
       <h4 class="xmix-h">Por serviço</h4><?= chart_stack100($sv, 'Mix por serviço', $money ? fn($v) => eur0($v) : fn($v) => $v . ($v == 1 ? ' negócio' : ' negócios')) ?></div>
   </div>
 </section>
+<?php if ($frag) exit; ?>
 
 <?php // ── 6. Hall of fame ──
     $rank = exec_ranking($pdo);

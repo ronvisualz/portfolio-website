@@ -3047,6 +3047,10 @@ a.mx-n:hover, a.mx-n:focus-visible { text-decoration-color: currentColor; color:
 .bullet.st-risk .b-val { background: var(--ring-near); } .bullet.st-behind .b-val, .bullet.st-missed .b-val { background: var(--danger); } .bullet.st-done .b-val { background: var(--ok-fg); }
 .bullet .b-exp { width: 2px; left: 0; margin-left: -1px; top: -4px; bottom: -4px; border-radius: 1px; background: var(--fg); }
 .bullet .b-goal { width: 3px; margin-left: -1.5px; top: -5px; bottom: -5px; border-radius: 2px; background: var(--c-goal); }
+.mx-goalform { margin-top: 16px; }
+.mx-goalform > summary { list-style: none; display: inline-flex; }
+.mx-goalform > summary::-webkit-details-marker { display: none; }
+.mx-goalform[open] > summary { margin-bottom: 10px; }
 .mx-goalform .bar { margin-bottom: 10px; }
 .mx-goals .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .mx-goals input.mx-sug { border-color: var(--c-real); background: color-mix(in srgb, var(--c-real) 8%, var(--panel)); }
@@ -3185,6 +3189,8 @@ a.tgo[data-gopen].on svg { transform: rotate(180deg); }
 .tday-list li small { color: var(--mute); font: 500 11.5px var(--mono); }
 .tday-list li.bad small { color: var(--danger); }
 .xsec { margin: 0 0 26px; }
+.xsec > * { transition: opacity .15s ease; }
+.xsec.xloading > :not(.xh-bar) { opacity: .45; }
 .xh { font-size: 19px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
 .xh .muted { font-weight: 500; font-size: 15px; }
 .xh-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
