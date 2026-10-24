@@ -3808,3 +3808,25 @@ Cada semáforo diz a razão numa frase e abre o relatório certo.
 
 ### 30.7 Design
 Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação de entrada, dicas com valores exatos). Cartões de KPI com número grande, variação ▲▼ colorida e mini-linha. Pódio com 1.º lugar em amarelo da marca (#FFC718), 2.º em azul-céu, 3.º em coral. Sem gráficos circulares nem velocímetros. Em telemóvel: leitura do mês, semáforos e os 4 KPIs principais primeiro. Interface sem referências «§».
+
+## 31. Email sem palavras-passe, login rápido e calendário (decidido 24 out 2026)
+
+### 31.1 Entrada de emails pela Cloudflare (substitui a leitura IMAP da §28.14 ponto 2)
+- **Circuito:** em cada caixa do Hostinger escolhida (ex.: info@topperdigital.xyz) cria-se um **reencaminhamento com cópia** para `entrada@topperhub.xyz`. Esse endereço é recebido pelo **Cloudflare Email Routing** (gratuito) e entregue a um **Email Worker** que envia o email à plataforma por HTTPS. Nenhuma palavra-passe de email é guardada.
+- **Worker:** novo handler `email()` no Worker existente em `rt/` (ou Worker próprio `mail/`, mesma conta e mesmo deploy por wrangler). Recebe a mensagem, rejeita > 25 MB, e faz POST do email em bruto (MIME) para `https://topperhub.xyz/admin/fin_inbound.php` com **assinatura HMAC-SHA256** (segredo partilhado guardado como secret do Worker e em `inc/fin_mail_config.php` no servidor) e carimbo de tempo (rejeita > 5 min e repetições pelo Message-ID).
+- **Plataforma (`fin_inbound.php`):** valida a assinatura; identifica a caixa de origem pelo cabeçalho do reencaminhamento (Delivered-To / X-Forwarded-For / To original); **ignora caixas que não estejam na lista de Definições › Integrações › Email** («Caixas ligadas», com data do último email recebido de cada uma); depois aplica as regras da §28.14: só anexos, QR fiscal/ATCUD primeiro, IA só sem QR claro, receita/despesa pelo NIF, corpo nunca guardado, «Por confirmar» em caso de dúvida, ligação ao pedido pelo código no assunto.
+- **Envio** (pedir fatura, enviar ao cliente): mantém-se por SMTP do Hostinger da caixa escolhida **ou**, para não guardar nenhuma palavra-passe, envio por um serviço transacional (ex.: Resend/Brevo com domínio verificado e chave API) com «Responder para» = info@. Escolha em Definições; por defeito o serviço transacional.
+- O leitor IMAP atual (`inc/fin_mail.php`) fica como alternativa desligada por defeito («Modo IMAP») para quem quiser; sem configuração, não corre.
+- **Configuração (feita pelo admin, com guia passo a passo em Definições):** (1) DNS do topperhub.xyz na Cloudflare; (2) ativar Email Routing e a regra `entrada@` → Worker; (3) `wrangler deploy`; (4) em cada caixa do Hostinger, Reencaminhamento → `entrada@topperhub.xyz` com «manter cópia»; (5) botão «Testar» que mostra o email de teste a chegar.
+
+### 31.2 Login rápido
+- **Chaves de acesso (passkeys / WebAuthn):** Face ID, impressão digital ou PIN do dispositivo, sem palavra-passe. Em Perfil › Segurança: «Criar chave de acesso» (várias por pessoa: telemóvel, portátil), lista com nome do dispositivo, último uso e «Remover». No ecrã de entrada o browser propõe a chave automaticamente. Biblioteca PHP de WebAuthn (ex.: lbuchs/WebAuthn); desafios guardados na sessão; contador e chave pública na base de dados.
+- **«Entrar com Google»** (OpenID Connect, sem Workspace): só entra quem já tem utilizador na plataforma com o **mesmo email** verificado pelo Google; nunca cria contas sozinho. A conta Google pode ser gratuita criada com o email de trabalho («usar o meu endereço de email atual»). Credenciais OAuth no servidor (`inc/auth_config.php`, fora do Git).
+- Palavra-passe atual mantém-se como recurso. Admins podem tornar a chave de acesso obrigatória por função.
+- Sessões e permissões exatamente como hoje (o método de entrada não muda o que cada um vê). Registo de entradas (método, dispositivo, data) visível em Perfil.
+
+### 31.3 Calendário Google por pessoa
+- Hoje (verificado no main) o Google Meet usa **uma conta da topper.** (`inc/meet_config.php`). Mantém-se para criar as reuniões.
+- Novo: cada pessoa pode **ligar o seu Google Calendar** em Perfil › Ligações («Ligar Google Calendar», OAuth com scope de eventos; o token fica cifrado no servidor e pode ser revogado). Funciona com conta Google gratuita.
+- Sincroniza num sentido: reuniões, gravações, visitas e prazos com hora da plataforma → calendário da pessoa (criar, mudar, cancelar). Opcional: mostrar na Agenda da plataforma os períodos «ocupado» do Google (só ocupado/livre, sem detalhes) para marcar reuniões sem conflitos.
+- Nota na interface: em contas gratuitas, chamadas Meet com 3+ pessoas param aos 60 minutos.
