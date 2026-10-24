@@ -38,14 +38,12 @@ const FIN_MAIL_MAX_BYTES = 25 * 1048576;    // acima disto não se descarrega
  * A configuração do servidor (inc/fin_mail_config.php): anfitriões, portas e as caixas com a palavra-passe
  * [endereço => palavra-passe]. Aceita o formato antigo (user/pass de uma caixa). Null se faltar.
  */
-function fin_mail_server(): ?array {
+function fin_mail_server(bool $fresh = false): ?array {
     static $c = false;
-    if ($c !== false) return $c;
+    if ($c !== false && !$fresh) return $c;
     $c = null;
-    $f = __DIR__ . '/fin_mail_config.php';
-    if (!is_file($f)) return null;
-    $raw = require $f;
-    if (!is_array($raw)) return null;
+    $raw = fin_mail_raw();
+    if ($raw === null) return null;
     $boxes = [];
     foreach ((array)($raw['boxes'] ?? []) as $addr => $pass) {
         $addr = strtolower(trim((string)$addr)); $pass = (string)$pass;
@@ -72,17 +70,130 @@ function fin_mail_boxes(PDO $pdo): array {
     return $out;
 }
 
+/** O ficheiro do servidor tal como está (ou null se não existe). */
+function fin_mail_raw(): ?array {
+    $f = __DIR__ . '/fin_mail_config.php';
+    if (!is_file($f)) return null;
+    if (function_exists('opcache_invalidate')) @opcache_invalidate($f, true);
+    $raw = require $f;
+    return is_array($raw) ? $raw : null;
+}
+
 /**
- * A ligação para enviar (pedidos ao contabilista, faturas ao cliente, recibos de vencimento): a configuração
- * do servidor com o user/pass da primeira caixa escolhida que tem palavra-passe no servidor. Null se não há.
+ * Grava (ou tira, com $pass null) a palavra-passe de uma caixa no ficheiro do servidor, inc/fin_mail_config.php
+ * (fora do Git, fechado à web). Antes de gravar, entra na caixa por IMAP para confirmar que está certa. Nunca
+ * passa pela base de dados nem volta a ser mostrada.
+ */
+function fin_mail_save_pass(string $addr, ?string $pass): void {
+    $addr = strtolower(trim($addr));
+    if (!filter_var($addr, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Endereço inválido.');
+    $raw = fin_mail_raw() ?? ['boxes' => [], 'smtp_host' => 'smtp.hostinger.com', 'smtp_port' => 465, 'smtp_tls' => 'ssl',
+                               'imap_host' => 'imap.hostinger.com', 'imap_port' => 993, 'imap_tls' => 'ssl', 'from_name' => 'topper.'];
+    $raw['boxes'] = (array)($raw['boxes'] ?? []);
+    // o formato antigo (uma caixa em user/pass) passa para a lista
+    if (!empty($raw['user']) && !empty($raw['pass'])) { $raw['boxes'][strtolower((string)$raw['user'])] ??= (string)$raw['pass']; }
+    unset($raw['user'], $raw['pass']);
+    if ($pass === null) unset($raw['boxes'][$addr]);
+    else {
+        if ($pass === '' || strlen($pass) > 200 || preg_match('/[\r\n\x00]/', $pass)) throw new RuntimeException('Palavra-passe inválida.');
+        $srv = fin_mail_server() ?? ['imap_host' => (string)$raw['imap_host'], 'imap_port' => (int)$raw['imap_port'], 'imap_tls' => (string)$raw['imap_tls'], 'verify_peer' => true];
+        try { (new FinImap($srv + ['user' => $addr, 'pass' => $pass]))->close(); }
+        catch (Throwable $e) {
+            throw new RuntimeException(preg_match('/autentica|AUTHENTICATIONFAILED|LOGIN|credentials/i', $e->getMessage())
+                ? 'A palavra-passe de ' . $addr . ' não está certa. Nada foi gravado.'
+                : 'Não consegui ligar a ' . $addr . ' (' . preg_replace('/^IMAP: /', '', $e->getMessage()) . '). Nada foi gravado.');
+        }
+        $raw['boxes'][$addr] = $pass;
+    }
+    $f = __DIR__ . '/fin_mail_config.php';
+    $php = "<?php\n// As caixas de email da plataforma, escritas pela própria plataforma (Definições › Integrações › Email e Perfil).\n"
+         . "// Só no servidor: fora do Git e fechado à web. Ver fin_mail_config.example.php.\nreturn " . var_export($raw, true) . ";\n";
+    $tmp = $f . '.' . bin2hex(random_bytes(6)) . '.tmp';
+    if (@file_put_contents($tmp, $php, LOCK_EX) === false) throw new RuntimeException('Não consegui escrever no servidor (admin/inc). Nada foi gravado.');
+    @chmod($tmp, 0600);
+    if (!@rename($tmp, $f)) { @unlink($tmp); throw new RuntimeException('Não consegui gravar o ficheiro no servidor. Nada foi gravado.'); }
+    if (function_exists('opcache_invalidate')) @opcache_invalidate($f, true);
+    fin_mail_server(true);
+}
+
+/** O email geral da empresa (Definições › Integrações › Email), de onde também se pode enviar. */
+function mail_general(PDO $pdo): string {
+    $g = strtolower(trim((string)setting($pdo, 'mail_general', 'info@topperdigital.xyz')));
+    return filter_var($g, FILTER_VALIDATE_EMAIL) ? $g : 'info@topperdigital.xyz';
+}
+
+const FIN_MAIL_AS = ['own' => 'O meu email', 'general' => 'O email geral'];
+
+/**
+ * De onde pode enviar quem está na plataforma: o seu email de registo (se for do domínio da empresa) e o email
+ * geral. Cada um: [endereço, se tem palavra-passe no servidor, porque não dá].
+ */
+function fin_mail_as_options(PDO $pdo, ?array $u): array {
+    $srv = fin_mail_server();
+    $gen = mail_general($pdo);
+    $dom = substr($gen, strpos($gen, '@'));
+    $own = strtolower(trim((string)($u['email'] ?? '')));
+    $out = [];
+    if ($own !== '' && $own !== $gen) {
+        $okDom = str_ends_with($own, $dom);
+        $out['own'] = ['addr' => $own, 'ok' => $okDom && $srv && isset($srv['boxes'][$own]),
+                       'why' => !$okDom ? 'não é um email ' . $dom : (($srv && isset($srv['boxes'][$own])) ? '' : 'falta a palavra-passe (Perfil › Email de envio)')];
+    }
+    $out['general'] = ['addr' => $gen, 'ok' => $srv && isset($srv['boxes'][$gen]), 'why' => $srv && isset($srv['boxes'][$gen]) ? '' : 'falta a palavra-passe (Definições › Integrações › Email)'];
+    return $out;
+}
+
+/** A escolha da pessoa (Perfil), ou o próprio email quando está pronto. */
+function fin_mail_pref(PDO $pdo, ?array $u): string {
+    $o = fin_mail_as_options($pdo, $u);
+    $p = $u && function_exists('user_prefs') ? (string)(user_prefs($pdo, (int)$u['id'])['mail_as'] ?? '') : '';
+    if (isset($o[$p])) return $p;
+    return !empty($o['own']['ok']) ? 'own' : 'general';
+}
+
+/** Escolhe a origem só para este pedido («Enviar de» nos formulários). */
+function fin_mail_use(?string $as): ?string {
+    static $v = null;
+    if (func_num_args() && $as !== '__get') $v = isset(FIN_MAIL_AS[(string)$as]) ? $as : null;
+    return $v;
+}
+
+/**
+ * A ligação para enviar: a configuração do servidor com o user/pass da origem de quem envia (o seu email ou o
+ * geral, pela escolha no formulário ou no Perfil; se essa não estiver pronta, a outra) e o nome da pessoa como
+ * remetente. Sem ninguém com sessão (cron), o email geral com o nome da empresa. Null se nenhuma está pronta.
  */
 function fin_mail_config(): ?array {
     global $pdo;
     $c = fin_mail_server();
-    if (!$c || !$c['boxes']) return null;
-    $chosen = $pdo instanceof PDO ? fin_mail_boxes($pdo) : [];
-    foreach ($chosen as $b) if (isset($c['boxes'][$b])) return $c + ['user' => $b, 'pass' => $c['boxes'][$b]];
+    if (!$c || !$c['boxes'] || !$pdo instanceof PDO) return null;
+    $u = function_exists('current_user') ? current_user() : null;
+    $opts = fin_mail_as_options($pdo, $u);
+    $want = fin_mail_use('__get') ?? fin_mail_pref($pdo, $u);
+    $name = $u ? trim(preg_replace('/[\r\n"<>]/', '', (string)($u['name'] ?? ''))) : '';
+    if ($name === '') $name = trim(preg_replace('/[\r\n"<>]/', '', (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
+    foreach (array_unique([$want, 'own', 'general']) as $k) {
+        if (!empty($opts[$k]['ok'])) return array_merge($c, ['user' => $opts[$k]['addr'], 'pass' => $c['boxes'][$opts[$k]['addr']], 'from_name' => $name, 'as' => $k]);
+    }
     return null;
+}
+
+/** Para onde respondem os pedidos ao contabilista: a própria caixa se é lida; senão a primeira caixa lida. */
+function fin_mail_reply_box(PDO $pdo, array $c): ?string {
+    $read = fin_mail_boxes($pdo);
+    return in_array((string)($c['user'] ?? ''), $read, true) ? null : ($read[0] ?? null);
+}
+
+/** O «Enviar de» de um formulário (vazio se só há uma origem pronta). */
+function fin_mail_as_select(PDO $pdo): string {
+    $u = current_user();
+    $opts = fin_mail_as_options($pdo, $u);
+    $ready = array_filter($opts, fn($o) => $o['ok']);
+    if (count($ready) < 2) return '';
+    $pref = fin_mail_pref($pdo, $u);
+    $h = '<div class="field"><label for="send-as">Enviar de</label><select id="send-as" name="send_as">';
+    foreach ($opts as $k => $o) $h .= '<option value="' . $k . '"' . ($k === $pref ? ' selected' : '') . ($o['ok'] ? '' : ' disabled') . '>' . e(FIN_MAIL_AS[$k] . ' · ' . $o['addr']) . '</option>';
+    return $h . '</select></div>';
 }
 
 /** Os remetentes a ignorar (endereços completos ou domínios «@loja.pt» / «loja.pt»). */
@@ -147,8 +258,8 @@ function fin_mail_hdr(string $s): string {
  * $o: reply_to, cc, test (só liga e autentica). Devolve o Message-ID.
  */
 function fin_smtp_send(string $to, string $subject, string $body, array $att = [], array $o = []): string {
-    $c = fin_mail_config();
-    if (!$c) throw new RuntimeException('Não há caixa de envio: escolha-a em Definições › Integrações › Email (com a palavra-passe no servidor).');
+    $c = $o['cred'] ?? fin_mail_config();
+    if (!$c) throw new RuntimeException('Não há de onde enviar: falta a palavra-passe do seu email (Perfil › Email de envio) ou do email geral (Definições › Integrações › Email).');
     if (empty($o['test']) && !filter_var($to, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Endereço de email inválido: ' . $to);
     $s = fin_sock($c['smtp_host'], $c['smtp_port'], $c['smtp_tls'], $c['verify_peer']);
     try {
@@ -465,7 +576,7 @@ function fin_request_invoice(PDO $pdo, array $src, ?int $by): array {
     $pdo->beginTransaction();
     try {
         $id = fin_doc_create($pdo, $v + ['status' => 'requested', 'req_code' => $code, 'req_body' => $body, 'number' => ''], $by);
-        fin_smtp_send($to, $subject, $body, [], ['reply_to' => fin_mail_config()['user'] ?? null]);
+        fin_smtp_send($to, $subject, $body, [], ['reply_to' => fin_mail_reply_box($pdo, (array)fin_mail_config())]);
         $pdo->prepare('UPDATE fin_docs SET req_sent_at = ? WHERE id = ?')->execute([fin_now(), $id]);
         $pdo->commit();
     } catch (Throwable $e) {
@@ -490,7 +601,7 @@ function fin_request_receipt(PDO $pdo, array $d, ?int $by): string {
     $l[] = '';
     $l[] = 'Obrigado,';
     $l[] = trim((string)setting($pdo, 'company_name', 'topper.')) ?: 'topper.';
-    fin_smtp_send($to, '[topper ' . $code . '] Pedido de recibo — ' . fin_doc_label($d), implode("\n", $l), [], ['reply_to' => fin_mail_config()['user'] ?? null]);
+    fin_smtp_send($to, '[topper ' . $code . '] Pedido de recibo — ' . fin_doc_label($d), implode("\n", $l), [], ['reply_to' => fin_mail_reply_box($pdo, (array)fin_mail_config())]);
     $pdo->prepare('UPDATE fin_docs SET notes = ?, updated_at = ? WHERE id = ?')->execute([trim($d['notes'] . "\n" . date('d/m/Y') . ' · Recibo pedido (' . $code . ')'), fin_now(), (int)$d['id']]);
     $pdo->prepare('INSERT INTO fin_mail (uid, message_id, from_addr, subject, code, status, doc_id, note, created_at) VALUES (\'\', \'\', ?, ?, ?, \'waiting\', ?, ?, ?)')
         ->execute([$to, 'Pedido de recibo — ' . fin_doc_label($d), $code, (int)$d['id'], 'Pedido enviado', fin_now()]);
@@ -869,31 +980,32 @@ function fin_client_send(PDO $pdo, array $d, string $to, string $subject, string
     if ($d['contact_id'] && function_exists('contact_log')) contact_log($pdo, (int)$d['contact_id'], 'billing', $what, $by);
 }
 
-/** O estado por caixa para Definições › Integrações › Email. */
+/** O estado por caixa para Definições › Integrações › Email: as caixas lidas e o email geral. */
 function fin_mail_status(PDO $pdo): array {
     $srv = fin_mail_server();
     $state = fin_mail_state($pdo);
-    $send = fin_mail_config();
+    $read = fin_mail_boxes($pdo);
+    $gen = mail_general($pdo);
     $boxes = [];
-    foreach (fin_mail_boxes($pdo) as $b) {
+    foreach (array_unique(array_merge($read, [$gen])) as $b) {
         $st = $state[$b] ?? [];
-        $boxes[] = ['addr' => $b, 'pass' => $srv && isset($srv['boxes'][$b]), 'sender' => $send && $send['user'] === $b, 'last' => (string)($st['last'] ?? ''),
-                    'error' => (string)($st['error'] ?? ''), 'uid' => (int)($st['uid'] ?? 0), 'seen' => (int)($st['seen'] ?? 0), 'docs' => (int)($st['docs'] ?? 0), 'since' => (string)($st['since'] ?? '')];
+        $boxes[] = ['addr' => $b, 'pass' => $srv && isset($srv['boxes'][$b]), 'read' => in_array($b, $read, true), 'general' => $b === $gen,
+                    'last' => (string)($st['last'] ?? ''), 'error' => in_array($b, $read, true) ? (string)($st['error'] ?? '') : '', 'uid' => (int)($st['uid'] ?? 0),
+                    'seen' => (int)($st['seen'] ?? 0), 'docs' => (int)($st['docs'] ?? 0), 'since' => (string)($st['since'] ?? '')];
     }
-    return ['server' => $srv !== null, 'boxes' => $boxes, 'sender' => $send['user'] ?? '', 'company_nif' => fin_our_nif($pdo), 'accountant' => fin_accountant_email($pdo),
+    return ['server' => $srv !== null, 'boxes' => $boxes, 'general' => $gen, 'company_nif' => fin_our_nif($pdo), 'accountant' => fin_accountant_email($pdo),
             'pending' => fin_ready($pdo) ? (int)$pdo->query("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'")->fetchColumn() : 0];
 }
 
-/** «Testar» uma caixa: entra no IMAP só para ler (EXAMINE) e, se for a que envia, autentica no SMTP sem enviar. */
+/** «Testar» uma caixa: entra no IMAP só para ler (EXAMINE) e autentica no SMTP, sem enviar nada. */
 function fin_mail_test(PDO $pdo, string $addr): string {
     $addr = strtolower(trim($addr));
-    if (!in_array($addr, fin_mail_boxes($pdo), true)) throw new RuntimeException('Essa caixa não está na lista.');
+    if (!in_array($addr, array_merge(fin_mail_boxes($pdo), [mail_general($pdo)]), true)) throw new RuntimeException('Essa caixa não está na lista.');
     $srv = fin_mail_server();
-    if (!$srv || !isset($srv['boxes'][$addr])) throw new RuntimeException('Falta a palavra-passe desta caixa no servidor (inc/fin_mail_config.php, ver o exemplo).');
-    $im = new FinImap($srv + ['user' => $addr, 'pass' => $srv['boxes'][$addr]]);
+    if (!$srv || !isset($srv['boxes'][$addr])) throw new RuntimeException('Falta a palavra-passe desta caixa: escreva-a ao lado e carregue em «Guardar».');
+    $c = array_merge($srv, ['user' => $addr, 'pass' => $srv['boxes'][$addr], 'from_name' => 'topper.']);
+    $im = new FinImap($c);
     try { $box = $im->examine($srv['folder']); } finally { $im->close(); }
-    $msg = 'IMAP OK, só leitura (' . $box['exists'] . ($box['exists'] === 1 ? ' mensagem' : ' mensagens') . ' na caixa de entrada; nada foi mudado)';
-    $send = fin_mail_config();
-    if ($send && $send['user'] === $addr) { fin_smtp_send('', '', '', [], ['test' => true]); $msg .= ' · SMTP OK (os pedidos ao contabilista saem desta caixa)'; }
-    return $msg . '.';
+    fin_smtp_send('', '', '', [], ['test' => true, 'cred' => $c]);
+    return 'IMAP OK, só leitura (' . $box['exists'] . ($box['exists'] === 1 ? ' mensagem' : ' mensagens') . ' na caixa de entrada; nada foi mudado) · SMTP OK (pode enviar).';
 }

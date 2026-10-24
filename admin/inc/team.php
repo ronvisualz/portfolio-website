@@ -389,11 +389,19 @@ function team_app_url(): string {
 
 /** Um email simples da plataforma. Na bancada fica no registo de erros. */
 function team_mail(string $to, string $subject, string $body): bool {
-    // O remetente vem de Definições › Integrações (sempre um endereço @topperdigital.xyz).
     global $pdo;
+    // Enviado por alguém na plataforma: sai do email dela ou do geral (Perfil › Email de envio), com o nome dela.
+    if (current_user() && filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        require_once __DIR__ . '/fin_mail.php';
+        if (fin_mail_config()) {
+            try { fin_smtp_send($to, $subject, $body); return true; }
+            catch (Throwable $e) { error_log('[topper] envio pelo email da pessoa falhou (' . $e->getMessage() . '): vai pelo envio automático'); }
+        }
+    }
+    // Automático (ou sem caixa pronta): o remetente vem de Definições › Integrações (sempre um endereço @topperdigital.xyz).
     $from = (string)setting($pdo, 'mail_from', 'no-reply@topperdigital.xyz');
     if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !str_ends_with(strtolower($from), '@topperdigital.xyz')) $from = 'no-reply@topperdigital.xyz';
-    $name = trim(preg_replace('/[\r\n"<>]/', '', (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
+    $name = trim(preg_replace('/[\r\n"<>]/', '', (string)(current_user()['name'] ?? '') ?: (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
     $headers = 'From: =?UTF-8?B?' . base64_encode($name) . "?= <$from>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
     $sent = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
     if (defined('IS_LOCAL') && IS_LOCAL) error_log('[topper] email para ' . $to . ' (só na bancada): ' . $subject . "\n" . $body);

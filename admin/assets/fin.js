@@ -163,11 +163,37 @@
       if (e.key === 'Escape') { el.value = el.getAttribute('data-was'); el.blur(); }
     });
   });
+  // Definições › Integrações › Email: a palavra-passe de cada caixa (testada e gravada só no servidor)
+  function boxOut(el) { var r = el.closest('tr'); while (r && !r.classList.contains('fin-box-out')) r = r.nextElementSibling; return r; }
+  function passOut(el, txt, bad) {
+    var outRow = boxOut(el), out = outRow && outRow.querySelector('td');
+    if (outRow) outRow.hidden = false;
+    if (out) { out.textContent = txt; out.className = 'small ' + (bad ? 'neg' : 'pos'); }
+  }
+  document.addEventListener('submit', function (e) {
+    var f = e.target.closest && e.target.closest('form[data-fin-mail-pass]');
+    if (!f) return;
+    e.preventDefault();
+    var btn = f.querySelector('button[type=submit]'), inp = f.querySelector('input[name=pass]');
+    var fd = new FormData(); fd.append('box', f.getAttribute('data-fin-mail-pass')); fd.append('pass', inp.value);
+    btn.disabled = true; passOut(f, 'A testar a palavra-passe…', false);
+    post('/admin/fin_api.php?a=mail_pass', fd).then(function (j) {
+      btn.disabled = false; inp.value = '';
+      passOut(f, j.error || j.msg, !!j.error);
+      if (!j.error) setTimeout(function () { location.reload(); }, 900);
+    }).catch(function () { btn.disabled = false; passOut(f, 'Sem ligação.', true); });
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-fin-mail-pass-del]');
+    if (!b || !confirm('Tirar a palavra-passe de ' + b.getAttribute('data-fin-mail-pass-del') + ' do servidor? Deixa de ler e de enviar por esta caixa.')) return;
+    var fd = new FormData(); fd.append('box', b.getAttribute('data-fin-mail-pass-del'));
+    post('/admin/fin_api.php?a=mail_pass_del', fd).then(function (j) { passOut(b, j.error || j.msg, !!j.error); if (!j.error) setTimeout(function () { location.reload(); }, 700); });
+  });
   // Definições › Integrações › Email: «Testar» cada caixa (só leitura)
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-fin-mail-test]');
     if (!b) return;
-    var row = b.closest('tr'), outRow = row && row.nextElementSibling, out = outRow && outRow.querySelector('td');
+    var outRow = boxOut(b), out = outRow && outRow.querySelector('td');
     if (outRow) outRow.hidden = false;
     b.disabled = true; if (out) { out.textContent = 'A testar…'; out.className = 'small'; }
     var fd = new FormData(); fd.append('box', b.getAttribute('data-fin-mail-test'));

@@ -2987,3 +2987,7 @@ div.xs-ind:empty { display: none; }
   .fin-acc th:first-child, .fin-acc td:first-child { padding-left: 12px; }
   .fin-acc th:last-child, .fin-acc td:last-child { padding-right: 10px; }
 }
+/* Definições › Email: a palavra-passe de cada caixa numa linha própria */
+.fin-boxes tr.fin-box-pass td { padding-top: 0; }
+.fin-pass { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fin-pass input { flex: 1 1 220px; max-width: 340px; }

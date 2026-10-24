@@ -161,9 +161,10 @@ elseif ($tab === 'receber'):
     $cfg = fin_mail_config(); $acc = fin_accountant_email($pdo);
 ?>
 <section class="panel"><h2>Pedir fatura ao contabilista</h2>
-  <?php if (!$cfg || $acc === ''): ?><div class="flash err">Para pedir faturas por email falta <?= !$cfg ? 'escolher a caixa de envio em Definições › Integrações › Email (com a palavra-passe no servidor)' : '' ?><?= !$cfg && $acc === '' ? ' e ' : '' ?><?= $acc === '' ? 'o email do contabilista em Definições › Financeiro' : '' ?>.</div><?php endif; ?>
-  <p class="small muted">Sai de <?= e($cfg['user'] ?? 'a caixa de envio') ?> para <?= e($acc ?: 'o contabilista') ?> com o código no assunto. A resposta com o PDF é lida sozinha (pelo código ou pelo QR fiscal) e liga-se a este pedido.</p>
+  <?php if (!$cfg || $acc === ''): ?><div class="flash err">Para pedir faturas por email falta <?= !$cfg ? 'a palavra-passe do seu email (Perfil › Email de envio) ou do email geral (Definições › Integrações › Email)' : '' ?><?= !$cfg && $acc === '' ? ' e ' : '' ?><?= $acc === '' ? 'o email do contabilista em Definições › Financeiro' : '' ?>.</div><?php endif; ?>
+  <p class="small muted">Sai de <?= e($cfg['user'] ?? 'o seu email ou do geral') ?>, com o seu nome, para <?= e($acc ?: 'o contabilista') ?> com o código no assunto. A resposta com o PDF é lida sozinha (pelo código ou pelo QR fiscal) e liga-se a este pedido.</p>
   <form method="post" class="fin-form" data-fin-req><?= csrf_field() ?><input type="hidden" name="do" value="request_invoice"><input type="hidden" name="back" value="<?= e(fin_url(['tab' => 'receber'])) ?>">
+    <?= fin_mail_as_select($pdo) ?>
     <div class="grid">
       <fieldset class="field fin-scope"><legend>Âmbito</legend><label class="check"><input type="radio" name="scope" value="deal"<?= ($vals['scope'] ?? '') === 'deal' ? ' checked' : '' ?>> Negócio</label> <label class="check"><input type="radio" name="scope" value="company"<?= ($vals['scope'] ?? '') !== 'deal' ? ' checked' : '' ?>> Empresa</label></fieldset>
       <div class="field fin-deal"<?= ($vals['scope'] ?? '') === 'deal' ? '' : ' hidden' ?>><label for="rq-deal">Negócio</label><select id="rq-deal" name="deal_id" data-reload="request"><?= fin_deal_options($pdo, (int)($vals['deal_id'] ?? 0) ?: null) ?></select></div>

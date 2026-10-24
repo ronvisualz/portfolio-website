@@ -76,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(fin_url(['tab' => 'tesouraria']));
     }
     require_perm('financeiro', PERM_EDIT);
+    if (isset($_POST['send_as'])) { require_once __DIR__ . '/inc/fin_mail.php'; fin_mail_use((string)$_POST['send_as']); }   // «Enviar de» deste envio
     try {
         switch ($do) {
             case 'doc_save': {

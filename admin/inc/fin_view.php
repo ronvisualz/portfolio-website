@@ -202,16 +202,16 @@ function fin_doc_panel(PDO $pdo, array $d, bool $canEdit, string $back): string 
         $dr = fin_client_mail_draft($pdo, $d);
         $h .= '<details class="fin-act"' . ($d['ready_at'] && !$d['client_sent_at'] ? ' open' : '') . '><summary>' . ($d['client_sent_at'] ? 'Reenviar ao cliente' : 'Enviar ao cliente') . '</summary>'
             . (fin_mail_config() ? '<form method="post">' . csrf_field() . '<input type="hidden" name="do" value="client_send"><input type="hidden" name="id" value="' . (int)$d['id'] . '"><input type="hidden" name="back" value="' . e($back) . '">'
-              . '<div class="field"><label>Para</label><input type="email" name="to" value="' . e($dr['to']) . '" required></div><div class="field"><label>Assunto</label><input type="text" name="subject" value="' . e($dr['subject']) . '" maxlength="200"></div>'
+              . fin_mail_as_select($pdo) . '<div class="field"><label>Para</label><input type="email" name="to" value="' . e($dr['to']) . '" required></div><div class="field"><label>Assunto</label><input type="text" name="subject" value="' . e($dr['subject']) . '" maxlength="200"></div>'
               . '<div class="field"><label>Mensagem (o PDF segue em anexo)</label><textarea name="body" rows="8">' . e($dr['body']) . '</textarea></div><div class="actions"><button class="btn sm" type="submit">' . icon('send') . ' Enviar</button></div></form>'
-              : '<p class="small muted">Não há caixa de envio configurada (Definições › Integrações › Email).</p>') . '</details>';
+              : '<p class="small muted">Não há de onde enviar: falta a palavra-passe do seu email (Perfil › Email de envio) ou do email geral (Definições › Integrações › Email).</p>') . '</details>';
     }
     if ($in && in_array($d['status'], ['issued', 'partial'], true) && fin_overdue_days($d) > -3) {
         $h .= '<details class="fin-act"' . ($d['reminder_draft'] ? ' open' : '') . '><summary>Lembrete ao cliente</summary>';
         if ($d['reminder_draft']) {
             $r = json_decode((string)$d['reminder_draft'], true) ?: ['subject' => '', 'body' => ''];
             $h .= '<form method="post">' . csrf_field() . '<input type="hidden" name="do" value="reminder_send"><input type="hidden" name="id" value="' . (int)$d['id'] . '"><input type="hidden" name="back" value="' . e($back) . '">'
-                . '<p class="small muted">' . (!empty($r['ai']) ? 'Rascunho da IA (tom pelo atraso).' : 'Rascunho.') . ' Reveja: só sai quando carregar em «Aprovar e enviar».</p>'
+                . fin_mail_as_select($pdo) . '<p class="small muted">' . (!empty($r['ai']) ? 'Rascunho da IA (tom pelo atraso).' : 'Rascunho.') . ' Reveja: só sai quando carregar em «Aprovar e enviar».</p>'
                 . '<div class="field"><label>Para</label><input type="email" name="to" value="' . e((string)$d['party_email']) . '" required></div><div class="field"><label>Assunto</label><input type="text" name="subject" value="' . e((string)$r['subject']) . '"></div>'
                 . '<div class="field"><label>Mensagem</label><textarea name="body" rows="8">' . e((string)$r['body']) . '</textarea></div><div class="actions"><button class="btn sm" type="submit">Aprovar e enviar</button></div></form>';
         } else {

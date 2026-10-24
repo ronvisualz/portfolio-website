@@ -92,6 +92,30 @@ if ($linksOn && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?
     redirect('/admin/conta.php#ligacoes');
 }
 
+// Email de envio: de onde saem os emails que a pessoa envia pela plataforma (o seu email ou o geral), com o nome
+// dela. A palavra-passe do próprio email é testada e fica só no servidor (inc/fin_mail_config.php), nunca na base de dados.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mail_as', 'mail_pass', 'mail_pass_del'], true)) {
+    csrf_check();
+    require_once __DIR__ . '/inc/fin_mail.php';
+    try {
+        $opts = fin_mail_as_options($pdo, $user);
+        if ($_POST['do'] === 'mail_as') {
+            $as = (string)($_POST['mail_as'] ?? '');
+            if (!isset($opts[$as])) throw new RuntimeException('Escolha uma das opções.');
+            $p = user_prefs($pdo, (int)$user['id']);
+            $p['mail_as'] = $as;
+            $pdo->prepare('UPDATE users SET prefs = ? WHERE id = ?')->execute([json_encode($p, JSON_UNESCAPED_UNICODE), (int)$user['id']]);
+            flash($as === 'own' ? 'Os seus emails passam a sair de ' . $opts['own']['addr'] . '.' : 'Os seus emails passam a sair do email geral (' . $opts['general']['addr'] . ').');
+        } else {
+            // só o próprio email, e só se for do domínio da empresa
+            if (!isset($opts['own']) || str_starts_with($opts['own']['why'], 'não é')) throw new RuntimeException('O seu email de registo não é uma caixa da empresa: use o email geral.');
+            fin_mail_save_pass($opts['own']['addr'], $_POST['do'] === 'mail_pass' ? (string)($_POST['pass'] ?? '') : null);
+            flash($_POST['do'] === 'mail_pass' ? 'Palavra-passe certa e guardada no servidor: já pode enviar de ' . $opts['own']['addr'] . '.' : 'Palavra-passe tirada do servidor.');
+        }
+    } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+    redirect('/admin/conta.php#email');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -211,6 +235,29 @@ render_flashes();
     <?php if ($p['pdf_key'] !== ''): ?><a class="lnk" href="<?= e(fin_file_href('payslip', (int)$p['id'])) ?>" target="_blank" rel="noopener"><?= icon('file') ?> Recibo (PDF)</a><?php endif; ?></li><?php endforeach; ?>
 </ul></div>
 <?php endif; endif; ?>
+<?php require_once __DIR__ . '/inc/fin_mail.php';
+    $mOpts = fin_mail_as_options($pdo, $user); $mPref = fin_mail_pref($pdo, $user); ?>
+<h2 id="email">Email de envio</h2>
+<div class="panel" style="max-width:920px">
+  <p class="small" style="margin-top:0">Os emails que envia pela plataforma (pedidos ao contabilista, faturas e lembretes aos clientes, propostas, convites e reuniões) levam o seu nome, <b><?= e($user['name']) ?></b>. Escolha de onde saem; em cada envio também pode mudar.</p>
+  <form method="post" class="fin-as"><?= csrf_field() ?><input type="hidden" name="do" value="mail_as">
+    <?php foreach ($mOpts as $k => $o): ?>
+      <label class="check"><input type="radio" name="mail_as" value="<?= $k ?>"<?= $mPref === $k ? ' checked' : '' ?> onchange="this.form.submit()"> <?= e(FIN_MAIL_AS[$k]) ?> · <b><?= e($o['addr']) ?></b>
+        <?= $o['ok'] ? '<span class="chip ok">pronto</span>' : '<span class="chip wait">' . e(str_replace(' (Perfil › Email de envio)', ' (abaixo)', $o['why'])) . '</span>' ?></label>
+    <?php endforeach; ?>
+    <noscript><button class="btn sm" type="submit">Guardar</button></noscript>
+  </form>
+  <?php if (isset($mOpts['own']) && !str_starts_with($mOpts['own']['why'], 'não é')): ?>
+  <form method="post" class="fin-pass-own" autocomplete="off"><?= csrf_field() ?><input type="hidden" name="do" value="mail_pass">
+    <label for="mp">Palavra-passe de <?= e($mOpts['own']['addr']) ?></label>
+    <div class="bar"><input type="password" id="mp" name="pass" required maxlength="200" autocomplete="new-password" placeholder="<?= $mOpts['own']['ok'] ? '•••••••• guardada' : 'A palavra-passe do seu email (Hostinger)' ?>">
+      <button class="btn sm" type="submit"><?= $mOpts['own']['ok'] ? 'Mudar' : 'Guardar' ?></button>
+      <?php if ($mOpts['own']['ok']): ?><button class="btn ghost sm" type="submit" form="mp-del">Tirar</button><?php endif; ?></div>
+    <p class="small muted">É testada (a plataforma entra na caixa só para ler) e, se estiver certa, fica só no servidor: nunca na base de dados nem nesta página. Não é a palavra-passe da plataforma.</p>
+  </form>
+  <?php if ($mOpts['own']['ok']): ?><form id="mp-del" method="post" hidden><?= csrf_field() ?><input type="hidden" name="do" value="mail_pass_del"></form><?php endif; ?>
+  <?php endif; ?>
+</div>
 <?php $up = user_prefs($pdo, (int)$user['id']); ?>
 <h2 id="preferencias">Preferências</h2>
 <form method="post" class="panel prefs" style="max-width:920px">

@@ -1877,9 +1877,13 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
 - **Leitura das caixas (revista a 24 out 2026, §28.14 ponto 2; base de dados v32: `fin_mail.box` e
   `fin_mail.source`):**
   - **Caixas existentes, várias:** Definições › Integrações › Email › «Caixas a ler» (ex.:
-    info@topperdigital.xyz), uma por linha; cada uma com a sua palavra-passe só em `inc/fin_mail_config.php`
-    no servidor (`boxes` → endereço => palavra-passe; exemplo em `fin_mail_config.example.php`). A primeira
-    da lista com palavra-passe envia os pedidos ao contabilista. Não é precisa uma caixa dedicada.
+    info@topperdigital.xyz), uma por linha. Não é precisa uma caixa dedicada.
+  - **Palavras-passe pela plataforma, guardadas só no servidor (24 out 2026):** em «Estado das caixas» cada
+    caixa (lidas e o email geral) tem um campo só de escrita (só superadmin/admins); cada pessoa põe a do seu
+    próprio email no Perfil › Email de envio. Antes de gravar, a plataforma entra na caixa por IMAP (só ler);
+    se estiver certa, grava-a em `inc/fin_mail_config.php` (`boxes` → endereço => palavra-passe; ficheiro
+    fora do Git, fechado à web, 0600, escrita atómica). Nunca na base de dados, no registo (diz só «guardada
+    no servidor») nem na página; «Tirar» apaga-a do ficheiro.
   - **Só leitura:** `EXAMINE` (nunca `SELECT`) e `BODY.PEEK` — não marca `\Seen`, não move, não apaga;
     o cliente IMAP não tem comandos de escrita. Guarda por caixa o último UID visto e o UIDVALIDITY
     (`settings.fin_mail_state`); na primeira leitura, ou se o UIDVALIDITY mudar, olha só os últimos 7 dias.
@@ -1900,7 +1904,15 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
   - **Privacidade:** o corpo dos emails nunca é guardado (o código FAT/REC lê-se em memória); fica só o
     anexo financeiro (Drive, Empresa/Financeiro) e o remetente, o assunto, a data e a caixa.
   - **Estado e «Testar» por caixa** em Definições › Integrações › Email: última leitura, erro, mensagens
-    vistas e com documento, UID; «Testar» entra só para ler (e autentica o SMTP na caixa que envia).
+    vistas e com documento, UID; «Testar» entra só para ler e autentica o SMTP, sem enviar nada.
+- **Quem envia (24 out 2026):** os emails que alguém envia pela plataforma (pedidos ao contabilista, faturas
+  e lembretes aos clientes, recibos de vencimento, propostas, convites, reuniões) levam o nome dessa pessoa
+  e saem do seu email de registo (se for do domínio da empresa e tiver a palavra-passe no servidor) ou do
+  **email geral** (Definições › Integrações › Email, por omissão info@topperdigital.xyz). A escolha fica no
+  Perfil › Email de envio e pode mudar-se em cada envio («Enviar de»); se a escolhida não estiver pronta,
+  usa a outra. Os pedidos ao contabilista enviados de uma caixa que não é lida levam Reply-To para a
+  primeira caixa lida, para a resposta voltar a ser lida. Os emails automáticos (recuperar palavra-passe,
+  confirmações ao cliente, cron) continuam com o nome e o endereço dos «Emails automáticos».
 - **Gráficos (`inc/charts.php`):** runway (barra com reserva tracejada), fluxo de caixa 12 meses (entradas/
   saídas + saldo, previsão tracejada), antiguidade empilhada, custos fixos por categoria, receita com
   tendência; dicas com valores exatos, animação de entrada (desligada com «reduzir movimento»), claro/escuro.
@@ -1916,8 +1928,8 @@ Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_par
   registam todos os comandos (só EXAMINE/PEEK, ficheiros intactos, UID por caixa, segunda volta sem nada
   novo), despesa, receita ligada ao pedido pelo QR, código, XML, recibo, foto, ignorados (antigos,
   remetente, sem anexo, terceiros, orçamento), IA só sem QR/XML, corpo nunca guardado.
-- **Para ligar em produção:** pôr no servidor `inc/fin_mail_config.php` com a palavra-passe de cada caixa
-  existente a ler (ex.: info@); escolher as caixas em Definições › Integrações › Email; confirmar o NIF da
+- **Para ligar em produção:** escolher as caixas em Definições › Integrações › Email e escrever lá a
+  palavra-passe de cada uma (e cada pessoa a do seu email no Perfil); confirmar o NIF da
   empresa em Definições › Geral; indicar o email do contabilista e o IBAN em Definições › Financeiro; a taxa do seguro de acidentes; a IA
   de leitura de PDFs usa a mesma chave do assistente (`ai_config.php`) — sem ela, preenche-se à mão.
 
@@ -3453,7 +3465,7 @@ Quatro números no topo: Saldo disponível · Por receber (em atraso a vermelho)
 
 ### 28.14 Faturas pelo contabilista (enquanto não há programa de faturação)
 Hoje a topper. não tem programa de faturação: envia os dados ao contabilista e ele devolve a fatura por email. O sistema automatiza o circuito:
-1. **Pedir fatura** — botão no negócio, em «A receber» e na tarefa «Emitir fatura» (§19.6 E). Abre um rascunho já preenchido: cliente (nome, NIF, morada, email), descrição do serviço, base, taxa de IVA ou menção de isenção/autoliquidação, total, prestação (ex.: «1.ª de 2 — 50%»), vencimento, referência do negócio. O utilizador revê e envia. O email sai da caixa da topper. (SMTP Hostinger) para o contabilista (email em Definições › Financeiro), com o **código de referência no assunto**, ex.: `[topper FAT-2026-0142] Pedido de fatura — NEG-0123`. Fica um lançamento «Fatura pedida» (estado novo, antes de «Emitida»).
+1. **Pedir fatura** — botão no negócio, em «A receber» e na tarefa «Emitir fatura» (§19.6 E). Abre um rascunho já preenchido: cliente (nome, NIF, morada, email), descrição do serviço, base, taxa de IVA ou menção de isenção/autoliquidação, total, prestação (ex.: «1.ª de 2 — 50%»), vencimento, referência do negócio. O utilizador revê e envia. O email sai do email de quem envia ou do email geral, com o nome dessa pessoa (SMTP Hostinger), para o contabilista (email em Definições › Financeiro), com o **código de referência no assunto**, ex.: `[topper FAT-2026-0142] Pedido de fatura — NEG-0123`. Fica um lançamento «Fatura pedida» (estado novo, antes de «Emitida»).
 2. **Receber a fatura** (revisto 24 out 2026) — a plataforma liga-se às **caixas de email existentes** da topper. no Hostinger (ex.: `info@topperdigital.xyz` e outras que o admin escolher em Definições › Integrações › Email, cada uma com a sua palavra-passe só no servidor; não é preciso criar uma caixa nova). Leitura por IMAP (`imap.hostinger.com`, 993, SSL) a cada 5 minutos pelo cron. Regras para caixas partilhadas:
    - **Só leitura:** não marca como lido, não move, não apaga nada; guarda o UID da última mensagem vista por caixa.
    - **Filtro barato primeiro, IA depois:** só analisa mensagens com anexo PDF/XML/imagem; o resto é ignorado e nunca guardado. Sinal forte: as faturas portuguesas têm **QR code fiscal e ATCUD** — o sistema lê o QR do PDF (NIF do emitente e do adquirente, data, total, IVA, ATCUD) sem custo de IA. Só os anexos sem QR claro vão à IA para classificar (fatura, fatura-recibo, recibo, nota de crédito, orçamento, outro).

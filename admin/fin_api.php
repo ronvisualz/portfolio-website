@@ -58,6 +58,16 @@ try {
         fj(200, ['ok' => true, 'value' => (string)$p[$field], 'msg' => $p['label'] . ' guardado.',
                  'undo' => undo_push('fin_param', ['key' => $k, 'field' => $field, 'v' => $old])]);
     }
+    if ($a === 'mail_pass' || $a === 'mail_pass_del') {   // a palavra-passe de uma caixa: testada e gravada só no servidor
+        if (!is_admin()) fj(403, ['error' => 'Só superadmin e admins.']);
+        require_once __DIR__ . '/inc/fin_mail.php';
+        $box = strtolower(trim((string)($_POST['box'] ?? '')));
+        if (!in_array($box, array_merge(fin_mail_boxes($pdo), [mail_general($pdo)]), true)) fj(422, ['error' => 'Essa caixa não está na lista.']);
+        fin_mail_save_pass($box, $a === 'mail_pass' ? (string)($_POST['pass'] ?? '') : null);
+        require_once __DIR__ . '/inc/settings_def.php';
+        setting_log($pdo, 'int_fin_mail', 'Palavra-passe de ' . $box, null, $a === 'mail_pass' ? 'guardada no servidor' : 'tirada do servidor');   // nunca o valor
+        fj(200, ['ok' => true, 'msg' => $a === 'mail_pass' ? 'Palavra-passe de ' . $box . ' certa e guardada no servidor.' : 'Palavra-passe de ' . $box . ' tirada do servidor.']);
+    }
     if ($a === 'mail_test') {
         if (!is_admin()) fj(403, ['error' => 'Só superadmin e admins.']);
         require_once __DIR__ . '/inc/fin_mail.php';
