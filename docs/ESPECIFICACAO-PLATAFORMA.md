@@ -3489,3 +3489,93 @@ Em certos serviços reserva-se uma parte da faturação como «salário» para a
 - O que está reservado e ainda não foi levantado **sai do saldo disponível e do runway** e aparece à parte («Reservado aos sócios»).
 - Cada levantamento fica registado com **data e comprovativo** (e a conta de onde saiu); conta como saída de caixa.
 - Só superadmin e admins veem e mudam o detalhe por sócio; quem tem o Financeiro sem ser admin vê apenas o total reservado.
+
+## 29. Relatórios (decidido 24 out 2026)
+
+**Princípio:** Relatórios = **micro** (onde está o problema, quem, que registo, o que fazer). Dashboard Executivo = **macro** (Revenue, Gross Profit e margem, EBITDA, margem operacional, Net Profit e margem, runway, saúde geral — já interpretados). Os dois leem a **mesma camada de métricas** (§29.11), para os números baterem sempre certo.
+
+**Ponto de partida (verificado no main):** `admin/relatorios.php` já mostra entradas / convertidas / ganhos / perdidos por funil, por origem e por mês. Mantém-se e passa a ser parte do separador «Funil».
+
+### 29.1 Regras comuns a todos os separadores
+- **Período** no topo (Esta semana · Este mês · Trimestre · Ano · Personalizado) com **comparação automática ao período anterior** (▲▼ e %).
+- **Filtros globais** que se mantêm entre separadores: funil, origem, pessoa, serviço/frente.
+- **Tudo é clicável:** cada número abre a lista dos registos que o compõem (leads, negócios, tarefas, faturas), com ligação direta.
+- ⓘ em cada indicador com a fórmula em linguagem simples.
+- Exportar CSV/PDF por separador.
+- Amostras pequenas sinalizadas («só 4 leads — pouco fiável»).
+- Valores em euros só para quem vê o Financeiro (regra que já existe).
+- Interface sem referências «§».
+
+### 29.2 Separadores
+**Atenção · Metas · Funil comercial · Velocidade · Origens · Atividade · Equipa · Operacional · Financeiro**. Abre em «Atenção».
+
+### 29.3 Atenção (o que é urgente agora)
+Lista única ordenada por gravidade e antiguidade, cada linha com dono, há quanto tempo e botão «Abrir»:
+- Leads sem primeira resposta fora do prazo (SLA, §29.6).
+- Leads e negócios parados numa etapa acima do tempo normal dessa etapa (média histórica × 1,5, ou limite definido no funil).
+- Propostas em «Aguardar feedback» há mais de N dias sem seguimento.
+- Gates bloqueados, tarefas atrasadas, kickoffs sem data.
+- Reviews à espera do cliente há mais de N dias.
+- Faturas em atraso e faturas pedidas ao contabilista sem resposta (só Financeiro).
+- Metas em risco (§29.4).
+Filtro «Só as minhas». O mesmo número aparece no menu lateral como alerta.
+
+### 29.4 Metas
+- Definir metas por mês ou trimestre, para a empresa, por funil e por pessoa (só superadmin/admins): leads abordadas, passadas a pipeline, propostas enviadas, kickoffs, valor ganho, e taxas (ex.: 75 de 200 = 37,5%; 10% das que entram em pipeline fecham).
+- **Meta em cascata (sugestão):** define-se só o objetivo final (ex.: 8 kickoffs/mês) e o sistema calcula, com as taxas reais dos últimos 6 meses, quantas leads, X-Rays e propostas são precisas. Pode-se ajustar à mão.
+- Progresso com **ritmo esperado**: «dia 18 de 30 — 60% do mês; leads abordadas 112/200 (56%) — ligeiramente atrás» e **previsão de fim de período** ao ritmo atual. Estados: Em linha · Em risco · Atrás · Cumprida.
+- Histórico de metas cumpridas por mês.
+
+### 29.5 Funil comercial
+Etapas: **Lead → Abordada → X-Ray (entrou em pipeline) → Proposta enviada → Aguardar feedback → Kickoff** (+ Perdido em qualquer etapa).
+- Por etapa: quantos entraram, % que passou à seguinte, % perdida com **motivos de perda** (obrigatórios ao perder), tempo médio e mediano na etapa.
+- Conversão total Lead → Kickoff e valor médio ganho.
+- Duas leituras: **Por período** (o que aconteceu neste mês) e **Por coorte** (das leads que entraram em março, quantas já chegaram a cada etapa) — a coorte é a leitura correta de conversão; mostrada por defeito.
+- Comparação entre os 6 funis lado a lado.
+
+### 29.6 Velocidade
+- **Tempo até à primeira resposta:** do registo da lead (manual ou automática) até à primeira interação de saída registada (chamada, email, WhatsApp, reunião). Mediana e p90, por canal/origem, por pessoa, contado em **horas úteis** (horário de trabalho em Definições).
+- **% dentro do SLA** (ex.: 1 h útil; editável por canal). Leads de formulários e anúncios com SLA mais curto.
+- Relação velocidade × conversão («leads respondidas em < 1 h convertem 2,3× mais») — calculada com os dados reais.
+- Duração do ciclo Lead → Kickoff e tempo por etapa (tendência mensal).
+
+### 29.7 Origens (qualidade das fontes)
+Origem estruturada em: **canal** (formulário do site, anúncio, parceiro, indicação de cliente, redes sociais, evento, prospeção ativa, manual) + **fonte** (qual parceiro, qual campanha, qual formulário) — UTM capturados nos formulários.
+Por origem: volume, % para pipeline, % kickoff, valor ganho, ticket médio, margem média (Financeiro), ciclo médio e, quando há custo registado (Marketing/Financeiro), **custo por lead, custo por kickoff e retorno**. Índice de qualidade da fonte (conversão × valor × margem) com ranking. Parceiros: o que cada parceiro trouxe e o valor gerado.
+
+### 29.8 Atividade
+Global e por pessoa: chamadas, emails, reuniões, WhatsApp, tarefas criadas / concluídas / atrasadas, propostas enviadas, X-Rays feitos, follow-ups. Semana a semana e mapa dia × hora (quando a equipa trabalha as leads).
+
+### 29.9 Equipa (performance comercial)
+Por utilizador: leads atribuídas, tempo de resposta, % lead → pipeline, % pipeline → kickoff, kickoffs, valor ganho, margem média, atividade e metas cumpridas. Normalizado pelo volume recebido (taxas, não só totais) e com aviso de amostra pequena.
+Visibilidade: superadmin/admins veem todos; cada operador vê os seus números e a **média da equipa** (sem nomes dos colegas).
+
+### 29.10 Operacional e Financeiro (micro)
+- **Operacional:** negócios em execução por etapa, % entregas no prazo, kickoff → entrega (dias), rondas de revisão usadas vs incluídas (excesso), aprovação na 1.ª ronda (Review), tarefas atrasadas por etapa e carga por pessoa.
+- **Financeiro (só com acesso):** margem por negócio, funil, serviço e cliente; **orçamentado vs real** por negócio (desvio de custos); top clientes por receita e por margem; prazo médio de recebimento por cliente; faturas em atraso por cliente; custos por categoria vs período anterior. (P&L, EBITDA e Net Profit ficam no Dashboard.)
+
+### 29.11 Base de dados das métricas
+- **Histórico de etapas estruturado** (`stage_events`: registo, de, para, quando, por quem, motivo de perda) para leads, negócios e frentes; preenchido daqui em diante e reconstruído do `deal_history` / `contact_history` onde possível.
+- `first_response_at` e canal da primeira resposta nas leads.
+- Origem: canal + fonte + campanha + parceiro; UTM nos formulários.
+- Motivo de perda obrigatório.
+- Tabela de metas.
+- **Fotografia diária** das métricas principais (cron) para tendências rápidas e para o Dashboard Executivo.
+- Uma só biblioteca de cálculo (`inc/metrics.php`) usada por Relatórios, Dashboard e alertas.
+
+### 29.12 Resumo semanal
+Segunda às 9h: resumo automático no chat da equipa (e email aos sócios) com metas, o que melhorou/piorou e **«3 coisas a fazer esta semana»** escritas pela IA a partir do separador Atenção. Cada pessoa recebe também o seu.
+
+### 29.13 Gráficos
+Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação de entrada, dica com valores exatos, clicáveis). Sem gráficos circulares, velocímetros ou 3D.
+- **Metas:** barra de progresso com marcador do ritmo esperado (bullet chart) e previsão a tracejado.
+- **Funil:** barras horizontais decrescentes por etapa com a % de passagem entre elas e a perda a cinzento; coorte em tabela com mapa de calor.
+- **Velocidade:** barras por canal com mediana e p90 + linha da % dentro do SLA ao longo dos meses.
+- **Origens:** gráfico de dispersão volume × conversão (tamanho = valor ganho) em quadrantes («escalar», «otimizar», «rever», «cortar») + tabela com barras.
+- **Atividade:** barras empilhadas por semana e mapa de calor dia × hora.
+- **Equipa:** tabela de ranking com mini-barras e linha da média da equipa.
+- **Tendências:** linhas com o período anterior a tracejado; mini-linhas (sparklines) junto aos números.
+- **Financeiro:** barras horizontais de margem; cascata orçamentado → real por negócio; barra empilhada por antiguidade.
+
+### 29.14 Ligação ao Dashboard Executivo
+O Dashboard (a desenhar) não recalcula nada: lê a fotografia diária e mostra a leitura macro — P&L (Revenue, Gross Profit e margem, EBITDA, margem operacional, Net Profit e margem), runway, pipeline ponderado, metas em semáforo, índice de saúde e um parágrafo da IA «o que mudou e porquê», com ligação ao separador de Relatórios que explica cada número.
