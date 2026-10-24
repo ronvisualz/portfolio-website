@@ -237,16 +237,14 @@ if ($tab === 'tarefas'):
       // Um grupo conta, em cada secção, só as tarefas dessa urgência (ex.: «Em atraso 10» de 22 chamadas).
       $n = 0; foreach ($items as $it) $n += isset($it['tasks']) ? count(array_filter($it['tasks'], fn($x) => task_bucket($x) === $k)) : 1;
       $rows = '';
-      foreach ($items as $it) $rows .= isset($it['task']) ? task_row_html($it['task'], $members, $editUrl((int)$it['task']['id'])) : task_group_html($it, $members, $showWho); ?>
+      foreach ($items as $it) $rows .= isset($it['task']) ? task_row_html($it['task'], $members, $editUrl((int)$it['task']['id'])) : task_group_html($it, $members, $showWho, $editUrl); ?>
     <?php if ($k === 'late'): ?>
       <section class="tgrp late" data-grp="late"><h2 class="tgh"><?= icon('alert') ?> <?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></h2><div class="tgb"><?= $rows ?></div></section>
     <?php else: ?>
       <details class="tgrp" data-grp="<?= $k ?>"<?= in_array($k, ['today'], true) || $total < 25 ? ' open' : '' ?>><summary class="tgh"><?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></summary><div class="tgb"><?= $rows ?></div></details>
     <?php endif; ?>
   <?php endforeach; ?>
-  <?php if (!$f['solto'] && array_filter($list, fn($t) => task_auto_group($t))): ?>
-    <p class="muted small">As chamadas de leads e os follow-ups de relação aparecem agrupados. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 1])) ?>">Ver uma a uma</a></p>
-  <?php elseif ($f['solto'] && $groupOn): ?>
+  <?php if ($f['solto'] && $groupOn): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação estão uma a uma. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 0])) ?>">Voltar a agrupar</a></p>
   <?php endif; ?>
 </div>
@@ -311,7 +309,14 @@ elseif ($tab === 'quadro'):
               [$gl, $gt, $go, $gu] = TASK_AUTO_GROUPS[$it['group']]; ?>
           <div class="bcard agg"><div class="br"><?= task_type_badge(['kind' => $gt], 'sm') . task_origin_badge(['kind' => $go === 'relation' ? 'relation' : 'call', 'deal_id' => $go === 'lead' ? 1 : null, 'deal_phase' => 'lead']) ?></div>
             <b><?= e($gl) ?> · <?= count($it['tasks']) ?></b><span class="<?= $it['late'] ? 'late' : 'muted' ?>"><?= $it['late'] ? $it['late'] . ' em atraso' : 'agrupadas' ?></span>
-            <a class="tgo" href="<?= e($gu) ?>">Abrir fila →</a></div>
+            <?php $gid = 'bg-' . e($it['group']) . '-' . (int)$mid; ?>
+            <a class="tgo" href="<?= e($gu) ?>" data-gopen="<?= $gid ?>" aria-expanded="false" aria-controls="<?= $gid ?>"><span class="o">Abrir fila</span><span class="c">Fechar fila</span> <?= icon('chev-down') ?></a>
+            <ul class="bgitems" id="<?= $gid ?>" hidden>
+              <?php foreach ($it['tasks'] as $gt): [$glt] = task_link($gt); ?>
+              <li data-task="<?= (int)$gt['id'] ?>"><?php if ($canEdit): ?><button type="button" class="tchk sm" data-done="<?= (int)$gt['id'] ?>"<?= task_call_attr($gt) ?> aria-label="Concluir" data-tip><?= icon('check') ?></button><?php endif; ?>
+                <a href="<?= e($editUrl((int)$gt['id'])) ?>"><?= e(shorten($gt['title'], 40)) ?></a><span class="tdue<?= task_bucket($gt, $today) === 'late' ? ' late' : '' ?>"><?= e(task_when($gt)) ?></span></li>
+              <?php endforeach; ?>
+            </ul></div>
       <?php } else { $t = $it['task']; [$lt] = task_link($t); $b = task_bucket($t, $today); ?>
           <div class="bcard" data-task="<?= (int)$t['id'] ?>"<?= $canEdit ? ' draggable="true"' : '' ?>>
             <div class="br"><?= task_type_badge($t, 'sm') . task_origin_badge($t) ?><?= !empty($t['help_by']) ? '<span class="help" data-tip="Pedido de ajuda de ' . e((string)$t['help_name']) . '">🙋</span>' : '' ?>
@@ -323,7 +328,7 @@ elseif ($tab === 'quadro'):
             <?php if ($lt !== ''): ?><span class="muted small"><?= e(shorten($lt, 34)) ?></span><?php endif; ?>
             <?php if (!empty($t['help_by']) && !$mid): ?><span class="muted small">pedido de ajuda · <?= e(first_name((string)$t['help_name'])) ?></span><?php endif; ?>
             <div class="br"><span class="tdue<?= $b === 'late' ? ' late' : '' ?>"><?= e(task_when($t)) ?></span><span class="spacer"></span>
-              <?php if ($canEdit): ?><button type="button" class="tchk sm" data-done="<?= (int)$t['id'] ?>" aria-label="Concluir" data-tip><?= icon('check') ?></button><?php endif; ?></div>
+              <?php if ($canEdit): ?><button type="button" class="tchk sm" data-done="<?= (int)$t['id'] ?>"<?= task_call_attr($t) ?> aria-label="Concluir" data-tip><?= icon('check') ?></button><?php endif; ?></div>
           </div>
       <?php } endforeach; ?>
       <?php if (count($items) > $boardMax):
@@ -478,5 +483,19 @@ if (isset(TASK_TYPES[$_GET['tipo'] ?? ''])) $pre['kind'] = $_GET['tipo'];
 if (!$operator) $pre['member_id'] = null;
 if ($canEdit) echo task_modal_html($pdo, $editing, $assignable, $operator ? $myMember : null, $participants, $here, $editing !== null || !empty($_GET['nova']), $pre);
 ?>
+<?php if ($canEdit):
+    require_once __DIR__ . '/inc/lead_view.php';
+    echo lead_modals_html(); ?>
+<div class="mdl" id="mdl-callnote" role="dialog" aria-modal="true" aria-labelledby="mdl-callnote-t" hidden>
+  <div class="mdl-back" data-mdl-close></div>
+  <form class="mdl-card pop-in" data-callnote>
+    <h3 id="mdl-callnote-t">Chamada feita</h3><p class="muted" data-cn-name></p>
+    <label class="field"><span>Nota da chamada <small class="muted">(opcional)</small></span>
+      <textarea name="note" rows="4" maxlength="4000" placeholder="O que se falou, o que ficou combinado…"></textarea></label>
+    <p class="muted small">Fica no histórico do negócio (ou do contacto), como chamada.</p>
+    <div class="actions"><button type="button" class="btn ghost" data-mdl-close>Cancelar</button><button class="btn" type="submit"><?= icon('check') ?> Concluir</button></div>
+  </form>
+</div>
+<?php endif; ?>
 <script src="<?= asset_url('tasks.js') ?>" defer></script>
 <?php render_footer();

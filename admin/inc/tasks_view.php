@@ -93,7 +93,7 @@ function task_row_html(array $t, array $members, string $editUrl): string {
     if (!empty($t['private'])) $extra .= '<span class="tmeta" data-tip="Privada: os outros veem só «Ocupado»">' . icon('eye') . '</span>';
     return '<div class="trow' . ($done ? ' is-done' : '') . '" data-task="' . (int)$t['id'] . '" data-mid="' . (int)$t['member_id'] . '">'
          . ($done ? '<button type="button" class="tchk on" data-reopen="' . (int)$t['id'] . '" aria-label="Reabrir" data-tip>' . icon('check') . '</button>'
-                  : '<button type="button" class="tchk" data-done="' . (int)$t['id'] . '" aria-label="Concluir" data-tip>' . icon('check') . '</button>')
+                  : '<button type="button" class="tchk" data-done="' . (int)$t['id'] . '"' . task_call_attr($t) . ' aria-label="Concluir" data-tip>' . icon('check') . '</button>')
          . task_type_badge($t) . task_origin_badge($t)
          . '<a class="tt" href="' . e($editUrl) . '">' . e($t['title']) . '</a><span class="tex">' . $extra . '</span>'
          . ($lt !== '' ? ($lu !== '' ? '<a class="tlink" href="' . e($lu) . '">' . e(shorten($lt, 40)) . '</a>' : '<span class="tlink">' . e(shorten($lt, 40)) . '</span>') : '<span class="tlink"></span>')
@@ -114,19 +114,39 @@ function task_due_html(array $t): string {
     return '<span class="tdue' . ($late ? ' late' : '') . ($t['due_date'] ? '' : ' none') . '"><b>' . e($abs) . '</b>' . ($sub !== '' ? '<small>' . e($sub) . '</small>' : '') . '</span>';
 }
 
-/** A linha que junta as tarefas automáticas iguais (§18.3). */
-function task_group_html(array $g, array $members, bool $showWho): string {
+/**
+ * O que o «Concluir» de uma chamada pede antes de a dar como feita: o «Como correu?» numa lead (o resultado vai
+ * para o histórico da lead), uma nota opcional nas outras chamadas (negócio, contacto ou interna).
+ */
+function task_call_attr(array $t): string {
+    if (($t['kind'] ?? '') !== 'call') return '';
+    if (!empty($t['deal_id']) && ($t['deal_phase'] ?? '') === 'lead') {
+        $name = preg_replace('/^Ligar a\s+/u', '', (string)$t['title']);
+        return ' data-call="lead" data-lead="' . (int)$t['deal_id'] . '" data-name="' . e($name) . '"';
+    }
+    return ' data-call="note" data-name="' . e((string)$t['title']) . '"';
+}
+
+/**
+ * A linha que junta as tarefas automáticas iguais (§18.3). «Abrir fila» abre o grupo ali mesmo, com todas as
+ * tarefas (e volta a fechar); sem JavaScript, leva à fila da aba de origem.
+ */
+function task_group_html(array $g, array $members, bool $showWho, ?callable $editUrl = null): string {
     [$label, $type, $origin, $url] = TASK_AUTO_GROUPS[$g['group']];
     $n = count($g['tasks']);
     $first = $g['tasks'][0];
-    return '<div class="trow agg" data-group="' . e($g['group']) . '">'
+    $gid = 'tg-' . e($g['group']) . '-' . (int)($g['member'] ?? 0) . '-' . (int)$first['id'];
+    $items = '';
+    if ($editUrl) foreach ($g['tasks'] as $t) $items .= task_row_html($t, $members, $editUrl((int)$t['id']));
+    return '<div class="tgwrap" data-gwrap><div class="trow agg" data-group="' . e($g['group']) . '">'
          . '<span class="tchk ghost" aria-hidden="true"></span>'
          . task_type_badge(['kind' => $type]) . task_origin_badge(['kind' => $origin === 'relation' ? 'relation' : 'call', 'deal_id' => $origin === 'lead' ? 1 : null, 'deal_phase' => 'lead'])
          . '<span class="tt"><b>' . e($label) . ' · ' . $n . '</b>' . ($g['late'] ? ' · <span class="late">' . $g['late'] . ' em atraso</span>' : '') . ' <small class="muted">agrupadas</small></span><span class="tex"></span>'
          . '<span class="tlink muted">' . ($showWho && $g['member'] && isset($members[$g['member']]) ? e(first_name($members[$g['member']]['name'])) : '') . '</span>'
          . task_due_html($first)
-         . '<a class="tgo" href="' . e($url) . '">Abrir fila →</a>'
-         . '</div>';
+         . ($items !== '' ? '<a class="tgo" href="' . e($url) . '" data-gopen="' . $gid . '" aria-expanded="false" aria-controls="' . $gid . '"><span class="o">Abrir fila</span><span class="c">Fechar fila</span> ' . icon('chev-down') . '</a>'
+                          : '<a class="tgo" href="' . e($url) . '">Abrir fila →</a>')
+         . '</div>' . ($items !== '' ? '<div class="tgitems" id="' . $gid . '" hidden>' . $items . '</div>' : '') . '</div>';
 }
 
 /** Os filtros (§18.5): botões combináveis e as vistas guardadas. */

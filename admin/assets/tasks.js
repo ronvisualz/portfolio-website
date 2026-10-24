@@ -39,19 +39,160 @@
     d.addEventListener('toggle', function () { store(k, d.open ? '1' : '0'); });
   });
 
+  // ── «Abrir fila»: o grupo abre ali mesmo com todas as tarefas (e fecha outra vez) ──
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-gopen]');
+    if (!a || e.metaKey || e.ctrlKey) return;
+    var box = document.getElementById(a.getAttribute('data-gopen'));
+    if (!box) return;
+    e.preventDefault();
+    var open = box.hidden;
+    box.hidden = !open;
+    a.setAttribute('aria-expanded', open ? 'true' : 'false');
+    a.classList.toggle('on', open);
+    store('tgopen:' + a.getAttribute('data-gopen').replace(/-\d+$/, ''), open ? '1' : '0');
+  });
+  $$('[data-gopen]').forEach(function (a) {
+    if (store('tgopen:' + a.getAttribute('data-gopen').replace(/-\d+$/, '')) === '1') {
+      var box = document.getElementById(a.getAttribute('data-gopen'));
+      if (box) { box.hidden = false; a.setAttribute('aria-expanded', 'true'); a.classList.add('on'); }
+    }
+  });
+
+  // ── formulários por cima (os do app.js: abrir pelo data-new, fechar pelo data-mdl-close) ──
+  var opener = document.createElement('a'); opener.hidden = true; document.body.appendChild(opener);
+  function openMdl(id) { opener.setAttribute('data-new', '#' + id); opener.click(); }
+  function closeMdl(m) { var c = m && m.querySelector('[data-mdl-close]'); if (c) c.click(); }
+  // a tarefa concluída sai da lista (linha, linha dentro do grupo ou cartão do quadro)
+  function gone(b, msg, undo) {
+    var row = b.closest('.trow, .bcard, .bgitems li');
+    if (row) { row.classList.add('gone'); setTimeout(function () { row.hidden = true; }, 240); }
+    T().toast(msg, undo ? { undo: undo } : {});
+  }
+
+  // ── chamada de uma lead: «Como correu?» aqui mesmo (o resultado fica no histórico da lead) ──
+  var outCur = null;   // {lead, task, btn}
+  function outStep(m, step) { $$('.out-step', m).forEach(function (x) { x.hidden = x.getAttribute('data-step') !== step; }); }
+  function openOutcome(b) {
+    var m = $('#mdl-out'); if (!m) return false;
+    outCur = { lead: b.getAttribute('data-lead'), task: b.getAttribute('data-done'), btn: b };
+    $('[data-out-name]', m).textContent = b.getAttribute('data-name') || '';
+    $('[data-out="convert"]', m).href = '/admin/leads.php?conv=' + outCur.lead + '#converter';
+    $('[data-suggest]', m).hidden = true;
+    $$('[data-recall]', m).forEach(function (x) { x.disabled = false; x.classList.remove('on'); });
+    var ta = $('textarea[name=note]', m); if (ta) ta.value = '';
+    var nx = $('[data-next-urgent]', m); if (nx) nx.hidden = true;
+    outStep(m, 'choose');
+    openMdl('mdl-out');
+    return true;
+  }
+  function outcome(result, extra) {
+    var d = { id: outCur.lead, result: result, task: outCur.task || '' };
+    Object.keys(extra || {}).forEach(function (k) { d[k] = extra[k]; });
+    return T().api('lead_outcome', d).then(function (j) {
+      if (outCur.task) { var b = outCur.btn; outCur.task = ''; gone(b, j.msg); }
+      return j;
+    });
+  }
+  function openArchive(reason) {
+    var m = $('#mdl-arch'); if (!m) return;
+    var f = $('form', m); f.reset();
+    $('input[name=id]', f).value = outCur.lead;
+    $('[data-arch-name]', m).textContent = $('#mdl-out [data-out-name]').textContent;
+    var other = $('[data-other-text]', f); other.hidden = true; other.required = false;
+    if (reason) { var r = $('input[name=reason][value="' + reason + '"]', f); if (r) r.checked = true; }
+    openMdl('mdl-arch');
+  }
+  document.addEventListener('click', function (e) {
+    var m = $('#mdl-out'); if (!m || !outCur || !m.contains(e.target)) return;
+    var o = e.target.closest('[data-out]');
+    if (o) {
+      e.preventDefault();
+      var what = o.getAttribute('data-out');
+      if (what === 'missed') {
+        o.disabled = true;
+        outcome('missed').then(function (j) {
+          $('[data-missed-msg]', m).textContent = j.msg + ' O prazo recomeçou.';
+          $('[data-suggest]', m).hidden = !j.suggest_archive;
+          outStep(m, 'missed');
+        }).catch(function (er) { T().toast(er.message, { err: true }); }).then(function () { o.disabled = false; });
+      } else if (what === 'followup') {
+        outStep(m, 'followup'); $('textarea[name=note]', m).focus();
+      } else if (what === 'archive' || what === 'convert') {
+        // atendida: a chamada fica feita primeiro, depois arquiva-se aqui ou converte-se na ficha da lead
+        var go = function () { if (what === 'convert') { location.href = o.getAttribute('href'); return; } closeMdl(m); openArchive(''); };
+        if (!outCur.task) { go(); return; }
+        outcome('answered').then(go).catch(function (er) { T().toast(er.message, { err: true }); });
+      } else if (what === 'archive-noanswer') {
+        closeMdl(m); openArchive('sem_resposta');
+      }
+      return;
+    }
+    var r = e.target.closest('[data-recall]');
+    if (r) {
+      var d = new Date(), w = r.getAttribute('data-recall');
+      if (w === '1h') d.setHours(d.getHours() + 1); else if (w === '3h') d.setHours(d.getHours() + 3); else { d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); }
+      var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+      $$('[data-recall]', m).forEach(function (x) { x.disabled = true; });
+      T().api('lead_task', { id: outCur.lead, kind: 'call', title: '', notes: '', date: d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()),
+                             time: p2(d.getHours()) + ':' + p2(d.getMinutes()), duration: 15, assignee: '', repeat: '' }).then(function () {
+        r.classList.add('on'); T().toast('Nova chamada marcada: ' + (r.textContent || '').toLowerCase() + '.');
+      }).catch(function (er) { $$('[data-recall]', m).forEach(function (x) { x.disabled = false; }); T().toast(er.message, { err: true }); });
+    }
+  });
+  document.addEventListener('submit', function (e) {
+    if (e.target.matches('#mdl-out form[data-step="followup"]') && outCur) {
+      e.preventDefault();
+      var btn = $('button[type=submit]', e.target); btn.disabled = true;
+      outcome('followup', { note: $('textarea[name=note]', e.target).value }).then(function () { closeMdl($('#mdl-out')); })
+        .catch(function (er) { T().toast(er.message, { err: true }); }).then(function () { btn.disabled = false; });
+    } else if (e.target.matches('#mdl-arch form') && outCur) {
+      e.preventDefault();
+      var f = e.target, fd = { id: outCur.lead, reason: (f.querySelector('input[name=reason]:checked') || {}).value || '', note: f.note.value };
+      T().api('lead_archive', fd).then(function (j) { closeMdl($('#mdl-arch')); T().toast(j.msg, j.undo ? { undo: j.undo } : {}); })
+        .catch(function (er) { T().toast(er.message, { err: true }); });
+    } else if (e.target.matches('form[data-callnote]') && noteBtn) {
+      e.preventDefault();
+      var nb = noteBtn, note = e.target.note.value, sb = $('button[type=submit]', e.target);
+      sb.disabled = true;
+      api({ do: 'done', id: nb.getAttribute('data-done'), note: note }).then(function (j) {
+        closeMdl($('#mdl-callnote')); noteBtn = null;
+        if (nb.closest('.trow, .bgitems li')) gone(nb, note.trim() ? 'Chamada concluída com nota.' : 'Chamada concluída.', j.undo); else later(j);
+      }).catch(function (er) { T().toast(er.message, { err: true }); }).then(function () { sb.disabled = false; });
+    }
+  });
+  document.addEventListener('change', function (e) {
+    if (!e.target.matches('#mdl-arch input[name=reason]')) return;
+    var other = $('#mdl-arch [data-other-text]'), on = e.target.hasAttribute('data-other');
+    other.hidden = !on; other.required = on; if (on) other.focus();
+  });
+
+  // ── outras chamadas (negócio, contacto, internas): uma nota opcional ao concluir ──
+  var noteBtn = null;
+  function openNote(b) {
+    var m = $('#mdl-callnote'); if (!m) return false;
+    noteBtn = b;
+    $('[data-cn-name]', m).textContent = b.getAttribute('data-name') || '';
+    $('textarea', m).value = '';
+    openMdl('mdl-callnote');
+    return true;
+  }
+
   // ── concluir / reabrir / pegar / pedir ajuda ─────────────
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-done], [data-reopen], [data-take], [data-help]');
     if (!b) return;
     e.preventDefault();
+    if (b.hasAttribute('data-done') && b.getAttribute('data-call') === 'lead' && openOutcome(b)) return;
+    if (b.hasAttribute('data-done') && b.getAttribute('data-call') === 'note' && openNote(b)) return;
     var act = b.hasAttribute('data-done') ? 'done' : b.hasAttribute('data-reopen') ? 'reopen' : b.hasAttribute('data-take') ? 'take' : 'help';
-    var id = b.getAttribute('data-' + act), row = b.closest('.trow, .bcard');
+    var id = b.getAttribute('data-' + act), row = b.closest('.trow, .bcard, .bgitems li');
     b.disabled = true;
     api({ do: act, id: id }).then(function (j) {
-      if (row && row.classList.contains('trow') && (act === 'done' || act === 'reopen')) {
+      if (row && (row.classList.contains('trow') || row.tagName === 'LI') && (act === 'done' || act === 'reopen')) {
         row.classList.add('gone');
         setTimeout(function () { row.hidden = true; }, 240);
-        T().toast(act === 'done' ? 'Concluída · ' + (row.querySelector('.tt') || {}).textContent : j.msg, j.undo ? { undo: j.undo } : {});
+        T().toast(act === 'done' ? 'Concluída · ' + ((row.querySelector('.tt, a') || {}).textContent || '') : j.msg, j.undo ? { undo: j.undo } : {});
         return;
       }
       later(j);

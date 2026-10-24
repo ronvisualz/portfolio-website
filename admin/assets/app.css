@@ -3151,3 +3151,17 @@ table.heat tbody tr:hover td { background: color-mix(in srgb, var(--c-real) calc
 .mx-t td .mx-small { margin-left: 6px; }
 .mx-body a.hbar { color: var(--fg); text-decoration: none; }
 .mx-body a.hbar:hover span:first-child { text-decoration: underline; }
+/* Tarefas: «Abrir fila» abre o grupo ali mesmo (lista e quadro) */
+.tgwrap { display: contents; }
+a.tgo[data-gopen] { display: inline-flex; align-items: center; gap: 4px; }
+a.tgo[data-gopen] .c, a.tgo[data-gopen].on .o { display: none; }
+a.tgo[data-gopen].on .c { display: inline; }
+a.tgo[data-gopen] svg { width: 14px; height: 14px; transition: transform var(--t); }
+a.tgo[data-gopen].on svg { transform: rotate(180deg); }
+.tgitems { border-left: 3px solid color-mix(in srgb, var(--c-real) 45%, transparent); margin: 0 0 6px 18px; animation: pop-in .18s ease-out; }
+.tgitems > .trow { background: color-mix(in srgb, var(--chip) 45%, transparent); }
+.bgitems { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; max-height: 360px; overflow: auto; }
+.bgitems li { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; padding: 6px 4px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.bgitems li a { color: var(--fg); text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bgitems li .tdue { grid-column: 2; font-size: 11px; }
+.bgitems li.gone, .tgitems .trow.gone { opacity: 0; transition: opacity .24s; }

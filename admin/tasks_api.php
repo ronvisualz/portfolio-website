@@ -52,6 +52,13 @@ try {
     case 'done':
         $snap['spawned'] = task_done($pdo, $id);
         task_log($pdo, $id, 'done', 'Concluída');
+        // Uma chamada (de um negócio ou de um contacto) fica no histórico, com a nota se houver.
+        if ($task['kind'] === 'call' && ($task['deal_id'] || $task['contact_id'])) {
+            require_once __DIR__ . '/inc/interactions.php';
+            $note = trim(mb_substr((string)($_POST['note'] ?? ''), 0, 4000));
+            interaction_add($pdo, $task['deal_id'] ? (int)$task['deal_id'] : null, $task['contact_id'] ? (int)$task['contact_id'] : null, 'call',
+                            $note !== '' ? $note : 'Chamada feita · ' . $task['title'], today_lisbon());
+        }
         api_out(200, ['ok' => true, 'msg' => 'Concluída.', 'undo' => undo_push('task', $snap)]);
 
     case 'reopen':

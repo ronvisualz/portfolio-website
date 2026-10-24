@@ -2029,6 +2029,16 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   Equipa sem nomes para operadores, sem euros sem Financeiro, UTM do site, fotografia e resumo (com e sem IA),
   claro/escuro, telemóvel e impressão.
 
+### 10.22 Tarefas: a fila abre no quadro e as chamadas pedem o resultado ali mesmo (24 out 2026)
+
+- **«Abrir fila»** (chamadas de leads, follow-ups de relação) abre o grupo no próprio quadro, na lista e no Quadro
+  da equipa, com todas as tarefas do grupo; «Fechar fila» recolhe (lembra-se por grupo). Saiu «Ver uma a uma».
+- **Concluir a chamada de uma lead** na aba Tarefas abre logo o «Como correu?» (não atendida, Follow-Up com nota,
+  Arquivar com motivo, Converter em negócio → ficha da lead). O resultado fica no histórico da lead, como na aba
+  Leads; fechar sem escolher deixa a chamada por fazer.
+- **Concluir outra chamada** (negócio, contacto ou interna) abre «Chamada feita» com uma nota opcional; fica no
+  histórico do negócio ou do contacto como chamada (sem nota: «Chamada feita · <título>»).
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
