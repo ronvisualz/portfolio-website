@@ -326,9 +326,9 @@ function user_start_view(PDO $pdo, int $uid, string $tab): string {
 }
 
 // ── settings ────────────────────────────────────────────────
-function settings(PDO $pdo): array {
+function settings(PDO $pdo, bool $fresh = false): array {
     static $cache = null;
-    if ($cache !== null) return $cache;
+    if ($cache !== null && !$fresh) return $cache;
     $cache = [];
     foreach ($pdo->query('SELECT skey, svalue FROM settings') as $r) {
         $cache[$r['skey']] = $r['svalue'];

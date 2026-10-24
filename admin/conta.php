@@ -201,6 +201,16 @@ render_flashes();
   <?php endif; ?>
 </div>
 <?php endif; ?>
+<?php if (db_has_table($pdo, 'fin_payroll')):   // recibos de vencimento: cada pessoa vê só os seus (§28.6)
+    require_once __DIR__ . '/inc/fin_pay.php';
+    $slips = fin_payroll_list($pdo, null, null, (int)$user['id']);
+    if ($slips): ?>
+<h2 id="recibos">Recibos de vencimento</h2>
+<div class="panel" style="max-width:920px"><ul class="set-list">
+  <?php foreach ($slips as $p): ?><li><b><?= e(month_year((int)$p['month'], (int)$p['year'])) ?></b> <span class="muted small">líquido <?= eur((float)$p['net']) ?></span>
+    <?php if ($p['pdf_key'] !== ''): ?><a class="lnk" href="<?= e(fin_file_href('payslip', (int)$p['id'])) ?>" target="_blank" rel="noopener"><?= icon('file') ?> Recibo (PDF)</a><?php endif; ?></li><?php endforeach; ?>
+</ul></div>
+<?php endif; endif; ?>
 <?php $up = user_prefs($pdo, (int)$user['id']); ?>
 <h2 id="preferencias">Preferências</h2>
 <form method="post" class="panel prefs" style="max-width:920px">

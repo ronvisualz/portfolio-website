@@ -264,11 +264,19 @@ function flow_billing_html(PDO $pdo, array $deal, string $back): string {
     if (!$open && !$docs) return '';
     $vat = vat_rate_flow($pdo);
     $h = '<section class="lv-blk fl-bill" id="faturacao"><h4>Faturação <span class="h-sub">a topper. ainda não emite faturas aqui</span></h4>';
+    // Financeiro (§28.14): o pedido ao contabilista, se houver um à espera, e o atalho para pedir
+    $req = '';
+    if (db_has_table($pdo, 'fin_docs')) {
+        $rq = $pdo->prepare("SELECT req_code, req_sent_at FROM fin_docs WHERE deal_id = ? AND direction = 'in' AND status = 'requested' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1");
+        $rq->execute([(int)$deal['id']]);
+        if ($r = $rq->fetch()) $h .= '<p class="small"><span class="chip info">Fatura pedida</span> ao contabilista (' . e($r['req_code']) . ($r['req_sent_at'] ? ', ' . e(date('d/m H:i', strtotime((string)$r['req_sent_at']))) : '') . '): quando a fatura chegar à caixa, regista-se sozinha e esta tarefa fica feita.</p>';
+        if (can('financeiro', PERM_EDIT)) $req = '<p class="small"><a class="lnk" href="/admin/financeiro.php?tab=receber&amp;request=1&amp;deal=' . (int)$deal['id'] . '">' . icon('send') . ' Pedir a fatura ao contabilista</a> <span class="muted">— ou submeta aqui o PDF, se já a tiver.</span></p>';
+    }
     foreach ($open as $t) {
         $id = (int)$t['id'];
         $due = $t['due_date'] ? ' · até ' . date('d/m', strtotime($t['due_date'])) : '';
         if ($t['doc_kind'] === 'invoice') {
-            $h .= '<details class="fl-doc"><summary>' . icon('file') . ' ' . e($t['title']) . '<small>' . e($due) . ' · submeta o PDF da fatura emitida</small></summary>'
+            $h .= '<details class="fl-doc"><summary>' . icon('file') . ' ' . e($t['title']) . '<small>' . e($due) . ' · submeta o PDF da fatura emitida</small></summary>' . $req
                 . flow_form('invoice', $deal, $back, '<input type="hidden" name="task" value="' . $id . '"><div class="fl-grid">'
                     . '<label>Número<input type="text" name="number" required maxlength="60" placeholder="FT 2026/123"></label>'
                     . '<label>Data<input type="date" name="doc_date" required value="' . e(today_lisbon()) . '"></label>'

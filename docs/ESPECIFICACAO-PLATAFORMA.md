@@ -1796,6 +1796,131 @@ Ficheiros novos: `inc/migrate_audio.php`, `inc/cc_stt.php`, `assets/cc_audio.js`
 `cc_api.php`, `rv_api.php`, `portal.php`, `criativo.php`, `definicoes.php`, `assets/cc.js`,
 `assets/review.js`, `assets/cc.css`, `assets/review.css`.
 
+### 10.19 Financeiro — §28 (23 out 2026)
+
+Base de dados **v30** (`inc/migrate_finance.php`, idempotente). Tabelas `fin_params` + `fin_param_log`
+(parâmetros), `fin_irs` (tabelas de retenção), `fin_docs` (todos os lançamentos), `fin_payments`,
+`fin_fixed` (custos fixos), `fin_accounts` / `fin_imports` / `fin_bank_tx` (tesouraria), `fin_employees`
+/ `fin_payroll` (salários), `fin_scenarios` (simulador), `fin_mail` (caixa das faturas), `fin_done`
+(obrigações já com tarefa); `contacts.wh_exempt` e `contacts.vat_exempt`.
+
+- **Migração dos dados atuais, sem perder nada:** os custos da empresa viviam em `costs` (sem negócio)
+  desde a passagem para a plataforma (a `company_costs` é a tabela da versão 10, já copiada para `costs`).
+  Cada um passa a lançamento «Despesa · Empresa» (base/IVA pelo modo de IVA de então, mês → data, «pago»
+  → «Paga»), com `legacy_cost_id` para nunca se repetir; as linhas originais ficam onde estavam. Se a
+  passagem da versão 10 não tiver sido feita, entram também as de `company_costs` (`legacy_cc_id`).
+  Os negócios antigos sem fatura continuam em «A receber» («Sem fatura») e no «pago» de antes.
+- **Parâmetros (nada fixo no código):** SS 11% / TSU 23,75%, FCT 0%, seguro de acidentes (taxa da
+  apólice), salário mínimo 920 €, refeição isenta 6,15 € / 10,46 €, meses dos subsídios, IRS (ano das
+  tabelas, adicionais por deficiência, −1 p.p. com 3+ dependentes), retenções 23% / 25%, IVA 23/13/6% e
+  período, menção de autoliquidação, IRC 15% até 50 000 € / 19% e derrama, viaturas (IVA dedutível,
+  limites, depreciação, tributação autónoma por escalão e motorização), amortizações, runway (N = 6 e
+  limiar, só admins), cenários 0,5× / 1,5×, probabilidade por etapa e todas as datas do calendário
+  fiscal — cada um com fonte legal, ano e data de verificação (vazia = por confirmar). Definições ›
+  Financeiro edita-os (só superadmin/admins, com «Anular» e registo); lá estão também o email do
+  contabilista, o IBAN, o prazo de pagamento, o responsável financeiro, as categorias e as **tabelas I–VII
+  do Despacho n.º 233-A/2026** (continente, guardadas como dados; «Importar tabelas novas» por ano/região).
+- **Acesso:** ver a aba Financeiro + nível por ação (calcular no simulador e o saldo semanal do responsável
+  pedem só «ver»; tudo o resto «editar» ou mais); ficheiros e exportações por `fin_file.php`
+  (só Financeiro; o recibo de vencimento também à própria pessoa); `fin_api.php` idem. O papel «Chefe de
+  equipa» deixa de ver o Financeiro por omissão. A pasta da Drive `Empresa/Financeiro/AAAA/MM/` conta como
+  faturação (só Financeiro). A ficha de salário na Equipa só aparece a quem tem Financeiro.
+- **Lançamentos (`inc/fin.php`):** sentido, âmbito (Empresa ou Negócio + frente), contraparte/NIF,
+  categoria, base/IVA/total/retenção/moeda, datas, PDF + comprovativos + recibo. Validação no servidor:
+  âmbito sempre, negócio obrigatório no âmbito Negócio, valores que batem, duplicados (NIF + nº). As
+  despesas de um negócio entram em `deal_costs()` (margem da ficha, Orçamentação, Resultado) e aparecem na
+  ficha só para ver («No Financeiro»). Os custos da empresa (`company_cost_rows`, `budget_fixed_average`)
+  passam a ler os lançamentos.
+- **A receber:** Fatura pedida → Emitida → Parcialmente paga → Paga → Recibo arquivado · Anulada. Só fica
+  paga com comprovativo ou movimento conciliado; pagamentos parciais; antiguidade em dia / 1–30 / 31–60 /
+  61–90 / +90 pelo vencimento (barra empilhada clicável; alertas, Dashboard e ficha usam os dias de
+  atraso). O PDF submetido na tarefa «Emitir fatura» é o mesmo lançamento (`fin_from_billing`); «Validar
+  pagamento» com comprovativo regista-o na fatura em aberto. Lembrete ao cliente: rascunho da IA (tom pelo
+  atraso), só sai depois de aprovado. Quando todas as faturas do negócio estão pagas, o negócio fica pago.
+- **A pagar:** Por confirmar → Por pagar → Paga → Recibo arquivado · Em disputa; vistas «esta semana»,
+  «vencidas», 30 dias. Largar o PDF: a IA (`inc/fin_ai.php`, o Claude do assistente) lê emitente, NIF,
+  número, datas e valores e sugere categoria/âmbito/retenção pelo histórico do NIF; tudo fica por confirmar.
+  Freelancer: retenção do parâmetro (0% com dispensa na ficha do fornecedor), «pagar ao freelancer» e
+  «entregar ao Estado»; rendas: 25%.
+- **Custos fixos:** periodicidade → valor mensal; geram «Por pagar» em cada vencimento (cron, sem repetir);
+  os salários entram sozinhos (custo anual ÷ 12); mudanças de mês para mês; barras por categoria.
+- **Salários (`inc/fin_pay.php`):** ficha (vencimento, refeição dinheiro/cartão, situação IRS,
+  dependentes, deficiência, residência, duodécimos, IBAN, NIF, NISS, contrato, entrada). Cálculo: IRS pela
+  tabela (fórmula R × taxa − parcela, com «k» nos primeiros escalões, − dependentes), subsídios retidos
+  autonomamente ou em duodécimos à taxa efetiva, excesso da refeição tributado, SS 11% e TSU 23,75%,
+  seguro e FCT. Conferido à mão (ex.: 1 500 € → IRS 168,17 €, líquido 1 396,95 €, custo 2 086,37 €).
+  «Emitir» grava o recibo em PDF (enviado à pessoa e no Perfil dela) e três lançamentos: líquido, IRS
+  (pagar até dia 20) e SS 34,75%; resumo CSV para o contabilista; «Anular» o mês.
+- **Tesouraria e runway (`inc/fin_cash.php`):** contas, importação CSV (cabeçalhos de bancos PT, débito/
+  crédito, saldo) e OFX, sem repetir movimentos; conciliação com sugestão por valor, data, NIF, nº e nome
+  (conta como comprovativo) ou «criar lançamento»; saldo disponível = contas − compromissos até ao fim do
+  mês (faturas, salários/IRS/SS, IVA); previsão 6/12 meses. Runway total e útil (total − N), leituras
+  Conservador e Com tendência («Sustentável — o saldo cresce X €/mês»); alerta aos admins abaixo do limiar
+  e ao entrar na reserva. Tendência: recebido e faturado, médias de 3 e 6 meses, crescimento composto de
+  6 e 12, projeção com banda pessimista–otimista e o pipeline (ganhos por faturar; propostas × probabilidade).
+- **Simulador (`inc/fin_sim.php`):** contratar, arrendar escritório, investir, comprar viatura (IVA
+  dedutível, consumos, depreciação aceite, tributação autónoma, crédito/renting, comparação das
+  motorizações a 4 anos); custo mensal e anual, de uma vez, poupança de IRC (diferença do imposto com e sem
+  o gasto), runway útil antes → depois, mês em que entra na reserva, receita extra (custo ÷ margem média);
+  atualiza enquanto se escreve; cenários guardados, lado a lado e «Aplicar» (vira custo fixo previsto);
+  aviso fixo «Estimativa com as regras de [ano]. Confirma com o contabilista antes de decidir.»
+- **Impostos (`inc/fin_tax.php`):** IVA por período a partir dos lançamentos (e dos negócios antigos), com
+  as datas de declaração e pagamento; calendário fiscal (DMR, SS, retenções, IVA, anuais) com tarefa ao
+  responsável financeiro 10 dias antes; ZIP do mês (PDFs + CSV dos lançamentos e dos salários).
+- **Contabilista (`inc/fin_mail.php`, §28.14):** «Pedir fatura» (no Financeiro e na tarefa «Emitir
+  fatura») envia por SMTP `[topper FAT-2026-0001] Pedido de fatura — ID…` e cria «Fatura pedida». O cron
+  `cc` (5 min) lê a caixa por IMAP (cliente em PHP puro, SSL): liga pelo código; sem código, a IA lê o PDF e
+  só liga sozinha com confiança alta e um candidato claro — senão «Por confirmar» com as sugestões;
+  compara valores e NIF (avisa), passa a «Emitida», conclui a tarefa e avisa o responsável e o comercial
+  («A fatura … do … está pronta para enviar ao cliente»). «Enviar ao cliente» (PDF, IBAN, vencimento) fica
+  no histórico do negócio e do contacto. Recibos («Pedir recibo», REC-…) e faturas de fornecedores pelo
+  mesmo leitor; duplicados detetados; as mensagens passam para «Processadas» (nada apagado). Credenciais só
+  em `inc/fin_mail_config.php` no servidor (fora do Git; exemplo em `fin_mail_config.example.php`).
+  Definições › Integrações › Email mostra a última leitura, o último erro e «Testar a ligação».
+- **Gráficos (`inc/charts.php`):** runway (barra com reserva tracejada), fluxo de caixa 12 meses (entradas/
+  saídas + saldo, previsão tracejada), antiguidade empilhada, custos fixos por categoria, receita com
+  tendência; dicas com valores exatos, animação de entrada (desligada com «reduzir movimento»), claro/escuro.
+  Quatro números no topo: saldo disponível · por receber (atraso a vermelho) · a pagar 30 dias · runway útil.
+- **Anular:** todas as ações (lançar, editar, estados, pagamentos, recibos, custos fixos, fichas, recibos
+  de vencimento, conciliação, cenários, parâmetros) têm «Anular» (`fin_undo_apply`).
+- **Testado na bancada:** migração (8 custos → lançamentos), cálculos do IRS/SS contra contas à mão,
+  circuito do contabilista com SMTP/IMAP simulados e a IA simulada, pagamentos parciais e comprovativo,
+  conciliação CSV/OFX, custos fixos, salários, permissões (colaborador, outro colaborador, API),
+  claro/escuro e telemóvel (390 px sem deslocamento horizontal).
+- **Para ligar em produção:** criar a caixa `faturas@` no Hostinger e o ficheiro `inc/fin_mail_config.php`;
+  indicar o email do contabilista e o IBAN em Definições › Financeiro; a taxa do seguro de acidentes; a IA
+  de leitura de PDFs usa a mesma chave do assistente (`ai_config.php`) — sem ela, preenche-se à mão.
+
+### 10.20 Tesouraria semanal e reservas dos sócios — §28.7 e §28.15 (24 out 2026)
+
+Base de dados **v31** (`migrate_finance_31`, idempotente): `fin_accounts.owner_id / balance_by /
+balance_at`; `fin_balance_log` (cada atualização de saldo: valor, data, quem, quando); `fin_reserve_rules`
+(negócio, sócio, % ou valor fixo, nota) e `fin_reserve_payouts` (levantamentos com data, conta e
+comprovativo). Sem contas, cria uma «Conta principal» sem saldo (o nome muda-se em Editar).
+- **Saldos (`inc/fin_res.php`):** Definições › Financeiro › Tesouraria tem o **responsável pelos saldos**
+  (só quem vê o Financeiro; vazio = responsável financeiro) e o **dia da atualização** (segunda a domingo).
+  Cada conta pode ter um responsável próprio (só superadmin/admins o escolhem). No dia, o cron dá a cada
+  responsável com contas por atualizar a tarefa «Atualizar os saldos das contas» (uma por semana,
+  `fin_done` `bal:<utilizador>:<semana ISO>`); a tarefa conclui sozinha quando as contas dele ficam em dia
+  (saldo do dia ou da véspera). Saldo com mais de 7 dias, ou nunca atualizado: aviso na Tesouraria e no sino.
+  «Atualizar saldo» (modal: valor e data, sem extrato) pode o responsável da conta mesmo só com «ver», e
+  quem edita o Financeiro; importar um extrato com saldo conta como atualização. «Anular» repõe o saldo.
+- **Contas:** «Nova conta» e «Editar» em modal (nome, tipo, IBAN, ativa, responsável; saldo inicial só na
+  conta nova). «Importar extrato» também em modal. Os valores aceitam «2.500» e «2.500,00» como milhares.
+- **Reservas:** só superadmin/admins criam, apagam e registam levantamentos (servidor: 403 aos outros).
+  % sobre o que o cliente pagou (sem IVA, pelos pagamentos; negócios de antes das faturas: o «pago») ou
+  valor fixo que acumula na proporção do pago. Entram em `deal_costs()` como custo sem IVA (margem da ficha,
+  Orçamentação, Relatórios); na ficha do negócio, só leitura («Reserva · sócio» para admins, «Reserva da
+  equipa» para os outros). `fin_cash()` tira o reservado por levantar do saldo disponível e, por isso, do
+  runway; os levantamentos contam como saída de caixa. Comprovativo obrigatório (`fin_file.php?payout=`,
+  só admins). Os outros veem só o total reservado.
+- **Também:** formulário dos custos fixos passou a modal («Novo custo fixo», tecla N); as tabelas de «A
+  receber» e «A pagar» ocupam a largura toda quando não há documento aberto, com margem nas pontas.
+- **Testado na bancada:** migração (conta principal, idempotente), validações, tarefa semanal (dia,
+  repetição, responsável da conta, conclusão automática), alertas, reservas (%, fixo, substituição,
+  acumulação, margem, total, disponível e runway), levantamentos (comprovativo, limite, «Anular»), permissões
+  pelo HTTP (só ver + responsável, editar sem ser admin, admin), claro/escuro, iPad e telemóvel.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e
@@ -3244,9 +3369,10 @@ Ficha de colaborador (Equipa §17) passa a ter, só visível a quem tem Financei
 - Custo anual mostrado na ficha: 14 meses × (bruto × 1,2375) + refeição + seguro.
 
 ### 28.7 Tesouraria
-- Contas: bancos, cartões, caixa — saldo atual atualizado por **importação do extrato (CSV/OFX)** ou manualmente (com data).
+- Contas: bancos, cartões, caixa — criadas e nomeadas na plataforma (começa com uma, «Conta principal»); saldo atual atualizado por **importação do extrato (CSV/OFX)** ou manualmente (valor e data).
+- **Atualização semanal (decidido 24 out 2026):** uma vez por semana, no dia escolhido em Definições › Financeiro (editável), o responsável pelos saldos recebe a tarefa de atualizar o saldo de cada conta. O responsável geral é nomeado por superadmin ou admin; cada conta pode ter um responsável próprio, que fica com as tarefas dessa conta. Cada atualização fica registada (valor, data, quem); saldos com mais de 7 dias aparecem como desatualizados.
 - **Conciliação:** cada movimento do extrato é emparelhado com uma fatura/custo/salário (sugestão automática por valor, data e NIF; o utilizador confirma). Conciliar conta como comprovativo de pagamento.
-- Saldo disponível = soma das contas − compromissos já conhecidos até ao fim do mês (IVA a entregar, IRS e SS dos salários, faturas a pagar vencidas).
+- Saldo disponível = soma das contas − compromissos já conhecidos até ao fim do mês (IVA a entregar, IRS e SS dos salários, faturas a pagar vencidas) − reservas dos sócios por levantar (§28.15).
 - Previsão de tesouraria 6/12 meses: saldo + recebimentos esperados (faturas emitidas por vencimento, prestações dos negócios ganhos) − custos fixos − pagamentos previstos.
 
 ### 28.8 Runway
@@ -3298,17 +3424,26 @@ Quatro números no topo: Saldo disponível · Por receber (em atraso a vermelho)
 ### 28.14 Faturas pelo contabilista (enquanto não há programa de faturação)
 Hoje a topper. não tem programa de faturação: envia os dados ao contabilista e ele devolve a fatura por email. O sistema automatiza o circuito:
 1. **Pedir fatura** — botão no negócio, em «A receber» e na tarefa «Emitir fatura» (§19.6 E). Abre um rascunho já preenchido: cliente (nome, NIF, morada, email), descrição do serviço, base, taxa de IVA ou menção de isenção/autoliquidação, total, prestação (ex.: «1.ª de 2 — 50%»), vencimento, referência do negócio. O utilizador revê e envia. O email sai da caixa da topper. (SMTP Hostinger) para o contabilista (email em Definições › Financeiro), com o **código de referência no assunto**, ex.: `[topper FAT-2026-0142] Pedido de fatura — NEG-0123`. Fica um lançamento «Fatura pedida» (estado novo, antes de «Emitida»).
-2. **Receber a fatura** — a plataforma liga-se às **caixas de email existentes** da topper. no Hostinger (ex.: `info@topperdigital.xyz` e outras que o admin escolher em Definições › Integrações › Email; não é preciso criar uma caixa nova). Leitura por IMAP (`imap.hostinger.com`, 993, SSL) a cada 5 minutos pelo cron que já existe. Regras para caixas partilhadas:
+2. **Receber a fatura** (revisto 24 out 2026) — a plataforma liga-se às **caixas de email existentes** da topper. no Hostinger (ex.: `info@topperdigital.xyz` e outras que o admin escolher em Definições › Integrações › Email, cada uma com a sua palavra-passe só no servidor; não é preciso criar uma caixa nova). Leitura por IMAP (`imap.hostinger.com`, 993, SSL) a cada 5 minutos pelo cron. Regras para caixas partilhadas:
    - **Só leitura:** não marca como lido, não move, não apaga nada; guarda o UID da última mensagem vista por caixa.
    - **Filtro barato primeiro, IA depois:** só analisa mensagens com anexo PDF/XML/imagem; o resto é ignorado e nunca guardado. Sinal forte: as faturas portuguesas têm **QR code fiscal e ATCUD** — o sistema lê o QR do PDF (NIF do emitente e do adquirente, data, total, IVA, ATCUD) sem custo de IA. Só os anexos sem QR claro vão à IA para classificar (fatura, fatura-recibo, recibo, nota de crédito, orçamento, outro).
-   - Se o NIF adquirente for o da topper. → **despesa** («A pagar»); se o emitente for a topper. (fatura feita pelo contabilista) → **receita** («A receber», ligada ao pedido). Outros documentos são ignorados.
-   - Privacidade: o corpo dos emails não é guardado; só o anexo classificado como documento financeiro e o remetente/assunto/data. Lista de remetentes a ignorar editável.
+   - NIF adquirente = topper. → **despesa** («A pagar», por confirmar); emitente = topper. → **receita** («A receber», ligada ao pedido). Outros documentos são ignorados.
+   - Privacidade: o corpo dos emails não é guardado; só o anexo classificado como documento financeiro e remetente/assunto/data. Lista de remetentes a ignorar editável.
 3. **Ligar ao pedido** — por esta ordem: código de referência no assunto/corpo; se faltar, a IA lê o PDF (NIF do cliente, total, data) e procura o pedido aberto que corresponde. Se houver dúvida, fica em «Por confirmar» com as opções sugeridas — nunca liga sozinho com baixa confiança.
 4. **Registar** — o PDF vai para a Drive (Financeiro e pasta do negócio), a IA preenche nº da fatura, data, base, IVA e total e **compara com o pedido** (avisa se o valor ou o NIF não batem). O lançamento passa a «Emitida» e a tarefa «Emitir fatura» conclui com esse PDF.
 5. **Avisar** — notificação ao responsável e ao comercial do negócio: «A fatura FT 2026/142 do NEG-0123 está pronta para enviar ao cliente».
 6. **Enviar ao cliente** — botão que abre um email pronto (PDF anexado, dados de pagamento/IBAN, vencimento), revisto e enviado da caixa da topper.; fica registado no histórico do negócio e do contacto. A partir daqui segue o circuito normal (comprovativo → «Paga»).
-- **Faturas de fornecedores** que cheguem a qualquer caixa ligada entram em «A pagar» para confirmar (§28.4), com deteção de duplicados.
+- O mesmo leitor da caixa `faturas@` aceita **faturas de fornecedores** reencaminhadas para lá: entram em «A pagar» para confirmar (§28.4).
 - Também para **recibos**: quando o pagamento é confirmado, botão «Pedir recibo» ao contabilista com o mesmo circuito.
 - Credenciais da caixa (palavra-passe IMAP/SMTP) guardadas só no servidor, num ficheiro de configuração fora do repositório (como `cc_config.php`), nunca no código, na base de dados em claro, nem no chat. Definições › Integrações › Email mostra o estado da ligação («última leitura há 3 min») e um botão «Testar».
 - Leitura IMAP em PHP com uma biblioteca pura (ex.: webklex/php-imap) para não depender da extensão `imap` do PHP (removida do núcleo a partir do PHP 8.4).
+- Mensagens lidas são movidas para uma pasta «Processadas» na caixa; nada é apagado.
 - Quando houver programa de faturação certificado, este circuito é substituído pela integração direta (§28.13), mantendo os mesmos estados.
+
+### 28.15 Reservas dos sócios (decidido 24 out 2026)
+Em certos serviços reserva-se uma parte da faturação como «salário» para a equipa de execução (hoje, os sócios). Esse capital pertence ao sócio e não conta como saldo real da empresa.
+- Superadmin ou admin cria a reserva num negócio: sócio + **% do que o cliente pagar** (sem IVA) ou **valor fixo**. É automática: acumula à medida que o cliente paga (o valor fixo na proporção do que foi pago).
+- Conta como **custo do negócio** e entra na margem de lucro.
+- O que está reservado e ainda não foi levantado **sai do saldo disponível e do runway** e aparece à parte («Reservado aos sócios»).
+- Cada levantamento fica registado com **data e comprovativo** (e a conta de onde saiu); conta como saída de caixa.
+- Só superadmin e admins veem e mudam o detalhe por sócio; quem tem o Financeiro sem ser admin vê apenas o total reservado.

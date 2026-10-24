@@ -123,7 +123,8 @@ function drive_cors_json(): string {
 // ── sistema, pastas base e catálogo ─────────────────────────
 
 /**
- * Documentos de faturação: qualquer pasta «Faturação» (ou as antigas «Faturas») abaixo do
+ * Documentos de faturação: qualquer pasta «Faturação» (ou as antigas «Faturas»), e a «Financeiro»
+ * (Empresa/Financeiro/AAAA/MM — faturas, comprovativos, recibos de vencimento, §28), abaixo do
  * primeiro nível — a da pasta de cada negócio, também no Arquivo e nas cópias. Só quem vê o
  * Financeiro os vê no Drive, no assistente e nas fichas.
  */
@@ -135,7 +136,7 @@ function drive_billing(string $k): bool {
         if ($s === '') continue;
         $t = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', mb_strtolower(trim($s), 'UTF-8'));
         $t = preg_replace('/[^a-z]/', '', (string)($t === false ? $s : $t));
-        if ($t === 'faturacao' || $t === 'faturas' || $t === 'facturacao' || $t === 'facturas') return true;
+        if ($t === 'faturacao' || $t === 'faturas' || $t === 'facturacao' || $t === 'facturas' || $t === 'financeiro') return true;
     }
     return false;
 }

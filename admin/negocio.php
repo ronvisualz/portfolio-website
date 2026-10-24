@@ -270,7 +270,7 @@ $rateCost = $moneyEdit && !empty($_GET['avaliar']) ? cost_needs_rating($pdo, (in
 if ($rateCost && (int)$rateCost['deal_id'] !== $id) $rateCost = null;
 if ($rateCost) $vista = 'contas';
 $editCost = (int)($_GET['cost'] ?? 0);
-$ec = null; foreach ($costs as $c) if ((int)$c['id'] === $editCost) $ec = $c;
+$ec = null; foreach ($costs as $c) if ($editCost && (int)$c['id'] === $editCost) $ec = $c;
 
 $prodPhase = in_array($deal['phase'], ['production', 'done'], true);
 // Crosselling (§22): as frentes (cada serviço na sua etapa) no lugar das etapas do negócio.
@@ -623,6 +623,13 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
       <td><?= e(VAT_MODES[$c['vat_mode']] ?? $c['vat_mode']) ?></td>
       <td class="num hide-sm"><?= eur($c['net']) ?></td>
       <td class="num hide-sm"><?= eur($c['vat']) ?></td>
+      <?php if (!empty($c['res_id'])): // reserva de um sócio (Financeiro › Tesouraria): só superadmin e admins a mudam ?>
+      <td><span data-tip="<?= e($c['notes']) ?>" tabindex="0"><?= (int)$c['is_closed'] ? 'Reservada' : 'A acumular · ' . eur((float)$c['accrued']) ?></span></td>
+      <td class="num nowrap"><?= role_is_admin((string)$user['role']) ? '<a class="lnk" href="/admin/financeiro.php?tab=tesouraria#reservas">Na Tesouraria</a>' : '<span class="muted small">Financeiro</span>' ?></td>
+      <?php elseif (!empty($c['fin_id'])): // lançada no Financeiro (§28.2): estado e edição lá ?>
+      <td><?= (int)$c['is_closed'] ? 'Paga' : 'Por pagar' ?></td>
+      <td class="num nowrap"><?= can('financeiro') ? '<a class="lnk" href="/admin/financeiro.php?tab=pagar&amp;doc=' . (int)$c['fin_id'] . '">No Financeiro</a>' : '<span class="muted small">Financeiro</span>' ?></td>
+      <?php else: ?>
       <td><?php if ($moneyEdit): ?>
         <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="toggle_cost"><input type="hidden" name="id" value="<?= $id ?>">
           <input type="hidden" name="cost_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="anchor" value="custos">
@@ -639,6 +646,7 @@ echo deal_card('close', 'won', 'green', 'Fecho do negócio', deal_checklist_html
           <a class="lnk del" href="<?= e($self . '&delcost=' . $c['id']) ?>#custos">Eliminar</a>
         <?php endif; ?>
       <?php endif; ?></td>
+      <?php endif; ?>
     </tr>
   <?php endforeach; ?>
   </tbody>

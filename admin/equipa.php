@@ -470,6 +470,20 @@ elseif ($tab === 'acessos'):
   <?php else: ?><p class="muted small">Seguem a grelha do papel (<?= e(ROLES[$tu['role']]) ?>). <a class="lnk" href="<?= e(team_url('acessos', ['pu' => $tu['id']])) ?>#permissoes">Exceções para esta pessoa</a></p><?php endif; ?>
 </section>
 
+<?php if (can('financeiro') && db_has_table($pdo, 'fin_employees')): // salário (§28.6): só quem tem a aba Financeiro vê
+    require_once __DIR__ . '/inc/fin_view.php';
+    require_once __DIR__ . '/inc/fin_pay.php';
+    $fe = fin_employee($pdo, (int)$tu['id']); ?>
+<section class="box" aria-labelledby="u-sal">
+  <h3 id="u-sal">Salário <span class="muted small">só visível a quem tem Financeiro</span></h3>
+  <?= fin_emp_summary($pdo, $fe) ?>
+  <?php if (can('financeiro', PERM_EDIT)): ?><details<?= $fe ? '' : ' open' ?>><summary class="small"><?= $fe ? 'Editar a ficha de salário' : 'Criar a ficha de salário' ?></summary>
+    <?= fin_emp_form($pdo, (int)$tu['id'], $fe, team_url('acessos', ['u' => $tu['id']]) . '#u-sal') ?></details>
+  <?php endif; ?>
+  <?php if ($fe): ?><p class="small"><a class="lnk" href="/admin/financeiro.php?tab=salarios&amp;emp=<?= (int)$tu['id'] ?>#ficha">Recibos e processamento no Financeiro</a></p><?php endif; ?>
+</section>
+<?php endif; ?>
+
 <?php if ($editable): ?>
 <section class="box" aria-labelledby="u-off">
   <h3 id="u-off"><?= $off ? 'Reativar' : 'Desativar' ?></h3>

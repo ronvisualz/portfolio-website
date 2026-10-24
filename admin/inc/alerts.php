@@ -57,12 +57,18 @@ function deal_url(array $d): string {
 }
 
 /**
- * Valores por receber: os negócios por pagar (em produção ou concluídos)
- * com a antiguidade em dias. Só para quem vê o Financeiro.
+ * Valores por receber (só para quem vê o Financeiro): as faturas emitidas em aberto e os negócios de antes
+ * das faturas ainda por pagar (fin_receivables, inc/fin.php). age = dias de atraso (0 = em dia).
+ * Antes do passo 30: os negócios por pagar, com o atraso contado depois do prazo de «Por receber em atraso».
  */
 function receivables(PDO $pdo): array {
     if (!can('financeiro')) return [];
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        return fin_receivables($pdo);
+    }
     $rate = (float)setting($pdo, 'vat_rate', 23);
+    $lim = (int)setting($pdo, 'invoice_overdue_days', 30);
     $rows = $pdo->query(
         "SELECT d.id, d.code, d.name, d.phase, d.budget, d.has_vat, d.year, d.month, d.done_at, d.created_at, d.funnel_id,
                 c.name AS contact_name
@@ -78,17 +84,20 @@ function receivables(PDO $pdo): array {
             $ref = substr((string)$r['created_at'], 0, 10);
         }
         $r['ref']   = $ref;
-        $r['age']   = max(0, days_since($ref));
+        $r['age']   = max(0, days_since($ref) - $lim);
+        $r['bucket'] = aging_bucket($r['age']);
         $r['net']   = round((float)$r['budget'], 2);
         $r['gross'] = (int)$r['has_vat'] ? round($r['net'] * (1 + $rate / 100), 2) : $r['net'];
+        $r['url']   = '/admin/financeiro.php?tab=receber&deal=' . (int)$r['id'];
+        $r['doc_id'] = 0; $r['number'] = 'Sem fatura registada'; $r['legacy'] = true;
     }
     unset($r);
     usort($rows, fn($a, $b) => $b['age'] <=> $a['age']);
     return $rows;
 }
 
-/** As faixas de antiguidade do Financeiro (§11.15). */
-const AGING = ['0-30' => [0, 30], '31-60' => [31, 60], '61-90' => [61, 90], '90+' => [91, PHP_INT_MAX]];
+/** As faixas de antiguidade do Financeiro: em dia · 1–30 · 31–60 · 61–90 · +90 dias de atraso. */
+const AGING = ['ok' => [PHP_INT_MIN, 0], '1-30' => [1, 30], '31-60' => [31, 60], '61-90' => [61, 90], '90+' => [91, PHP_INT_MAX]];
 
 function aging_bucket(int $age): string {
     foreach (AGING as $k => [$a, $b]) if ($age >= $a && $age <= $b) return $k;
@@ -243,15 +252,20 @@ function my_alerts(PDO $pdo): array {
         }
     }
 
-    // Por receber em atraso (quem vê o Financeiro).
+    // Por receber em atraso (quem vê o Financeiro): faturas vencidas e negócios de antes das faturas.
     foreach (receivables($pdo) as $r) {
-        if ($r['age'] <= $lim['invoice']) continue;
+        if ($r['age'] <= 0) continue;
         $out['invoice'][] = [
-            'key' => 'inv:' . $r['id'] . ':' . aging_bucket($r['age']), 'kind' => 'invoice', 'icon' => 'financeiro',
-            'title' => $r['code'] . ' · ' . $r['name'], 'sev' => $r['age'] > 60 ? 'bad' : 'warn', 'date' => $r['ref'],
-            'sub' => 'Por receber há ' . $r['age'] . ' dias · ' . eur0($r['net']) . ' s/ IVA',
-            'url' => '/admin/financeiro.php?tab=receber&doc=' . (int)$r['id'],
+            'key' => 'inv:' . ($r['doc_id'] ? 'd' . $r['doc_id'] : $r['id']) . ':' . aging_bucket($r['age']), 'kind' => 'invoice', 'icon' => 'financeiro',
+            'title' => $r['code'] . ' · ' . $r['name'], 'sev' => $r['age'] > 30 ? 'bad' : 'warn', 'date' => $r['ref'],
+            'sub' => 'Em atraso há ' . $r['age'] . ($r['age'] === 1 ? ' dia' : ' dias') . ' · ' . eur0($r['gross']) . ' por receber' . ($r['legacy'] ? ' · sem fatura registada' : ''),
+            'url' => $r['url'],
         ];
+    }
+    // Financeiro (§28): faturas prontas a enviar, por confirmar, a pagar vencidas, calendário fiscal, runway.
+    if (db_has_table($pdo, 'fin_docs')) {
+        require_once __DIR__ . '/fin.php';
+        foreach (fin_alerts($pdo, $me) as $a) $out['invoice'][] = $a;
     }
 
     // Equipa (§17): mensagens por ler, pedidos de reunião e férias por aprovar (admins).

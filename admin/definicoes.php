@@ -37,6 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Modelo «' . $t['name'] . '» apagado.', 'ok', undo_push('budget_tpl', $t));
         }
     }
+    if (isset($_POST['irs_import'])) {   // Financeiro: tabelas de retenção novas (§28.6)
+        require_once __DIR__ . '/inc/fin_pay.php';
+        try {
+            $n = fin_irs_import($pdo, (int)($_POST['year'] ?? 0), (string)($_POST['region'] ?? 'continente'), (string)($_POST['rows'] ?? ''), trim((string)($_POST['source'] ?? '')));
+            setting_log($pdo, 'fin_irs', 'Financeiro · Tabelas de retenção do IRS importadas', '', (int)$_POST['year'] . ' · ' . (string)$_POST['region'] . ' · ' . $n . ' linhas');
+            flash($n . ' linhas importadas. Para as usar, mude «Ano das tabelas em uso».');
+        } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect('/admin/definicoes.php?t=financeiro#set-fin_irs');
+    }
     redirect('/admin/definicoes.php?t=orcamentacao#set-budget_templates');
 }
 
@@ -86,7 +95,7 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
     }
     $editable = in_array($d['type'], ['int', 'num', 'text', 'email', 'url', 'time', 'textarea', 'list', 'select'], true);
     $reset = $editable ? '<button type="button" class="set-reset" data-reset="' . e($key) . '" data-def="' . e($def) . '"' . ($v === $def ? ' hidden' : '') . ' data-tip="Repor o valor de origem">Repor (' . e(setting_show($d, $def)) . ')</button>' : '';
-    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens'], true);
+    $wide = in_array($d['type'], ['textarea', 'list', 'services', 'pillars', 'templates', 'types', 'origins', 'ai', 'cc_ai', 'cc_funnels', 'rt', 'tokens', 'fin_params', 'fin_irs', 'fin_mail'], true);
     return '<div class="set-row' . ($wide ? ' wide' : '') . '" id="' . $id . '" data-row="' . e($key) . '">' . $label . '<div class="set-f">' . $field . '</div>' . $reset
          . '<div class="set-warn" hidden role="alert"><p></p><div class="actions"><button type="button" class="btn sm" data-impact-ok>Confirmar</button><button type="button" class="btn ghost sm" data-impact-no>Cancelar</button></div></div></div>';
 }
@@ -94,6 +103,64 @@ function set_row_html(PDO $pdo, string $key, array $d): string {
 /** Os campos que não são um valor só: tabelas, listas de tipos, estado da IA. */
 function set_special_html(PDO $pdo, string $key, array $d): string {
     switch ($d['type']) {
+        case 'fin_params':
+            // Financeiro (§28): cada parâmetro com valor, fonte legal, ano e data da verificação (gravam ao sair do campo)
+            if (!db_has_table($pdo, 'fin_params')) return '<span class="set-info">Disponível depois do passo 30 da base de dados.</span>';
+            require_once __DIR__ . '/inc/fin.php';
+            $h = '<div class="tablewrap"><table class="set-t fin-params"><thead><tr><th>Parâmetro</th><th class="num">Valor</th><th>Fonte legal</th><th class="hide-sm">Ano</th><th class="hide-sm">Verificado em</th></tr></thead><tbody>';
+            $grp = '';
+            foreach (fin_params($pdo, true) as $k => $p) {
+                if ($p['grp'] !== $grp) { $grp = $p['grp']; $h .= '<tr class="grp"><th colspan="5">' . e($grp) . '</th></tr>'; }
+                $text = $p['unit'] === '' || in_array($k, ['ta_comb', 'ta_phev', 'ta_ev', 'cal_annual', 'vat_exempt_note'], true);
+                $v = $text ? (string)$p['value'] : str_replace('.', ',', (string)$p['value']);
+                $h .= '<tr><td>' . e($p['label']) . ((int)$p['admin_only'] ? ' <span class="chip" data-tip="Só superadmin e admins (com registo)">admins</span>' : '') . '</td>'
+                    . '<td class="v' . ($text ? ' wide' : '') . '"><input type="text" value="' . e($v) . '" data-fparam="' . e($k) . '" aria-label="' . e($p['label']) . '"' . ($text ? ' style="max-width:none;text-align:left"' : ' inputmode="decimal"') . '>'
+                    . ($p['unit'] !== '' ? ' <span class="muted small">' . e($p['unit']) . '</span>' : '') . '</td>'
+                    . '<td><input type="text" value="' . e((string)$p['source']) . '" data-fparam="' . e($k) . '" data-ffield="source" maxlength="255" title="' . e((string)$p['source']) . '" aria-label="Fonte legal de ' . e($p['label']) . '"></td>'
+                    . '<td class="hide-sm"><input type="number" min="2000" max="2100" value="' . e((string)$p['year']) . '" data-fparam="' . e($k) . '" data-ffield="year" style="width:5.5em" aria-label="Ano"></td>'
+                    . '<td class="hide-sm' . ($p['verified_on'] ? '' : ' unv') . '"><input type="date" value="' . e((string)$p['verified_on']) . '" data-fparam="' . e($k) . '" data-ffield="verified_on" aria-label="Verificado em"' . ($p['verified_on'] ? '' : ' title="Por confirmar com o contabilista"') . '></td></tr>';
+            }
+            return $h . '</tbody></table></div><p class="small muted">Sem data de verificação = por confirmar. Nada disto está escrito no código: os cálculos leem estes valores.</p>';
+        case 'fin_irs':
+            if (!db_has_table($pdo, 'fin_irs')) return '<span class="set-info">Disponível depois do passo 30 da base de dados.</span>';
+            require_once __DIR__ . '/inc/fin_pay.php';
+            $years = fin_irs_years($pdo);
+            $use = (int)fin_p($pdo, 'irs_table_year', (float)date('Y'));
+            $h = '<p class="small">Em uso: <b>' . $use . '</b> (continente)' . ($years ? ' · carregadas: ' . e(implode(', ', $years)) : '') . '. Açores e Madeira ainda sem tabelas (a retenção usa as do continente, com aviso).</p>';
+            $h .= '<details><summary class="small">Ver as tabelas de ' . $use . '</summary>';
+            foreach (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as $t) {
+                $rows = fin_irs_rows($pdo, $use, $t);
+                if (!$rows) continue;
+                $h .= '<h4 class="small">Tabela ' . $t . '</h4><div class="tablewrap"><table class="set-t"><thead><tr><th>Remuneração até</th><th class="num">Taxa</th><th>Parcela a abater</th><th class="num">Por dependente</th></tr></thead><tbody>';
+                foreach ($rows as $r) {
+                    $h .= '<tr><td>' . ($r['upto'] === null ? 'Superior' : eur((float)$r['upto'])) . '</td><td class="num">' . e(fin_num((float)$r['rate'])) . '%</td>'
+                        . '<td>' . ($r['deduct_k'] !== null ? e(fin_num((float)$r['rate'])) . '% × ' . e(fin_num((float)$r['deduct_k'])) . ' × (' . e(fin_num((float)$r['deduct_base'])) . ' − R)' : eur((float)$r['deduct'])) . '</td>'
+                        . '<td class="num">' . eur((float)$r['dep_deduct']) . '</td></tr>';
+                }
+                $h .= '</tbody></table></div>';
+            }
+            $h .= '</details><details><summary class="small">Importar tabelas novas</summary>'
+                . '<form method="post" class="fin-form">' . csrf_field() . '<input type="hidden" name="irs_import" value="1">'
+                . '<div class="grid"><div class="field"><label>Ano</label><input type="number" name="year" min="2020" max="2100" value="' . ((int)date('Y') + 1) . '" required></div>'
+                . '<div class="field"><label>Região</label><select name="region"><option value="continente">Continente</option><option value="acores">Açores</option><option value="madeira">Madeira</option></select></div>'
+                . '<div class="field"><label>Fonte (despacho)</label><input type="text" name="source" maxlength="190" required placeholder="Despacho n.º …"></div>'
+                . '<div class="field wide"><label>Linhas: tabela;até;taxa;parcela;k;base;por dependente (até vazio = superior; k e base só nas linhas com fórmula)</label>'
+                . '<textarea name="rows" rows="8" required placeholder="I;920;0;0;;;0&#10;I;1042;12,5;0;2,6;1273,85;21,43&#10;I;;47,17;1272,31;;;21,43"></textarea></div></div>'
+                . '<div class="actions"><button class="btn sm" type="submit">Importar</button></div></form>'
+                . '<p class="small muted">Substitui as tabelas desse ano e região que vierem no texto. Para as usar, mude «Ano das tabelas em uso» nos parâmetros.</p></details>';
+            return $h;
+        case 'fin_mail':
+            require_once __DIR__ . '/inc/fin_mail.php';
+            $s = fin_mail_status($pdo);
+            $ago = $s['last'] !== '' ? max(0, (int)round((time() - strtotime($s['last'])) / 60)) : null;
+            $h = '<div class="set-ai"><span class="chip ' . ($s['configured'] ? 'ok' : 'wait') . '">' . ($s['configured'] ? 'Configurada · ' . e($s['user']) : 'Por configurar no servidor') . '</span> '
+               . ($ago !== null ? '<span class="chip ' . ($s['error'] !== '' ? 'no' : 'info') . '">' . ($ago < 1 ? 'última leitura agora mesmo' : 'última leitura há ' . ($ago < 60 ? $ago . ' min' : round($ago / 60) . ' h')) . '</span> ' : '')
+               . ($s['pending'] ? '<a class="chip info" href="/admin/financeiro.php?tab=receber">' . $s['pending'] . ' por confirmar</a>' : '') . '</div>';
+            if ($s['error'] !== '') $h .= '<p class="small neg">Último erro: ' . e($s['error']) . '</p>';
+            $h .= '<p class="small">Contabilista: ' . ($s['accountant'] !== '' ? e($s['accountant']) : '<span class="muted">por indicar em Definições › Financeiro</span>') . '</p>';
+            if ($s['configured']) $h .= '<p><button type="button" class="btn ghost sm" data-fin-mail-test>Testar a ligação</button> <span class="fin-mail-out small" aria-live="polite"></span></p>';
+            else $h .= '<p class="small muted">Para ligar: criar a caixa (ex.: faturas@topperdigital.xyz) no Hostinger e pôr o endereço e a palavra-passe no servidor, em admin/inc/fin_mail_config.php (como no fin_mail_config.example.php). Nunca no código, na base de dados nem nesta página. IMAP: imap.hostinger.com:993 (SSL) · SMTP: smtp.hostinger.com:465 (SSL).</p>';
+            return $h;
         case 'info':
             $show = (string)$d['show'];
             if ($key === 'mkt_templates') { require_once __DIR__ . '/inc/marketing.php'; $show = implode(' · ', MKT_FORMATS); }
@@ -298,4 +365,5 @@ render_flashes();
 </div>
 <script type="application/json" id="set-index"><?= json_encode(settings_index(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
 <script src="<?= asset_url('settings.js') ?>" defer></script>
+<?php if (in_array($tab, ['financeiro', 'integracoes'], true)): ?><script src="<?= asset_url('fin.js') ?>" defer></script><?php endif; ?>
 <?php render_footer();

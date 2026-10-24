@@ -435,6 +435,18 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('INSERT INTO stage_automations (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($d));
             return 'Automação reposta.';
 
+        case 'fin_param':
+            // Um parâmetro do Financeiro (Definições › Financeiro) volta ao que era.
+            if (!is_admin()) throw new RuntimeException('Sem permissão.');
+            require_once __DIR__ . '/fin.php';
+            fin_param_save($pdo, current_user(), (string)$d['key'], [(string)$d['field'] => (string)$d['v']]);
+            return 'Parâmetro reposto.';
+
+        case 'fin':
+            // Financeiro (§28): lançamentos, pagamentos, custos fixos, salários, conciliação, cenários.
+            require_once __DIR__ . '/fin.php';
+            return fin_undo_apply($pdo, $d);
+
         case 'relation_drop':
             // «Acompanhar relação» acabado de fazer: deixa de ser acompanhada.
             require_once __DIR__ . '/contacts.php';
