@@ -128,7 +128,7 @@ function fin_balance_tick(PDO $pdo, ?string $today = null): int {
         if ((int)$has->fetchColumn()) continue;
         $mid = $pdo->query('SELECT team_member_id FROM users WHERE id = ' . (int)$uid)->fetchColumn();
         if (!$mid) continue;
-        $tid = task_create($pdo, ['title' => 'Atualizar os saldos das contas', 'member_id' => (int)$mid, 'job_name' => '', 'deal_id' => null, 'due_date' => $w['date'], 'priority' => 'media', 'status' => 'todo',
+        $tid = task_create($pdo, ['title' => 'Atualizar os saldos das contas', 'member_id' => (int)$mid, 'job_name' => '', 'deal_id' => null, 'due_date' => max($w['date'], $today), 'priority' => 'media', 'status' => 'todo',
             'description' => 'Atualização semanal da tesouraria: ' . implode(', ', array_map(fn($a) => $a['name'], $accs)) . ".\nFinanceiro › Tesouraria › Atualizar saldo (valor e data). A tarefa conclui sozinha quando as contas ficarem em dia."]);
         $pdo->prepare('INSERT INTO fin_done (okey, task_id, created_at) VALUES (?,?,?)')->execute([$key, $tid, fin_now()]);
         $n++;
