@@ -2039,6 +2039,87 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Concluir outra chamada** (negócio, contacto ou interna) abre «Chamada feita» com uma nota opcional; fica no
   histórico do negócio ou do contacto como chamada (sem nota: «Chamada feita · <título>»).
 
+### 10.23 Dashboard Executivo — §30 (24 out 2026)
+
+**Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
+viaturas, abate), `fin_loans` (empréstimos e leasings: capital, TAN, prazo, início, dia, residual) e
+`fin_docs.loan_id`; `exec_months` (a fotografia mensal do resultado), `exec_reading` (a leitura do mês, com e sem
+euros, e os números em que se baseou), `exec_hof` (pódio por mês, entradas, recordes, negócio do mês, comercial do
+mês, destaque de produção, fecho do mês) e `team_posts` (avisos da equipa no chat). Parâmetro novo «Horas produtivas
+por pessoa e por ano» (1 600 h, só admins). O custo/hora interno de quem tem ficha de salário passa a vir dela.
+
+**O resultado (P&L), `inc/exec.php`** — sem contas próprias: lê o Financeiro e a camada de métricas.
+- Revenue: faturado s/ IVA pela data da fatura (notas de crédito abatem); antes das faturas, o negócio no mês do
+  trabalho. Recebido em nota (pelos pagamentos).
+- Custos diretos: despesas com âmbito «Negócio» e das categorias do tipo «Custo direto» (pela data do documento),
+  custos da equipa da altura da folha (mês do custo/negócio), gastos escritos à mão, reservas dos sócios (na proporção
+  do faturado) e o tempo das pessoas declaradas na Orçamentação.
+- Salários: o custo total do processamento do mês; sem processamento, a estimativa pela ficha (custo anual ÷ 12) a
+  partir da data de entrada; com lançamentos «Salários» feitos à mão nesse mês, contam esses (sem estimativa).
+- **Equipa nos negócios (sem dupla contagem):** horas da Orçamentação (versão e opção que contam; dias × horas do
+  dia) × custo/hora interno (custo anual ÷ horas produtivas), repartidas pelos dias de execução (Kickoff → entrega,
+  prevista ou feita); cada mês, o imputado sai dos salários operacionais e entra nos diretos, nunca mais do que o
+  custo real de cada pessoa nesse mês (aviso quando limita). Quem não tem ficha de salário conta horas, não custo.
+- Operacionais: categorias do tipo «Operacional» (âmbito Empresa) + salários − imputado. Amortizações: ativos
+  (valor × taxa ÷ 12 desde o mês de aquisição, até ao valor ou ao abate) + tipo «Amortização». Juros: plano de cada
+  empréstimo (prestação constante, residual no fim) + tipo «Financeiro». As prestações nascem «Por pagar» (categoria
+  «Empréstimos e leasings», como os custos fixos) e não contam no resultado (só o juro). Tipo «Imposto»: não é custo.
+- IRC estimado sobre o resultado do ano até ao mês (taxa PME até ao limite, taxa geral, derrama — parâmetros),
+  repartido pelos meses; tributação autónoma das viaturas registadas (depreciação × taxa pela motorização e preço) e
+  das despesas «Viaturas» (taxa da viatura principal ou do 1.º escalão). Net Profit marcado «estimativa».
+- A fotografia (`exec_months`, 24 meses + o ano anterior inteiro) refaz-se de hora a hora no cron, ao mudar um tipo
+  de categoria, um ativo ou um empréstimo, e com «atualizar agora»; o Dashboard lê dela.
+
+**Definições:** Financeiro › Categorias › «Tipo contabilístico de cada categoria» (Custo direto · Operacional ·
+Amortização · Financeiro · Imposto; grava ao mudar, com «Anular»; Salários e Empréstimos são automáticos). Geral ›
+Dashboard executivo: meta anual de faturação (a mesma da Visão geral do Financeiro), limites dos semáforos,
+concentração, mínimo do comercial do mês e hora da leitura. Financeiro: separador novo **Ativos e empréstimos**
+(registo, valor líquido, juros do mês, dívida; «Anular» em tudo). Perfil: «O teu dia» compacto ou aberto.
+
+**O Dashboard, de cima para baixo** (`dashboard.php`, `inc/exec_view.php`, `assets/dash.js`):
+1. Saudação e **«O teu dia» numa linha de contadores** (Tarefas a vencer · Leads em atraso · Negócios parados · Por
+   receber em atraso) que abrem o detalhe no painel lateral (`ui_api.php?a=panel&type=today`); Ctrl-clique abre a
+   página. «Abrir expandido» (preferência da pessoa, desligada por defeito) mostra o bloco antigo.
+2. **Leitura do mês:** de manhã (a partir da hora das Definições) o cron escreve 3–4 frases pela IA, só com os números
+   da fotografia (escritos já formatados); se aparecer um número que não está nos dados, o texto da IA cai e fica um
+   texto fixo com os mesmos números. Duas versões: com euros (Financeiro) e sem euros nem margens (os outros).
+   Admins podem «Escrever agora».
+3. **Saúde da empresa:** Finanças (últimos 3 meses: gross margin vs meta e net profit > 0) · Comercial (metas do
+   período e pipeline ponderado vs meta de valor do mês seguinte × 1,5) · Operação (90 dias: entregas no prazo e
+   rondas a mais) · Tesouraria (runway útil e % do por receber em atraso). Cada um diz a razão e abre o relatório.
+4. **Resultados (só Financeiro):** Mês · Trimestre · Ano até hoje · Últimos 12 meses, contra o período anterior e o
+   do ano anterior (▲▼). Cinco cartões (Revenue, Gross Profit, EBITDA, EBIT, Net Profit) com margem, ⓘ com a fórmula
+   e mini-linha de 12 meses; o número abre os documentos/negócios por trás. Cascata do período e barras de Revenue
+   com a linha da gross margin (escala própria, um só eixo). Indicadores: runway útil, saldo disponível, por receber
+   em atraso, receita por pessoa, concentração dos 3 maiores clientes (alerta acima do limite), clientes recorrentes.
+5. **Crescimento e previsão:** Revenue e Gross Profit de 12 meses com a média de 3; previsão do ano = faturado +
+   ganho por faturar + pipeline ponderado + tendência (o que a tendência espera para lá do que já se conhece), banda
+   pessimista/otimista e distância à meta; mix do gross profit por funil e por serviço (barra a 100%). Sem
+   Financeiro: ganhos no ano, kickoffs do mês, negócios em pipeline e o mix em número de negócios.
+6. **Hall of fame:** pódio (1.º amarelo, 2.º azul-céu, 3.º coral) com código, negócio, cliente, funil, mês e equipa;
+   gross profit = valor − custos − tempo da equipa, «provisório» até à entrega; euros só com Financeiro. Negócio do
+   mês com a % do 1.º do mês anterior e do recorde. Quando um negócio entra no pódio pela primeira vez ou passa a 1.º
+   acima do recorde: registo, aviso no chat («Equipa · avisos») e o pódio anima uma vez. No dia 1 (a partir das 9h):
+   pódio do mês, negócio do mês, **comercial do mês** (melhor conversão pipeline → kickoff com pelo menos N negócios
+   em pipeline; desempate pelo gross profit e pela primeira resposta) e **destaque de produção** (entregas no prazo e
+   aprovação à 1.ª ronda), com aviso no chat; histórico de 12 meses.
+7. **Comercial** (o bloco de antes) e **Pedem atenção agora** (com ligação ao separador Atenção).
+
+**Visibilidade:** sem Financeiro, o servidor não envia euros (P&L, previsão, valores do pódio e do «Pedem atenção»
+ficam de fora; verificado: nenhum «€» no HTML). **Chat:** a conversa «Equipa · avisos» (só leitura) aparece no topo
+da lista com as não lidas; o aviso novo chega como notificação com «Ver». **Cron:** `exec_tick` corre na tarefa «cc»
+(prestações, fotografia, hall of fame, leitura); `php admin/inc/cron_run.php exec [leitura | fecho AAAA-MM]` à mão.
+
+**Também:** a lista de documentos por trás de um número (Relatórios) mostra o estado inteiro («Emitida», não «E»).
+
+**Ajustes (24 out 2026):** trocar o período dos Resultados (Mês, Trimestre, Ano até hoje, 12 meses) já não recarrega
+a página: o Dashboard pede só as secções Resultados e Crescimento (`?frag=per`, com as mesmas permissões e sem euros
+para quem não tem Financeiro), troca-as no sítio e atualiza o endereço; sem JavaScript continua a ser um link. Em
+Relatórios › Metas, o formulário «Definir metas» fica atrás de um botão (abre sozinho quando se está a escolher
+âmbito, período ou cascata). No Financeiro, os cartões Saldo disponível, Por receber e A pagar mostram os cêntimos, e
+o pedido de fatura ao contabilista mostra o destinatário (o email do contabilista de Definições › Financeiro) à
+parte do email do cliente, que vai na fatura.
+
 ## 11. Linha de design e features transversais (decidido 21 out 2026)
 
 Referências analisadas: 4 vídeos (dashboards CRM Code & Chill, login em vidro e

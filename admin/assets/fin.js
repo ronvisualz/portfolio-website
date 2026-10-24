@@ -203,3 +203,13 @@
     }).catch(function () { b.disabled = false; if (out) out.textContent = 'Sem ligação.'; });
   });
 })();
+
+// Ativos: a taxa de amortização sugerida muda com o tipo (parâmetros do Financeiro)
+(function () {
+  var k = document.getElementById('as-k'), r = document.getElementById('as-r');
+  if (!k || !r) return;
+  var rates = {};
+  try { rates = JSON.parse(k.getAttribute('data-rates') || '{}'); } catch (x) { /* sem sugestão */ }
+  var hint = function () { var v = rates[k.value]; r.placeholder = v ? String(v).replace('.', ',') + ' (a do tipo)' : 'taxa anual'; };
+  k.addEventListener('change', hint); hint();
+})();

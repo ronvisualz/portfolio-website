@@ -68,6 +68,8 @@ function fin_employee_save(PDO $pdo, int $uid, array $v, ?int $by): array {
         $pdo->prepare('INSERT INTO fin_employees (user_id, ' . implode(', ', $cols) . ') VALUES (?, ' . implode(', ', array_fill(0, count($cols), '?')) . ')')->execute([$uid, ...array_values($v)]);
     }
     if ($old) foreach (['name', 'email', 'role', 'user_active', 'job_title'] as $k) unset($old[$k]);
+    // o custo/hora interno (Equipa, Orçamentação, custo direto dos negócios) acompanha o salário (§30.2)
+    if (db_has_table($pdo, 'exec_months')) { require_once __DIR__ . '/exec.php'; exec_sync_hourly($pdo, $uid); }
     return [$old, !$old];
 }
 

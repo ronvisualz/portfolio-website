@@ -420,3 +420,27 @@ function lead_late_count(PDO $pdo, array $user): int {
     }
     return $memo[$k] = $n;
 }
+
+/**
+ * «O teu dia» (§30.1): os contadores do Dashboard, cada um com o detalhe (aberto no painel lateral) e a página completa.
+ * [key, título, dica, itens, página, texto quando está vazio] — só o que a pessoa pode ver.
+ */
+function today_columns(PDO $pdo): array {
+    $a = my_alerts($pdo);
+    $out = [];
+    if (can('tarefas'))    $out[] = ['task', 'Tarefas a vencer', 'As suas tarefas atrasadas ou a vencer nos próximos dias', $a['task'], '/admin/calendar.php', 'Sem tarefas a vencer.'];
+    if (can('leads'))      $out[] = ['lead', 'Leads em atraso', 'As suas leads em atraso ou a aproximar-se do prazo (e a fila por atribuir, se a gere)', array_merge($a['queue'], $a['lead']), '/admin/leads.php?urgente=1', 'Todas as leads dentro do prazo.'];
+    if (can('pipeline'))   $out[] = ['deal', 'Negócios parados', 'Os seus negócios sem movimento no Pipeline e o que pede resposta', $a['deal'], '/admin/pipeline.php?vista=risco', 'Tudo a andar.'];
+    if (can('financeiro')) $out[] = ['invoice', 'Por receber em atraso', 'Faturas em atraso e o que o Financeiro pede', $a['invoice'], '/admin/financeiro.php?tab=receber', 'Nada em atraso.'];
+    return $out;
+}
+
+/** A lista de um contador de «O teu dia» (o painel lateral do Dashboard). */
+function today_list_html(array $items, string $more, string $none): string {
+    if (!$items) return '<p class="muted">' . e($none) . '</p>';
+    $h = '<ul class="tday-list">';
+    foreach ($items as $it) {
+        $h .= '<li class="' . ($it['sev'] === 'bad' ? 'bad' : '') . '"><a href="' . e($it['url']) . '"><span>' . e($it['title']) . '</span><small>' . e($it['sub']) . '</small></a></li>';
+    }
+    return $h . '</ul><p><a class="btn ghost sm" href="' . e($more) . '">Ver tudo na página →</a></p>';
+}

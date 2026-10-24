@@ -101,7 +101,7 @@ function rep_metas(array $c): void {
     if ($c['f']['pe']) $goals = array_values(array_filter($goals, fn($g) => $g['scope'] !== 'user' || $g['scope_id'] === $c['f']['pe']));
     $head = ['Meta', 'Âmbito', 'Progresso', '#Real / meta', '#Ritmo esperado', '#Previsão', 'Estado'];
     if (!$goals) {
-        echo '<div class="mx-calm"><b>Ainda não há metas para o período em curso.</b> <span class="muted">' . ($c['admin'] ? 'Defina-as abaixo: por mês ou trimestre, para a empresa, um funil ou uma pessoa.' : 'Os administradores definem as metas.') . '</span></div>';
+        echo '<div class="mx-calm"><b>Ainda não há metas para o período em curso.</b> <span class="muted">' . ($c['admin'] ? 'Defina-as no botão «Definir metas», abaixo: por mês ou trimestre, para a empresa, um funil ou uma pessoa.' : 'Os administradores definem as metas.') . '</span></div>';
     } else {
         $first = $goals[0];
         echo '<p class="sub">' . e($first['period_label']) . ' · dia ' . $first['day'] . ' de ' . $first['days'] . ' — ' . (int)round($first['frac'] * 100) . '% do período ' . mx_ii('Ritmo esperado = meta × parte do período que já passou. Previsão = o real ao ritmo de agora até ao fim do período. Em linha: pelo menos 95% do ritmo; em risco: 80–95%; atrás: abaixo de 80%. As taxas comparam-se diretamente com a meta.') . '</p>';
@@ -167,7 +167,10 @@ function rep_goal_form(array $c, array $rates): void {
         if (!isset($cur[$m])) return '';
         return rtrim(rtrim(number_format((float)$cur[$m]['target'], 2, ',', ''), '0'), ',');
     };
-    echo '<section class="box mx-goalform" id="definir"><h3>Definir metas <span class="muted small">· só administradores</span></h3>';
+    // fechado atrás de um botão; abre sozinho quando se está a trabalhar nele (âmbito, período ou cascata no endereço)
+    $open = array_intersect(['gs', 'gi', 'gp', 'gd', 'cascata'], array_keys($_GET)) !== [];
+    echo '<details class="mx-goalform" id="definir"' . ($open ? ' open' : '') . '><summary class="btn">' . icon('plus') . ' Definir metas</summary>'
+        . '<section class="box"><h3>Definir metas <span class="muted small">· só administradores</span></h3>';
     // escolher âmbito e período (GET: recarrega com as metas que já existem)
     echo '<form class="bar" method="get" data-auto>' . rep_hidden(['tab' => 'metas']) . '<select name="gs" aria-label="Âmbito"><option value="company"' . ($scope === 'company' ? ' selected' : '') . '>Empresa</option><option value="funnel"' . ($scope === 'funnel' ? ' selected' : '') . '>Funil</option><option value="user"' . ($scope === 'user' ? ' selected' : '') . '>Pessoa</option></select>';
     if ($scope === 'funnel') { echo '<select name="gi" aria-label="Funil">'; foreach ($c['funnels'] as $id => $n) echo '<option value="' . (int)$id . '"' . ($sid === (int)$id ? ' selected' : '') . '>' . e($n) . '</option>'; echo '</select>'; }
@@ -189,7 +192,7 @@ function rep_goal_form(array $c, array $rates): void {
             . '<input id="g-' . $m . '" name="g[' . $m . ']" inputmode="decimal" value="' . e($val($m)) . '" placeholder="sem meta"' . (isset($sug[$m]) ? ' class="mx-sug"' : '') . '>'
             . (isset($cur[$m]) ? '<input type="hidden" name="had[' . $m . ']" value="1">' : '') . (isset($sug[$m]) ? '<input type="hidden" name="auto[' . $m . ']" value="1">' : '') . '</div>';
     }
-    echo '</div><div class="actions"><button class="btn" type="submit">Gravar metas</button><span class="small muted">Vazio ou 0 tira a meta. ' . e(mx_goal_period_label($period, $start)) . '.</span></div></form></section>';
+    echo '</div><div class="actions"><button class="btn" type="submit">Gravar metas</button><span class="small muted">Vazio ou 0 tira a meta. ' . e(mx_goal_period_label($period, $start)) . '.</span></div></form></section></details>';
 }
 
 /** Campos escondidos com o estado (período e filtros) e os dados. */

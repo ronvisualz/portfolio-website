@@ -13,6 +13,8 @@
  *                                          Criativo (análises, embeddings, importações) durante [seg] segundos (240)
  *   php …/admin/inc/cron_run.php metrics [semana]  a fotografia diária dos Relatórios e o resumo semanal (também
  *                                          correm na tarefa «cc»); «semana» gera já o resumo desta semana
+ *   php …/admin/inc/cron_run.php exec [leitura | fecho AAAA-MM]  o Dashboard Executivo (também corre na tarefa «cc»):
+ *                                          fotografia do resultado, hall of fame, leitura do mês, prestações dos empréstimos
  *   php …/admin/inc/cron_run.php plan      mostra o plano da migração para a plataforma, sem escrever
  *   php …/admin/inc/cron_run.php migrate   faz a migração com as escolhas por omissão (uma vez)
  *
@@ -70,6 +72,10 @@ try {
         // Relatórios (§29): a fotografia diária das métricas (uma vez por dia) e o resumo semanal (segunda, 9h)
         require_once __DIR__ . '/metrics.php';
         try { if (($m = metrics_tick($pdo)) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Métricas: ' . $e->getMessage() . "\n"; }
+        // Dashboard Executivo (§30): prestações dos empréstimos, fotografia do resultado (de hora a hora), hall of fame
+        // (pódio, recorde, fecho do mês no dia 1) e a leitura do mês de manhã
+        require_once __DIR__ . '/exec.php';
+        try { if (($m = exec_tick($pdo)) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Dashboard: ' . $e->getMessage() . "\n"; }
         // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)
         require_once __DIR__ . '/cc_review.php';
         if (cc_rv_ready($pdo)) {
@@ -91,6 +97,12 @@ try {
         require_once __DIR__ . '/metrics.php';
         $out = metrics_tick($pdo) . "\n";
         if (($argv[2] ?? '') === 'semana') $out .= metrics_weekly_tick($pdo, true) . "\n";
+    } elseif ($job === 'exec') {
+        // só o Dashboard: «exec» faz o ciclo normal; «exec leitura» escreve já a leitura de hoje; «exec fecho AAAA-MM» fecha esse mês no hall of fame
+        require_once __DIR__ . '/exec.php';
+        $out = exec_tick($pdo) . "\n";
+        if (($argv[2] ?? '') === 'leitura') $out .= exec_reading_make($pdo, true) . "\n";
+        if (($argv[2] ?? '') === 'fecho' && preg_match('/^\d{4}-\d{2}$/', (string)($argv[3] ?? ''))) $out .= exec_month_close($pdo, (string)$argv[3]) . "\n";
     } elseif ($job === 'relations') {
         $out = 'Follow-ups de relação criados: ' . relation_tick($pdo) . "\n";
     } elseif ($job === 'plan' || $job === 'migrate') {
@@ -109,7 +121,7 @@ try {
             }
         }
     } else {
-        fwrite(STDERR, "Uso: php cron_run.php backup|relations|pipeline|cc|plan|migrate\n");
+        fwrite(STDERR, "Uso: php cron_run.php backup|relations|pipeline|cc|metrics|exec|plan|migrate\n");
         exit(2);
     }
 } catch (Throwable $e) {

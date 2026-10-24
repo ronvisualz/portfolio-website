@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 33;
+const SCHEMA_VERSION = 34;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -323,6 +323,10 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     require_once __DIR__ . '/migrate_leads_v2.php';   // db_column_type
     require_once __DIR__ . '/migrate_metrics.php';
     migrate_metrics_33($pdo);
+    // ── 34 · Dashboard Executivo (§30): ativos e empréstimos (amortizações e juros automáticos), fotografia mensal
+    //        do resultado, leitura do mês, hall of fame e avisos da equipa no chat ──
+    require_once __DIR__ . '/migrate_exec.php';
+    migrate_exec_34($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

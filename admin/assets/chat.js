@@ -106,10 +106,48 @@
         try { sessionStorage.setItem('chat-seen', String(seen)); } catch (x) { /* fica só nesta página */ }
         if (!open) notify(j.last);
       }
+      if (j.post && j.post.id > seenPost && !j.focus) {
+        seenPost = j.post.id;
+        try { sessionStorage.setItem('chat-seen-post', String(seenPost)); } catch (x) { /* fica só nesta página */ }
+        if (!(panelOpen() && threadWith === -1)) notifyPost(j.post);
+      }
       if (panelOpen() && !threadWith) loadList();
     }).catch(function (e) { if (e.expired) stopped = true; }).then(function () {
       if (!stopped) pingTimer = setTimeout(ping, PING_MS);
     });
+  }
+  var seenPost = 0;
+  try { seenPost = parseInt(sessionStorage.getItem('chat-seen-post') || '0', 10) || 0; } catch (x) { /* avisa outra vez */ }
+  function notifyPost(p) {
+    toast(p.title);
+    var t = $$('.toasts .tst'); t = t[t.length - 1];
+    if (!t) return;
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'undo'; b.textContent = 'Ver';
+    b.addEventListener('click', function () { if (t.parentNode) t.parentNode.removeChild(t); openChat(0); openTeam(); });
+    t.insertBefore(b, t.querySelector('.x'));
+  }
+  // Os avisos da equipa (pódio, recorde, comercial do mês): só leitura, no lugar de uma conversa.
+  function openTeam() {
+    clearTimeout(threadTimer);
+    threadWith = -1; lastId = 0;
+    list.hidden = true; thread.hidden = false; homeBtn.hidden = false;
+    form.hidden = true; thread.classList.add('is-team');
+    who.innerHTML = '<span class="tav sm chat-team-ico" aria-hidden="true">★</span><span><b>Equipa · avisos</b><small>Hall of fame e anúncios do Dashboard</small></span>';
+    msgs.innerHTML = '<div class="sp-loading">A carregar…</div>';
+    api('team_posts', null, 'GET').then(function (j) {
+      if (threadWith !== -1) return;
+      msgs.innerHTML = j.posts.length ? '' : '<p class="muted empty-s">Ainda não há avisos.</p>';
+      j.posts.forEach(function (p) {
+        var d = document.createElement('div');
+        d.className = 'cmsg theirs team-post k-' + p.kind;
+        d.innerHTML = '<div class="ctext"><b>' + esc(p.title) + '</b><br>' + p.html + '</div>'
+          + (p.url ? '<a class="rcard" href="' + esc(p.url) + '"><span><small>Dashboard</small><b>Ver no Hall of fame</b></span></a>' : '') + '<time>' + esc(p.at) + '</time>';
+        msgs.appendChild(d);
+      });
+      msgs.scrollTop = msgs.scrollHeight;
+      ping();
+    }).catch(function (e) { msgs.innerHTML = '<p class="muted empty-s">' + esc(e.message) + '</p>'; });
   }
   function notify(last) {
     toast('Nova mensagem de ' + last.name);
@@ -150,8 +188,8 @@
   function showList() {
     clearTimeout(threadTimer);
     threadWith = 0; threadPerson = null;
-    thread.hidden = true; list.hidden = false; homeBtn.hidden = true;
-    who.innerHTML = '<b>Chat</b><small>Só conversas privadas 1:1</small>';
+    thread.hidden = true; list.hidden = false; homeBtn.hidden = true; form.hidden = false; thread.classList.remove('is-team');
+    who.innerHTML = '<b>Chat</b><small>Conversas privadas 1:1 e avisos da equipa</small>';
     loadList();
     setTimeout(function () { var f = $('.chat-search', list); (f || panel).focus({ preventScroll: true }); }, 30);
   }
@@ -160,6 +198,9 @@
     api('chat_list', null, 'GET').then(function (j) {
       setFocus(j.focus);
       var html = '<label class="sr" for="chat-q">Procurar pessoa</label><input id="chat-q" class="chat-search" type="search" placeholder="Procurar pessoa…" value="' + esc(listQ) + '">';
+      if (j.team) html += '<button type="button" class="chat-it chat-team' + (j.team.unread ? ' unread' : '') + '" data-chat-team data-q="equipa avisos">'
+        + '<span class="tav sm chat-team-ico" aria-hidden="true">★</span><span class="ci-t"><b>Equipa · avisos</b><small>' + esc(j.team.last) + '</small></span>'
+        + '<span class="ci-m">' + (j.team.unread ? '<span class="cnt">' + j.team.unread + '</span>' : '') + '</span></button>';
       if (!j.people.length) html += '<p class="muted empty-s">Ainda não há mais ninguém na equipa.</p>';
       html += j.people.map(function (p) {
         return '<button type="button" class="chat-it' + (p.unread ? ' unread' : '') + '" data-chat-person="' + p.id + '" data-q="' + esc((p.name + ' ' + p.role).toLowerCase()) + '">'
@@ -184,7 +225,7 @@
   function openThread(id) {
     clearTimeout(threadTimer);
     threadWith = +id; lastId = 0;
-    list.hidden = true; thread.hidden = false; homeBtn.hidden = false;
+    list.hidden = true; thread.hidden = false; homeBtn.hidden = false; form.hidden = false; thread.classList.remove('is-team');
     msgs.innerHTML = '<div class="sp-loading">A carregar…</div>';
     who.innerHTML = '<b>…</b>';
     pollThread(true);
@@ -421,7 +462,8 @@
     if (e.target.closest('[data-chat-close]')) { e.preventDefault(); closeChat(); return; }
     if (e.target.closest('[data-chat-home]')) { e.preventDefault(); showList(); return; }
     var p = e.target.closest('[data-chat-person]');
-    if (p) { e.preventDefault(); openThread(+p.getAttribute('data-chat-person')); }
+    if (p) { e.preventDefault(); openThread(+p.getAttribute('data-chat-person')); return; }
+    if (e.target.closest('[data-chat-team]')) { e.preventDefault(); openTeam(); }
   });
   document.addEventListener('keydown', function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;

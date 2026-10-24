@@ -209,6 +209,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (!$def || setting_get($pdo, (string)$d['key']) !== (string)$d['to']) throw new RuntimeException($changed);
             setting_write($pdo, (string)$d['key'], (string)$d['from']);
             setting_log($pdo, (string)$d['key'], SET_TABS[$def['tab']][0] . ' · ' . $def['label'] . ' (anulado)', (string)$d['to'], (string)$d['from']);
+            if ($d['key'] === 'fin_cat_types' && is_file(__DIR__ . '/exec.php')) { require_once __DIR__ . '/exec.php'; exec_snapshot_refresh($pdo); }   // o resultado volta a contar como antes
             return $def['label'] . ' reposto: ' . setting_show($def, (string)$d['from']) . '.';
 
         case 'setting_row':
