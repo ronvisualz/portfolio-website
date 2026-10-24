@@ -3830,3 +3830,15 @@ Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação 
 - Novo: cada pessoa pode **ligar o seu Google Calendar** em Perfil › Ligações («Ligar Google Calendar», OAuth com scope de eventos; o token fica cifrado no servidor e pode ser revogado). Funciona com conta Google gratuita.
 - Sincroniza num sentido: reuniões, gravações, visitas e prazos com hora da plataforma → calendário da pessoa (criar, mudar, cancelar). Opcional: mostrar na Agenda da plataforma os períodos «ocupado» do Google (só ocupado/livre, sem detalhes) para marcar reuniões sem conflitos.
 - Nota na interface: em contas gratuitas, chamadas Meet com 3+ pessoas param aos 60 minutos.
+
+### 31.4 Google Calendar e Google Meet em toda a plataforma (preparação e criação direta)
+**Já existe (main):** criar Meet nas reuniões da aba Equipa pela conta da topper. (`inc/meet_config.php`), ativo quando as credenciais estiverem preenchidas.
+**Passa a existir:**
+- **Uma só camada de calendário** (`inc/gcal.php`): criar/alterar/cancelar evento, criar Meet, ler ocupado/livre, por **conta da topper.** ou **conta da pessoa** (quando ligada, §31.3). Todas as partes da plataforma usam esta camada — nada fala com a API do Google diretamente.
+- **«Criar Google Meet» em qualquer evento com hora:** reuniões e gravações/visitas de leads, negócios (incl. kickoff e reuniões de review), tarefas do tipo Reunião, Equipa e Agenda. Um clique cria o evento com link Meet, título e descrição gerados (código do negócio, ordem de trabalhos), convidados = participantes internos + contactos externos escolhidos (o cliente recebe o convite do Google). O link fica guardado no registo, no histórico e no chat.
+- **Organizador:** a pessoa que marca, se tiver o calendário ligado; senão a conta da topper. (com a pessoa como convidada).
+- **Ligação evento ↔ registo:** tabela `calendar_links` (registo, tipo, id do evento Google, calendário, conta, etag, última sincronização). Mudar a data/hora ou cancelar na plataforma atualiza o Google; nunca cria duplicados.
+- **Preparado para sincronização nos dois sentidos (fase 2):** pedir já os scopes `calendar.events` e `calendar.freebusy` na ligação; guardar `syncToken`; endpoint `gcal_push.php` pronto para as notificações push do Google (canal por calendário, renovado pelo cron). Na fase 2: mudanças feitas no Google (hora, cancelamento, respostas dos convidados Sim/Não/Talvez) voltam para a plataforma.
+- **Disponibilidade ao marcar:** ao escolher hora, mostra ocupado/livre dos participantes internos com calendário ligado e sugere os 3 próximos horários livres comuns.
+- **Respostas dos convidados** visíveis no evento (fase 2 via push; fase 1 lidas ao abrir).
+- Tudo opcional: sem credenciais Google, os botões mostram «Ligar Google» (admin) e o link pode ser colado à mão, como hoje.
