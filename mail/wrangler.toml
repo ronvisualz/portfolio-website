@@ -2,8 +2,8 @@
 # Publicar (uma vez, e de novo só se este código mudar), na mesma conta do Worker do tempo real (rt/):
 #   cd mail && npm ci && npx wrangler deploy
 #   npx wrangler secret put INBOUND_SECRET      ← cole o segredo de Definições › Integrações › Email
-# Depois, no painel da Cloudflare (domínio topperhub.xyz): Email › Email Routing › ativar; em «Routing rules»,
-# um endereço personalizado entrada@topperhub.xyz com a ação «Send to a Worker» › topper-mail.
+# Depois, na Cloudflare (zona topperhub.xyz): Email Routing só no subdomínio in.topperhub.xyz (Settings › Subdomains;
+# os MX de topperhub.xyz continuam mx1/mx2.hostinger) e a regra entrada@in.topperhub.xyz → «Send to a Worker» › topper-mail.
 name = "topper-mail"
 main = "src/index.js"
 compatibility_date = "2026-09-01"

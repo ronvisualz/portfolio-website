@@ -2137,7 +2137,8 @@ SRS do envelope); caixas fora de «Caixas ligadas» são ignoradas sem guardar n
 regras de sempre: só anexos, QR/ATCUD, IA só sem QR, NIF, código no assunto). Envio: `inc/mailer.php` — Resend ou
 Brevo (chave confirmada no serviço e gravada só em `inc/fin_mail_config.php`), remetente = a pessoa, «Responder para»
 = o email geral; os emails automáticos (recuperar palavra-passe, convites, avisos) também saem por aqui quando está
-pronto. Definições › Integrações › Email: guia em 5 passos (MX do domínio, Email Routing, `wrangler deploy` +
+pronto. Endereço de entrada: `entrada@in.topperhub.xyz` (Email Routing só no subdomínio `in.`, para os MX de
+topperhub.xyz continuarem no Hostinger). Definições › Integrações › Email: guia em 5 passos (MX do subdomínio, regra, `wrangler deploy` +
 «Gerar o segredo», reencaminhamento em cada caixa, «Testar»), «Como chegam as faturas» (Cloudflare | Modo IMAP),
 «Como saem os emails» (serviço | SMTP), estado por caixa com a data do último email e «Testar» (manda um email com
 um código e mostra-o a chegar), e «Enviar um email de teste para mim». O Perfil › Email de envio deixa de pedir
@@ -3869,12 +3870,12 @@ Linha da §11 e de `inc/charts.php` (claro/escuro, degradês suaves, animação 
 ## 31. Email sem palavras-passe, login rápido e calendário (decidido 24 out 2026)
 
 ### 31.1 Entrada de emails pela Cloudflare (substitui a leitura IMAP da §28.14 ponto 2)
-- **Circuito:** em cada caixa do Hostinger escolhida (ex.: info@topperdigital.xyz) cria-se um **reencaminhamento com cópia** para `entrada@topperhub.xyz`. Esse endereço é recebido pelo **Cloudflare Email Routing** (gratuito) e entregue a um **Email Worker** que envia o email à plataforma por HTTPS. Nenhuma palavra-passe de email é guardada.
+- **Circuito:** em cada caixa do Hostinger escolhida (ex.: info@topperdigital.xyz) cria-se um **reencaminhamento com cópia** para `entrada@in.topperhub.xyz`. Esse endereço é recebido pelo **Cloudflare Email Routing** (gratuito), ativo **só no subdomínio `in.topperhub.xyz`** — o domínio `topperhub.xyz` continua com os MX do Hostinger (mx1/mx2.hostinger) e entregue a um **Email Worker** que envia o email à plataforma por HTTPS. Nenhuma palavra-passe de email é guardada.
 - **Worker:** novo handler `email()` no Worker existente em `rt/` (ou Worker próprio `mail/`, mesma conta e mesmo deploy por wrangler). Recebe a mensagem, rejeita > 25 MB, e faz POST do email em bruto (MIME) para `https://topperhub.xyz/admin/fin_inbound.php` com **assinatura HMAC-SHA256** (segredo partilhado guardado como secret do Worker e em `inc/fin_mail_config.php` no servidor) e carimbo de tempo (rejeita > 5 min e repetições pelo Message-ID).
 - **Plataforma (`fin_inbound.php`):** valida a assinatura; identifica a caixa de origem pelo cabeçalho do reencaminhamento (Delivered-To / X-Forwarded-For / To original); **ignora caixas que não estejam na lista de Definições › Integrações › Email** («Caixas ligadas», com data do último email recebido de cada uma); depois aplica as regras da §28.14: só anexos, QR fiscal/ATCUD primeiro, IA só sem QR claro, receita/despesa pelo NIF, corpo nunca guardado, «Por confirmar» em caso de dúvida, ligação ao pedido pelo código no assunto.
 - **Envio** (pedir fatura, enviar ao cliente): mantém-se por SMTP do Hostinger da caixa escolhida **ou**, para não guardar nenhuma palavra-passe, envio por um serviço transacional (ex.: Resend/Brevo com domínio verificado e chave API) com «Responder para» = info@. Escolha em Definições; por defeito o serviço transacional.
 - O leitor IMAP atual (`inc/fin_mail.php`) fica como alternativa desligada por defeito («Modo IMAP») para quem quiser; sem configuração, não corre.
-- **Configuração (feita pelo admin, com guia passo a passo em Definições):** (1) DNS do topperhub.xyz na Cloudflare; (2) ativar Email Routing e a regra `entrada@` → Worker; (3) `wrangler deploy`; (4) em cada caixa do Hostinger, Reencaminhamento → `entrada@topperhub.xyz` com «manter cópia»; (5) botão «Testar» que mostra o email de teste a chegar.
+- **Configuração (feita pelo admin, com guia passo a passo em Definições):** (1) DNS do topperhub.xyz na Cloudflare; (2) Email Routing só no subdomínio `in.topperhub.xyz` e a regra `entrada@in.topperhub.xyz` → Worker (sem mexer nos MX de topperhub.xyz); (3) `wrangler deploy`; (4) em cada caixa do Hostinger, Reencaminhamento → `entrada@topperhub.xyz` com «manter cópia»; (5) botão «Testar» que mostra o email de teste a chegar.
 
 ### 31.2 Login rápido
 - **Chaves de acesso (passkeys / WebAuthn):** Face ID, impressão digital ou PIN do dispositivo, sem palavra-passe. Em Perfil › Segurança: «Criar chave de acesso» (várias por pessoa: telemóvel, portátil), lista com nome do dispositivo, último uso e «Remover». No ecrã de entrada o browser propõe a chave automaticamente. Biblioteca PHP de WebAuthn (ex.: lbuchs/WebAuthn); desafios guardados na sessão; contador e chave pública na base de dados.

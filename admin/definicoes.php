@@ -202,9 +202,10 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             };
             $boxes = fin_mail_boxes_safe($pdo);
             $h = '<ol class="cf-steps">';
-            $h .= '<li><b>O domínio ' . e($g['domain']) . ' na Cloudflare.</b> ' . ($g['mx'] ? $ok($g['mx_ok'], 'MX da Cloudflare', 'MX ainda não é da Cloudflare') . ' <span class="muted small">' . e(implode(', ', $g['mx'])) . '</span>' : '<span class="muted small">Ative o Email Routing e confirme aqui que os MX passam a ser *.mx.cloudflare.net.</span>')
-                . '<div class="small muted">Cloudflare › ' . e($g['domain']) . ' › DNS: os servidores de nomes do domínio têm de ser os da Cloudflare.</div></li>';
-            $h .= '<li><b>Email Routing.</b> Cloudflare › ' . e($g['domain']) . ' › Email › Email Routing › <i>Enable</i>. Em <i>Routing rules</i> › <i>Custom address</i>: <code>' . e($g['address']) . '</code> com a ação <i>Send to a Worker</i> › <code>topper-mail</code>.</li>';
+            $apex = preg_replace('/^[^.]+\./', '', $g['domain']);   // in.topperhub.xyz → topperhub.xyz
+            $h .= '<li><b>Email Routing só no subdomínio ' . e($g['domain']) . '.</b> ' . ($g['mx'] ? $ok($g['mx_ok'], 'MX do subdomínio na Cloudflare', 'MX do subdomínio ainda não é da Cloudflare') . ' <span class="muted small">' . e(implode(', ', $g['mx'])) . '</span>' : '<span class="muted small">Depois de ativar, os MX de ' . e($g['domain']) . ' passam a ser *.mx.cloudflare.net.</span>')
+                . '<div class="small muted">Cloudflare › ' . e($apex) . ' › Email › Email Routing › Settings › <i>Subdomains</i> › ' . e($g['domain']) . '. O domínio ' . e($apex) . ' não muda: os seus MX continuam os do Hostinger (mx1/mx2.hostinger).</div></li>';
+            $h .= '<li><b>A regra.</b> Email Routing › <i>Routing rules</i> › <i>Custom address</i>: <code>' . e($g['address']) . '</code> com a ação <i>Send to a Worker</i> › <code>topper-mail</code>.</li>';
             $h .= '<li><b>Publicar o Worker</b> (uma vez; na mesma conta do tempo real):<pre class="cf-cmd">cd mail &amp;&amp; npm ci &amp;&amp; npx wrangler deploy' . "\n" . 'npx wrangler secret put INBOUND_SECRET</pre>'
                 . '<div class="cf-secret">' . ($g['secret'] ? $ok(true, 'Segredo gerado', '') . ' <button type="button" class="btn ghost sm" data-mail-secret data-again="1">Gerar outro</button> <span class="muted small">(o anterior deixa de valer: volte a pôr o novo no Worker)</span>'
                                                          : '<button type="button" class="btn sm" data-mail-secret>Gerar o segredo</button> <span class="muted small">É o que o comando <code>secret put</code> pede. Aparece uma vez.</span>')

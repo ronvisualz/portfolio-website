@@ -3,7 +3,7 @@
  * topper. admin — emails que chegam pela Cloudflare (§31.1)
  *
  * Circuito: cada caixa escolhida do Hostinger (ex.: info@topperdigital.xyz) reencaminha uma cópia para
- * entrada@topperhub.xyz → Cloudflare Email Routing → Email Worker (mail/) → POST do email em bruto para
+ * entrada@in.topperhub.xyz (Email Routing só no subdomínio in.: os MX de topperhub.xyz continuam no Hostinger) → Cloudflare Email Routing → Email Worker (mail/) → POST do email em bruto para
  * admin/fin_inbound.php, assinado (HMAC-SHA256 com o segredo partilhado) e com carimbo de tempo.
  *
  * Aqui: valida a assinatura e a hora (5 min), recusa repetições (o mesmo Message-ID não entra duas vezes),
@@ -19,7 +19,9 @@ require_once __DIR__ . '/mailer.php';
 
 const MAIL_INBOUND_MAX_BYTES = 25 * 1048576;
 const MAIL_INBOUND_SKEW = 300;               // segundos de diferença aceites no carimbo
-const MAIL_TEST_TAG = 'topper teste';        // «[topper teste AB12CD]» no assunto = email de teste de Definições
+const MAIL_TEST_TAG = 'topper teste';
+/** O endereço que recebe as cópias: Email Routing só no subdomínio in.topperhub.xyz (o domínio principal fica com o email do Hostinger). */
+const MAIL_INBOUND_DEFAULT = 'entrada@in.topperhub.xyz';        // «[topper teste AB12CD]» no assunto = email de teste de Definições
 
 function mail_inbound_ready(PDO $pdo): bool {
     return db_has_table($pdo, 'mail_inbound');
@@ -32,8 +34,8 @@ function fin_mail_mode(PDO $pdo): string {
 
 /** O endereço que recebe as cópias (Definições). */
 function mail_inbound_address(PDO $pdo): string {
-    $a = strtolower(trim((string)setting($pdo, 'mail_inbound_address', 'entrada@topperhub.xyz')));
-    return filter_var($a, FILTER_VALIDATE_EMAIL) ? $a : 'entrada@topperhub.xyz';
+    $a = strtolower(trim((string)setting($pdo, 'mail_inbound_address', MAIL_INBOUND_DEFAULT)));
+    return filter_var($a, FILTER_VALIDATE_EMAIL) ? $a : MAIL_INBOUND_DEFAULT;
 }
 
 /**

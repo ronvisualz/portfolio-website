@@ -2,7 +2,7 @@
  * topper. — entrada dos emails do Financeiro pela Cloudflare (§31.1).
  *
  * Cada caixa escolhida do Hostinger (ex.: info@topperdigital.xyz) reencaminha uma cópia para
- * entrada@topperhub.xyz. O Cloudflare Email Routing entrega essa cópia a este Worker, que a envia em bruto (MIME)
+ * entrada@in.topperhub.xyz (Email Routing só no subdomínio in.; os MX de topperhub.xyz ficam no Hostinger). O Cloudflare Email Routing entrega essa cópia a este Worker, que a envia em bruto (MIME)
  * à plataforma por HTTPS, assinada. Nenhuma palavra-passe de email é guardada em lado nenhum.
  *
  *   POST INBOUND_URL   corpo: o email em bruto (message/rfc822)
@@ -69,7 +69,9 @@ export default {
     const req = await buildRequest(raw, message.headers.get("message-id"), message.from, env);
     const res = await fetch(req);
     if (res.status >= 500) throw new Error("topper-mail: a plataforma respondeu " + res.status + " (tentar depois)");
+    // só o estado (nunca o conteúdo): aparece em «npx wrangler tail topper-mail»
     if (res.status >= 400) console.log("topper-mail: recusado pela plataforma", res.status, await res.text());
+    else console.log("topper-mail: entregue", res.status, (await res.text()).slice(0, 200));
   },
 
   async fetch(request, env) {
