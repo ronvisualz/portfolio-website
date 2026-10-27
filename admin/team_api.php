@@ -19,6 +19,7 @@
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/team.php';
+require_once __DIR__ . '/inc/gcal.php';
 require_once __DIR__ . '/inc/undo.php';
 
 function tout(int $code, array $body): void {
@@ -76,7 +77,7 @@ function msg_out(PDO $pdo, array $m, int $me): array {
                            'platform' => MEETING_PLATFORMS[$mt['platform']] ?? '', 'deal' => $mt['deal_code'] ? $mt['deal_code'] . ' · ' . $mt['deal_name'] : '',
                            'link' => $mt['status'] === 'accepted' ? (string)$mt['link'] : '', 'can_answer' => (int)$mt['invitee_id'] === $me && $mt['status'] === 'pending',
                            'can_cancel' => (int)$mt['requester_id'] === $me && $mt['status'] === 'pending', 'start' => substr((string)$mt['starts_at'], 0, 16),
-                           'needs_link' => $mt['link'] === '' && $mt['platform'] !== 'local' && !(($mt['platform'] === 'meet' && team_meet_config()['google']) || ($mt['platform'] === 'discord' && team_meet_settings()['discord']))];
+                           'needs_link' => $mt['link'] === '' && $mt['platform'] !== 'local' && !(($mt['platform'] === 'meet' && gcal_can_meet($pdo, (int)$mt['requester_id'])) || ($mt['platform'] === 'discord' && team_meet_settings()['discord']))];
     }
     return $out;
 }

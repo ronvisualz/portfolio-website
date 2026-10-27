@@ -17,6 +17,12 @@ $error = '';
 $note  = '';
 $view  = !empty($_GET['recuperar']) ? 'forgot' : 'login';
 if (!empty($_GET['expired'])) $error = 'A sessão expirou. Entre outra vez.';
+// a volta de «Entrar com Google» quando não deu (a mensagem fica na sessão, nunca vem do endereço)
+if (isset($_GET['g']) && isset($_SESSION['g_err'])) { $error = (string)$_SESSION['g_err']; unset($_SESSION['g_err']); }
+require_once __DIR__ . '/inc/auth.php';
+require_once __DIR__ . '/inc/secrets.php';
+$authOn = auth_ready($pdo);
+$googleOn = google_client() !== null;
 
 $lite = db_is_sqlite($pdo);
 $now  = $lite ? "datetime('now')" : 'NOW()';
@@ -87,8 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       . "Pediu para definir uma palavra-passe nova na topper. admin.\n"
                       . "Abra este link nos próximos " . RESET_TTL_MINUTES . " minutos:\n\n$link\n\n"
                       . "Se não foi você, ignore este email: a palavra-passe atual continua a valer.\n";
-                $headers = "From: topper. <no-reply@topperdigital.xyz>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
-                $sent = @mail($u['email'], '=?UTF-8?B?' . base64_encode('topper. admin — nova palavra-passe') . '?=', $body, $headers);
+                // pelo serviço de envio, se estiver pronto (§31.1); senão pelo mail() do servidor, como antes
+                require_once __DIR__ . '/inc/mailer.php';
+                $sent = app_mail($pdo, (string)$u['email'], 'topper. admin — nova palavra-passe', $body, 'topper.');
                 if (IS_LOCAL) error_log('[topper] link de recuperação (só na bancada): ' . $link);
                 elseif (!$sent) error_log('[topper] o email de recuperação não saiu para o utilizador ' . (int)$u['id']);
             }
@@ -136,19 +143,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ?? '$2y$12$usesomesillystringfoeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
             if (password_verify($pass, $hash) && $user) {
-                record_attempt($pdo, $email, true);
-                $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')
-                    ->execute([$user['id']]);
-                login_user($user);
-                redirect(home_url());
+                // quem tem de usar a chave de acesso (Definições › Segurança) e já a criou não entra com a palavra-passe
+                if ($authOn && ($block = auth_method_blocked($pdo, $user, 'password')) !== '') {
+                    $error = $block;
+                } else {
+                    record_attempt($pdo, $email, true);
+                    login_user($user);
+                    auth_log_login($pdo, (int)$user['id'], 'password');
+                    redirect($authOn ? auth_after_login($pdo, $user, 'password') : home_url());
+                }
+            } else {
+                record_attempt($pdo, $email, false);
+                // Deliberately vague: never confirm whether the email exists.
+                $error = 'Credenciais inválidas.';
             }
-
-            record_attempt($pdo, $email, false);
-            // Deliberately vague: never confirm whether the email exists.
-            $error = 'Credenciais inválidas.';
         }
     }
 }
+
 
 $msg = function (string $for) use ($view, $error, $note) {
     if ($view !== $for) return '';
@@ -196,11 +208,19 @@ $msg = function (string $for) use ($view, $error, $note) {
         <?= csrf_field() ?><input type="hidden" name="do" value="login">
         <div class="field"><label for="email">Email</label>
           <input type="email" id="email" name="email" required <?= $view === 'login' ? 'autofocus' : '' ?>
-                 value="<?= e($_POST['email'] ?? '') ?>" autocomplete="username"></div>
+                 value="<?= e($_POST['email'] ?? '') ?>" autocomplete="username webauthn"></div>
         <div class="field"><label for="password">Palavra-passe</label>
           <input type="password" id="password" name="password" required autocomplete="current-password"></div>
         <button type="submit" class="btn">Entrar</button>
       </form>
+      <?php if ($authOn || $googleOn): ?>
+      <div class="login-alt">
+        <span class="login-or">ou</span>
+        <div class="flash" data-passkey-out hidden role="status"></div>
+        <?php if ($authOn): ?><button type="button" class="btn ghost" data-passkey-login hidden><?= icon('key') ?> Entrar com chave de acesso</button><?php endif; ?>
+        <?php if ($googleOn): ?><a class="btn ghost" href="/admin/google_auth.php?start=login"><svg class="g-logo" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg> Entrar com Google</a><?php endif; ?>
+      </div>
+      <?php endif; ?>
       <a class="lnk" href="?recuperar=1" data-go="forgot">Esqueceu-se da palavra-passe?</a>
     </section>
     <section data-view="forgot" aria-hidden="<?= $view === 'forgot' ? 'false' : 'true' ?>">
@@ -232,5 +252,6 @@ document.addEventListener('click', function (e) {
   setTimeout(function () { if (mail) mail.focus(); }, 60);
 });
 </script>
+<?php if ($authOn && $view !== 'reset'): ?><script src="<?= asset_url('passkey.js') ?>" defer></script><?php endif; ?>
 </body>
 </html>

@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 34;
+const SCHEMA_VERSION = 35;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -327,6 +327,10 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     //        do resultado, leitura do mês, hall of fame e avisos da equipa no chat ──
     require_once __DIR__ . '/migrate_exec.php';
     migrate_exec_34($pdo);
+    // ── 35 · Email sem palavras-passe, login rápido e calendário (§31): emails recebidos pela Cloudflare, chaves de
+    //        acesso, registo de entradas, Google Calendar por pessoa e a ligação evento ↔ registo ──
+    require_once __DIR__ . '/migrate_auth.php';
+    migrate_auth_35($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -11,6 +11,12 @@
  *              Só leitura: nada é marcado como lido, movido ou apagado.
  * smtp_*       envio — Hostinger: smtp.hostinger.com, porta 465, SSL.
  * from_name    o nome que aparece como remetente.
+ *
+ * Desde a §31.1 (por defeito) nada disto precisa de palavras-passe: os emails chegam pela Cloudflare e saem
+ * por um serviço de envio. A própria plataforma escreve aqui, a partir de Definições › Integrações › Email:
+ * api             o serviço de envio: ['provider' => 'resend' | 'brevo', 'key' => 'a chave API']
+ * inbound_secret  o segredo partilhado com o Worker do email (o mesmo vai como secret INBOUND_SECRET)
+ * Com isto, «boxes» só é preciso no modo IMAP ou no envio por SMTP.
  */
 return [
     'boxes' => [
@@ -24,4 +30,6 @@ return [
     'imap_port' => 993,
     'imap_tls'  => 'ssl',
     'from_name' => 'topper. Financeiro',
+    // 'api' => ['provider' => 'resend', 'key' => 'COLE_AQUI'],
+    // 'inbound_secret' => 'gerado em Definições › Integrações › Email',
 ];

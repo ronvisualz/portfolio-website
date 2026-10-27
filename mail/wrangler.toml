@@ -1,0 +1,14 @@
+# topper. — entrada dos emails do Financeiro pela Cloudflare (§31.1). Plano gratuito.
+# Publicar (uma vez, e de novo só se este código mudar), na mesma conta do Worker do tempo real (rt/):
+#   cd mail && npm ci && npx wrangler deploy
+#   npx wrangler secret put INBOUND_SECRET      ← cole o segredo de Definições › Integrações › Email
+# Depois, na Cloudflare (zona topperhub.xyz): Email Routing só no subdomínio in.topperhub.xyz (Settings › Subdomains;
+# os MX de topperhub.xyz continuam mx1/mx2.hostinger) e a regra entrada@in.topperhub.xyz → «Send to a Worker» › topper-mail.
+name = "topper-mail"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# para onde vão os emails (a plataforma); o segredo NÃO vai aqui: é um secret do Worker (INBOUND_SECRET)
+INBOUND_URL = "https://topperhub.xyz/admin/fin_inbound.php"

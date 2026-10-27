@@ -116,6 +116,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mail
     redirect('/admin/conta.php#email');
 }
 
+// Segurança (§31.2): chaves de acesso e a conta Google da entrada; Ligações (§31.3): o Google Calendar da pessoa.
+require_once __DIR__ . '/inc/auth.php';
+require_once __DIR__ . '/inc/gcal.php';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['pk_del', 'pk_rename', 'google_unlink', 'gcal_off', 'gcal_prefs'], true)) {
+    csrf_check();
+    $uid = (int)$user['id'];
+    try {
+        switch ($_POST['do']) {
+        case 'pk_del':
+            $pdo->prepare('DELETE FROM user_passkeys WHERE id = ? AND user_id = ?')->execute([(int)($_POST['id'] ?? 0), $uid]);
+            flash('Chave de acesso removida. Esse aparelho já não entra sem palavra-passe.');
+            break;
+        case 'pk_rename':
+            $n = trim(mb_substr(preg_replace('/[\x00-\x1f<>]/u', '', (string)($_POST['name'] ?? '')), 0, 80));
+            if ($n === '') throw new RuntimeException('Dê um nome à chave.');
+            $pdo->prepare('UPDATE user_passkeys SET name = ? WHERE id = ? AND user_id = ?')->execute([$n, (int)($_POST['id'] ?? 0), $uid]);
+            flash('Nome guardado.');
+            break;
+        case 'google_unlink':
+            $pdo->prepare('UPDATE users SET google_sub = NULL WHERE id = ?')->execute([$uid]);
+            flash('A conta Google deixou de estar ligada à entrada. Da próxima vez que entrar com Google, fica ligada a conta que usar (com o mesmo email).');
+            break;
+        case 'gcal_off':
+            gcal_disconnect($pdo, $uid);
+            flash('Google Calendar desligado: o acesso foi revogado na Google e os eventos que a plataforma lá tinha posto foram retirados.');
+            break;
+        case 'gcal_prefs':
+            gcal_prefs_save($pdo, $uid, !empty($_POST['sync_on']), !empty($_POST['show_busy']));
+            flash('Preferências do calendário guardadas.');
+            break;
+        }
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'err');
+    }
+    redirect('/admin/conta.php#' . (str_starts_with((string)$_POST['do'], 'gcal') ? 'ligacoes' : 'seguranca'));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
     csrf_check();
     $name  = trim(mb_substr((string)($_POST['display_name'] ?? ''), 0, 80));
@@ -248,7 +285,9 @@ render_flashes();
     <?php endforeach; ?>
     <noscript><button class="btn sm" type="submit">Guardar</button></noscript>
   </form>
-  <?php if (isset($mOpts['own']) && !str_starts_with($mOpts['own']['why'], 'não é')): ?>
+  <?php if (mailer_mode($pdo) === 'api'): ?>
+  <p class="small muted">Saem pelo serviço de envio da empresa: não precisa de nenhuma palavra-passe. As respostas vão para o email geral.</p>
+  <?php elseif (isset($mOpts['own']) && !str_starts_with($mOpts['own']['why'], 'não é')): ?>
   <form method="post" class="fin-pass-own" autocomplete="off"><?= csrf_field() ?><input type="hidden" name="do" value="mail_pass">
     <label for="mp">Palavra-passe de <?= e($mOpts['own']['addr']) ?></label>
     <div class="bar"><input type="password" id="mp" name="pass" required maxlength="200" autocomplete="new-password" placeholder="<?= $mOpts['own']['ok'] ? '•••••••• guardada' : 'A palavra-passe do seu email (Hostinger)' ?>">
@@ -311,13 +350,35 @@ render_flashes();
 </div>
 <?php endif; ?>
 
+<?php $gc = gcal_ready($pdo) ? gcal_conn($pdo, (int)$user['id']) : null; $gOn = google_client() !== null; ?>
+<h2 id="ligacoes">Ligações</h2>
+<div class="panel gcal-card" style="max-width:920px">
+  <h3 style="margin-top:0"><?= icon('calendar') ?> Google Calendar</h3>
+  <?php if ($gc): ?>
+    <p>Ligado a <b><?= e($gc['google_email']) ?></b> desde <?= e(date('d/m/Y', strtotime((string)$gc['connected_at']))) ?>.
+      <?= $gc['last_error'] !== '' ? '<span class="chip no">' . e($gc['last_error']) . '</span>' : ($gc['last_sync_at'] ? '<span class="chip ok">sincronizado ' . e(date('d/m H:i', strtotime((string)$gc['last_sync_at']))) . '</span>' : '<span class="chip info">a sincronizar</span>') ?></p>
+    <form method="post" class="gcal-prefs"><?= csrf_field() ?><input type="hidden" name="do" value="gcal_prefs">
+      <label class="check"><input type="checkbox" name="sync_on" value="1"<?= (int)$gc['sync_on'] ? ' checked' : '' ?>> Pôr no meu calendário as minhas reuniões, gravações, visitas e prazos com hora</label>
+      <label class="check"><input type="checkbox" name="show_busy" value="1"<?= (int)$gc['show_busy'] ? ' checked' : '' ?>> Mostrar na Agenda e na disponibilidade da equipa os meus períodos «ocupado» do Google (só ocupado/livre, sem detalhes)</label>
+      <div class="actions"><button class="btn sm" type="submit">Guardar</button></div></form>
+    <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="gcal_off"><button class="btn ghost sm" type="submit">Desligar (revogar o acesso)</button></form>
+  <?php elseif ($gOn && gcal_ready($pdo)): ?>
+    <p>Ligue o seu Google Calendar (pode ser uma conta Google gratuita) para ver lá as reuniões, gravações, visitas e prazos com hora da plataforma, e para os outros saberem quando está ocupado ao marcar consigo.</p>
+    <a class="btn" href="/admin/google_auth.php?start=calendar"><?= icon('calendar') ?> Ligar Google Calendar</a>
+    <p class="small muted">A Google pede autorização para os eventos e para o ocupado/livre. O acesso fica cifrado no servidor e pode ser revogado aqui a qualquer momento.</p>
+  <?php else: ?>
+    <p class="muted">A ligação à Google ainda não está configurada<?= $isAdmin ? ' — <a href="/admin/definicoes.php?t=integracoes#set-int_google">configurar em Definições</a>' : ' (um administrador configura-a em Definições)' ?>.</p>
+  <?php endif; ?>
+  <p class="small muted" style="margin-bottom:0">As reuniões com Google Meet continuam a ser criadas pela conta da topper. quando não tem o calendário ligado. Nota: em contas Google gratuitas, as chamadas Meet com 3 ou mais pessoas param aos 60 minutos.</p>
+</div>
+
 <?php if ($linksOn):
     $newTok = (string)($_SESSION['ut_new'] ?? '');
     unset($_SESSION['ut_new']);
     $myTokens = ut_list($pdo, (int)$user['id']);
     $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . preg_replace('/[^a-z0-9.:-]/i', '', (string)($_SERVER['HTTP_HOST'] ?? 'topperhub.xyz'));
     $iosUrl = (string)setting($pdo, 'ios_shortcut_url', ''); ?>
-<h2 id="ligacoes">Ligações</h2>
+<h3 style="margin-top:22px">Guardar no Centro Criativo</h3>
 <p class="sub" style="max-width:760px">Guardar referências de fora no Centro Criativo: tudo entra na Caixa de entrada (ou num quadro) e a IA analisa. A extensão e o Atalho entram com um token pessoal, nunca com a sua palavra-passe.</p>
 <?php if ($newTok !== ''): ?>
 <div class="lg-new" role="status"><b>O seu token novo — copie-o agora, não volta a aparecer:</b><code id="ut-new"><?= e($newTok) ?></code>
@@ -368,6 +429,53 @@ render_flashes();
   <p class="small muted" style="margin-bottom:0">Um token por aparelho é o mais prático: se perder um, revoga só esse.</p>
 </div>
 <script>document.addEventListener('click', function (e) { var b = e.target.closest('[data-copy]'); if (!b) return; var t = document.querySelector(b.getAttribute('data-copy')).textContent; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copiado'; }, function () { b.textContent = 'Selecione e copie'; }); });</script>
+<?php endif; ?>
+
+<?php if (auth_ready($pdo)):
+    $pks = auth_passkeys($pdo, (int)$user['id']);
+    $log = auth_log_list($pdo, (int)$user['id'], 15);
+    $st = $pdo->prepare('SELECT google_sub, role FROM users WHERE id = ?');
+    $st->execute([(int)$user['id']]);
+    $meSec = $st->fetch() ?: [];
+    $pkReq = auth_passkey_required($pdo, (string)($meSec['role'] ?? '')); ?>
+<h2 id="seguranca">Segurança</h2>
+<div class="panel sec-card" style="max-width:920px">
+  <h3 style="margin-top:0"><?= icon('key') ?> Chaves de acesso</h3>
+  <p class="small">Entre com o Face ID, a impressão digital ou o PIN do aparelho, sem palavra-passe. Crie uma em cada aparelho que usa (telemóvel, portátil).<?= $pkReq ? ' <b>A sua função pede chave de acesso.</b>' : '' ?></p>
+  <?php if ($pks): ?>
+  <div class="tablewrap"><table class="prefs-t"><thead><tr><th>Aparelho</th><th class="hide-sm">Criada</th><th>Último uso</th><th></th></tr></thead><tbody>
+  <?php foreach ($pks as $k): ?>
+    <tr><td><form method="post" class="inl pk-name"><?= csrf_field() ?><input type="hidden" name="do" value="pk_rename"><input type="hidden" name="id" value="<?= (int)$k['id'] ?>"><input type="text" name="name" maxlength="80" value="<?= e($k['name']) ?>" aria-label="Nome da chave"><button class="btn ghost sm" type="submit">Guardar</button></form></td>
+      <td class="hide-sm small"><?= e(date('d/m/Y', strtotime((string)$k['created_at']))) ?></td>
+      <td class="small"><?= $k['last_used_at'] ? e(date('d/m H:i', strtotime((string)$k['last_used_at']))) . ($k['last_ua'] !== '' ? '<div class="muted">' . e($k['last_ua']) . '</div>' : '') : '<span class="muted">nunca</span>' ?></td>
+      <td><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="pk_del"><input type="hidden" name="id" value="<?= (int)$k['id'] ?>"><button class="btn ghost sm" type="submit">Remover</button></form></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+  <?php endif; ?>
+  <form class="pk-new" onsubmit="return false"><?= csrf_field() ?>
+    <div class="field" style="margin:0"><label for="pk-name">Nome do aparelho <span class="muted">(opcional)</span></label><input id="pk-name" name="pk_name" maxlength="80" placeholder="ex.: iPhone do trabalho"></div>
+    <button class="btn" type="button" data-passkey-new><?= icon('key') ?> Criar chave de acesso</button>
+    <p class="small muted" data-passkey-nosupport hidden>Este browser não suporta chaves de acesso.</p>
+    <p class="small" data-passkey-note hidden aria-live="polite"></p>
+  </form>
+
+  <h3><?= icon('user') ?> Entrar com Google</h3>
+  <?php if (google_client()): ?>
+    <p class="small"><?= !empty($meSec['google_sub']) ? 'A sua conta Google está ligada à entrada: «Entrar com Google» funciona só com ela.' : 'Ainda não entrou com Google. No ecrã de entrada, «Entrar com Google» com a conta do seu email de trabalho (' . e($user['email']) . '). Se ainda não tem, crie uma conta Google gratuita com «usar o meu endereço de email atual».' ?></p>
+    <?php if (!empty($meSec['google_sub'])): ?><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="google_unlink"><button class="btn ghost sm" type="submit">Desligar a conta Google da entrada</button></form><?php endif; ?>
+  <?php else: ?><p class="small muted">Ainda não configurado<?= $isAdmin ? ' — <a href="/admin/definicoes.php?t=integracoes#set-int_google">Definições › Integrações › Google</a>' : '' ?>.</p><?php endif; ?>
+
+  <h3><?= icon('clock') ?> Registo de entradas</h3>
+  <?php if ($log): ?>
+  <div class="tablewrap"><table class="prefs-t"><thead><tr><th>Quando</th><th>Como</th><th>Aparelho</th><th class="hide-sm">Rede</th></tr></thead><tbody>
+  <?php foreach ($log as $l): ?>
+    <tr><td class="small"><?= e(date('d/m/Y H:i', strtotime((string)$l['created_at']))) ?></td><td><?= e(LOGIN_METHODS[$l['method']] ?? $l['method']) ?></td><td class="small"><?= e($l['device']) ?></td><td class="hide-sm small mono muted"><?= e(auth_ip_show($l['ip'] ?? null)) ?></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+  <p class="small muted">Não reconhece uma entrada? Mude a palavra-passe e remova as chaves de acesso que não são suas.</p>
+  <?php else: ?><p class="small muted">As próximas entradas aparecem aqui.</p><?php endif; ?>
+</div>
+<script src="<?= asset_url('passkey.js') ?>" defer></script>
 <?php endif; ?>
 
 <h2>Mudar palavra-passe</h2>

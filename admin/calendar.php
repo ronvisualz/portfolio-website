@@ -4,6 +4,7 @@ require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/tasks_view.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/team.php';
+require_once __DIR__ . '/inc/gcal.php';
 $user = require_login();
 require_page('tarefas');
 
@@ -58,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($old['is_gate']) && $old['status'] !== 'done' && !is_admin()) throw new RuntimeException('Esta tarefa é obrigatória para o negócio avançar: só um admin a pode eliminar.');
                 $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
                 if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
+                // o Google acompanha (§31.4): o Meet é cancelado (com aviso aos convidados) e sai dos calendários
+                try { gcal_task_sync($pdo, $id); } catch (Throwable $e) { error_log('[topper] gcal delete: ' . $e->getMessage()); }
                 flash('Tarefa eliminada.');
                 redirect($back);
             }
@@ -98,6 +101,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'checklist' => task_checklist_parse((string)($_POST['checklist'] ?? '')), 'attachments' => task_links_parse((string)($_POST['attachments'] ?? '')),
                 'participants' => implode(',', $parts),
             ];
+            // o link da chamada colado à mão (sem Google ligado) ou o do Meet criado pela plataforma
+            if (db_has_column($pdo, 'tasks', 'call_link')) {
+                $cl = trim(mb_substr((string)($_POST['call_link'] ?? ''), 0, 500));
+                if ($cl !== '' && !preg_match('~^https://\S+$~', $cl)) throw new RuntimeException('O link da chamada começa por https://.');
+                $row['call_link'] = $cl;
+            }
             if ($row['contact_id'] && !(int)$pdo->query('SELECT COUNT(*) FROM contacts WHERE id = ' . (int)$row['contact_id'])->fetchColumn()) $row['contact_id'] = null;
             $now = task_now();
             if ($old) {
@@ -143,6 +152,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($sent) task_log($pdo, $id, 'invite', $sent . ' participante(s) convidado(s) pelo chat');
                 $msg .= $sent ? ' Convite enviado no chat a ' . $sent . ' pessoa(s).' : '';
                 if ($warn !== '') $msg .= ' Convite não enviado: ' . $warn;
+            }
+            // o Google acompanha (§31.4): hora, título e convidados do Meet; o espelho no calendário de cada pessoa ligada
+            $wantMeet = !empty($_POST['gmeet']) && $row['due_date'] && $row['due_time'];
+            if (!$wantMeet) { try { gcal_task_sync($pdo, $id); } catch (Throwable $e) { error_log('[topper] gcal save: ' . $e->getMessage()); } }
+            if ($wantMeet) {   // cria o Meet e põe o resto em linha (sem cópias para quem já é convidado)
+                try {
+                    $guests = preg_split('/[\s,;]+/', (string)($_POST['gmeet_guests'] ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+                    $l = gcal_meet_for_task($pdo, $id, array_filter($guests, fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)), (int)$me['id']);
+                    $msg .= ' Google Meet criado: os convidados recebem o convite do Google.';
+                } catch (RuntimeException $e) {
+                    $msg .= ' Meet não criado: ' . $e->getMessage();
+                    try { gcal_task_sync($pdo, $id); } catch (Throwable $e2) { error_log('[topper] gcal save: ' . $e2->getMessage()); }
+                }
             }
             flash($msg, 'ok', $undo);
             redirect($back);
@@ -388,6 +410,17 @@ else: // agenda
             }
         }
     }
+    // O «ocupado» do Google Calendar de quem o mostra (Perfil › Ligações), sem detalhes (§31.3).
+    if ($whoUser && gcal_ready($pdo) && ($gcw = gcal_conn($pdo, (int)$whoUser['id'])) && (int)$gcw['show_busy']) {
+        foreach (gcal_busy_blocks($pdo, (int)$whoUser['id'], $from->getTimestamp(), $to->getTimestamp()) as [$ga, $gb]) {
+            for ($x = (new DateTimeImmutable('@' . $ga))->setTimezone(team_tz())->setTime(0, 0); $x->getTimestamp() < $gb; $x = $x->modify('+1 day')) {
+                $s0 = max($ga, $x->getTimestamp()); $e0 = min($gb, $x->modify('+1 day')->getTimestamp());
+                if ($e0 <= $s0) continue;
+                $a = intdiv($s0 - $x->getTimestamp(), 60);
+                $items[$x->format('Y-m-d')][] = ['a' => $a, 'b' => min(1440, $a + max(15, intdiv($e0 - $s0, 60))), 't' => ['kind' => 'event'], 'label' => 'Ocupado (Google)', 'url' => '', 'hidden' => true, 'gbusy' => true];
+            }
+        }
+    }
     // Os eventos antigos do calendário (da empresa) continuam visíveis.
     if (db_has_table($pdo, 'events')) {
         $st = $pdo->prepare('SELECT * FROM events WHERE event_date >= ? AND event_date < ?');
@@ -498,4 +531,5 @@ if ($canEdit) echo task_modal_html($pdo, $editing, $assignable, $operator ? $myM
 </div>
 <?php endif; ?>
 <script src="<?= asset_url('tasks.js') ?>" defer></script>
+<script src="<?= asset_url('gcal.js') ?>" defer></script>
 <?php render_footer();

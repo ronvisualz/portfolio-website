@@ -9,6 +9,8 @@
  *          ID de cliente OAuth (aplicação Web). O refresh_token obtém-se uma vez com o scope
  *          https://www.googleapis.com/auth/calendar.events (ex.: OAuth 2.0 Playground).
  *          A reunião fica no calendário calendar_id dessa conta, com os dois como convidados.
+ *          Desde a §31.4 é a conta usada para criar o Meet quando quem marca não tem o seu Google Calendar ligado
+ *          (Perfil › Ligações). O cliente (client_id/secret) pode ser o mesmo de auth_config.php.
  * discord  O link de convite do servidor/canal de voz da topper. (https://discord.gg/…).
  */
 return [
