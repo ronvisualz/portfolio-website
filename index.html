@@ -17,99 +17,119 @@
 <meta name="theme-color" content="#0c0c10">
 <link rel="preload" href="assets/fonts/FuturaNowHeadline-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/FuturaNowHeadline-Light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="site.css?v=0fed272e1e">
+<link rel="stylesheet" href="site.css?v=d7589d3c75">
 <link rel="modulepreload" href="vendor/three/three.module.min.js">
 </head>
 <body>
 <canvas id="stage" aria-hidden="true"></canvas>
 <div class="grain" aria-hidden="true"></div>
+<script>document.documentElement.classList.add('js')</script>
+<!-- the door: the stage loads behind it; the visitor walks in with sound or without -->
+<div class="loader" id="loader">
+  <img class="ld-mark" src="assets/brand/topper-wordmark-black.svg" alt="topper." width="171" height="48">
+  <div class="ld-door" id="ldDoor" hidden>
+    <button class="ld-in" type="button" data-sound="1">Enter with sound</button>
+    <button class="ld-quiet" type="button" data-sound="0">Enter without</button>
+  </div>
+  <div class="ld-foot wrap"><span class="ld-tag" id="ldTag">Preparing the trick</span><span class="ld-num" id="ldNum">0</span></div>
+  <i class="ld-bar" id="ldBar"></i>
+</div>
+<div class="cursor" id="cursor" aria-hidden="true"><span></span></div>
 
 <header class="hdr" id="hdr">
   <a class="logo" href="#top" aria-label="topper. — back to the top"><img src="assets/brand/topper-wordmark-white.svg" alt="topper." width="114" height="32"></a>
   <nav class="nav" aria-label="Main">
-    <a href="#work">Work</a><a href="#services">Services</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
+    <a href="#services">Services</a><a href="#work">Work</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
   </nav>
-  <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="mnav">Menu</button>
+  <div class="hdr-r">
+    <button class="snd" id="snd" type="button" aria-pressed="false"><i aria-hidden="true"><b></b><b></b><b></b><b></b></i><span>Sound</span></button>
+    <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="mnav">Menu</button>
+  </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Mobile">
-  <a href="#work">Work</a><a href="#services">Services</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
+  <a href="#services">Services</a><a href="#work">Work</a><a href="#studio">Studio</a><a href="#contact">Contact</a>
   <p>info@topperdigital.xyz · Lisbon</p>
 </nav>
 
 <main id="top">
-  <!-- 1 · hero: the hat is the hero -->
-  <section class="hero" data-scene="hero" aria-label="Topper Digital">
-    <div class="hero-tags wrap">
-      <span>VFX · 3D · Post-production</span>
-      <span class="hide-s">Lisbon — working worldwide</span>
-      <span>Boutique studio</span>
+  <!-- 1 · daylight: the wordmark, made of everything (the film opens the site) -->
+  <section class="intro" data-scene="intro" aria-label="Topper Digital">
+    <video class="intro-film" id="reel" muted loop playsinline autoplay preload="auto" poster="assets/portfolio/clips/logo-reel.jpg" data-src="assets/portfolio/clips/logo-reel.mp4" data-src-s="assets/portfolio/clips/logo-reel-s.mp4" aria-hidden="true"></video>
+    <div class="intro-row wrap">
+      <p class="hero-tags"><span>VFX, 3D and post-production</span><span class="hide-s">Lisbon, working worldwide</span></p>
+      <a class="cue" href="#hero">Scroll<i></i></a>
     </div>
-    <p class="hat-hint" id="hatHint" aria-hidden="true"><i></i>Click the hat</p>
+  </section>
+
+  <!-- 2 · the hat on white; the headline is drawn in the scene, behind the hat -->
+  <section class="hero" id="hero" data-scene="hero">
     <img class="hero-still" src="assets/brand/topper-icon-black.svg" alt="" aria-hidden="true">
     <div class="hero-copy wrap">
-      <h1 class="headline"><span class="b">We make images</span> <span class="l">that move people.</span></h1>
-      <div class="hero-row">
-        <p class="hero-sub">VFX, 3D and post-production for brands that want to be seen.</p>
-        <a class="cue" href="#services"><i></i>Scroll</a>
-      </div>
+      <h1 class="headline" data-t3d>We make images that move people.</h1>
+      <p class="hero-sub">VFX, 3D and post-production for brands that want to be seen.</p>
     </div>
   </section>
 
-  <!-- 2 · services: the hat turns over, things come out -->
-  <section class="services wrap" id="services" data-scene="services">
-    <p class="eyebrow"><span class="dot"></span>Services</p>
-    <h2 class="sec-title">Pulled out<br><span class="l">of the hat.</span></h2>
-    <ol class="svcs">
-      <li><span class="n">01</span><div><h3>3D, VFX &amp; post-production</h3><p>Animation, visual effects, compositing, grade and finishing for film, broadcast and digital.</p></div></li>
-      <li><span class="n">02</span><div><h3>Adverts</h3><p>From idea to final master: production and post for commercials that hold attention.</p></div></li>
-      <li><span class="n">03</span><div><h3>Campaigns</h3><p>Hero films, cutdowns and social assets built as one system across every format.</p></div></li>
-    </ol>
+  <!-- 3 · the dive: the hat tips its opening to you and the camera falls in (a scroll spacer) -->
+  <section class="dive" data-scene="dive" aria-hidden="true">
+    <p class="dive-line">Step inside.</p>
   </section>
 
-  <!-- 3 · work -->
-  <section class="work" id="work" data-scene="work">
+  <!-- 3 · services: inside the hat. The dust gathers into the heading; each service is a glass panel with a film of that kind of work (main.js adds it) -->
+  <section class="services wrap" id="services" data-scene="services">
+    <h2 class="sec-title" data-dust data-t3d>Pulled out of the hat.</h2>
+    <ul class="svcs" id="svcs">
+      <li class="svc" style="--i:0" data-p="Wuant — The One"><div class="svc-txt"><h3>3D, VFX &amp; post-production</h3><p>Animation, visual effects, compositing, grade and finishing for film, broadcast and digital.</p></div></li>
+      <li class="svc" style="--i:1" data-p="Casino Solverde"><div class="svc-txt"><h3>Adverts</h3><p>From idea to final master: production and post for commercials that hold attention.</p></div></li>
+      <li class="svc" style="--i:2" data-p="LING"><div class="svc-txt"><h3>Campaigns</h3><p>Hero films, cutdowns and social assets built as one system across every format.</p></div></li>
+    </ul>
+  </section>
+
+  <!-- 4 · work: each project is a card (WebGL). The grid is the fallback. No instructions: the deck explains itself. -->
+  <section class="work" id="work" data-scene="work" aria-labelledby="workTitle">
     <div class="work-head wrap">
-      <div>
-        <p class="eyebrow"><span class="dot b"></span>Selected work</p>
-        <h2 class="sec-title">Work</h2>
-      </div>
+      <h2 class="sr" id="workTitle">Work</h2>
       <div class="tabs" role="tablist" aria-label="Filter projects" id="tabs"></div>
+    </div>
+    <div class="deck" id="deck">
+      <div class="deck-pin">
+        <div class="deck-top wrap"><div class="tabs-slot" id="tabsSlot"></div><span class="deck-count" id="deckCount"></span></div>
+        <div class="deck-info wrap">
+          <p class="deck-cat" id="deckCat"></p>
+          <h3 class="deck-title" id="deckTitle"></h3>
+          <p class="sr" id="deckLive" aria-live="polite"></p>
+          <button class="deck-play" id="deckPlay" type="button">Watch the film</button>
+        </div>
+        <ol class="deck-list" id="deckList" aria-label="Projects"></ol>
+      </div>
     </div>
     <ul class="projects wrap" id="projects"></ul>
   </section>
 
-  <!-- 4 · clients -->
+  <!-- 5 · clients -->
   <section class="clients" id="clients" data-scene="clients" aria-labelledby="clientsTitle">
     <div class="wrap clients-head">
-      <p class="eyebrow"><span class="dot"></span>Trusted by</p>
-      <h2 class="sec-title sm" id="clientsTitle">Brands we've made<br><span class="l">things move for.</span></h2>
+      <h2 class="sec-title" id="clientsTitle" data-dust data-t3d>Brands we've made things move for.</h2>
     </div>
-    <div class="marquee" aria-label="Clients: Riot Games, Galp, Sporting CP, NOS, Federação Portuguesa de Futebol, Casino Solverde, Delta Y, Wuant, Richie Campbell">
-      <div class="mq-track" id="logos"></div>
-    </div>
-    <div class="nums wrap">
-      <div><b data-to="10" data-suf="+">10+</b><span>Years of craft</span></div>
-      <div><b data-to="150" data-suf="+">150+</b><span>Projects delivered</span></div>
-      <div><b data-to="12">12</b><span>Countries</span></div>
-      <div><b data-to="3">3</b><span>Disciplines, one team</span></div>
-    </div>
+    <ul class="wall wrap" id="logos" aria-label="Clients"></ul>
   </section>
 
-  <!-- 5 · studio -->
+  <!-- 6 · the way out: the stars rush past, the hat's opening opens ahead, and we fly out of the hat into daylight (a scroll spacer) -->
+  <section class="exit" data-scene="exit" aria-hidden="true"></section>
+
+  <!-- 7 · studio: back in daylight; the hat juggles what it is made of -->
   <section class="studio wrap" id="studio" data-scene="studio">
-    <figure class="studio-img"><img src="assets/brand/magician.jpg" alt="A stage magician in a tuxedo presenting a vase of flowers." loading="lazy" width="560" height="700"></figure>
+    <figure class="studio-img"><img src="assets/brand/magician.jpg" alt="A stage magician in a tuxedo presenting a vase of flowers." width="560" height="700"></figure>
     <div class="studio-txt">
-      <p class="eyebrow"><span class="dot b"></span>Studio</p>
-      <h2 class="sec-title sm">The trick<br><span class="l">is the craft.</span></h2>
+      <h2 class="sec-title">The trick is the craft.</h2>
       <p>Boutique VFX and motion design studio in Lisbon, working worldwide.</p>
       <p class="mute">A small senior team that stays close to every frame — 3D, compositing, grade and finishing under one roof, so ideas survive all the way to the master.</p>
     </div>
   </section>
 
-  <!-- 6 · contact -->
+  <!-- 8 · contact: the hat tips itself to you -->
   <section class="contact wrap" id="contact" data-scene="contact">
-    <p class="eyebrow"><span class="dot"></span>Contact</p>
-    <h2 class="sec-title xl">Let's make<br><span class="l">something move.</span></h2>
+    <h2 class="sec-title">Let's make something move.</h2>
     <p class="mail"><a href="mailto:info@topperdigital.xyz?subject=New%20project">info@topperdigital.xyz</a></p>
     <form class="cform" id="cform" action="/contacto.php" method="post" novalidate>
       <p class="cform-lead">Or tell us about your project and we'll get back to you.</p>
@@ -129,19 +149,19 @@
         <input type="hidden" name="src" value="">
       </div>
       <div class="csend">
-        <button type="submit" class="cbtn">Send message <span aria-hidden="true">→</span></button>
+        <button type="submit" class="cbtn">Send message</button>
         <p class="cstatus" id="cstatus" role="status" aria-live="polite"></p>
       </div>
     </form>
   </section>
 
-  <!-- 7 · outro: the hat lands in the logo -->
+  <!-- 9 · outro: the hat lands in the logo -->
   <footer class="outro" data-scene="outro">
     <div class="foot wrap">
       <div><h4>Studio</h4><p>Lisbon, Portugal.<br>Working worldwide.</p></div>
       <div><h4>New business</h4><p><a href="mailto:info@topperdigital.xyz">info@topperdigital.xyz</a></p></div>
       <div><h4>Follow</h4><p><a href="https://www.instagram.com/topper.digital/" target="_blank" rel="noopener">Instagram ↗</a></p></div>
-      <div><h4>Menu</h4><p><a href="#work">Work</a><br><a href="#services">Services</a><br><a href="#studio">Studio</a><br><a href="#contact">Contact</a></p></div>
+      <div><h4>Menu</h4><p><a href="#services">Services</a><br><a href="#work">Work</a><br><a href="#studio">Studio</a><br><a href="#contact">Contact</a></p></div>
     </div>
     <div class="mark wrap">
       <div class="mark-box">
@@ -160,12 +180,6 @@
     <div class="legal wrap"><span>© <span id="yr">2026</span> Topper Digital</span><span>3D · VFX · Post · Adverts · Campaigns</span></div>
   </footer>
 
-  <!-- 8 · loop: the start again; scrolling here jumps back to the top -->
-  <section class="hero loop" data-scene="loop" aria-hidden="true">
-    <div class="hero-copy wrap">
-      <p class="headline"><span class="b">We make images</span> <span class="l">that move people.</span></p>
-    </div>
-  </section>
 </main>
 
 <div class="lightbox" id="lightbox" hidden>
@@ -173,7 +187,7 @@
   <video id="lbVideo" playsinline controls></video>
   <p class="lb-title" id="lbTitle"></p>
 </div>
-<script src="js/main.js?v=981423f6ab"></script>
-<script type="module" src="js/scene.js?v=7a9f2fcebc"></script>
+<script src="js/main.js?v=a21bdbf09b"></script>
+<script type="module" src="js/scene.js?v=b874a84f33"></script>
 </body>
 </html>
