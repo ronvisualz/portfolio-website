@@ -3966,3 +3966,17 @@ A Google não deixa criar contas gratuitas com os emails @topperdigital.xyz sem 
 - Ecrã de consentimento OAuth publicado (não modo de teste).
 - **Atualização (28 out 2026):** a conta da topper. para o Meet/Calendar e para a Google Cloud Console passa a ser **Google Workspace com info@topperdigital.xyz** (1 licença), comprada diretamente na Google. O email continua no Hostinger: domínio verificado por TXT, **Gmail não ativado e MX nunca alterados**. Reuniões criadas pela plataforma em nome do info@ com **acesso aberto** (quem tem o link entra sem conta Google e sem pedir para entrar); comerciais e clientes recebem o convite nos seus emails — ninguém partilha o login do info@. Coanfitriões opcionais pela conta Google associada no Perfil. geral@ fica para mais tarde.
 - **Atualização (29 out 2026) — substitui a de 28 out:** sem Workspace. A conta da topper. para o Meet e para a Google Cloud Console é a **conta Gmail gratuita `geraltopperdigital@gmail.com`**, ligada em Definições › Integrações › Google › «Ligar conta da topper.» (o token de atualização fica em `inc/meet_config.php`). Por ser gratuita: chamadas com 3+ pessoas param aos **60 minutos** e quem entra precisa de **conta Google** (sem conta fica à espera que o anfitrião aceite) — avisos na interface. Os convites seguem para os emails de trabalho.
+
+### 31.6 Reuniões na criação da tarefa (decidido 29 out 2026)
+Fluxo pedido: tudo acontece **no próprio formulário da tarefa**, sem gravar primeiro nem abrir outro botão.
+1. Tipo **Reunião** → escolha da plataforma: **Google Meet · Discord · Presencial** (já existe a escolha; passa a mudar os campos abaixo).
+2. **Google Meet** → campo **«Convidar»** (etiquetas de email):
+   - **Sugestões automáticas** quando a tarefa nasce numa lead, negócio ou contacto: emails da ficha de contacto associada (pessoa e empresa, todos os emails registados), outros contactos do mesmo negócio/empresa e os participantes internos da tarefa. Um clique acrescenta; também se escreve qualquer email (validado).
+   - Participantes internos (utilizadores da plataforma) são convidados por defeito, com o email de trabalho.
+   - Ao **guardar a tarefa**, o Meet é criado e os convites enviados de imediato; o link aparece no formulário, na tarefa, no histórico da lead/negócio e no chat.
+   - **Organizador por defeito: a conta da topper. (geraltopperdigital@gmail.com).** Opção secundária «Enviar do meu Google Calendar» só para quem tem o calendário ligado. O evento aparece também (em espelho, sem convite duplicado) no calendário de quem tem o Google ligado.
+   - Editar a tarefa (hora, convidados) atualiza o evento e avisa os convidados; remover um convidado cancela-lhe o convite; apagar a tarefa cancela a reunião. Respostas (Sim/Não/Talvez) visíveis ao lado de cada email.
+   - Se a conta da topper. não estiver ligada: aviso com atalho para Definições › Integrações e campo para colar o link à mão.
+3. **Discord** → o link do canal (Definições) entra automaticamente na tarefa e no convite por email (enviado pelo serviço de envio, §31.1) aos mesmos convidados sugeridos.
+4. **Presencial** → campo «Local» com sugestão da morada da empresa/contacto e convite por email com ficheiro .ics.
+5. Convites por email em PT (EN se o contacto tiver idioma inglês), com o nome e o código do negócio no título.
