@@ -237,6 +237,8 @@ $msg = function (string $for) use ($view, $error, $note) {
     </section>
     <?php endif; ?>
   </div>
+  <p class="login-legal">Plataforma interna da Topper Digital (leads, negócios, tarefas e agenda), só para a equipa.<br>
+    <a href="/privacidade">Política de Privacidade</a> · <a href="/termos">Termos de Utilização</a></p>
 </main>
 <script>
 // Troca suave entre «Entrar» e «Recuperar palavra-passe», sem recarregar.

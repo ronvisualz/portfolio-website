@@ -1,2 +1,6 @@
 User-agent: *
+Allow: /$
+Allow: /privacidade
+Allow: /termos
+Allow: /admin/$
 Disallow: /

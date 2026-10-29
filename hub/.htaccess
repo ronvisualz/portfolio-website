@@ -5,6 +5,11 @@
 # base de dados); assets/fonts/ também, para a letra dos títulos.
 
 Options -Indexes
+
+# _legal.php só serve às páginas; não se abre sozinho
+<Files "_legal.php">
+  Require all denied
+</Files>
 DirectoryIndex index.php
 
 <IfModule mod_headers.c>
@@ -17,6 +22,9 @@ DirectoryIndex index.php
   RewriteCond %{HTTPS} off [OR]
   RewriteCond %{HTTP_HOST} ^www\. [NC]
   RewriteRule ^(.*)$ https://topperhub.xyz/$1 [L,R=301]
-  # A raiz (e a página de omissão do alojamento) abre a plataforma.
+  # Páginas públicas, sem login (pedidas pela Google para a app OAuth).
+  RewriteRule ^privacidade/?$ privacidade.php [L]
+  RewriteRule ^termos/?$ termos.php [L]
+  # A raiz (e a página de omissão do alojamento) abre a plataforma: o ecrã de entrada, sem login, com os links.
   RewriteRule ^(default\.php)?$ /admin/ [L,R=302]
 </IfModule>
