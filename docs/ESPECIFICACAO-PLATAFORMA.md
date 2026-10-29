@@ -2081,6 +2081,45 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - Ficheiros: `google_auth.php`, `ical.php`, `conta.php`, `definicoes.php`, `inc/google_oauth.php`, `inc/ical.php`,
   `inc/auth.php`, `inc/mail_inbound.php`, `inc/migrate_auth.php`, `inc/migrate.php`.
 
+### 10.27 Reuniões criadas no formulário da tarefa — §31.6 (29 out 2026)
+
+- **Base de dados, passo 37:** `tasks.invitees` (os convidados externos de «Convidar», JSON), `tasks.organizer`
+  (`topper` | `me`), `contacts.lang` (`pt` | `en`, o idioma dos convites) e a tabela `task_invites` (os convites por
+  email das reuniões Discord e presenciais: email, canal, idioma, sequência do .ics, assinatura do que foi enviado, o
+  resumo do evento — para cancelar mesmo depois de a tarefa ser apagada —, estado, resposta e último erro).
+- **Formulário (Tipo Reunião):** a plataforma (Google Meet · Discord · Presencial) muda os campos. «Convidar» com
+  etiquetas de email: sugestões da ficha de contacto (pessoa e empresa), do negócio/lead (email da lead, pessoa,
+  empresa, contactos do negócio) e das outras pessoas da mesma empresa, com a origem e «EN» para quem tem inglês;
+  email livre validado (Enter, vírgula, colar vários; um email errado não deixa gravar). Mudar o negócio ou o contacto
+  traz outras sugestões; numa reunião nova o contacto vem marcado. Os internos (responsável e participantes) vão por
+  defeito com o email de trabalho. A resposta de cada convidado (Sim / Não / Talvez / Sem resposta / Não enviado)
+  aparece ao lado do email.
+- **Google Meet:** ao gravar (com dia e hora) o Meet é criado e os convites enviados pela Google, sem outro botão.
+  Organizador por defeito: a conta da topper.; «Enviar do meu Google Calendar» só para quem o tem ligado. Depois de
+  criado, o organizador fica o mesmo. Editar atualiza o evento e avisa (`sendUpdates=all`); tirar um email cancela-lhe
+  o convite; apagar a tarefa (ou mudá-la para Discord/presencial, ou tirar-lhe a hora) cancela a reunião. Quem já é
+  convidado não leva cópia no seu calendário. O link fica na tarefa, no histórico da tarefa e do negócio/lead e no
+  chat dos participantes. Sem conta da topper.: aviso com atalho para Definições › Integrações (para os admins) e o
+  campo para colar o link; quem tem o calendário ligado pode enviar do seu.
+- **Discord:** o link do canal (Definições › Integrações) entra na tarefa e no convite por email.
+- **Presencial:** «Local» com o botão «Usar a morada de …» (empresa ou contacto) e convite por email.
+- **Convites por email (Discord e presencial):** pelo serviço de envio (§31.1; sem ele, pelo servidor), com o evento em
+  `.ics` (`METHOD:REQUEST`, organizador a caixa geral, «responder a» quem marcou). Só se reenvia quando muda a hora, o
+  título, o local ou o link («Reunião atualizada», sequência +1); a quem sai vai `METHOD:CANCEL`. Recebem-no os
+  externos e os internos sem o Google Calendar ligado (os outros têm o espelho). As respostas (`METHOD:REPLY`) voltam à
+  caixa geral pela Cloudflare e ficam ao lado do email e no histórico da tarefa.
+- **Idioma e título:** em português, ou em inglês quando o contacto da tarefa (ou a empresa) tem inglês na ficha, ou
+  quando todos os convidados externos o têm (nos emails, cada convidado no seu idioma). Título com o código e o nome do
+  negócio; a descrição leva o tipo, o negócio, o link e a ordem de trabalhos — sem links internos da plataforma.
+- **Ficha de contacto:** campo «Idioma dos convites» (Português / English) em Editar.
+- **Tarefas apagadas por outro caminho** (lead apagada, Anular «Criar tarefa»…): Anular cancela logo; o cron (`cc`)
+  cancela os Meet e os convites por email que ficaram sem tarefa.
+- Ficheiros: `calendar.php`, `gcal_api.php` (`a=guests`, respostas dos convites por email em `a=event`),
+  `assets/gcal.js`, `assets/tasks.js`, `assets/app.css`, `inc/task_invites.php` (novo), `inc/gcal.php`,
+  `inc/tasks_view.php`, `inc/mailer.php` (anexos e «responder a» em `app_mail`), `inc/mail_inbound.php`,
+  `inc/contacts.php`, `inc/contact_view.php`, `ui_api.php`, `inc/undo.php`, `inc/cron_run.php`,
+  `inc/migrate_auth.php`, `inc/migrate.php`.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das

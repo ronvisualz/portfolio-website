@@ -159,6 +159,12 @@ function mail_inbound_accept(PDO $pdo, string $raw, array $h): array {
         }
         return ['confirm', 'Link de confirmação guardado em Definições.'];
     }
+    // a resposta a um convite de reunião (Sim/Não/Talvez, §31.6): fica ao lado do email na tarefa
+    require_once __DIR__ . '/task_invites.php';
+    if (($note = tinv_reply($pdo, $raw)) !== '') {
+        if (!mail_inbound_log($pdo, $hash, ['box' => $box, 'from' => $parsed['from'], 'subject' => $subject, 'size' => strlen($raw), 'status' => 'rsvp', 'note' => $note])) return ['dup', 'Repetido.'];
+        return ['rsvp', $note];
+    }
     if ($box === '') {
         // de uma caixa que não está ligada: nada fica além da marca contra repetições
         if (!mail_inbound_log($pdo, $hash, ['status' => 'ignored', 'size' => strlen($raw), 'note' => 'Caixa não ligada'])) return ['dup', 'Repetido.'];

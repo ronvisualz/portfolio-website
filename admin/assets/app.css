@@ -3416,6 +3416,25 @@ a.xmini:hover { border-color: var(--line-2); color: var(--fg); }
 .gm-make input[type=text] { flex: 1 1 240px; min-width: 0; }
 .gm-hint { margin: 4px 0 0; }
 .gm-manual summary { cursor: pointer; margin: 6px 0 4px; }
+/* Reunião (§31.6): «Convidar» com etiquetas de email, sugestões e a resposta de cada convidado */
+.tinv .lbl { display: block; }
+.tinv-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; min-height: 40px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); cursor: text; }
+.tinv-box:focus-within { border-color: var(--ink, currentColor); box-shadow: 0 0 0 3px color-mix(in srgb, var(--info-fg) 18%, transparent); }
+.tinv-in { flex: 1 1 180px; min-width: 120px; border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 4px 2px !important; outline: none; }
+.tinv-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--chip); font-size: 13px; }
+.tinv-tag .e { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tinv-tag .chip { font-size: 11px; padding: 1px 7px; }
+.tinv-tag .x { border: 0; background: transparent; color: inherit; opacity: .6; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; }
+.tinv-tag .x:hover, .tinv-tag .x:focus-visible { opacity: 1; background: var(--hover); }
+.tinv-sug { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 2px; }
+.tinv-s small { margin-left: 2px; }
+.tinv [data-plat] p, .tinv [data-tinv-team] { margin: 6px 0 0; }
+.tinv-org { margin-top: 8px; align-items: center; }
+.tinv-warn { color: var(--warn-fg); background: var(--warn-bg); padding: 6px 10px; border-radius: 8px; }
+.tinv-warn a { color: inherit; font-weight: 600; }
+.tinv-warn .ico, .tinv [data-plat] .ico { width: 15px; height: 15px; vertical-align: -2px; }
+.tinv-addr { margin-top: 6px; }
+.tinv-addr .chip-btn { max-width: 100%; white-space: normal; text-align: left; }
 .gslots { margin-top: -4px; }
 .gslots .chips-wrap { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .gslots p { margin: 4px 0; }

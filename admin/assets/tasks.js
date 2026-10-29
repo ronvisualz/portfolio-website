@@ -311,6 +311,10 @@
     // Local: reunião presencial, almoço, jantar e evento.
     $$('[data-only="local"]', form).forEach(function (n) { n.hidden = !((k === 'meeting' && plat === '') || ['lunch', 'dinner', 'event'].indexOf(k) >= 0); });
     $$('[data-not="block"]', form).forEach(function (n) { n.hidden = k === 'block' || k === 'personal'; });
+    // Reunião (§31.6): «Convidar» e os campos de cada plataforma; a chamada só no Meet (e nos outros eventos)
+    $$('[data-not="meeting"]', form).forEach(function (n) { n.hidden = k === 'meeting'; });
+    $$('[data-plat]', form).forEach(function (n) { n.hidden = k !== 'meeting' || n.getAttribute('data-plat') !== (plat || 'local'); });
+    $$('[data-call]', form).forEach(function (n) { n.hidden = k === 'meeting' && plat !== 'meet'; });
     // Participantes: só em Reunião, Gravação e Visita.
     $$('[data-only="guests"]', form).forEach(function (n) { n.hidden = ['meeting', 'shoot', 'visit'].indexOf(k) < 0; });
     var who = $('#tk-who', form); if (who) who.closest('.field').hidden = k === 'block' || k === 'personal';

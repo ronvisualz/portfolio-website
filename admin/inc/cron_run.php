@@ -80,6 +80,9 @@ try {
         // (fase 2, quando ligada em Definições) os canais de notificações e as mudanças vindas do Google
         require_once __DIR__ . '/gcal.php';
         try { if (($m = gcal_tick($pdo, (float)min(45, $sec / 5))) !== '') $out .= $m . "\n"; } catch (Throwable $e) { $out .= 'Google Calendar: ' . $e->getMessage() . "\n"; }
+        // reuniões de tarefas apagadas por outro caminho (lead apagada, anular…): o Meet e os convites por email são cancelados (§31.6)
+        require_once __DIR__ . '/task_invites.php';
+        try { if (($n = tinv_orphans($pdo)) > 0) $out .= 'Reuniões canceladas (tarefas apagadas): ' . $n . "\n"; } catch (Throwable $e) { $out .= 'Convites: ' . $e->getMessage() . "\n"; }
         // o Review (§24): o cron diz às páginas se há ffmpeg (elas não correm programas; o cron sim)
         require_once __DIR__ . '/cc_review.php';
         if (cc_rv_ready($pdo)) {

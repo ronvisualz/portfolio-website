@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 36;
+const SCHEMA_VERSION = 37;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -334,6 +334,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 36 · Sem contas Google nos emails de trabalho (§31.5): conta Google associada no Perfil, link iCal por pessoa
     //        e as confirmações de reencaminhamento do Hostinger ──
     migrate_auth_36($pdo);
+    // ── 37 · Reuniões no formulário da tarefa (§31.6): convidados externos, organizador, convites por email (.ics)
+    //        das reuniões Discord e presenciais, idioma do contacto ──
+    migrate_auth_37($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

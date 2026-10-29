@@ -571,6 +571,8 @@ function contact_input(array $src, string $kind): array {
         'birthday' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $bday) ? $bday : null,
         'notes'    => $t('notes', 8000),
     ];
+    // o idioma dos convites (§31.6): só quando o formulário o traz (importar e criar ficam em português)
+    if (array_key_exists('lang', $src)) $v['lang'] = ($src['lang'] ?? '') === 'en' ? 'en' : 'pt';
     foreach (array_keys(CONTACT_TYPES) as $f) {
         $v[$f] = !empty($src[$f]) && ($kind === 'person' || $f !== 'is_freelancer') ? 1 : 0;
     }
@@ -686,11 +688,11 @@ function contact_refs(PDO $pdo, int $cid): int {
 
 /** Os campos que «Editar» grava (para o «Anular» repor). */
 const CONTACT_EDIT_FIELDS = ['name', 'role', 'email', 'phone', 'links', 'nif', 'address', 'birthday', 'notes',
-                             'is_client', 'is_supplier', 'is_freelancer', 'is_partner', 'company_id'];
+                             'is_client', 'is_supplier', 'is_freelancer', 'is_partner', 'company_id', 'lang'];
 
 function contact_snapshot(array $c): array {
     $o = [];
-    foreach (CONTACT_EDIT_FIELDS as $f) $o[$f] = $c[$f] ?? null;
+    foreach (CONTACT_EDIT_FIELDS as $f) if ($f !== 'lang' || array_key_exists('lang', $c)) $o[$f] = $c[$f] ?? null;
     return $o;
 }
 

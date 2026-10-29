@@ -108,6 +108,8 @@ function contact_edit_form_html(PDO $pdo, array $c): string {
          . $text('nif', 'NIF', 20, ['im' => 'numeric'])
          . $text('address', 'Morada', 255)
          . $text('birthday', 'Aniversário', 10, ['only' => 'person', 'type' => 'date', 'value' => (string)$c['birthday']])
+         . (array_key_exists('lang', $c) ? '<div class="field"><label for="' . $f('lang') . '">Idioma dos convites</label><select id="' . $f('lang') . '" name="f[lang]">'
+             . '<option value="pt"' . ($c['lang'] !== 'en' ? ' selected' : '') . '>Português</option><option value="en"' . ($c['lang'] === 'en' ? ' selected' : '') . '>English</option></select></div>' : '')
          . '<div class="field wide"><span class="lbl">Tipo</span><div class="chips-check" role="group" aria-label="Tipo">' . $types . '</div></div>'
          . $text('notes', 'Notas', 8000, ['area' => true, 'wide' => true, 'rows' => 4, 'value' => (string)$c['notes']])
          . '</div>'
@@ -311,6 +313,7 @@ function contact_view(PDO $pdo, array $c, string $mode = 'panel', string $back =
     if ($person) $row('Cargo', e((string)$c['role']));
     $row('NIF', $c['nif'] !== '' ? '<span class="mono">' . e($c['nif']) . '</span>' : '');
     $row('Morada', e((string)$c['address']));
+    if (($c['lang'] ?? 'pt') === 'en') $row('Idioma', 'English <span class="muted small">(convites em inglês)</span>');
     if ($person && $c['birthday']) $row('Aniversário', '<span class="mono">' . e(date('d/m', strtotime((string)$c['birthday']))) . '</span>');
     if ($prov) { [$avg, $n] = contact_rating($pdo, $id); $row('Avaliação', rating_html($avg, $n)); }
     $row('Criado', '<span class="mono">' . e(lisbon_fmt(strtotime((string)$c['created_at']), 'd/m/Y')) . '</span>');

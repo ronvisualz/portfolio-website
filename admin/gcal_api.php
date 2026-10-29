@@ -4,6 +4,7 @@
  *
  *   POST ?a=meet    «Criar Google Meet» numa tarefa com hora (task, guests: emails externos separados por vírgulas)
  *   GET  ?a=event   o Meet de uma tarefa: link, organizador e respostas dos convidados (lidas agora à Google)
+ *   GET  ?a=guests  «Convidar» (§31.6): as sugestões de emails do negócio/contacto escolhidos e a morada (deal, contact)
  *   GET  ?a=slots   ao marcar: quem está ocupado nessa hora (plataforma + Google de quem tem o calendário ligado)
  *                   e os 3 próximos horários livres em comum (mid, uids, dur, date, time)
  * As mesmas regras de acesso das tarefas: privadas dos outros não existem; editar pede permissão de edição.
@@ -13,6 +14,7 @@ require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/tasks_view.php';
 require_once __DIR__ . '/inc/team.php';
 require_once __DIR__ . '/inc/gcal.php';
+require_once __DIR__ . '/inc/task_invites.php';
 $user = require_login();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -50,7 +52,7 @@ try {
         $bad = array_filter($guests, fn($e) => !filter_var($e, FILTER_VALIDATE_EMAIL));
         if ($bad) gj(422, ['error' => 'Email inválido: ' . implode(', ', array_slice($bad, 0, 3))]);
         if (count($guests) > 30) gj(422, ['error' => 'No máximo 30 convidados externos.']);
-        $l = gcal_meet_for_task($pdo, (int)$t['id'], $guests, (int)$me['id']);
+        $l = gcal_meet_for_task($pdo, (int)$t['id'], $guests, (int)$me['id'], ($_POST['organizer'] ?? '') === 'me' ? 'me' : '');
         gj(200, ['ok' => true, 'url' => (string)$l['meet_url'], 'html' => (string)$l['html_link'], 'organizer' => $l['account'] === 'topper' ? 'conta da topper.' : 'o seu Google Calendar',
                  'msg' => 'Google Meet criado. Os convidados recebem o convite do Google.']);
     }
@@ -59,12 +61,33 @@ try {
         $t = $reach((int)($_GET['task'] ?? 0));
         if (!$t) gj(404, ['error' => 'Essa tarefa já não existe.']);
         $l = gcal_link($pdo, 'task', (int)$t['id'], 'meet');
-        if (!$l) gj(200, ['ok' => true, 'url' => (string)($t['call_link'] ?? ''), 'linked' => false, 'can' => gcal_can_meet($pdo, (int)$me['id'])]);
+        // os convites por email (Discord e presencial): a resposta que voltou ou «sem resposta»
+        $inv = [];
+        foreach (tinv_responses($pdo, (int)$t['id']) as $e => $r) $inv[$e] = $r['status'] !== '' ? $r['status'] : ($r['state'] === 'failed' ? 'failed' : 'needsAction');
+        if (!$l) gj(200, ['ok' => true, 'url' => (string)($t['call_link'] ?? ''), 'linked' => false, 'can' => gcal_can_meet($pdo, (int)$me['id']), 'invites' => $inv]);
         $resp = [];
         try { $resp = gcal_responses($pdo, $l); } catch (Throwable $e) { $resp = json_decode((string)$l['responses'], true) ?: []; }
         gj(200, ['ok' => true, 'linked' => true, 'url' => (string)$l['meet_url'], 'html' => (string)$l['html_link'],
                  'organizer' => $l['account'] === 'topper' ? 'conta da topper.' : 'Google Calendar de ' . (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)substr((string)$l['account'], 5))->fetchColumn(),
-                 'responses' => array_map(fn($r) => ['email' => $r['email'], 'status' => GCAL_RESP[$r['status']] ?? $r['status'], 'k' => $r['status'], 'organizer' => !empty($r['organizer'])], $resp)]);
+                 'responses' => array_map(fn($r) => ['email' => $r['email'], 'status' => GCAL_RESP[$r['status']] ?? $r['status'], 'k' => $r['status'], 'organizer' => !empty($r['organizer'])], $resp), 'invites' => $inv]);
+    }
+
+    if ($a === 'guests') {
+        if (!can('tarefas', PERM_EDIT)) gj(403, ['error' => 'Sem permissão para editar tarefas.']);
+        // só o negócio que a pessoa pode escolher no formulário; o contacto, se vê Contactos ou é desse negócio
+        $deal = (int)($_GET['deal'] ?? 0);
+        if ($deal && !isset(task_deal_options($pdo)[$deal]) && !can('leads')) $deal = 0;   // as leads: só quem vê Leads
+        $ct = (int)($_GET['contact'] ?? 0);
+        if ($ct && !can('contactos')) {
+            $ok = false;
+            if ($deal) {
+                $st = $pdo->prepare('SELECT COUNT(*) FROM deals WHERE id = ? AND ? IN (contact_id, person_id, company_id)');
+                $st->execute([$deal, $ct]);
+                $ok = (bool)$st->fetchColumn();
+            }
+            if (!$ok) $ct = 0;
+        }
+        gj(200, ['ok' => true] + tinv_suggest($pdo, $deal ?: null, $ct ?: null));
     }
 
     if ($a === 'slots') {

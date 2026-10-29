@@ -682,6 +682,7 @@ try {
         $cur = ['name' => $c['name'], 'role' => $c['role'], 'email' => $c['email'], 'phone' => $c['phone'], 'links' => (string)$c['links'], 'nif' => $c['nif'],
                 'address' => $c['address'], 'birthday' => (string)$c['birthday'], 'notes' => (string)$c['notes'], 'company' => (string)$c['company_name']];
         foreach (array_keys(CONTACT_TYPES) as $f) if ((int)$c[$f] === 1) $cur[$f] = '1';
+        if (array_key_exists('lang', $c)) $cur['lang'] = (string)$c['lang'];
         // Os tipos: o formulário marca que os mandou (os desmarcados não vêm).
         $in = array_key_exists('types_sent', $in) ? $in + array_diff_key($cur, CONTACT_TYPES) : $in + $cur;
         $kind = in_array($in['kind'] ?? '', ['person', 'company'], true) ? $in['kind'] : $c['kind'];
@@ -693,7 +694,7 @@ try {
         if ($coName !== '' && mb_strtolower($coName) === mb_strtolower($v['name'])) throw new RuntimeException('A empresa não pode ter o mesmo nome da pessoa.');
         $before = contact_snapshot($c);
         $labels = ['name' => 'nome', 'role' => 'cargo', 'email' => 'email', 'phone' => 'telefone', 'links' => 'redes', 'nif' => 'NIF', 'address' => 'morada',
-                   'birthday' => 'aniversário', 'notes' => 'notas', 'is_client' => 'tipo', 'is_supplier' => 'tipo', 'is_freelancer' => 'tipo', 'is_partner' => 'tipo'];
+                   'birthday' => 'aniversário', 'notes' => 'notas', 'lang' => 'idioma', 'is_client' => 'tipo', 'is_supplier' => 'tipo', 'is_freelancer' => 'tipo', 'is_partner' => 'tipo'];
         $pdo->beginTransaction();
         try {
             $set = $v + ($kind === 'company' ? ['company_id' => null, 'role' => ''] : []);
@@ -702,7 +703,7 @@ try {
             if ($kind === 'person') contact_set_company($pdo, contact_get($pdo, $id), $coName, (int)current_user()['id']);
             $now = contact_get($pdo, $id);
             $changed = [];
-            foreach ($labels as $f => $lab) if ((string)$before[$f] !== (string)$now[$f]) $changed[$lab] = true;
+            foreach ($labels as $f => $lab) if (array_key_exists($f, $before) && (string)$before[$f] !== (string)$now[$f]) $changed[$lab] = true;
             if ($kind !== $c['kind']) $changed[$kind === 'person' ? 'passou a pessoa' : 'passou a empresa'] = true;
             if ($changed) contact_log($pdo, $id, 'c_edit', ucfirst(implode(', ', array_keys($changed))));
             $pdo->commit();

@@ -139,3 +139,34 @@ function migrate_auth_36(PDO $pdo): void {
         created_at   DATETIME      NOT NULL,
         UNIQUE KEY uq_mc_hash (msg_hash)");
 }
+
+/**
+ * Passo 37 · Reuniões criadas no próprio formulário da tarefa (§31.6):
+ *   tasks.invitees   os convidados externos escolhidos em «Convidar» (JSON com os emails)
+ *   tasks.organizer  quem envia o Meet: 'topper' (a conta da topper., por defeito) ou 'me' (o Google Calendar de quem marca)
+ *   task_invites     os convites por email das reuniões Discord e presenciais (com .ics): a quem, em que idioma, o que
+ *                    foi enviado (para só reenviar quando muda e para cancelar a quem sai — mesmo depois de a tarefa
+ *                    ser apagada, por isso guarda o resumo do evento) e a resposta (Sim/Não/Talvez) que volta à caixa geral
+ *   contacts.lang    o idioma do contacto (pt | en): os convites saem em inglês para quem o tiver
+ */
+function migrate_auth_37(PDO $pdo): void {
+    db_add_column($pdo, 'tasks', 'invitees', 'TEXT NULL', 'TEXT NULL');
+    db_add_column($pdo, 'tasks', 'organizer', "VARCHAR(8) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'contacts', 'lang', "VARCHAR(2) NOT NULL DEFAULT 'pt'", "TEXT NOT NULL DEFAULT 'pt'");
+    db_create($pdo, 'task_invites', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        task_id      INT UNSIGNED  NOT NULL,
+        email        VARCHAR(190)  NOT NULL,
+        channel      VARCHAR(8)    NOT NULL DEFAULT '',
+        lang         VARCHAR(2)    NOT NULL DEFAULT 'pt',
+        seq          INT UNSIGNED  NOT NULL DEFAULT 0,
+        sig          CHAR(64)      NOT NULL DEFAULT '',
+        meta         TEXT          NULL,
+        status       VARCHAR(10)   NOT NULL DEFAULT 'sent',
+        response     VARCHAR(12)   NOT NULL DEFAULT '',
+        last_error   VARCHAR(300)  NOT NULL DEFAULT '',
+        sent_at      DATETIME      NULL,
+        created_at   DATETIME      NOT NULL,
+        UNIQUE KEY uq_ti (task_id, email),
+        KEY ix_ti_status (status)");
+}

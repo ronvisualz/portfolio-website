@@ -183,6 +183,10 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $st->execute([(int)$d['id']]);
             if (!$st->rowCount()) throw new RuntimeException($changed);
             if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([(int)$d['id']]);
+            // o Meet e os convites por email que a tarefa já levou são cancelados (§31.6)
+            require_once __DIR__ . '/task_invites.php';
+            try { gcal_task_sync($pdo, (int)$d['id']); } catch (Throwable $e) { error_log('[topper] undo gcal: ' . $e->getMessage()); }
+            tinv_sync($pdo, (int)$d['id']);
             return 'Tarefa retirada.';
 
         case 'task':

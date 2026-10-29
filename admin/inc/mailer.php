@@ -96,7 +96,7 @@ function mailer_api_send(array $c, string $to, string $subject, string $body, ar
         $msg = ['from' => $name . ' <' . $c['user'] . '>', 'to' => [$to], 'subject' => $subject, 'text' => $body];
         if ($cc) $msg['cc'] = $cc;
         if ($reply !== '') $msg['reply_to'] = [$reply];
-        foreach ($att as $a) $msg['attachments'][] = ['filename' => (string)$a['name'], 'content' => base64_encode((string)$a['bytes'])];
+        foreach ($att as $a) $msg['attachments'][] = ['filename' => (string)$a['name'], 'content' => base64_encode((string)$a['bytes'])] + (!empty($a['mime']) ? ['content_type' => (string)$a['mime']] : []);
         [$code, $j, $txt] = http_call('POST', ext_url('https://api.resend.com/emails'), ['Authorization: Bearer ' . $api['key']], $msg, 40);
         if ($code >= 300 || empty($j['id'])) throw new RuntimeException('O Resend não enviou (' . $code . ': ' . mb_substr((string)($j['message'] ?? $txt), 0, 160) . ').');
         return (string)$j['id'];
@@ -113,18 +113,34 @@ function mailer_api_send(array $c, string $to, string $subject, string $body, ar
 /**
  * Os emails que a plataforma envia sozinha (recuperar a palavra-passe, convites, avisos): pelo serviço de envio
  * quando está pronto; senão pelo mail() do servidor, como antes. O remetente é o de Definições (@ do domínio).
+ * Anexos [['name', 'mime', 'bytes']] (ex.: o .ics de um convite) e «responder a» opcionais.
  */
-function app_mail(PDO $pdo, string $to, string $subject, string $body, string $name = ''): bool {
+function app_mail(PDO $pdo, string $to, string $subject, string $body, string $name = '', array $att = [], string $replyTo = ''): bool {
     $from = (string)setting($pdo, 'mail_from', 'no-reply@topperdigital.xyz');
     if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !str_ends_with(strtolower($from), '@topperdigital.xyz')) $from = 'no-reply@topperdigital.xyz';
     $name = trim(preg_replace('/[\r\n"<>]/', '', $name !== '' ? $name : (string)setting($pdo, 'mail_from_name', 'topper.'))) ?: 'topper.';
+    $replyTo = filter_var($replyTo, FILTER_VALIDATE_EMAIL) ? $replyTo : '';
     if (mailer_api_on($pdo)) {
-        try { mailer_api_send(['user' => $from, 'from_name' => $name], $to, $subject, $body); return true; }
+        try { mailer_api_send(['user' => $from, 'from_name' => $name], $to, $subject, $body, $att, $replyTo !== '' ? ['reply_to' => $replyTo] : []); return true; }
         catch (Throwable $e) { error_log('[topper] o serviço de envio falhou (' . $e->getMessage() . '): vai pelo mail() do servidor'); }
     }
-    $headers = 'From: =?UTF-8?B?' . base64_encode($name) . "?= <$from>\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Auto-Response-Suppress: All";
+    $headers = 'From: =?UTF-8?B?' . base64_encode($name) . "?= <$from>\r\n" . ($replyTo !== '' ? "Reply-To: $replyTo\r\n" : '') . "MIME-Version: 1.0\r\nX-Auto-Response-Suppress: All\r\n";
+    if ($att) {
+        // multipart: o texto e os anexos (um .ics como text/calendar, para o cliente de email mostrar «Sim / Não / Talvez»)
+        $b = 'tp' . bin2hex(random_bytes(12));
+        $headers .= 'Content-Type: multipart/mixed; boundary="' . $b . '"';
+        $msg = "--$b\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($body));
+        foreach ($att as $a) {
+            $mime = preg_replace('/[\r\n]/', '', (string)($a['mime'] ?? 'application/octet-stream'));
+            $fn = preg_replace('/[^A-Za-z0-9._-]/', '_', (string)$a['name']);
+            $msg .= "--$b\r\nContent-Type: $mime; name=\"$fn\"\r\nContent-Disposition: attachment; filename=\"$fn\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode((string)$a['bytes']));
+        }
+        $body = $msg . "--$b--\r\n";
+    } else {
+        $headers .= 'Content-Type: text/plain; charset=UTF-8';
+    }
     $sent = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
-    if (defined('IS_LOCAL') && IS_LOCAL) error_log('[topper] email para ' . $to . ' (só na bancada): ' . $subject . "\n" . $body);
+    if (defined('IS_LOCAL') && IS_LOCAL) error_log('[topper] email para ' . $to . ' (só na bancada): ' . $subject . ($att ? ' [' . count($att) . ' anexo(s)]' : '') . "\n" . ($att ? '' : $body));
     elseif (!$sent) error_log('[topper] o email «' . $subject . '» não saiu para ' . $to);
     return (bool)$sent;
 }

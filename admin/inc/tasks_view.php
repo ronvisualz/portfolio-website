@@ -271,26 +271,30 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
     $parts = array_filter(array_map('intval', explode(',', (string)($v['participants'] ?? ''))));
     $pp = '';
     foreach ($participants as $uid => $name) $pp .= '<label class="chk"><input type="checkbox" name="participants[]" value="' . $uid . '"' . (in_array($uid, $parts, true) ? ' checked' : '') . '><span>' . e($name) . '</span></label>';
-    // a chamada (§31.4): o link (Meet criado pela plataforma ou colado à mão) e «Criar Google Meet»
+    // a chamada (§31.4): o link (Meet criado pela plataforma ou colado à mão) e «Criar Google Meet» — nos eventos com
+    // hora que não são reuniões; nas reuniões (§31.6) o Meet é criado ao gravar, com os convidados de «Convidar»
     require_once __DIR__ . '/gcal.php';
+    require_once __DIR__ . '/task_invites.php';
     $meUid = (int)(current_user()['id'] ?? 0);
     $canMeet = gcal_can_meet($pdo, $meUid);
-    $hasMeet = $edit && gcal_link($pdo, 'task', (int)$v['id'], 'meet') !== null;
+    $mlink = $edit ? gcal_link($pdo, 'task', (int)$v['id'], 'meet') : null;
+    $hasMeet = $mlink !== null;
     $guestDef = '';
     if (!empty($v['contact_id'])) { $cst = $pdo->prepare('SELECT email FROM contacts WHERE id = ?'); $cst->execute([(int)$v['contact_id']]); $guestDef = (string)$cst->fetchColumn(); }
     $link = (string)($v['call_link'] ?? '');
-    $meet = '<div class="field wide gmeet" data-gmeet data-task="' . (int)$v['id'] . '"' . ($hasMeet ? ' data-linked' : '') . '><span class="lbl">' . icon('video') . ' Chamada</span>'
-          . ($link !== '' ? '<div class="gm-now"><a class="gm-link" href="' . e($link) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $link)) . '</a>' . ($hasMeet ? ' <span class="chip ok">Google Meet</span>' : '') . '</div><div class="gm-resp small" data-gm-resp></div>' : '');
+    $meet = '<div class="field wide gmeet" data-call data-gmeet data-task="' . (int)$v['id'] . '"' . ($hasMeet ? ' data-linked' : '') . '><span class="lbl">' . icon('video') . ' Chamada</span>'
+          . ($link !== '' ? '<div class="gm-now"><a class="gm-link" href="' . e($link) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $link)) . '</a>' . ($hasMeet ? ' <span class="chip ok">Google Meet</span>' : '') . '</div><div class="gm-resp small" data-gm-resp data-not="meeting"></div>' : '');
     if ($canMeet && !$hasMeet) {
-        $meet .= '<div class="gm-make"><input type="text" name="gmeet_guests" value="' . e($guestDef) . '" placeholder="Convidados externos (emails, separados por vírgulas)" aria-label="Convidados externos">'
+        $meet .= '<div class="gm-make" data-not="meeting"><input type="text" name="gmeet_guests" value="' . e($guestDef) . '" placeholder="Convidados externos (emails, separados por vírgulas)" aria-label="Convidados externos">'
                . ($edit ? '<button type="button" class="btn sm" data-gmeet-create>' . icon('video') . ' Criar Google Meet</button>'
                         : '<label class="check"><input type="checkbox" name="gmeet" value="1"> Criar Google Meet ao gravar</label>')
-               . '</div><p class="small muted gm-hint">Precisa de dia e hora. Os participantes da equipa e estes convidados recebem o convite do Google (o cliente também). Contas Google gratuitas: chamadas com 3+ pessoas param aos 60 min.</p>';
+               . '</div><p class="small muted gm-hint" data-not="meeting">Precisa de dia e hora. Os participantes da equipa e estes convidados recebem o convite do Google (o cliente também). Contas Google gratuitas: chamadas com 3+ pessoas param aos 60 min.</p>';
     }
     $meet .= '<details class="gm-manual"' . ($link !== '' && !$hasMeet ? ' open' : '') . '><summary class="small">' . ($canMeet ? 'Ou colar um link à mão' : 'Colar o link da chamada') . '</summary>'
            . '<input type="url" name="call_link" maxlength="500" value="' . e($link) . '" placeholder="https://meet.google.com/… ou outro link" aria-label="Link da chamada"></details>'
-           . (!$canMeet ? '<p class="small muted">' . (is_admin() ? 'Para criar o Meet daqui: <a href="/admin/definicoes.php?t=integracoes#set-int_google">Ligar Google</a> (ou cada pessoa liga o seu calendário no Perfil).' : 'Para criar o Meet daqui, ligue o seu Google Calendar no <a href="/admin/conta.php#ligacoes">Perfil</a>.') . '</p>' : '')
+           . (!$canMeet ? '<p class="small muted" data-not="meeting">' . (is_admin() ? 'Para criar o Meet daqui: <a href="/admin/definicoes.php?t=integracoes#set-int_google">Ligar Google</a> (ou cada pessoa liga o seu calendário no Perfil).' : 'Para criar o Meet daqui, ligue o seu Google Calendar no <a href="/admin/conta.php#ligacoes">Perfil</a>.') . '</p>' : '')
            . '<p class="small" data-gm-out hidden aria-live="polite"></p></div>';
+    $inv = tinv_ready($pdo) ? task_invite_html($pdo, $v, $edit, $mlink, $guestDef) : '';
     $hist = '';
     if ($edit) {
         foreach (task_history($pdo, (int)$v['id']) as $h) {
@@ -320,8 +324,9 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
         <div class="chips-check"><label class="rb"><input type="radio" name="platform" value="meet"' . ($plat === 'meet' ? ' checked' : '') . '><span>' . icon('video') . ' Google Meet</span></label>
           <label class="rb"><input type="radio" name="platform" value="discord"' . ($plat === 'discord' ? ' checked' : '') . '><span>' . icon('video') . ' Discord</span></label>
           <label class="rb"><input type="radio" name="platform" value=""' . ($plat === '' ? ' checked' : '') . '><span>' . icon('pin') . ' Presencial</span></label></div></div>
-      ' . $meet . '
-      <div class="field wide" data-only="local"><label for="tk-loc">Local</label><input type="text" id="tk-loc" name="location" maxlength="200" value="' . e((string)($v['location'] ?? '')) . '" placeholder="Estúdio, morada do cliente…"></div>
+      <div class="field wide" data-only="local"><label for="tk-loc">Local</label><input type="text" id="tk-loc" name="location" maxlength="200" value="' . e((string)($v['location'] ?? '')) . '" placeholder="Estúdio, morada do cliente…">'
+        . '<div class="tinv-addr" data-tinv-addr hidden><button type="button" class="chip-btn" data-tinv-addr-use>' . icon('pin') . ' <span></span></button></div></div>
+      ' . $inv . $meet . '
       <div class="field"><label for="tk-who">Responsável</label><select id="tk-who" name="member_id">' . $who . '</select></div>
       <div class="field"><label for="tk-deal">Negócio ou lead</label><select id="tk-deal" name="deal_id">' . $deals . '</select></div>
       <div class="field"><label for="tk-ct">Contacto</label>' . contact_pick_html($pdo, 'contact_label', 'contact_id', $v['contact_id'] ? (int)$v['contact_id'] : null, 'tk-ct') . '</div>
@@ -336,6 +341,65 @@ function task_modal_html(PDO $pdo, ?array $t, array $assignable, ?int $myMember,
       . '<button type="button" class="btn ghost" data-mdl-close>Cancelar</button><span class="spacer"></span><button class="btn" type="submit">' . ($edit ? 'Gravar' : 'Criar tarefa') . '</button></div>
   </form>
 </div>';
+}
+
+/**
+ * «Convidar» numa reunião (§31.6): etiquetas de email com sugestões (ficha de contacto, negócio, mesma empresa) e
+ * email livre validado; os internos (responsável e participantes) vão por defeito com o email de trabalho; a resposta
+ * de cada convidado ao lado do email. Por plataforma: o organizador do Meet (conta da topper. por defeito) ou o aviso
+ * sem ela; o link do Discord; a morada sugerida para o «Local». Ao gravar, o Meet é criado e os convites enviados.
+ */
+function task_invite_html(PDO $pdo, array $v, bool $edit, ?array $mlink, string $guestDef): string {
+    $meUid = (int)(current_user()['id'] ?? 0);
+    $inv = $edit ? tinv_of($v) : [];
+    $sug = tinv_suggest($pdo, $v['deal_id'] ? (int)$v['deal_id'] : null, $v['contact_id'] ? (int)$v['contact_id'] : null);
+    // uma reunião nova com o contacto (ou a lead) já escolhido: esse email vem marcado
+    if (!$edit) {
+        if ($guestDef !== '' && filter_var($guestDef, FILTER_VALIDATE_EMAIL)) $inv = [strtolower($guestDef)];
+        elseif ($sug['suggest']) $inv = [$sug['suggest'][0]['email']];
+    }
+    // as respostas: as do Meet (guardadas; o browser pede as de agora à Google) e as dos convites por email
+    $resp = [];
+    if ($mlink) foreach (json_decode((string)$mlink['responses'], true) ?: [] as $r) $resp[strtolower((string)$r['email'])] = (string)$r['status'];
+    if ($edit) foreach (tinv_responses($pdo, (int)$v['id']) as $e => $r) $resp[$e] = $r['status'] !== '' ? $r['status'] : ($r['state'] === 'failed' ? 'failed' : 'needsAction');
+    $data = ['inv' => $inv, 'sug' => $sug['suggest'], 'addr' => $sug['address'], 'addr_of' => $sug['address_of'], 'resp' => $resp, 'max' => TINV_MAX];
+    $admin = is_admin();
+    $set = '/admin/definicoes.php?t=integracoes#set-int_google';
+    // Google Meet: o organizador
+    $topper = gcal_ready($pdo) && gcal_topper() !== null;
+    $mine = gcal_conn($pdo, $meUid) !== null;
+    if ($mlink) {
+        $who = $mlink['account'] === 'topper' ? 'a conta da topper. (' . (google_topper_account() ?: TOPPER_GOOGLE_ACCOUNT) . ')'
+             : 'o Google Calendar de ' . (string)$pdo->query('SELECT name FROM users WHERE id = ' . (int)substr((string)$mlink['account'], 5))->fetchColumn();
+        $org = '<p class="small muted">' . icon('video') . ' Organizado por ' . e($who) . '. Gravar atualiza o evento e avisa os convidados; tirar um email cancela-lhe o convite.</p>';
+    } else {
+        $org = $topper || $mine ? '<div class="chips-check tinv-org" role="radiogroup" aria-label="Quem envia o convite"><span class="small muted">Enviado por</span>'
+             . ($topper ? '<label class="rb"><input type="radio" name="organizer" value="topper" checked><span>Conta da topper.</span></label>' : '')
+             . ($mine ? '<label class="rb"><input type="radio" name="organizer" value="me"' . (!$topper ? ' checked' : '') . '><span>' . ($topper ? 'Enviar do meu Google Calendar' : 'O meu Google Calendar') . '</span></label>' : '')
+             . '</div>' : '';
+        if (!$topper) {
+            $org .= '<p class="small tinv-warn">' . icon('alert') . ' A conta da topper. não está ligada. '
+                  . ($admin ? '<a href="' . $set . '">Ligar em Definições › Integrações</a>.' : 'Peça a um admin para a ligar em Definições › Integrações.')
+                  . ($mine ? ' Entretanto, o Meet sai do seu Google Calendar.' : ' Entretanto, cole o link da chamada abaixo.') . '</p>';
+        } else {
+            $org .= '<p class="small muted">Ao gravar (com dia e hora), o Meet é criado e os convites enviados pelo Google — a cada convidado e à equipa, com o email de trabalho. Contas Google gratuitas: chamadas com 3+ pessoas param aos 60 min; os convidados precisam de conta Google para entrar sem pedir.</p>';
+        }
+    }
+    // Discord: o link do canal
+    $dl = tinv_discord();
+    $disc = $dl !== '' ? '<p class="small">' . icon('link') . ' Canal: <a href="' . e($dl) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $dl)) . '</a> — vai na tarefa e no convite por email.</p>'
+                       : '<p class="small tinv-warn">' . icon('alert') . ' Falta o link do canal do Discord. ' . ($admin ? '<a href="' . $set . '">Definir em Definições › Integrações</a>.' : 'Peça a um admin para o definir em Definições › Integrações.') . '</p>';
+    $mailNote = mailer_api_on($pdo) ? '' : ' ' . ($admin ? '<a href="/admin/definicoes.php?t=integracoes">O serviço de envio de email não está ligado</a>: os convites saem pelo servidor e podem cair no spam.' : '');
+    $byMail = '<p class="small muted">Ao gravar (com dia e hora), cada convidado recebe o convite por email com o evento para o calendário (.ics) e pode responder Sim / Não / Talvez. Mudar a hora ou o local avisa; tirar um email cancela-lhe o convite.' . $mailNote . '</p>';
+    return '<div class="field wide tinv" data-only="meeting" data-tinv="' . e(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . '">'
+         . '<label class="lbl" for="tinv-in">Convidar</label>'
+         . '<div class="tinv-box" data-tinv-box><input type="email" id="tinv-in" class="tinv-in" data-tinv-in placeholder="Escreva um email e Enter" autocomplete="off" aria-describedby="tinv-help"></div>'
+         . '<input type="hidden" name="invitees" value="' . e(implode(',', $inv)) . '"><input type="hidden" name="invitees_sent" value="1">'
+         . '<p class="small neg" data-tinv-err hidden aria-live="polite"></p>'
+         . '<div class="tinv-sug" data-tinv-sug></div>'
+         . '<p class="small muted" id="tinv-help" data-tinv-team></p>'
+         . '<div data-plat="meet">' . $org . '</div><div data-plat="discord">' . $disc . $byMail . '</div><div data-plat="local">' . $byMail . '</div>'
+         . '</div>';
 }
 
 /**

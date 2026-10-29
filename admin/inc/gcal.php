@@ -250,30 +250,78 @@ function gcal_task_live(?array $t): bool {
 }
 
 /**
- * «Criar Google Meet» numa tarefa: cria (ou atualiza) o evento com o Meet, convida as pessoas da plataforma e os
- * emails externos escolhidos. Organizador: quem marca, se tiver o calendário ligado; senão a conta da topper.
- * Guarda o link na tarefa, no histórico, no negócio e no chat dos participantes. Devolve a linha de calendar_links.
+ * O evento do Meet de uma tarefa: numa reunião (§31.6), o texto que os convidados veem (código e nome do negócio no
+ * título, em inglês se o contacto o tiver, sem links internos); nos outros eventos com hora, o de sempre.
  */
-function gcal_meet_for_task(PDO $pdo, int $taskId, array $external, int $by): array {
+function gcal_meet_event(PDO $pdo, array $t, array $ext): array {
+    if (($t['kind'] ?? '') !== 'meeting') return gcal_task_event($t);
+    require_once __DIR__ . '/task_invites.php';
+    $ev = tinv_event($t, tinv_task_lang($pdo, $t, $ext));
+    $ev['location'] = '';
+    return $ev;
+}
+
+/** Os convidados externos de uma tarefa: os de «Convidar» (§31.6) ou, em tarefas antigas, os do evento já criado. */
+function gcal_task_external(PDO $pdo, array $t, ?array $link, array $people): array {
+    if (db_has_column($pdo, 'tasks', 'invitees') && $t['invitees'] !== null) {
+        require_once __DIR__ . '/task_invites.php';
+        return array_values(array_diff(tinv_of($t), array_values($people)));
+    }
+    if (!$link) return [];
+    $old = json_decode((string)$link['guests'], true) ?: [];
+    return array_values(array_diff((array)($old['emails'] ?? []), array_values($people)));
+}
+
+/** A conta que organiza o Meet: a da topper. por defeito (§31.6); «me» = o Google Calendar de quem marca. */
+function gcal_meet_account(PDO $pdo, int $by, string $organizer = ''): string {
+    $mine = gcal_conn($pdo, $by) ? 'user:' . $by : '';
+    if ($organizer === 'me' && $mine !== '') return $mine;
+    if (gcal_topper()) return 'topper';
+    return $mine;
+}
+
+/**
+ * Cria (ou atualiza) o Meet de uma tarefa com hora: convida as pessoas da plataforma (responsável e participantes,
+ * com o email de trabalho) e os convidados externos ($external; null = os guardados na tarefa). Organizador: a conta
+ * da topper. por defeito, ou o Google Calendar de quem marca ($organizer 'me'); depois de criado, fica o mesmo.
+ * Da primeira vez, o link vai para a tarefa, o histórico, o negócio e o chat dos participantes. Devolve a linha de
+ * calendar_links.
+ */
+function gcal_meet_for_task(PDO $pdo, int $taskId, ?array $external, int $by, string $organizer = ''): array {
     $t = gcal_task($pdo, $taskId);
     if (!gcal_task_live($t)) throw new RuntimeException('O Meet precisa de um evento com dia e hora (e por fazer).');
-    $account = gcal_conn($pdo, $by) ? 'user:' . $by : (gcal_topper() ? 'topper' : '');
-    if ($account === '') throw new RuntimeException('Ligue o seu Google Calendar no Perfil (ou peça a um admin para ligar a conta da topper.) para criar o Meet. Entretanto, cole o link à mão.');
+    $existing = gcal_link($pdo, 'task', $taskId, 'meet');
+    $account = $existing ? (string)$existing['account'] : gcal_meet_account($pdo, $by, $organizer);   // o organizador fica o mesmo
+    if ($account === '') throw new RuntimeException('A conta da topper. não está ligada (Definições › Integrações) e não tem o seu Google Calendar ligado: cole o link da chamada à mão.');
     $people = gcal_task_people($pdo, $t);
     $st = $pdo->prepare('SELECT email, name FROM users WHERE id = ?');
     $st->execute([$by]);
     $me = $st->fetch() ?: ['email' => '', 'name' => ''];
-    $ext = [];
-    foreach ($external as $e) { $e = strtolower(trim((string)$e)); if (filter_var($e, FILTER_VALIDATE_EMAIL)) $ext[] = $e; }
-    $guests = array_values(array_unique(array_merge(array_values($people), $account === 'topper' ? [strtolower((string)$me['email'])] : [], $ext)));
-    $existing = gcal_link($pdo, 'task', $taskId, 'meet');
-    if ($existing && $existing['account'] !== $account) $account = (string)$existing['account'];   // o organizador fica o mesmo
-    $ev = gcal_task_event($t) + ['attendees' => $guests, 'meet' => true];
+    if ($external !== null) {
+        $ext = [];
+        foreach ($external as $e) { $e = strtolower(trim((string)$e)); if (filter_var($e, FILTER_VALIDATE_EMAIL)) $ext[] = $e; }
+        $ext = array_values(array_unique($ext));
+        if (db_has_column($pdo, 'tasks', 'invitees')) {
+            $pdo->prepare('UPDATE tasks SET invitees = ? WHERE id = ?')->execute([json_encode($ext), $taskId]);
+            $t['invitees'] = json_encode($ext);
+        }
+    } else {
+        $ext = gcal_task_external($pdo, $t, $existing, $people);
+    }
+    $ext = array_values(array_diff($ext, array_values($people)));
+    $self = $account === 'topper' ? [strtolower((string)$me['email'])] : [];
+    if ($existing && $account === 'topper' && $existing['created_by']) {   // quem marcou continua convidado
+        $st->execute([(int)$existing['created_by']]);
+        $self = [strtolower((string)($st->fetch()['email'] ?? ''))];
+    }
+    $guests = array_values(array_unique(array_filter(array_merge(array_values($people), $self, $ext))));
+    $ev = gcal_meet_event($pdo, $t, $ext) + ['attendees' => $guests, 'meet' => true];
     $l = gcal_upsert($pdo, 'task', $taskId, 'meet', $account, $ev, $by);
     $url = (string)$l['meet_url'];
-    if ($url !== '') {
+    if ($url !== '' && db_has_column($pdo, 'tasks', 'organizer')) $pdo->prepare('UPDATE tasks SET organizer = ? WHERE id = ?')->execute([$account === 'topper' ? 'topper' : 'me', $taskId]);
+    if ($url !== '' && !$existing) {
         $pdo->prepare("UPDATE tasks SET call_link = ?, platform = CASE WHEN kind = 'meeting' THEN 'meet' ELSE platform END, updated_at = ? WHERE id = ?")->execute([$url, date('Y-m-d H:i:s'), $taskId]);
-        if (function_exists('task_log')) task_log($pdo, $taskId, 'meet', 'Google Meet criado · ' . $url . ($ext ? ' · convidados: ' . implode(', ', $ext) : ''));
+        if (function_exists('task_log')) task_log($pdo, $taskId, 'meet', 'Google Meet criado (' . ($account === 'topper' ? 'conta da topper.' : 'Google Calendar de ' . $me['name']) . ') · ' . $url . ($ext ? ' · convidados: ' . implode(', ', $ext) : ''));
         if ($t['deal_id'] && function_exists('deal_log')) deal_log($pdo, (int)$t['deal_id'], 'meeting', ['note' => 'Google Meet: ' . $t['title'] . ' · ' . date('d/m H:i', strtotime($t['due_date'] . ' ' . $t['due_time'])) . ' · ' . $url]);
         if (function_exists('team_chat_send')) {
             foreach (array_keys($people) as $uid) {
@@ -281,6 +329,10 @@ function gcal_meet_for_task(PDO $pdo, int $taskId, array $external, int $by): ar
                 try { team_chat_send($pdo, $by, (int)$uid, '📹 Google Meet: ' . $t['title'] . ' · ' . date('d/m H:i', strtotime($t['due_date'] . ' ' . $t['due_time'])) . ' · ' . $url); } catch (Throwable $e) { /* o chat é um extra */ }
             }
         }
+    } elseif ($existing && function_exists('task_log')) {
+        $was = (array)((json_decode((string)$existing['guests'], true) ?: [])['emails'] ?? []);
+        $in = array_diff($guests, $was); $out = array_diff($was, $guests);
+        if ($in || $out) task_log($pdo, $taskId, 'meet', 'Convidados do Meet' . ($in ? ' · entram: ' . implode(', ', $in) : '') . ($out ? ' · saem (convite cancelado): ' . implode(', ', $out) : ''));
     }
     gcal_task_sync($pdo, $taskId);   // quem já é convidado não leva cópia no seu calendário
     return $l;
@@ -289,6 +341,7 @@ function gcal_meet_for_task(PDO $pdo, int $taskId, array $external, int $by): ar
 /**
  * Põe o Google em linha com a tarefa: o Meet (hora, título, convidados) e o espelho no calendário de cada pessoa
  * ligada (as suas reuniões, gravações, visitas e prazos com hora). Tarefa feita, sem hora ou apagada → retira.
+ * Uma reunião que deixou de ser no Google Meet (Discord, presencial) cancela o Meet.
  */
 function gcal_task_sync(PDO $pdo, int $taskId): void {
     if (!gcal_ready($pdo) || !google_client()) return;
@@ -306,12 +359,25 @@ function gcal_task_sync(PDO $pdo, int $taskId): void {
     $people = gcal_task_people($pdo, $t);
     $meet = null;
     foreach ($links as $l) if ($l['kind'] === 'meet') $meet = $l;
+    if ($meet && $t['kind'] === 'meeting' && (string)$t['platform'] !== 'meet' && $meet['ref_type'] === 'task') {
+        try {
+            gcal_delete_link($pdo, $meet);
+            if ((string)$t['call_link'] === (string)$meet['meet_url']) $pdo->prepare("UPDATE tasks SET call_link = '' WHERE id = ?")->execute([$taskId]);
+            if (function_exists('task_log')) task_log($pdo, $taskId, 'meet', 'Google Meet cancelado (a reunião deixou de ser no Meet)');
+            $t['call_link'] = '';
+        } catch (Throwable $e) { error_log('[topper] gcal meet off: ' . $e->getMessage()); }
+        $meet = null;
+    }
     $invited = [];
     if ($meet) {
-        $old = json_decode((string)$meet['guests'], true) ?: [];
-        $ext = array_values(array_diff((array)($old['emails'] ?? []), array_values($people)));
+        $ext = gcal_task_external($pdo, $t, $meet, $people);
         $guests = array_values(array_unique(array_merge(array_values($people), $ext)));
-        try { gcal_upsert($pdo, 'task', $taskId, 'meet', (string)$meet['account'], $ev + ['attendees' => $guests, 'meet' => true]); }
+        if ($meet['account'] === 'topper' && $meet['created_by']) {   // quem marcou pela conta da topper. continua convidado
+            $st = $pdo->prepare('SELECT email FROM users WHERE id = ?');
+            $st->execute([(int)$meet['created_by']]);
+            if (($m = strtolower((string)$st->fetchColumn())) !== '') $guests = array_values(array_unique(array_merge($guests, [$m])));
+        }
+        try { gcal_upsert($pdo, 'task', $taskId, 'meet', (string)$meet['account'], gcal_meet_event($pdo, $t, $ext) + ['attendees' => $guests, 'meet' => true]); }
         catch (Throwable $e) { error_log('[topper] gcal meet update: ' . $e->getMessage()); }
         $invited = $guests;
         if (str_starts_with((string)$meet['account'], 'user:')) $invited[] = '#' . substr((string)$meet['account'], 5);

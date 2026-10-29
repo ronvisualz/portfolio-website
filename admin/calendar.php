@@ -5,6 +5,7 @@ require_once __DIR__ . '/inc/tasks_view.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/team.php';
 require_once __DIR__ . '/inc/gcal.php';
+require_once __DIR__ . '/inc/task_invites.php';
 $user = require_login();
 require_page('tarefas');
 
@@ -59,9 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($old['is_gate']) && $old['status'] !== 'done' && !is_admin()) throw new RuntimeException('Esta tarefa é obrigatória para o negócio avançar: só um admin a pode eliminar.');
                 $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
                 if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
-                // o Google acompanha (§31.4): o Meet é cancelado (com aviso aos convidados) e sai dos calendários
+                // o Google acompanha (§31.4): o Meet é cancelado (com aviso aos convidados) e sai dos calendários;
+                // os convites por email (Discord, presencial) recebem o cancelamento (§31.6)
                 try { gcal_task_sync($pdo, $id); } catch (Throwable $e) { error_log('[topper] gcal delete: ' . $e->getMessage()); }
-                flash('Tarefa eliminada.');
+                $ci = tinv_sync($pdo, $id, (int)$me['id']);
+                flash('Tarefa eliminada.' . ($ci['cancelled'] ? ' ' . $ci['cancelled'] . ($ci['cancelled'] === 1 ? ' convidado avisado' : ' convidados avisados') . ' do cancelamento.' : ''));
                 redirect($back);
             }
 
@@ -108,6 +111,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $row['call_link'] = $cl;
             }
             if ($row['contact_id'] && !(int)$pdo->query('SELECT COUNT(*) FROM contacts WHERE id = ' . (int)$row['contact_id'])->fetchColumn()) $row['contact_id'] = null;
+            // Reunião (§31.6): os convidados de «Convidar», quem envia o Meet e o link do Discord
+            $meeting = $kind === 'meeting' && tinv_ready($pdo);
+            if ($meeting && isset($_POST['invitees_sent'])) {
+                [$inv, $bad] = tinv_parse((string)($_POST['invitees'] ?? ''));
+                if ($bad) throw new RuntimeException('Email inválido em «Convidar»: ' . implode(', ', array_slice($bad, 0, 3)) . '.');
+                if (count($inv) > TINV_MAX) throw new RuntimeException('No máximo ' . TINV_MAX . ' convidados externos.');
+                $row['invitees'] = json_encode($inv);
+                if ($platform === 'meet' && !($old && gcal_link($pdo, 'task', $id, 'meet'))) $row['organizer'] = ($_POST['organizer'] ?? '') === 'me' ? 'me' : 'topper';
+            }
+            if ($meeting && $platform === 'discord' && ($dl = tinv_discord()) !== '' && !preg_match('~^https://(discord\.gg|discord\.com)/~', (string)($row['call_link'] ?? ''))) $row['call_link'] = $dl;
+            if ($meeting && $platform === '' && isset($row['call_link'])) $row['call_link'] = '';
             $now = task_now();
             if ($old) {
                 $pdo->prepare('UPDATE tasks SET ' . implode(', ', array_map(fn($c) => "$c = ?", array_keys($row))) . ', updated_at = ? WHERE id = ?')
@@ -153,17 +167,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg .= $sent ? ' Convite enviado no chat a ' . $sent . ' pessoa(s).' : '';
                 if ($warn !== '') $msg .= ' Convite não enviado: ' . $warn;
             }
-            // o Google acompanha (§31.4): hora, título e convidados do Meet; o espelho no calendário de cada pessoa ligada
-            $wantMeet = !empty($_POST['gmeet']) && $row['due_date'] && $row['due_time'];
+            // o Google acompanha (§31.4): hora, título e convidados do Meet; o espelho no calendário de cada pessoa ligada.
+            // Numa reunião no Google Meet (§31.6) o Meet é criado ao gravar (com dia e hora), sem outro botão.
+            $hadMeet = gcal_link($pdo, 'task', $id, 'meet') !== null;
+            $wantMeet = $row['due_date'] && $row['due_time'] && ($meeting ? $platform === 'meet' && (gcal_can_meet($pdo, (int)$me['id']) || $hadMeet) : !empty($_POST['gmeet']));
+            if ($meeting && $platform === 'meet' && !$wantMeet && !$hadMeet && trim((string)($row['call_link'] ?? '')) === '') {
+                $msg .= $row['due_date'] && $row['due_time'] ? ' Meet por criar: a conta da topper. não está ligada (Definições › Integrações). Cole o link da chamada à mão.' : ' O Meet é criado quando a reunião tiver dia e hora.';
+            }
             if (!$wantMeet) { try { gcal_task_sync($pdo, $id); } catch (Throwable $e) { error_log('[topper] gcal save: ' . $e->getMessage()); } }
             if ($wantMeet) {   // cria o Meet e põe o resto em linha (sem cópias para quem já é convidado)
                 try {
-                    $guests = preg_split('/[\s,;]+/', (string)($_POST['gmeet_guests'] ?? ''), -1, PREG_SPLIT_NO_EMPTY);
-                    $l = gcal_meet_for_task($pdo, $id, array_filter($guests, fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)), (int)$me['id']);
-                    $msg .= ' Google Meet criado: os convidados recebem o convite do Google.';
+                    if ($meeting) {
+                        $l = gcal_meet_for_task($pdo, $id, null, (int)$me['id'], (string)($row['organizer'] ?? ''));
+                        $msg .= $hadMeet ? ' Google Meet atualizado: os convidados são avisados pelo Google.' : ' Google Meet criado (' . ($l['account'] === 'topper' ? 'conta da topper.' : 'o seu Google Calendar') . '): os convidados recebem o convite do Google.';
+                    } else {
+                        $guests = preg_split('/[\s,;]+/', (string)($_POST['gmeet_guests'] ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+                        $l = gcal_meet_for_task($pdo, $id, array_filter($guests, fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)), (int)$me['id']);
+                        $msg .= ' Google Meet criado: os convidados recebem o convite do Google.';
+                    }
                 } catch (RuntimeException $e) {
                     $msg .= ' Meet não criado: ' . $e->getMessage();
                     try { gcal_task_sync($pdo, $id); } catch (Throwable $e2) { error_log('[topper] gcal save: ' . $e2->getMessage()); }
+                }
+            }
+            // Discord e presencial (§31.6): o convite por email com o .ics; mudanças e cancelamentos a quem sai
+            if (tinv_ready($pdo) && ($meeting || ($old && $old['kind'] === 'meeting'))) {
+                $ri = tinv_sync($pdo, $id, (int)$me['id']);
+                if (($sum = tinv_summary($ri)) !== '') { $msg .= $sum; task_log($pdo, $id, 'invite', trim($sum)); }
+                if ($ri['sent'] && $row['deal_id'] && function_exists('deal_log')) {
+                    deal_log($pdo, (int)$row['deal_id'], 'meeting', ['note' => 'Reunião (' . ($platform === 'discord' ? 'Discord' : 'presencial') . '): ' . $title . ' · ' . date('d/m H:i', strtotime($due . ' ' . $time)) . ($platform === 'discord' && ($row['call_link'] ?? '') !== '' ? ' · ' . $row['call_link'] : ($location !== '' ? ' · ' . $location : ''))]);
                 }
             }
             flash($msg, 'ok', $undo);
