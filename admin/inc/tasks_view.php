@@ -385,10 +385,14 @@ function task_invite_html(PDO $pdo, array $v, bool $edit, ?array $mlink, string 
             $org .= '<p class="small muted">Ao gravar (com dia e hora), o Meet é criado e os convites enviados pelo Google — a cada convidado e à equipa, com o email de trabalho. Contas Google gratuitas: chamadas com 3+ pessoas param aos 60 min; os convidados precisam de conta Google para entrar sem pedir.</p>';
         }
     }
-    // Discord: o link do canal
+    // Discord: a equipa leva o link direto do canal (abre a app no canal); os convidados externos o convite do servidor
     $dl = tinv_discord();
-    $disc = $dl !== '' ? '<p class="small">' . icon('link') . ' Canal: <a href="' . e($dl) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $dl)) . '</a> — vai na tarefa e no convite por email.</p>'
-                       : '<p class="small tinv-warn">' . icon('alert') . ' Falta o link do canal do Discord. ' . ($admin ? '<a href="' . $set . '">Definir em Definições › Integrações</a>.' : 'Peça a um admin para o definir em Definições › Integrações.') . '</p>';
+    $dc = (string)(team_meet_settings()['discord']['channel_url'] ?? '');
+    $lnk = fn(string $u) => '<a href="' . e($u) . '" target="_blank" rel="noopener">' . e(preg_replace('~^https://~', '', $u)) . '</a>';
+    $disc = ($dc !== '' ? '<p class="small">' . icon('link') . ' Equipa: ' . $lnk($dc) . ' — o canal direto, na tarefa e nos convites da equipa.</p>' : '')
+          . ($dl !== '' ? '<p class="small">' . icon('link') . ' Convidados: ' . $lnk($dl) . ' — o convite para entrarem no servidor.</p>' : '');
+    $miss = array_filter([$dc === '' ? 'o link direto do canal (para a equipa)' : '', $dl === '' ? 'o convite do servidor (para os convidados)' : '']);
+    if ($miss) $disc .= '<p class="small tinv-warn">' . icon('alert') . ' Falta ' . implode(' e ', $miss) . '. ' . ($admin ? '<a href="' . $set . '">Definir em Definições › Integrações › Reuniões</a>.' : 'Peça a um admin para o definir em Definições › Integrações.') . '</p>';
     $mailNote = mailer_api_on($pdo) ? '' : ' ' . ($admin ? '<a href="/admin/definicoes.php?t=integracoes">O serviço de envio de email não está ligado</a>: os convites saem pelo servidor e podem cair no spam.' : '');
     $byMail = '<p class="small muted">Ao gravar (com dia e hora), cada convidado recebe o convite por email com o evento para o calendário (.ics) e pode responder Sim / Não / Talvez. Mudar a hora ou o local avisa; tirar um email cancela-lhe o convite.' . $mailNote . '</p>';
     return '<div class="field wide tinv" data-only="meeting" data-tinv="' . e(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . '">'

@@ -2101,7 +2101,12 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   convidado não leva cópia no seu calendário. O link fica na tarefa, no histórico da tarefa e do negócio/lead e no
   chat dos participantes. Sem conta da topper.: aviso com atalho para Definições › Integrações (para os admins) e o
   campo para colar o link; quem tem o calendário ligado pode enviar do seu.
-- **Discord:** o link do canal (Definições › Integrações) entra na tarefa e no convite por email.
+- **Discord:** dois links em Definições › Integrações › Reuniões — o convite do servidor (`discord.gg`, para os
+  convidados externos entrarem no servidor) e o «Link direto do canal (para a equipa)» (`https://discord.com/channels/…`,
+  abre a app no canal). A tarefa e os convites da equipa (e os pedidos de reunião da Equipa) levam o link direto; os
+  externos levam o convite do servidor. Sem o link direto, vale o convite para todos. O convite diz «Se o browser pedir
+  para abrir a app do Discord, carregue em Permitir.» (EN: «If your browser asks to open the Discord app, click
+  Allow.»). A equipa recebe sempre o convite em português.
 - **Presencial:** «Local» com o botão «Usar a morada de …» (empresa ou contacto) e convite por email.
 - **Convites por email (Discord e presencial):** pelo serviço de envio (§31.1; sem ele, pelo servidor), com o evento em
   `.ics` (`METHOD:REQUEST`, organizador a caixa geral, «responder a» quem marcou). Só se reenvia quando muda a hora, o

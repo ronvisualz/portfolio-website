@@ -703,6 +703,9 @@ function team_meet_settings(): array {
     $c = team_meet_config();
     $d = trim((string)setting($pdo, 'discord_invite_url', ''));
     if (preg_match('~^https://(discord\.gg|discord\.com)/\S+$~', $d)) $c['discord'] = ['invite_url' => $d];
+    // o link direto do canal (abre a app no canal): para a equipa; os convidados externos levam o convite do servidor
+    $ch = trim((string)setting($pdo, 'discord_channel_url', ''));
+    if (preg_match('~^https://(www\.|ptb\.|canary\.)?discord\.com/channels/(\d+|@me)/\d+/?$~', $ch)) $c['discord'] = ['invite_url' => (string)($c['discord']['invite_url'] ?? ''), 'channel_url' => $ch];
     return $c;
 }
 
@@ -757,7 +760,7 @@ function team_meeting_link(array $m, string $manual): string {
     if ($m['link'] !== '') return (string)$m['link'];
     if ($m['platform'] === 'local') return '';   // presencial: sem link, segue o local
     $cfg = team_meet_settings();
-    if ($m['platform'] === 'discord' && $cfg['discord']) return $cfg['discord']['invite_url'];
+    if ($m['platform'] === 'discord' && $cfg['discord']) return ($cfg['discord']['channel_url'] ?? '') ?: $cfg['discord']['invite_url'];   // reunião da equipa: o canal direto
     if ($m['platform'] === 'meet') {
         // pela camada única do calendário (§31.4): organizador = quem pediu, se tiver o Google Calendar ligado; senão a conta da topper.
         global $pdo;

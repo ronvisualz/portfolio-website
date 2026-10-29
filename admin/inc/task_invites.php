@@ -132,13 +132,18 @@ function tinv_event(array $t, string $lang, string $link = ''): array {
     $min = (int)($t['duration_min'] ?: 60);
     $plat = (string)($t['platform'] ?? '');
     $where = $plat === 'discord' ? 'Discord' : ($plat === 'meet' ? 'Google Meet' : trim((string)($t['location'] ?? '')));
-    $desc = ($en ? 'Meeting' : 'Reunião') . ($where !== '' ? ($en ? ' · ' : ' · ') . $where : '') . "\n"
+    $desc = ($en ? 'Meeting' : 'Reunião') . ($where !== '' ? ' · ' . $where : '') . "\n"
           . (($t['deal_code'] ?? '') !== '' ? ($en ? 'Project: ' : 'Negócio: ') . $t['deal_code'] . ' · ' . $t['deal_name'] . "\n" : '')
-          . ($link !== '' ? "\n" . ($en ? 'Join: ' : 'Entrar: ') . $link . "\n" : '')
+          . ($link !== '' ? "\n" . ($en ? 'Join: ' : 'Entrar: ') . $link . "\n" . ($plat === 'discord' ? tinv_discord_tip($lang) . "\n" : '') : '')
           . (trim((string)$t['description']) !== '' ? "\n" . ($en ? 'Agenda / notes:' : 'Ordem de trabalhos / notas:') . "\n" . trim((string)$t['description']) . "\n" : '')
           . "\n— topper.";
     return ['summary' => $summary, 'description' => $desc, 'start' => $start, 'minutes' => $min,
             'location' => $plat === 'discord' ? $link : ($plat === '' ? trim((string)($t['location'] ?? '')) : ''), 'busy' => (int)($t['busy'] ?? 1) === 1];
+}
+
+/** A nota do Discord nos convites: o browser pede para abrir a app. */
+function tinv_discord_tip(string $lang): string {
+    return $lang === 'en' ? 'If your browser asks to open the Discord app, click Allow.' : 'Se o browser pedir para abrir a app do Discord, carregue em Permitir.';
 }
 
 /** A data por extenso para o email (Lisboa). */
@@ -190,6 +195,7 @@ function tinv_mail_text(array $ev, string $kind, string $lang, string $by, strin
     $where = $plat === 'discord' ? 'Discord' . ($link !== '' ? ': ' . $link : '') : ((string)$ev['location'] !== '' ? ($en ? 'Place: ' : 'Local: ') . $ev['location'] : '');
     $body = ($kind === 'update' ? ($en ? "The meeting has been updated:\n\n" : "A reunião foi atualizada:\n\n") : ($en ? "You are invited to a meeting:\n\n" : "Está convidado(a) para uma reunião:\n\n"))
           . $ev['summary'] . "\n" . $when . "\n" . ($where !== '' ? $where . "\n" : '')
+          . ($plat === 'discord' && $link !== '' ? tinv_discord_tip($lang) . "\n" : '')
           . "\n" . ($en ? 'Open the attached invitation to add it to your calendar and reply (Yes / No / Maybe).' : 'Abra o convite em anexo para o pôr no seu calendário e responder (Sim / Não / Talvez).') . "\n"
           . "\n— " . $by . ' · topper.';
     return [$subject, $body];
@@ -216,22 +222,36 @@ function tinv_rows(PDO $pdo, int $taskId): array {
     return $o;
 }
 
-/** Quem recebe convite por email numa reunião Discord/presencial: os externos e os internos sem o Google ligado. */
+/**
+ * Quem recebe convite por email numa reunião Discord/presencial: os externos e os internos sem o Google ligado.
+ * Devolve [email => true se for da equipa].
+ */
 function tinv_email_guests(PDO $pdo, array $t): array {
-    $ext = tinv_of($t);
-    $int = [];
+    $out = [];
+    foreach (tinv_of($t) as $e) $out[$e] = false;
     foreach (gcal_task_people($pdo, $t) as $uid => $email) {
         $c = gcal_conn($pdo, (int)$uid);
         if ($c && (int)$c['sync_on']) continue;   // já tem o espelho no seu calendário: sem convite duplicado
-        if (filter_var($email, FILTER_VALIDATE_EMAIL)) $int[] = $email;
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) $out[$email] = true;
     }
-    return array_values(array_unique(array_merge($ext, $int)));
+    return $out;
 }
 
 /** O link do Discord (Definições › Integrações). */
 function tinv_discord(): string {
     if (!function_exists('team_meet_settings')) require_once __DIR__ . '/team.php';
     return (string)(team_meet_settings()['discord']['invite_url'] ?? '');
+}
+
+/** O link direto do canal do Discord (abre a app no canal): o da equipa; sem ele, o convite do servidor. */
+function tinv_discord_channel(): string {
+    if (!function_exists('team_meet_settings')) require_once __DIR__ . '/team.php';
+    return (string)(team_meet_settings()['discord']['channel_url'] ?? '') ?: tinv_discord();
+}
+
+/** O link do Discord para um convidado: os internos o canal direto, os externos o convite do servidor. */
+function tinv_discord_for(bool $internal): string {
+    return $internal ? tinv_discord_channel() : (tinv_discord() ?: tinv_discord_channel());
 }
 
 /**
@@ -246,7 +266,8 @@ function tinv_sync(PDO $pdo, int $taskId, ?int $by = null): array {
     $rows = tinv_rows($pdo, $taskId);
     if ($t && $t['status'] === 'done') return $r;   // já aconteceu
     $live = $t && $t['kind'] === 'meeting' && in_array((string)$t['platform'], ['discord', ''], true) && gcal_task_live($t);
-    $want = $live ? tinv_email_guests($pdo, $t) : [];
+    $guests = $live ? tinv_email_guests($pdo, $t) : [];
+    $want = array_keys($guests);
     $organizer = tinv_organizer($pdo);
     $uid = $by ?? (int)($t['created_by'] ?? 0);
     $st = $pdo->prepare('SELECT name, email FROM users WHERE id = ?');
@@ -256,11 +277,13 @@ function tinv_sync(PDO $pdo, int $taskId, ?int $by = null): array {
     $reply = filter_var((string)$u['email'], FILTER_VALIDATE_EMAIL) ? (string)$u['email'] : $organizer;
     $now = date('Y-m-d H:i:s');
     if ($live) {
-        $link = (string)$t['platform'] === 'discord' ? ((string)$t['call_link'] !== '' ? (string)$t['call_link'] : tinv_discord()) : '';
+        $disc = (string)$t['platform'] === 'discord';
         $lang0 = tinv_task_lang($pdo, $t, tinv_of($t));
-        foreach ($want as $email) {
+        foreach ($guests as $email => $internal) {
+            // Discord: a equipa leva o link direto do canal (abre a app), os externos o convite do servidor
+            $link = $disc ? (tinv_discord_for($internal) ?: (string)$t['call_link']) : '';
             $row = $rows[$email] ?? null;
-            $lang = tinv_lang_of($pdo, $email, $lang0);
+            $lang = $internal ? 'pt' : tinv_lang_of($pdo, $email, $lang0);   // a equipa recebe sempre em português
             $ev = tinv_event($t, $lang, $link);
             $sig = tinv_sig($ev, $lang, $link);
             if ($row && $row['status'] === 'sent' && $row['sig'] === $sig) continue;

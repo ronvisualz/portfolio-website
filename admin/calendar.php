@@ -120,7 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $row['invitees'] = json_encode($inv);
                 if ($platform === 'meet' && !($old && gcal_link($pdo, 'task', $id, 'meet'))) $row['organizer'] = ($_POST['organizer'] ?? '') === 'me' ? 'me' : 'topper';
             }
-            if ($meeting && $platform === 'discord' && ($dl = tinv_discord()) !== '' && !preg_match('~^https://(discord\.gg|discord\.com)/~', (string)($row['call_link'] ?? ''))) $row['call_link'] = $dl;
+            // Discord: na tarefa (a equipa) o link direto do canal, que abre a app; os externos recebem o convite do servidor
+            if ($meeting && $platform === 'discord' && ($dl = tinv_discord_channel()) !== '') $row['call_link'] = $dl;
             if ($meeting && $platform === '' && isset($row['call_link'])) $row['call_link'] = '';
             $now = task_now();
             if ($old) {
