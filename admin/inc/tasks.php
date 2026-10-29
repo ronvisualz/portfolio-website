@@ -454,6 +454,7 @@ const TASK_ORIGINS = [
     'deal'     => ['Negócio', 'negocios'],
     'mkt'      => ['Marketing', 'marketing'],
     'relation' => ['Relação', 'contactos'],
+    'fin'      => ['Financeiro', 'financeiro'],
     'personal' => ['Pessoal', 'user'],
     'manual'   => ['Manual', 'tarefas'],
 ];
@@ -470,12 +471,13 @@ function task_type(array $t): string {
     return ['relation' => 'followup'][$k] ?? 'task';
 }
 
-/** A origem: pessoal, relação, Marketing, lead, negócio ou manual (feita aqui). */
+/** A origem: pessoal, relação, Marketing, lead, negócio, Financeiro ou manual (feita aqui). */
 function task_origin(array $t): string {
     if (!empty($t['private']) || in_array($t['kind'] ?? '', ['personal', 'block'], true)) return 'personal';
     if (($t['kind'] ?? '') === 'relation') return 'relation';
     if (!empty($t['mkt_piece_id'])) return 'mkt';
     if (!empty($t['deal_id'])) return in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true) ? 'lead' : 'deal';
+    if (!empty($t['fin_key'])) return 'fin';   // saldos da tesouraria e calendário fiscal (o cron do Financeiro)
     return 'manual';
 }
 
@@ -617,7 +619,10 @@ function task_links_parse(string $raw): ?string {
 function tasks_open(PDO $pdo, ?array $visible, ?int $myMember, bool $done = false, int $doneLimit = 200): array {
     $vis = $visible === null ? '' : ' AND (t.member_id IS NULL' . ($visible ? ' OR t.member_id IN (' . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
     $hasPriv = db_has_column($pdo, 'tasks', 'private');
-    $sql = 'SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, d.company AS deal_company, d.person AS deal_person, c.name AS contact_name, h.name AS help_name
+    // as tarefas do Financeiro (saldos, calendário fiscal) ficam em fin_done: dizem de onde vieram
+    $fin = db_has_table($pdo, 'fin_done');
+    $sql = 'SELECT t.*, d.code AS deal_code, d.name AS deal_name, d.phase AS deal_phase, d.company AS deal_company, d.person AS deal_person, c.name AS contact_name, h.name AS help_name'
+         . ($fin ? ', (SELECT fd.okey FROM fin_done fd WHERE fd.task_id = t.id LIMIT 1) AS fin_key' : '') . '
               FROM tasks t LEFT JOIN deals d ON d.id = t.deal_id LEFT JOIN contacts c ON c.id = t.contact_id
               LEFT JOIN users h ON h.id = ' . ($hasPriv ? 't.help_by' : 'NULL') . '
              WHERE ' . ($done ? "t.status = 'done'" : "t.status <> 'done'") . $vis
@@ -626,8 +631,10 @@ function tasks_open(PDO $pdo, ?array $visible, ?int $myMember, bool $done = fals
     return $pdo->query($sql)->fetchAll();
 }
 
-/** A ligação de uma tarefa: [texto, endereço]. */
+/** A ligação de uma tarefa (a origem, fora da aba Tarefas): [texto, endereço]. */
 function task_link(array $t): array {
+    // um plano tirado de um quadro do Centro Criativo leva ao quadro (o negócio fica na ficha do quadro)
+    if (preg_match('~/admin/criativo\.php\?b=(\d+)~', (string)($t['description'] ?? ''), $m)) return ['Centro Criativo · quadro', '/admin/criativo.php?b=' . (int)$m[1]];
     if (!empty($t['deal_id'])) {
         if (in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)) {
             $n = trim((string)($t['deal_person'] ?: $t['deal_company'] ?: $t['deal_name']));
@@ -637,6 +644,7 @@ function task_link(array $t): array {
     }
     if (!empty($t['contact_id']) && !empty($t['contact_name'])) return [(($t['kind'] ?? '') === 'relation' ? 'Relação · ' : '') . $t['contact_name'], '/admin/contact.php?id=' . (int)$t['contact_id']];
     if (!empty($t['mkt_piece_id'])) return ['Marketing', '/admin/marketing_peca.php?id=' . (int)$t['mkt_piece_id']];
+    if (!empty($t['fin_key'])) return str_starts_with((string)$t['fin_key'], 'bal:') ? ['Financeiro · Tesouraria', '/admin/financeiro.php?tab=tesouraria'] : ['Financeiro · Impostos', '/admin/financeiro.php?tab=impostos'];
     if (($t['job_name'] ?? '') !== '') return [(string)$t['job_name'], ''];
     return ['', ''];
 }

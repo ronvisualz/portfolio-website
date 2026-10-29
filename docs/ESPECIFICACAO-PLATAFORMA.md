@@ -2039,6 +2039,17 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Concluir outra chamada** (negócio, contacto ou interna) abre «Chamada feita» com uma nota opcional; fica no
   histórico do negócio ou do contacto como chamada (sem nota: «Chamada feita · <título>»).
 
+### 10.25 Tarefas: um só quadro, filtros mais simples e «Abrir na origem» em todas as fontes (29 out 2026)
+
+- **Separador Tarefas:** uma só lista (§18.3) em vez das secções Em atraso · Hoje · Esta semana · Mais tarde · Sem
+  data; as em atraso ficam no topo com uma barra vermelha. Em «Todas», as concluídas vêm no fim da mesma lista.
+- **Filtros (§18.5):** «Estado» passou a um botão (Por fazer · Concluídas · Todas); «Em atraso» e «Por atribuir»
+  são botões próprios, com o número; saíram «Hoje» e «Esta semana» da lista (o quadro da equipa mantém-nos).
+- **«Abrir na origem»:** além de lead, negócio, contacto e Marketing, agora também as tarefas do Financeiro (saldos →
+  Tesouraria, calendário fiscal → Impostos, pela tabela `fin_done`; nova origem «Financeiro» no filtro e na marca)
+  e os planos tirados de um quadro do Centro Criativo (abrem o quadro). Visível também no telemóvel.
+- Ficheiros: `calendar.php`, `inc/tasks_view.php`, `inc/tasks.php`, `assets/app.css`.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
@@ -2839,9 +2850,13 @@ O separador «Equipa» desta aba sai (existe a aba Equipa).
 
 ### 18.3 Tarefas (lista)
 - Linhas compactas: ícone do tipo · marca de origem · título · ligação · prazo · responsável.
-- Grupos recolhíveis por urgência: **Em atraso** (sempre aberto, vermelho) · **Hoje** ·
-  **Esta semana** · **Mais tarde** · **Sem data**.
-- Concluídas não aparecem (filtro próprio); ao concluir, «Concluída · Anular».
+- **Um só quadro** (desde 29 out 2026, §10.25): todas as tarefas numa lista, pela ordem de urgência — as em
+  atraso primeiro, com uma barra vermelha à esquerda; o cabeçalho diz quantas há e quantas estão em atraso.
+  (Antes: grupos recolhíveis Em atraso · Hoje · Esta semana · Mais tarde · Sem data.)
+- Concluídas não aparecem (filtro próprio; em «Todas» vêm no fim da mesma lista); ao concluir, «Concluída · Anular».
+- **«Abrir na origem»** (ícone ↗ em cada linha) em todas as tarefas criadas fora da aba Tarefas: lead, negócio,
+  contacto/relação, peça de Marketing, quadro do Centro Criativo e Financeiro (saldos → Tesouraria, calendário
+  fiscal → Impostos). As criadas na aba Tarefas só o têm se tiverem sido ligadas a um negócio ou contacto.
 - **Agrupamento de tarefas automáticas iguais:** chamadas de leads e follow-ups de relação
   aparecem numa linha por pessoa, ex.: «☎ Chamadas de leads · 22 · 5 em atraso · Abrir fila →»
   (abre a aba Leads com «Urgente»/a lista de Relações).
@@ -2856,9 +2871,11 @@ O separador «Equipa» desta aba sai (existe a aba Equipa).
   botão **«Pedir ajuda»** (envia para Por atribuir com 🙋 e notifica a equipa). Tudo no histórico.
 
 ### 18.5 Filtros (lista e quadro)
-Botões combináveis: **Estado** (Por fazer · Concluídas · Todas) · **Urgência** (Em atraso ·
-Hoje · Esta semana) · **Responsável** (eu · cada operador · por atribuir) · **Tipo** ·
-**Origem** (Lead · Negócio · Marketing · Relação · Pessoal · Manual) · **Negócio** (ID/nome).
+Lista (desde 29 out 2026): **Estado** num só botão (Por fazer · Concluídas · Todas) · **Em atraso** (um botão, com
+o número) · **Por atribuir** (um botão, com o número; volta a carregar para tirar) · **Quem** (eu · todos · cada
+operador) · **Tipo** · **Origem** (Lead · Negócio · Marketing · Relação · Financeiro · Pessoal · Manual) ·
+**Negócio** (ID/nome). «Hoje» e «Esta semana» só vêm de vistas guardadas antigas (aparecem como filtro a tirar).
+Quadro da equipa: Urgência (Em atraso · Hoje · Esta semana) · Tipo · Origem · Negócio.
 Filtros guardáveis como vistas.
 
 ### 18.6 Tipos, origens, ícones e cores

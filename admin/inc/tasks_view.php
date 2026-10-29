@@ -91,7 +91,7 @@ function task_row_html(array $t, array $members, string $editUrl): string {
     if (($t['platform'] ?? '') !== '') $extra .= '<span class="tmeta" data-tip="' . e(MEETING_PLATFORMS_TASK[$t['platform']] ?? '') . '">' . icon('video') . '</span>';
     elseif (($t['location'] ?? '') !== '') $extra .= '<span class="tmeta" data-tip="' . e((string)$t['location']) . '">' . icon('pin') . '</span>';
     if (!empty($t['private'])) $extra .= '<span class="tmeta" data-tip="Privada: os outros veem só «Ocupado»">' . icon('eye') . '</span>';
-    return '<div class="trow' . ($done ? ' is-done' : '') . '" data-task="' . (int)$t['id'] . '" data-mid="' . (int)$t['member_id'] . '">'
+    return '<div class="trow' . ($done ? ' is-done' : (task_bucket($t) === 'late' ? ' is-late' : '')) . '" data-task="' . (int)$t['id'] . '" data-mid="' . (int)$t['member_id'] . '">'
          . ($done ? '<button type="button" class="tchk on" data-reopen="' . (int)$t['id'] . '" aria-label="Reabrir" data-tip>' . icon('check') . '</button>'
                   : '<button type="button" class="tchk" data-done="' . (int)$t['id'] . '"' . task_call_attr($t) . ' aria-label="Concluir" data-tip>' . icon('check') . '</button>')
          . task_type_badge($t) . task_origin_badge($t)
@@ -101,7 +101,8 @@ function task_row_html(array $t, array $members, string $editUrl): string {
          . '<span class="tacts">'
          . (!$done ? '<button type="button" class="tact" data-snooze="' . (int)$t['id'] . '" data-due="' . e((string)$t['due_date']) . '" data-time="' . e(substr((string)($t['due_time'] ?? ''), 0, 5)) . '" aria-label="Adiar" data-tip aria-haspopup="menu">' . icon('clock') . '</button>' : '')
          . '<a class="tact" href="' . e($editUrl) . '" aria-label="Editar" data-tip>' . icon('pencil') . '</a>'
-         . ($lu !== '' ? '<a class="tact" href="' . e($lu) . '" aria-label="Abrir ' . e($lt) . '" data-tip="Abrir ' . e(shorten($lt, 40)) . '">' . icon('external') . '</a>' : '')
+         // «Abrir na origem»: onde a tarefa nasceu (lead, negócio, contacto, Marketing, Financeiro, Centro Criativo)
+         . ($lu !== '' ? '<a class="tact orig" href="' . e($lu) . '" aria-label="Abrir na origem: ' . e($lt) . '" data-tip="Abrir na origem · ' . e(shorten($lt, 40)) . '">' . icon('external') . '</a>' : '')
          . '</span>'
          . task_who_html($members, $t['member_id'] !== null ? (int)$t['member_id'] : null)
          . '</div>';
@@ -157,13 +158,29 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
     };
     $h = '<div class="tfilters">';
     if ($tab === 'tarefas') {
-        $h .= '<div class="fg"><em>Estado</em>' . $chip('est', 'todo', 'Por fazer') . $chip('est', 'done', 'Concluídas') . $chip('est', 'all', 'Todas') . '</div>';
+        // Estado: um só botão (Por fazer · Concluídas · Todas); depois os dois atalhos que mais se usam.
+        $est = ['todo' => 'Por fazer', 'done' => 'Concluídas', 'all' => 'Todas'];
+        $items = '';
+        foreach ($est as $v => $l) {
+            $on = $f['est'] === $v;
+            $items .= '<a class="fpl' . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['est' => $v])) . '"' . ($on ? ' aria-current="true"' : '') . '><span>' . e($l) . '</span>' . ($on ? '<span class="ok">' . icon('check') . '</span>' : '') . '</a>';
+        }
+        $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($f['est'] !== 'todo' ? ' on' : '') . '">' . icon('check') . ' ' . e($est[$f['est']]) . ' ' . icon('chev-down', 'chev') . '</summary>'
+            . '<div class="fpop-box" role="menu" aria-label="Estado"><div class="fpop-h"><b>Estado</b></div><div class="fpop-l">' . $items . '</div></div></details>';
+        $late = $f['urg'] === 'late';
+        $h .= '<a class="fchip urg' . ($late ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['urg' => $late ? '' : 'late'])) . '"' . ($late ? ' aria-current="true"' : '') . '>' . icon('alert') . ' Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : '') . '</a>';
+        $none = $f['quem'] === 'none';
+        $h .= '<a class="fchip' . ($none ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['quem' => $none ? tasks_default_who() : 'none'])) . '"' . ($none ? ' aria-current="true"' : '') . '>' . icon('hand') . ' Por atribuir' . (($counts['none'] ?? 0) ? ' <i class="nb">' . (int)$counts['none'] . '</i>' : '') . '</a>';
+        // «Hoje» e «Esta semana» já não têm botão; uma vista guardada com eles mostra-os aqui, para os poder tirar
+        if (in_array($f['urg'], ['today', 'week'], true)) $h .= '<a class="fchip on" href="' . e(tasks_url($tab, $f, ['urg' => ''])) . '" data-tip="Tirar este filtro">' . ($f['urg'] === 'today' ? 'Hoje' : 'Esta semana') . ' ' . icon('x') . '</a>';
+        $h .= '</div>';
+    } else {
+        $h .= '<div class="fg"><em>Urgência</em>' . $chip('urg', 'late', 'Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : ''), 'urg') . $chip('urg', 'today', 'Hoje') . $chip('urg', 'week', 'Esta semana') . '</div>';
     }
-    $h .= '<div class="fg"><em>Urgência</em>' . $chip('urg', 'late', 'Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : ''), 'urg') . $chip('urg', 'today', 'Hoje') . $chip('urg', 'week', 'Esta semana') . '</div>';
     if ($tab === 'tarefas') {
-        // «Quem»: um botão que abre a lista de pessoas (em vez de um botão por pessoa).
+        // «Quem»: um botão que abre a lista de pessoas (em vez de um botão por pessoa). «Por atribuir» tem botão próprio.
         $opts = ($myMember !== null && isset($members[$myMember]) ? ['me' => ['Eu', task_who_html($members, $myMember)]] : [])
-              + ['all' => ['Todos', '<span class="fpl-i">' . icon('equipa') . '</span>'], 'none' => ['Por atribuir', '<span class="fpl-i">' . icon('hand') . '</span>']];
+              + ['all' => ['Todos', '<span class="fpl-i">' . icon('equipa') . '</span>']];
         foreach ($members as $mid => $m) if ($mid !== $myMember) $opts[(string)$mid] = [$m['name'], task_who_html($members, (int)$mid)];
         $cur = (string)$f['quem'];
         $items = ''; $sep = false;
@@ -173,7 +190,7 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
             $items .= '<a class="fpl' . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['quem' => (string)$v])) . '"' . ($on ? ' aria-current="true"' : '') . '>' . $av . '<span>' . e($l) . '</span>' . ($on ? '<span class="ok">' . icon('check') . '</span>' : '') . '</a>';
         }
         $label = $opts[$cur][0] ?? 'Todos';
-        $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($cur !== 'all' ? ' on' : '') . '">' . icon('user') . ' Quem: ' . e($cur === 'me' ? 'Eu' : (ctype_digit($cur) ? first_name($label) : $label)) . ' ' . icon('chev-down', 'chev') . '</summary>'
+        $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($cur !== 'all' && $cur !== 'none' ? ' on' : '') . '">' . icon('user') . ' Quem: ' . e($cur === 'me' ? 'Eu' : (ctype_digit($cur) ? first_name($label) : $label)) . ' ' . icon('chev-down', 'chev') . '</summary>'
             . '<div class="fpop-box" role="menu" aria-label="Quem"><div class="fpop-h"><b>Quem</b></div><div class="fpop-l">' . $items . '</div></div></details></div>';
     }
     // Tipo e origem: um botão que abre uma caixa com os ícones (tipo: 5 × 3).

@@ -243,34 +243,34 @@ render_flashes();
 if ($tab === 'tarefas'):
     $list = array_values(array_filter(tasks_filter($open, $f, $myMember), fn($t) => $t['kind'] !== 'block'));
     task_urgency_sort($list);
-    echo tasks_filters_html($f, $members, $myMember, 'tarefas', $views, task_deal_options($pdo), ['late' => $lateMine]);
+    // «Por atribuir»: as abertas sem responsável, com os outros filtros (menos o «Quem»)
+    $noneN = count(array_filter(tasks_filter($open, ['quem' => 'none'] + $f, $myMember), fn($t) => $t['kind'] !== 'block'));
+    echo tasks_filters_html($f, $members, $myMember, 'tarefas', $views, task_deal_options($pdo), ['late' => $lateMine, 'none' => $noneN]);
+    // Um só quadro: as por fazer pela ordem de urgência (as em atraso primeiro, a vermelho) e, em «Todas», as
+    // concluídas a seguir. As chamadas de leads e os follow-ups de relação continuam juntos numa linha.
     $showWho = $f['quem'] !== 'me';
-    if ($f['est'] !== 'done'):
-        $byBucket = array_fill_keys(array_keys(TASK_BUCKETS), []);
-        foreach ($f['solto'] ? array_map(fn($t) => ['task' => $t], $list) : task_aggregate($list) as $it) {
-            $t = $it['task'] ?? $it['tasks'][0];
-            $byBucket[task_bucket($t)][] = $it;
-        }
-        $total = count($list);
+    $open1 = $f['est'] !== 'done' ? ($f['solto'] ? array_map(fn($t) => ['task' => $t], $list) : task_aggregate($list)) : [];
+    $done = $f['est'] !== 'todo' ? tasks_filter(tasks_open($pdo, $visible, $myMember, true), $f, $myMember) : [];
+    $total = count($list);
+    $lateN = count(array_filter($list, fn($t) => task_bucket($t) === 'late'));
+    $rows = '';
+    foreach ($open1 as $it) $rows .= isset($it['task']) ? task_row_html($it['task'], $members, $editUrl((int)$it['task']['id'])) : task_group_html($it, $members, $showWho, $editUrl);
+    foreach ($done as $t) $rows .= task_row_html($t, $members, $editUrl((int)$t['id']));
+    $head = $f['est'] === 'done' ? 'Concluídas' : ($f['est'] === 'all' ? 'Todas' : 'Por fazer');
 ?>
 <div class="tlist" data-tlist>
-  <?php if (!$total): ?><p class="empty-s muted">Nada por fazer com estes filtros. <?= $f['quem'] === 'me' ? '<a href="' . e(tasks_url('tarefas', $f, ['quem' => 'all'])) . '">Ver as da equipa</a>' : '' ?></p><?php endif; ?>
-  <?php foreach ($byBucket as $k => $items): if (!$items) continue;
-      // Um grupo conta, em cada secção, só as tarefas dessa urgência (ex.: «Em atraso 10» de 22 chamadas).
-      $n = 0; foreach ($items as $it) $n += isset($it['tasks']) ? count(array_filter($it['tasks'], fn($x) => task_bucket($x) === $k)) : 1;
-      $rows = '';
-      foreach ($items as $it) $rows .= isset($it['task']) ? task_row_html($it['task'], $members, $editUrl((int)$it['task']['id'])) : task_group_html($it, $members, $showWho, $editUrl); ?>
-    <?php if ($k === 'late'): ?>
-      <section class="tgrp late" data-grp="late"><h2 class="tgh"><?= icon('alert') ?> <?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></h2><div class="tgb"><?= $rows ?></div></section>
-    <?php else: ?>
-      <details class="tgrp" data-grp="<?= $k ?>"<?= in_array($k, ['today'], true) || $total < 25 ? ' open' : '' ?>><summary class="tgh"><?= e(TASK_BUCKETS[$k]) ?> <span class="n"><?= $n ?></span></summary><div class="tgb"><?= $rows ?></div></details>
-    <?php endif; ?>
-  <?php endforeach; ?>
+  <section class="tgrp one" data-grp="all">
+    <h2 class="tgh"><?= e($head) ?> <span class="n"><?= $f['est'] === 'done' ? count($done) : $total + count($done) ?></span>
+      <?php if ($lateN && $f['est'] !== 'done'): ?><span class="tgl late"><?= icon('alert') ?> <?= $lateN ?> em atraso</span><?php endif; ?>
+      <?php if ($f['est'] !== 'todo'): ?><small class="muted">concluídas: as mais recentes</small><?php endif; ?></h2>
+    <div class="tgb"><?= $rows ?>
+    <?php if ($rows === ''): ?><p class="empty-s muted"><?= $f['est'] === 'done' ? 'Ainda não há concluídas com estes filtros.' : 'Nada por fazer com estes filtros.' ?> <?= $f['quem'] === 'me' ? '<a href="' . e(tasks_url('tarefas', $f, ['quem' => 'all'])) . '">Ver as da equipa</a>' : '' ?></p><?php endif; ?></div>
+  </section>
   <?php if ($f['solto'] && $groupOn): ?>
     <p class="muted small">As chamadas de leads e os follow-ups de relação estão uma a uma. <a href="<?= e(tasks_url('tarefas', $f, ['solto' => 0])) ?>">Voltar a agrupar</a></p>
   <?php endif; ?>
 </div>
-<?php endif;
+<?php
     if ($canEdit): ?>
 <div class="snz" data-snz hidden role="dialog" aria-label="Adiar a tarefa">
   <b class="snz-h"><?= icon('clock') ?> Adiar</b>
@@ -284,12 +284,6 @@ if ($tab === 'tarefas'):
     <button class="btn sm" type="submit">Adiar</button>
   </form>
 </div>
-<?php endif;
-    if ($f['est'] !== 'todo'):
-        $done = tasks_filter(tasks_open($pdo, $visible, $myMember, true), $f, $myMember); ?>
-<section class="tgrp done" data-grp="done"><h2 class="tgh"><?= icon('check') ?> Concluídas <span class="n"><?= count($done) ?></span> <small class="muted">as mais recentes</small></h2>
-  <div class="tgb"><?php foreach ($done as $t) echo task_row_html($t, $members, $editUrl((int)$t['id'])); ?>
-  <?php if (!$done): ?><p class="empty-s muted">Ainda não há concluídas.</p><?php endif; ?></div></section>
 <?php endif; ?>
 
 <?php
