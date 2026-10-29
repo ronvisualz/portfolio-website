@@ -191,7 +191,8 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $t = task_by_id($pdo, (int)$d['id']);
             $members = team_members($pdo);
             $visible = task_visible_members($pdo, $members);
-            if (!$t || !task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible)) throw new RuntimeException($changed);
+            require_once __DIR__ . '/leads.php';   // member_for_user
+            if (!$t || !task_can_see($pdo, $t, $visible, member_for_user($pdo, (int)current_user()['id']))) throw new RuntimeException($changed);
             $from = $d['member_id'] !== null ? (int)$d['member_id'] : null;
             if (!task_member_visible($from, $visible)) throw new RuntimeException('Sem permissão.');
             $pdo->prepare('UPDATE tasks SET status = ?, done_at = ?, member_id = ?, position = ?, updated_at = ? WHERE id = ?')
@@ -230,7 +231,7 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $t = task_by_id($pdo, (int)$d['id']);
             $members = team_members($pdo);
             $mine = member_for_user($pdo, (int)current_user()['id']);
-            if ($t && (task_hidden_for($t, $mine) || (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, task_visible_members($pdo, $members)) && (int)$t['member_id'] !== (int)$mine))) throw new RuntimeException('Sem permissão.');
+            if ($t && (task_hidden_for($t, $mine) || !task_can_see($pdo, $t, task_visible_members($pdo, $members), $mine))) throw new RuntimeException('Sem permissão.');
             if (!$t || (string)$t['due_date'] !== (string)$d['to_date'] || (string)$t['due_time'] !== (string)$d['to_time']) throw new RuntimeException($changed);
             $pdo->prepare('UPDATE tasks SET due_date = ?, due_time = ?, duration_min = ?, updated_at = ? WHERE id = ?')->execute([$d['due_date'], $d['due_time'], $d['duration_min'] ?? null, task_now(), $d['id']]);
             task_log($pdo, (int)$d['id'], 'snooze', 'Prazo reposto (anulado)');

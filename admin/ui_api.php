@@ -289,7 +289,7 @@ try {
             if (can('tarefas')) {
                 require_once __DIR__ . '/inc/tasks.php';
                 $visible = task_visible_members($pdo, team_members($pdo));
-                $vis = $visible === null ? '' : ' AND (t.member_id IS NULL' . ($visible ? ' OR t.member_id IN (' . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
+                $vis = task_vis_where($pdo, $visible);
                 $st = $pdo->prepare("SELECT t.id, t.title, t.status, t.due_date, tm.name AS who FROM tasks t LEFT JOIN team_members tm ON tm.id = t.member_id
                                       WHERE t.title LIKE ? ESCAPE '!'$vis ORDER BY t.status = 'done', t.due_date IS NULL, t.due_date LIMIT 6");
                 $st->execute([$l]);

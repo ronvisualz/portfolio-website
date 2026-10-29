@@ -34,7 +34,7 @@ $myMember = member_for_user($pdo, (int)$me['id']);
 $reach = function (int $id) use ($pdo, $visible, $myMember): ?array {
     $t = task_by_id($pdo, $id);
     if (!$t || task_hidden_for($t, $myMember)) return null;
-    if (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible) && (int)$t['member_id'] !== (int)$myMember) {
+    if (!task_can_see($pdo, $t, $visible, $myMember)) {
         $parts = array_map('intval', explode(',', (string)($t['participants'] ?? '')));
         if (!in_array((int)$GLOBALS['user']['id'], $parts, true)) return null;
     }

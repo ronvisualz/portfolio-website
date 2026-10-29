@@ -31,10 +31,10 @@ $canEdit = can('tarefas', PERM_EDIT);
 $assignable = array_filter($members, fn($m, $mid) => task_can_assign($pdo, (int)$mid, $members, $visible), ARRAY_FILTER_USE_BOTH);
 
 /** Uma tarefa que posso ver e mexer (as privadas dos outros não existem para mim). */
-$reach = function (?array $t) use ($visible, $myMember): ?array {
+$reach = function (?array $t) use ($pdo, $visible, $myMember): ?array {
     if (!$t) return null;
     if (task_hidden_for($t, $myMember)) return null;
-    if (!task_member_visible($t['member_id'] !== null ? (int)$t['member_id'] : null, $visible) && (int)$t['member_id'] !== (int)$myMember) return null;
+    if (!task_can_see($pdo, $t, $visible, $myMember)) return null;   // as por atribuir: só as da minha equipa
     return $t;
 };
 

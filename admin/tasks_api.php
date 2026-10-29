@@ -43,7 +43,7 @@ $myMember = member_for_user($pdo, (int)current_user()['id']);
 $gone = fn() => api_out(404, ['ok' => false, 'error' => 'Essa tarefa já não existe. Recarregue a página.']);
 if (!$task || task_hidden_for($task, $myMember)) $gone();
 $from = $task['member_id'] !== null ? (int)$task['member_id'] : null;
-if (!task_member_visible($from, $visible) && $from !== $myMember) $gone();
+if (!task_can_see($pdo, $task, $visible, $myMember)) $gone();   // as por atribuir: só as da minha equipa
 $snap = ['id' => $id, 'status' => $task['status'], 'done_at' => $task['done_at'], 'member_id' => $task['member_id'], 'position' => $task['position'], 'help_by' => $task['help_by'] ?? null];
 $name = fn(?int $m) => $m && isset($members[$m]) ? $members[$m]['name'] : 'Por atribuir';
 

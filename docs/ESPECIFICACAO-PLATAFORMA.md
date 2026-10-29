@@ -2048,7 +2048,11 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **«Abrir na origem»:** além de lead, negócio, contacto e Marketing, agora também as tarefas do Financeiro (saldos →
   Tesouraria, calendário fiscal → Impostos, pela tabela `fin_done`; nova origem «Financeiro» no filtro e na marca)
   e os planos tirados de um quadro do Centro Criativo (abrem o quadro). Visível também no telemóvel.
-- Ficheiros: `calendar.php`, `inc/tasks_view.php`, `inc/tasks.php`, `assets/app.css`.
+- **Quem vê o quê (§18.5):** abre em «Eu»; admins escolhem «Todos» ou cada pessoa; chefes «A minha equipa» ou cada
+  membro; membros só as suas. As por atribuir passam a ser por equipa (`task_team_sql`, `task_unassigned_sql`,
+  `task_can_see`), também no quadro, na agenda, na pesquisa ⌘K, na API das tarefas, no Google Calendar e no «Anular».
+- Ficheiros: `calendar.php`, `tasks_api.php`, `gcal_api.php`, `ui_api.php`, `inc/tasks_view.php`, `inc/tasks.php`,
+  `inc/undo.php`, `assets/app.css`.
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
@@ -2877,6 +2881,15 @@ operador) · **Tipo** · **Origem** (Lead · Negócio · Marketing · Relação 
 **Negócio** (ID/nome). «Hoje» e «Esta semana» só vêm de vistas guardadas antigas (aparecem como filtro a tirar).
 Quadro da equipa: Urgência (Em atraso · Hoje · Esta semana) · Tipo · Origem · Negócio.
 Filtros guardáveis como vistas.
+
+**Quem vê o quê (29 out 2026), sempre conferido no servidor (lista, quadro, agenda, pesquisa e ações):** a lista
+abre só com as tarefas da própria pessoa («Quem: Eu»). Admins e superadmin podem escolher «Todos» ou cada pessoa
+(o superadmin, que não tem tarefas, abre em «Todos»). Chefes de equipa: «A minha equipa» (as suas e as dos membros
+do departamento) ou cada membro. Membros: só as suas — sem botão «Quem». **Por atribuir:** admins veem todas; o
+chefe vê as da sua equipa e as que ainda não têm equipa; o membro só as da sua equipa. A equipa de uma tarefa por
+atribuir é o departamento de quem pediu ajuda, senão o do comercial do negócio, senão o de quem a criou; quem a
+criou ou pediu ajuda vê-a sempre. O âmbito de cada função é o da grelha de permissões (Tarefas: Todos ·
+Do departamento · Só os meus).
 
 ### 18.6 Tipos, origens, ícones e cores
 - **Tipo** = ícone principal da tarefa (16): Chamada · Reunião · Email · Mensagem/WhatsApp ·

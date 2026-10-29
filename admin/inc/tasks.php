@@ -105,9 +105,52 @@ function task_visible_members(PDO $pdo, array $members): ?array {
     return $ids;
 }
 
-/** Posso mexer numa tarefa desta pilha? (null = Por atribuir: toda a gente) */
+/** Posso mexer numa tarefa desta pilha? (null = Por atribuir: aqui sim; a equipa vê-se em task_can_see) */
 function task_member_visible(?int $mid, ?array $visible): bool {
     return $mid === null || $visible === null || in_array($mid, $visible, true);
+}
+
+/**
+ * A equipa de uma tarefa por atribuir (SQL): o departamento de quem pediu ajuda, senão o do comercial do negócio,
+ * senão o de quem a criou. NULL quando não se sabe (ex.: criada pelo sistema, sem negócio).
+ */
+function task_team_sql(PDO $pdo, string $a = 't'): string {
+    $help = db_has_column($pdo, 'tasks', 'help_by') ? "(SELECT hu.department_id FROM users hu WHERE hu.id = $a.help_by), " : '';
+    return "COALESCE($help(SELECT du.department_id FROM deals dd JOIN users du ON du.id = dd.owner_id WHERE dd.id = $a.deal_id), "
+         . "(SELECT cu.department_id FROM users cu WHERE cu.id = $a.created_by))";
+}
+
+/**
+ * Que tarefas por atribuir vejo (SQL, sem parâmetros): com âmbito «todos» todas; com «departamento» (chefes de equipa)
+ * as da minha equipa e as sem equipa; com «só os meus» (membros) só as da minha equipa. As que eu criei ou em que
+ * pedi ajuda vejo sempre.
+ */
+function task_unassigned_sql(PDO $pdo, string $a = 't'): string {
+    $scope = my_scope('tarefas');
+    if ($scope === 'all') return '1 = 1';
+    $me = (int)current_user()['id'];
+    $dept = $pdo->query('SELECT department_id FROM users WHERE id = ' . $me)->fetchColumn();
+    $team = task_team_sql($pdo, $a);
+    $mine = "$a.created_by = $me" . (db_has_column($pdo, 'tasks', 'help_by') ? " OR $a.help_by = $me" : '');
+    $conds = [$mine];
+    if ($dept !== false && $dept !== null) $conds[] = "$team = " . (int)$dept;
+    if ($scope === 'dept') $conds[] = "$team IS NULL";
+    return '(' . implode(' OR ', $conds) . ')';
+}
+
+/** A condição de visibilidade para juntar a um WHERE (« AND (…)»), ou '' com âmbito «todos». */
+function task_vis_where(PDO $pdo, ?array $visible, string $a = 't'): string {
+    if ($visible === null) return '';
+    return " AND (($a.member_id IS NULL AND " . task_unassigned_sql($pdo, $a) . ')'
+         . ($visible ? " OR $a.member_id IN (" . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
+}
+
+/** Posso ver (e mexer) nesta tarefa? A pilha tem de estar à vista; uma por atribuir, ser da minha equipa. */
+function task_can_see(PDO $pdo, array $t, ?array $visible, ?int $myMember): bool {
+    $mid = $t['member_id'] !== null ? (int)$t['member_id'] : null;
+    if ($mid !== null) return $mid === $myMember || task_member_visible($mid, $visible);
+    if ($visible === null) return true;
+    return (int)$pdo->query('SELECT COUNT(*) FROM tasks t WHERE t.id = ' . (int)$t['id'] . ' AND ' . task_unassigned_sql($pdo))->fetchColumn() > 0;
 }
 
 /**
@@ -617,7 +660,7 @@ function task_links_parse(string $raw): ?string {
 
 /** Todas as tarefas abertas que posso ver (sem as privadas dos outros), com o necessário para a lista e o quadro. */
 function tasks_open(PDO $pdo, ?array $visible, ?int $myMember, bool $done = false, int $doneLimit = 200): array {
-    $vis = $visible === null ? '' : ' AND (t.member_id IS NULL' . ($visible ? ' OR t.member_id IN (' . implode(',', array_map('intval', $visible)) . ')' : '') . ')';
+    $vis = task_vis_where($pdo, $visible);
     $hasPriv = db_has_column($pdo, 'tasks', 'private');
     // as tarefas do Financeiro (saldos, calendário fiscal) ficam em fin_done: dizem de onde vieram
     $fin = db_has_table($pdo, 'fin_done');

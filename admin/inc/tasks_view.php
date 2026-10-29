@@ -23,6 +23,9 @@ function tasks_filters(array $g, bool $operator, string $defWho = ''): array {
         'solto'  => !empty($g['solto']) ? 1 : 0,
     ];
     if (!in_array($f['quem'], ['me', 'all', 'none'], true) && !ctype_digit($f['quem'])) $f['quem'] = $defWho;
+    // Um membro (âmbito «só os meus») vê as suas e as por atribuir da sua equipa: o «Quem» não tem mais nada.
+    // (O servidor limita sempre o que cada um vê: isto só tira as escolhas que não dariam nada.)
+    if (my_scope('tarefas') === 'own' && !in_array($f['quem'], ['me', 'none'], true)) $f['quem'] = 'me';
     return $f;
 }
 
@@ -177,10 +180,13 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
     } else {
         $h .= '<div class="fg"><em>Urgência</em>' . $chip('urg', 'late', 'Em atraso' . ($counts['late'] ? ' <i>' . $counts['late'] . '</i>' : ''), 'urg') . $chip('urg', 'today', 'Hoje') . $chip('urg', 'week', 'Esta semana') . '</div>';
     }
-    if ($tab === 'tarefas') {
+    // «Quem» depende da função (§18.5): admins — todos ou cada pessoa; chefes de equipa — a sua equipa ou cada
+    // membro dela; membros — só as suas (sem botão).
+    $scope = my_scope('tarefas');
+    if ($tab === 'tarefas' && $scope !== 'own') {
         // «Quem»: um botão que abre a lista de pessoas (em vez de um botão por pessoa). «Por atribuir» tem botão próprio.
         $opts = ($myMember !== null && isset($members[$myMember]) ? ['me' => ['Eu', task_who_html($members, $myMember)]] : [])
-              + ['all' => ['Todos', '<span class="fpl-i">' . icon('equipa') . '</span>']];
+              + ['all' => [$scope === 'dept' ? 'A minha equipa' : 'Todos', '<span class="fpl-i">' . icon('equipa') . '</span>']];
         foreach ($members as $mid => $m) if ($mid !== $myMember) $opts[(string)$mid] = [$m['name'], task_who_html($members, (int)$mid)];
         $cur = (string)$f['quem'];
         $items = ''; $sep = false;
@@ -189,7 +195,7 @@ function tasks_filters_html(array $f, array $members, ?int $myMember, string $ta
             if (is_int($v) && !$sep) { $items .= '<hr>'; $sep = true; }   // as pessoas, depois de Eu · Todos · Por atribuir
             $items .= '<a class="fpl' . ($on ? ' on' : '') . '" href="' . e(tasks_url($tab, $f, ['quem' => (string)$v])) . '"' . ($on ? ' aria-current="true"' : '') . '>' . $av . '<span>' . e($l) . '</span>' . ($on ? '<span class="ok">' . icon('check') . '</span>' : '') . '</a>';
         }
-        $label = $opts[$cur][0] ?? 'Todos';
+        $label = $opts[$cur][0] ?? $opts['all'][0];
         $h .= '<div class="fg"><details class="fpop" data-fpop><summary class="fchip' . ($cur !== 'all' && $cur !== 'none' ? ' on' : '') . '">' . icon('user') . ' Quem: ' . e($cur === 'me' ? 'Eu' : (ctype_digit($cur) ? first_name($label) : $label)) . ' ' . icon('chev-down', 'chev') . '</summary>'
             . '<div class="fpop-box" role="menu" aria-label="Quem"><div class="fpop-h"><b>Quem</b></div><div class="fpop-l">' . $items . '</div></div></details></div>';
     }
