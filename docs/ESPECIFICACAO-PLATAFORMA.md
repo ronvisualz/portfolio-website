@@ -2054,6 +2054,33 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - Ficheiros: `calendar.php`, `tasks_api.php`, `gcal_api.php`, `ui_api.php`, `inc/tasks_view.php`, `inc/tasks.php`,
   `inc/undo.php`, `assets/app.css`.
 
+### 10.26 Sem contas Google nos emails de trabalho — §31.5 (29 out 2026)
+
+- **Base de dados, passo 36:** `users.google_email` e `google_linked_at` (a conta Google associada), `users.ical_hash`,
+  `ical_enc` e `ical_at` (o link da agenda: sha256 para o encontrar, token cifrado com `inc/app_key.php` para o mostrar)
+  e a tabela `mail_confirm` (links de confirmação dos reencaminhamentos do Hostinger).
+- **Perfil › Ligações › «Conta Google»:** «Ligar conta Google» (com sessão; qualquer conta Google, ex.: Gmail pessoal;
+  uma conta Google só pode estar numa pessoa) e «Ligar conta e Google Calendar» (uma só autorização para as duas
+  coisas); «Desligar» no mesmo sítio. Associar e desligar ficam no registo de entradas (`login_log`: `g_link`,
+  `g_unlink`). O login por email e palavra-passe e as chaves de acesso não mudam.
+- **«Entrar com Google»:** primeiro a conta associada (`google_sub`), mesmo com outro email; sem associação, a regra do
+  email igual verificado (e essa conta fica associada). Conta desconhecida: mensagem a explicar como associar.
+- **«Ligar Google Calendar»:** sugere a conta associada (`login_hint`), por isso a Google só pede a autorização do
+  calendário; quem ainda não tinha conta associada fica com a do calendário associada também.
+- **«Ligar conta da topper.»** (Definições › Integrações › Google, só admins): OAuth com `geraltopperdigital@gmail.com`
+  sugerida, scopes de eventos e ocupado/livre, token em `inc/meet_config.php`; «Desligar» revoga na Google. Avisos dos
+  60 minutos e da conta Google dos convidados. O guia mostra o URI de redirecionamento e a origem JavaScript.
+- **Começar noutro endereço** (ex.: `www.`) passa primeiro para o `app_url`, para a volta da Google encontrar a sessão.
+- **«Subscrever a agenda»** (Perfil › Ligações): `admin/ical.php?t=<token>`, só leitura, sem sessão; tarefas com hora
+  da pessoa (responsável ou participante) de 30 dias para trás a 180 para a frente, com o link do Meet; «Gerar outro
+  link» revoga o anterior; «Revogar». Token errado ou revogado: 404.
+- **Confirmação dos reencaminhamentos:** um email do Hostinger com link de confirmação que chega pela Cloudflare fica em
+  `mail_confirm` (só o link, remetente e assunto; nunca o corpo) e aparece em Definições › Integrações › Email, no passo
+  das caixas, com «Abrir o link de confirmação» e «Já confirmei». O link procura-se também no HTML (quoted-printable e
+  base64).
+- Ficheiros: `google_auth.php`, `ical.php`, `conta.php`, `definicoes.php`, `inc/google_oauth.php`, `inc/ical.php`,
+  `inc/auth.php`, `inc/mail_inbound.php`, `inc/migrate_auth.php`, `inc/migrate.php`.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
@@ -3938,3 +3965,4 @@ A Google não deixa criar contas gratuitas com os emails @topperdigital.xyz sem 
 - **Calendário:** cada pessoa pode ligar o Google Calendar de **qualquer** conta Google sua (já suportado). Novo: **link de subscrição iCal privado por pessoa** (Perfil › Ligações › «Subscrever a agenda»; URL com token revogável/regenerável; só leitura) para Calendário do iPhone/Mac, Outlook ou Google — reuniões, gravações, visitas e prazos com hora. Atualização segundo a app de calendário (15 min a algumas horas).
 - Ecrã de consentimento OAuth publicado (não modo de teste).
 - **Atualização (28 out 2026):** a conta da topper. para o Meet/Calendar e para a Google Cloud Console passa a ser **Google Workspace com info@topperdigital.xyz** (1 licença), comprada diretamente na Google. O email continua no Hostinger: domínio verificado por TXT, **Gmail não ativado e MX nunca alterados**. Reuniões criadas pela plataforma em nome do info@ com **acesso aberto** (quem tem o link entra sem conta Google e sem pedir para entrar); comerciais e clientes recebem o convite nos seus emails — ninguém partilha o login do info@. Coanfitriões opcionais pela conta Google associada no Perfil. geral@ fica para mais tarde.
+- **Atualização (29 out 2026) — substitui a de 28 out:** sem Workspace. A conta da topper. para o Meet e para a Google Cloud Console é a **conta Gmail gratuita `geraltopperdigital@gmail.com`**, ligada em Definições › Integrações › Google › «Ligar conta da topper.» (o token de atualização fica em `inc/meet_config.php`). Por ser gratuita: chamadas com 3+ pessoas param aos **60 minutos** e quem entra precisa de **conta Google** (sem conta fica à espera que o anfitrião aceite) — avisos na interface. Os convites seguem para os emails de trabalho.

@@ -72,6 +72,47 @@ function mail_inbound_box(array $headers, string $envFrom, array $connected): st
     return '';
 }
 
+/**
+ * O email com que o Hostinger pede para confirmar um reencaminhamento novo (§31.5): vem do Hostinger e traz um link
+ * de confirmação. Devolve esse link ('' se não for um destes). O corpo nunca se guarda: só o link.
+ */
+function mail_inbound_confirm_link(array $parsed, string $envFrom, string $raw = ''): string {
+    $from = strtolower((string)$parsed['from'] . ' ' . $envFrom);
+    if (!preg_match('/@([a-z0-9-]+\.)*hostinger\.[a-z.]+\b/', $from)) return '';
+    // o link vem muitas vezes só no href do HTML (que o texto perde): procura-se também no email em bruto,
+    // com as partes em quoted-printable e em base64 descodificadas
+    $text = (string)$parsed['text'] . ' ' . (string)$parsed['subject'];
+    if ($raw !== '') {
+        $text .= ' ' . (stripos($raw, 'quoted-printable') !== false ? quoted_printable_decode($raw) : $raw);
+        if (preg_match_all('/\r?\n\r?\n([A-Za-z0-9+\/=\r\n]{200,})/', $raw, $b64)) foreach ($b64[1] as $blk) $text .= ' ' . (string)base64_decode(preg_replace('/\s+/', '', $blk));
+    }
+    if (!preg_match('/confirm|verif|reencaminh|forward/i', $text)) return '';
+    if (!preg_match_all('~https://[^\s"<>\)\]]+~i', $text, $m)) return '';
+    foreach ($m[0] as $u) {
+        $u = rtrim(html_entity_decode($u, ENT_QUOTES, 'UTF-8'), '.,;');
+        $host = strtolower((string)parse_url($u, PHP_URL_HOST));
+        if ($host === '' || !preg_match('/(^|\.)hostinger\.[a-z.]+$|(^|\.)hpanel\.[a-z.]+$/', $host)) continue;
+        if (preg_match('/confirm|verif|forward|token|accept/i', $u)) return $u;
+    }
+    return '';
+}
+
+/** A caixa que pediu o reencaminhamento, se o email a disser (no assunto ou no texto). */
+function mail_inbound_confirm_box(array $parsed): string {
+    $boxes = [];
+    if (preg_match_all('/[A-Z0-9._%+-]+@(topperdigital|topperhub)\.xyz/i', (string)$parsed['subject'] . ' ' . (string)$parsed['text'], $m)) $boxes = array_map('strtolower', $m[0]);
+    foreach ($boxes as $b) if (!str_starts_with($b, 'entrada@')) return $b;
+    return '';
+}
+
+/** As confirmações por usar (as dos últimos 14 dias). */
+function mail_inbound_confirms(PDO $pdo): array {
+    if (!db_has_table($pdo, 'mail_confirm')) return [];
+    $st = $pdo->prepare('SELECT * FROM mail_confirm WHERE done_at IS NULL AND created_at >= ? ORDER BY id DESC LIMIT 20');
+    $st->execute([date('Y-m-d H:i:s', strtotime('-14 days'))]);
+    return $st->fetchAll();
+}
+
 /** Regista a chegada (nunca o corpo). Devolve false se já tinha chegado (repetição). */
 function mail_inbound_log(PDO $pdo, string $hash, array $v): bool {
     try {
@@ -106,6 +147,17 @@ function mail_inbound_accept(PDO $pdo, string $raw, array $h): array {
     if (preg_match('/\[' . preg_quote(MAIL_TEST_TAG, '/') . ' ([A-Z0-9]{6})\]/i', $subject, $tm)) {
         if (!mail_inbound_log($pdo, $hash, ['box' => $box, 'from' => $parsed['from'], 'subject' => $subject, 'size' => strlen($raw), 'status' => 'test', 'note' => strtoupper($tm[1])])) return ['dup', 'Repetido.'];
         return ['test', 'Email de teste ' . strtoupper($tm[1]) . ($box !== '' ? ' de ' . $box : ' (caixa por identificar)')];
+    }
+    // a confirmação de um reencaminhamento novo do Hostinger: o link fica em Definições › Integrações › Email (§31.5)
+    if (($link = mail_inbound_confirm_link($parsed, (string)($h['x-topper-from'] ?? ''), $raw)) !== '') {
+        if (!mail_inbound_log($pdo, $hash, ['box' => $box, 'from' => $parsed['from'], 'subject' => $subject, 'size' => strlen($raw), 'status' => 'confirm', 'note' => 'Link de confirmação do reencaminhamento'])) return ['dup', 'Repetido.'];
+        if (db_has_table($pdo, 'mail_confirm')) {
+            try {
+                $pdo->prepare('INSERT INTO mail_confirm (msg_hash, from_addr, subject, box, link, created_at) VALUES (?,?,?,?,?,?)')
+                    ->execute([$hash, mb_substr((string)$parsed['from'], 0, 190), mb_substr($subject, 0, 300), mb_substr($box !== '' ? $box : mail_inbound_confirm_box($parsed), 0, 190), mb_substr($link, 0, 1000), date('Y-m-d H:i:s')]);
+            } catch (PDOException $e) { /* repetido */ }
+        }
+        return ['confirm', 'Link de confirmação guardado em Definições.'];
     }
     if ($box === '') {
         // de uma caixa que não está ligada: nada fica além da marca contra repetições

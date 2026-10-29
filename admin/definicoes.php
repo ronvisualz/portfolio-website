@@ -55,6 +55,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
         redirect('/admin/definicoes.php?t=integracoes#set-int_google');
     }
+    if (isset($_POST['google_topper_off'])) {   // desligar a conta da topper. (Meet): revoga na Google e tira o token
+        require_once __DIR__ . '/inc/google_oauth.php';
+        try {
+            google_topper_remove();
+            setting_log($pdo, 'int_google', 'Ligação à Google', null, 'conta da topper. desligada');
+            flash('Conta da topper. desligada: o acesso foi revogado na Google. Os Meet passam a ser criados só por quem tem o calendário ligado.');
+        } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect('/admin/definicoes.php?t=integracoes#set-int_google');
+    }
+    if (isset($_POST['mail_confirm_done'])) {   // confirmação de reencaminhamento já usada (§31.5): sai da lista
+        $pdo->prepare('UPDATE mail_confirm SET done_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), (int)$_POST['mail_confirm_done']]);
+        redirect('/admin/definicoes.php?t=integracoes#set-mail_cf');
+    }
     redirect('/admin/definicoes.php?t=orcamentacao#set-budget_templates');
 }
 
@@ -178,18 +191,36 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             $nConn = gcal_ready($pdo) ? (int)$pdo->query('SELECT COUNT(*) FROM user_google')->fetchColumn() : 0;
             $nSub = db_has_column($pdo, 'users', 'google_sub') ? (int)$pdo->query('SELECT COUNT(*) FROM users WHERE google_sub IS NOT NULL')->fetchColumn() : 0;
             $chip = fn(bool $b, string $y, string $n) => '<span class="chip ' . ($b ? 'ok' : 'wait') . '">' . e($b ? $y : $n) . '</span>';
-            $h = '<p>' . $chip((bool)$gcl, 'Cliente OAuth ligado', 'Cliente OAuth por ligar') . ' ' . $chip((bool)$top, 'Conta da topper. ligada (Meet)', 'Conta da topper. por ligar')
-               . ' <span class="small muted">' . $nConn . ($nConn === 1 ? ' pessoa com o calendário ligado' : ' pessoas com o calendário ligado') . ' · ' . $nSub . ' já entraram com Google</span></p>';
-            $h .= '<ol class="cf-steps"><li>Em <b>console.cloud.google.com</b>: crie um projeto (ex.: «topper.»), ative a <b>Google Calendar API</b> (APIs e serviços › Biblioteca).</li>'
-                . '<li><b>Ecrã de consentimento OAuth</b>: tipo «Externo», nome «topper.», domínio autorizado <code>' . e(parse_url(app_base_url(), PHP_URL_HOST) ?: 'topperhub.xyz') . '</code>, scopes <code>openid</code>, <code>email</code>, <code>calendar.events</code> e <code>calendar.freebusy</code>; publique a app (ou junte cada pessoa como utilizador de teste).</li>'
-                . '<li><b>Credenciais › Criar ID de cliente OAuth › Aplicação Web</b>, com o URI de redirecionamento autorizado:<pre class="cf-cmd">' . e(google_redirect_uri()) . '</pre></li>'
+            $acct = google_topper_account();
+            $nLink = db_has_column($pdo, 'users', 'google_sub') ? (int)$pdo->query('SELECT COUNT(*) FROM users WHERE google_sub IS NOT NULL')->fetchColumn() : 0;
+            $origin = app_base_url();
+            $h = '<p>' . $chip((bool)$gcl, 'Cliente OAuth ligado', 'Cliente OAuth por ligar') . ' ' . $chip((bool)$top, 'Conta da topper. ligada (Meet)' . ($acct !== '' ? ': ' . $acct : ''), 'Conta da topper. por ligar')
+               . ' <span class="small muted">' . $nConn . ($nConn === 1 ? ' pessoa com o calendário ligado' : ' pessoas com o calendário ligado') . ' · ' . $nLink . ($nLink === 1 ? ' com conta Google associada' : ' com conta Google associada') . '</span></p>';
+            $h .= '<ol class="cf-steps"><li>Em <b>console.cloud.google.com</b>, com a conta da topper. (' . e(TOPPER_GOOGLE_ACCOUNT) . '): crie um projeto (ex.: «topper.») e ative a <b>Google Calendar API</b> (APIs e serviços › Biblioteca).</li>'
+                . '<li><b>Ecrã de consentimento OAuth</b>: tipo «Externo», nome «topper.», email de apoio ' . e(TOPPER_GOOGLE_ACCOUNT) . ', domínio autorizado <code>' . e(parse_url($origin, PHP_URL_HOST) ?: 'topperhub.xyz') . '</code>, scopes <code>openid</code>, <code>email</code>, <code>calendar.events</code> e <code>calendar.freebusy</code>. '
+                . '<b>Publique a app</b> (estado «Em produção»): em modo de teste os acessos ao calendário caducam ao fim de 7 dias.</li>'
+                . '<li><b>Credenciais › Criar ID de cliente OAuth › Aplicação Web</b>, com:<div class="small">URI de redirecionamento autorizado</div><pre class="cf-cmd">' . e(google_redirect_uri()) . '</pre>'
+                . '<div class="small">Origem JavaScript autorizada</div><pre class="cf-cmd">' . e($origin) . '</pre></li>'
                 . '<li>Cole aqui o ID e o segredo do cliente:</li></ol>'
                 . '<form method="post" class="fin-pass cf-api" autocomplete="off">' . csrf_field() . '<input type="hidden" name="google_client" value="1">'
                 . '<input type="text" name="client_id" maxlength="200" required placeholder="' . ($gcl ? e(substr($gcl['client_id'], 0, 12)) . '… (guardado)' : '…apps.googleusercontent.com') . '" aria-label="ID de cliente">'
                 . '<input type="password" name="client_secret" maxlength="200" required autocomplete="new-password" placeholder="' . ($gcl ? '•••••••• guardado no servidor' : 'Segredo do cliente') . '" aria-label="Segredo do cliente">'
                 . '<button class="btn sm" type="submit">' . ($gcl ? 'Mudar' : 'Guardar') . '</button></form>'
-                . '<p class="small muted">Fica só no servidor (admin/inc/auth_config.php), nunca na base de dados nem nesta página. O mesmo cliente serve para entrar, para o calendário de cada pessoa e para o Meet.'
-                . ($top ? '' : ' Para criar Meet também por quem não liga o calendário, a conta da topper. continua em admin/inc/meet_config.php (o refresh_token dessa conta).') . '</p>';
+                . '<p class="small muted">Fica só no servidor (admin/inc/auth_config.php), nunca na base de dados nem nesta página. O mesmo cliente serve para entrar, para o calendário de cada pessoa e para o Meet.</p>';
+            // a conta da topper. (Meet de quem não tem o calendário ligado)
+            $h .= '<div class="cf-send"><h4>Conta da topper. (Google Meet)</h4>'
+                . '<p class="small">Cria os Meet quando quem marca não tem o seu Google Calendar ligado. Use a conta Gmail da empresa, <b>' . e(TOPPER_GOOGLE_ACCOUNT) . '</b>. Os convites seguem para os emails de trabalho; ninguém partilha a palavra-passe desta conta.</p>'
+                . '<p class="small"><b>Limites de uma conta Gmail gratuita:</b> as chamadas com 3 ou mais pessoas param aos <b>60 minutos</b>; e quem entra precisa de <b>conta Google</b> (sem conta, fica à espera que o anfitrião aceite — e o anfitrião é a conta da topper.).</p>';
+            if ($top) {
+                $h .= '<p class="small">' . $chip(true, 'Ligada' . ($acct !== '' ? ': ' . $acct : ''), '') . '</p>'
+                    . '<div class="actions"><a class="btn ghost sm" href="/admin/google_auth.php?start=topper">Ligar outra vez</a> '
+                    . '<form method="post" class="inl">' . csrf_field() . '<input type="hidden" name="google_topper_off" value="1"><button class="btn ghost sm" type="submit">Desligar (revogar o acesso)</button></form></div>';
+            } elseif ($gcl) {
+                $h .= '<p><a class="btn sm" href="/admin/google_auth.php?start=topper">' . icon('video') . ' Ligar conta da topper.</a> <span class="small muted">Entre na Google com ' . e(TOPPER_GOOGLE_ACCOUNT) . ' e autorize os eventos do calendário.</span></p>';
+            } else {
+                $h .= '<p class="small muted">Primeiro o cliente OAuth (acima).</p>';
+            }
+            $h .= '</div>';
             return $h;
         case 'mail_cf':
             require_once __DIR__ . '/inc/mail_inbound.php';
@@ -212,7 +243,14 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                 . '<div class="cf-secret-out" hidden><code></code> <button type="button" class="btn ghost sm" data-copy-secret>Copiar</button></div></div>'
                 . '<div class="small">' . ($g['last'] !== '' ? $ok(true, 'A funcionar', '') . ' último email recebido ' . e($agoT($g['last'])) : '<span class="muted">Ainda não chegou nenhum email pela Cloudflare.</span>') . '</div></li>';
             $h .= '<li><b>Em cada caixa ligada do Hostinger:</b> hPanel › Emails › a caixa › <i>Reencaminhamento</i> › para <code>' . e($g['address']) . '</code>, com <i>manter uma cópia</i> na caixa. '
-                . ($boxes ? '<span class="small">Caixas ligadas: ' . e(implode(', ', $boxes)) . '.</span>' : '<span class="small neg">Ainda não há caixas ligadas (campo «Caixas ligadas», abaixo).</span>') . '</li>';
+                . ($boxes ? '<span class="small">Caixas ligadas: ' . e(implode(', ', $boxes)) . '.</span>' : '<span class="small neg">Ainda não há caixas ligadas (campo «Caixas ligadas», abaixo).</span>')
+                . '<div class="small muted">O Hostinger manda um email de confirmação para ' . e($g['address']) . ': o link aparece aqui em baixo, para o abrir. O reencaminhamento só funciona depois de confirmado.</div>';
+            foreach (mail_inbound_confirms($pdo) as $c) {
+                $h .= '<div class="cf-confirm"><span class="chip wait">por confirmar</span> ' . ($c['box'] !== '' ? '<b>' . e($c['box']) . '</b> · ' : '') . '<span class="small muted">' . e(shorten((string)$c['subject'], 80)) . ' · ' . e($agoT((string)$c['created_at'])) . '</span> '
+                    . '<a class="btn sm" href="' . e($c['link']) . '" target="_blank" rel="noopener noreferrer">Abrir o link de confirmação</a> '
+                    . '<form method="post" class="inl">' . csrf_field() . '<input type="hidden" name="mail_confirm_done" value="' . (int)$c['id'] . '"><button class="btn ghost sm" type="submit">Já confirmei</button></form></div>';
+            }
+            $h .= '</li>';
             $h .= '<li><b>Testar:</b> em «Estado das caixas», abaixo, «Testar» manda um email com um código para a caixa e mostra-o a chegar.</li>';
             $h .= '</ol>';
             // envio pelo serviço transacional

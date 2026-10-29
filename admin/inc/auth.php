@@ -10,7 +10,7 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
-const LOGIN_METHODS = ['password' => 'Palavra-passe', 'passkey' => 'Chave de acesso', 'google' => 'Google'];
+const LOGIN_METHODS = ['password' => 'Palavra-passe', 'passkey' => 'Chave de acesso', 'google' => 'Google', 'g_link' => 'Conta Google associada', 'g_unlink' => 'Conta Google desligada'];
 /** Quem tem de entrar com chave de acesso: nível → funções. */
 const PASSKEY_REQUIRED = ['' => [], 'admins' => ['superadmin', 'admin'], 'leads' => ['superadmin', 'admin', 'lead'], 'all' => ['superadmin', 'admin', 'lead', 'member']];
 
@@ -38,6 +38,13 @@ function auth_log_login(PDO $pdo, int $uid, string $method): void {
     if (!auth_ready($pdo)) return;
     $pdo->prepare('INSERT INTO login_log (user_id, method, device, ip, created_at) VALUES (?,?,?,?,?)')
         ->execute([$uid, isset(LOGIN_METHODS[$method]) ? $method : 'password', mb_substr(auth_device((string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 120), client_ip_bin(), date('Y-m-d H:i:s')]);
+}
+
+/** Um acontecimento da conta no registo de entradas (associar/desligar a conta Google), sem contar como entrada. */
+function auth_log_event(PDO $pdo, int $uid, string $method): void {
+    if (!auth_ready($pdo) || !isset(LOGIN_METHODS[$method])) return;
+    $pdo->prepare('INSERT INTO login_log (user_id, method, device, ip, created_at) VALUES (?,?,?,?,?)')
+        ->execute([$uid, $method, mb_substr(auth_device((string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 120), client_ip_bin(), date('Y-m-d H:i:s')]);
 }
 
 /** As últimas entradas de uma pessoa. */

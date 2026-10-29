@@ -119,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['mail
 // Segurança (§31.2): chaves de acesso e a conta Google da entrada; Ligações (§31.3): o Google Calendar da pessoa.
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/gcal.php';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['pk_del', 'pk_rename', 'google_unlink', 'gcal_off', 'gcal_prefs'], true)) {
+require_once __DIR__ . '/inc/ical.php';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['pk_del', 'pk_rename', 'google_unlink', 'gcal_off', 'gcal_prefs', 'ical_new', 'ical_off'], true)) {
     csrf_check();
     $uid = (int)$user['id'];
     try {
@@ -135,8 +136,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['pk_d
             flash('Nome guardado.');
             break;
         case 'google_unlink':
-            $pdo->prepare('UPDATE users SET google_sub = NULL WHERE id = ?')->execute([$uid]);
-            flash('A conta Google deixou de estar ligada à entrada. Da próxima vez que entrar com Google, fica ligada a conta que usar (com o mesmo email).');
+            google_unlink($pdo, $uid);
+            flash('Conta Google desligada: «Entrar com Google» deixa de a aceitar. O email e a palavra-passe e as chaves de acesso continuam iguais.');
+            break;
+        case 'ical_new':
+            if (!ical_ready($pdo)) throw new RuntimeException('A base de dados ainda não está no passo 36.');
+            ical_new($pdo, $uid);
+            flash('Link da agenda criado. Se havia um anterior, deixou de funcionar.');
+            break;
+        case 'ical_off':
+            ical_off($pdo, $uid);
+            flash('Link da agenda revogado: as apps que o usavam deixam de receber atualizações.');
             break;
         case 'gcal_off':
             gcal_disconnect($pdo, $uid);
@@ -150,7 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['do'] ?? '', ['pk_d
     } catch (RuntimeException $e) {
         flash($e->getMessage(), 'err');
     }
-    redirect('/admin/conta.php#' . (str_starts_with((string)$_POST['do'], 'gcal') ? 'ligacoes' : 'seguranca'));
+    redirect('/admin/conta.php#' . (in_array((string)$_POST['do'], ['pk_del', 'pk_rename'], true) ? 'seguranca' : 'ligacoes'));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'settings') {
@@ -350,8 +360,23 @@ render_flashes();
 </div>
 <?php endif; ?>
 
-<?php $gc = gcal_ready($pdo) ? gcal_conn($pdo, (int)$user['id']) : null; $gOn = google_client() !== null; ?>
+<?php $gc = gcal_ready($pdo) ? gcal_conn($pdo, (int)$user['id']) : null; $gOn = google_client() !== null;
+      $gLink = google_linked($pdo, (int)$user['id']); $icalUrl = ical_current($pdo, (int)$user['id']); ?>
 <h2 id="ligacoes">Ligações</h2>
+<div class="panel gcal-card" style="max-width:920px">
+  <h3 style="margin-top:0"><?= icon('user') ?> Conta Google</h3>
+  <?php if ($gLink): ?>
+    <p>Associada a <b><?= e($gLink['email'] !== '' ? $gLink['email'] : 'uma conta Google') ?></b><?= $gLink['at'] !== '' ? ' desde ' . e(date('d/m/Y', strtotime($gLink['at']))) : '' ?>. No ecrã de entrada, «Entrar com Google» entra com ela.</p>
+    <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="google_unlink"><button class="btn ghost sm" type="submit">Desligar a conta Google</button></form>
+  <?php elseif ($gOn): ?>
+    <p>Associe uma conta Google sua — pode ser um Gmail pessoal, não precisa de ter o email de trabalho — para entrar com «Entrar com Google» e, se quiser, ligar logo o seu Google Calendar.</p>
+    <a class="btn" href="/admin/google_auth.php?start=link"><?= icon('user') ?> Ligar conta Google</a>
+    <?php if (!$gc && gcal_ready($pdo)): ?> <a class="btn ghost" href="/admin/google_auth.php?start=link&amp;cal=1"><?= icon('calendar') ?> Ligar conta e Google Calendar</a><?php endif; ?>
+    <p class="small muted">O email e a palavra-passe e as chaves de acesso continuam a funcionar como antes. Desliga-se aqui a qualquer momento.</p>
+  <?php else: ?>
+    <p class="muted">A ligação à Google ainda não está configurada<?= $isAdmin ? ' — <a href="/admin/definicoes.php?t=integracoes#set-int_google">configurar em Definições</a>' : ' (um administrador configura-a em Definições)' ?>.</p>
+  <?php endif; ?>
+</div>
 <div class="panel gcal-card" style="max-width:920px">
   <h3 style="margin-top:0"><?= icon('calendar') ?> Google Calendar</h3>
   <?php if ($gc): ?>
@@ -365,12 +390,28 @@ render_flashes();
   <?php elseif ($gOn && gcal_ready($pdo)): ?>
     <p>Ligue o seu Google Calendar (pode ser uma conta Google gratuita) para ver lá as reuniões, gravações, visitas e prazos com hora da plataforma, e para os outros saberem quando está ocupado ao marcar consigo.</p>
     <a class="btn" href="/admin/google_auth.php?start=calendar"><?= icon('calendar') ?> Ligar Google Calendar</a>
-    <p class="small muted">A Google pede autorização para os eventos e para o ocupado/livre. O acesso fica cifrado no servidor e pode ser revogado aqui a qualquer momento.</p>
+    <p class="small muted">A Google pede autorização para os eventos e para o ocupado/livre<?= $gLink && $gLink['email'] !== '' ? ' — já com a sua conta associada (' . e($gLink['email']) . ') escolhida' : '' ?>. O acesso fica cifrado no servidor e pode ser revogado aqui a qualquer momento.</p>
   <?php else: ?>
     <p class="muted">A ligação à Google ainda não está configurada<?= $isAdmin ? ' — <a href="/admin/definicoes.php?t=integracoes#set-int_google">configurar em Definições</a>' : ' (um administrador configura-a em Definições)' ?>.</p>
   <?php endif; ?>
   <p class="small muted" style="margin-bottom:0">As reuniões com Google Meet continuam a ser criadas pela conta da topper. quando não tem o calendário ligado. Nota: em contas Google gratuitas, as chamadas Meet com 3 ou mais pessoas param aos 60 minutos.</p>
 </div>
+<?php if (ical_ready($pdo)): ?>
+<div class="panel gcal-card" style="max-width:920px">
+  <h3 style="margin-top:0"><?= icon('calendar') ?> Subscrever a agenda</h3>
+  <p>Um link privado, só de leitura, com as suas reuniões, gravações, visitas e prazos com hora — para o Calendário do iPhone ou do Mac, o Outlook ou o Google Calendar, sem ligar nenhuma conta.</p>
+  <?php if ($icalUrl !== ''): ?>
+    <p class="ut-new"><code id="ical-url"><?= e($icalUrl) ?></code> <button type="button" class="btn ghost sm" data-copy="#ical-url">Copiar</button></p>
+    <p class="small muted">iPhone: Definições › Calendário › Contas › Adicionar conta › Outra › Adicionar calendário subscrito. Mac: Calendário › Ficheiro › Nova subscrição de calendário. Google Calendar: Outros calendários › + › A partir de URL. Outlook: Adicionar calendário › Subscrever a partir da Web. A app volta a ler o link sozinha (de 15 minutos a algumas horas, conforme a app).</p>
+    <p class="small"><b>Quem tiver o link vê a sua agenda:</b> não o partilhe. Se o enviou por engano, gere outro.</p>
+    <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="ical_new"><button class="btn ghost sm" type="submit">Gerar outro link</button></form>
+    <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="ical_off"><button class="btn ghost sm" type="submit">Revogar</button></form>
+  <?php else: ?>
+    <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="ical_new"><button class="btn" type="submit"><?= icon('calendar') ?> Criar o link da agenda</button></form>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+<script>document.addEventListener('click', function (e) { var b = e.target.closest('[data-copy="#ical-url"]'); if (!b) return; e.stopImmediatePropagation(); var t = document.querySelector('#ical-url').textContent; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copiado'; }, function () { b.textContent = 'Selecione e copie'; }); }, true);</script>
 
 <?php if ($linksOn):
     $newTok = (string)($_SESSION['ut_new'] ?? '');
@@ -434,7 +475,7 @@ render_flashes();
 <?php if (auth_ready($pdo)):
     $pks = auth_passkeys($pdo, (int)$user['id']);
     $log = auth_log_list($pdo, (int)$user['id'], 15);
-    $st = $pdo->prepare('SELECT google_sub, role FROM users WHERE id = ?');
+    $st = $pdo->prepare('SELECT google_sub, ' . (db_has_column($pdo, 'users', 'google_email') ? 'google_email, ' : '') . 'role FROM users WHERE id = ?');
     $st->execute([(int)$user['id']]);
     $meSec = $st->fetch() ?: [];
     $pkReq = auth_passkey_required($pdo, (string)($meSec['role'] ?? '')); ?>
@@ -461,8 +502,7 @@ render_flashes();
 
   <h3><?= icon('user') ?> Entrar com Google</h3>
   <?php if (google_client()): ?>
-    <p class="small"><?= !empty($meSec['google_sub']) ? 'A sua conta Google está ligada à entrada: «Entrar com Google» funciona só com ela.' : 'Ainda não entrou com Google. No ecrã de entrada, «Entrar com Google» com a conta do seu email de trabalho (' . e($user['email']) . '). Se ainda não tem, crie uma conta Google gratuita com «usar o meu endereço de email atual».' ?></p>
-    <?php if (!empty($meSec['google_sub'])): ?><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="google_unlink"><button class="btn ghost sm" type="submit">Desligar a conta Google da entrada</button></form><?php endif; ?>
+    <p class="small"><?= !empty($meSec['google_sub']) ? '«Entrar com Google» funciona com a conta associada' . (!empty($meSec['google_email']) ? ' (' . e($meSec['google_email']) . ')' : '') . '. Muda-se ou desliga-se em <a href="#ligacoes">Ligações › Conta Google</a>.' : 'Ainda sem conta Google associada. Em <a href="#ligacoes">Ligações › «Ligar conta Google»</a> associe qualquer conta Google sua (um Gmail pessoal serve).' ?></p>
   <?php else: ?><p class="small muted">Ainda não configurado<?= $isAdmin ? ' — <a href="/admin/definicoes.php?t=integracoes#set-int_google">Definições › Integrações › Google</a>' : '' ?>.</p><?php endif; ?>
 
   <h3><?= icon('clock') ?> Registo de entradas</h3>

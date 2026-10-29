@@ -113,3 +113,29 @@ function migrate_auth_35(PDO $pdo): void {
         $ins->execute(['mail_send_mode', $imapOn ? 'smtp' : 'api']);
     }
 }
+
+/**
+ * Passo 36 (§31.5): sem contas Google nos emails de trabalho.
+ *   users.google_email / google_linked_at   a conta Google que a pessoa associou no Perfil (pode ter outro email)
+ *   users.ical_hash / ical_enc / ical_at     o link de subscrição da agenda: o sha256 do token (para o procurar) e o
+ *                                            token cifrado com a chave do servidor (para o voltar a mostrar no Perfil)
+ *   mail_confirm                             os links de confirmação dos reencaminhamentos do Hostinger que chegam
+ *                                            pela Cloudflare (só o link, o remetente e o assunto; nunca o corpo)
+ */
+function migrate_auth_36(PDO $pdo): void {
+    db_add_column($pdo, 'users', 'google_email', 'VARCHAR(190) NULL', 'TEXT NULL');
+    db_add_column($pdo, 'users', 'google_linked_at', 'DATETIME NULL', 'TEXT NULL');
+    db_add_column($pdo, 'users', 'ical_hash', 'CHAR(64) NULL', 'TEXT NULL');
+    db_add_column($pdo, 'users', 'ical_enc', 'TEXT NULL', 'TEXT NULL');
+    db_add_column($pdo, 'users', 'ical_at', 'DATETIME NULL', 'TEXT NULL');
+    db_create($pdo, 'mail_confirm', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        msg_hash     CHAR(64)      NOT NULL,
+        from_addr    VARCHAR(190)  NOT NULL DEFAULT '',
+        subject      VARCHAR(300)  NOT NULL DEFAULT '',
+        box          VARCHAR(190)  NOT NULL DEFAULT '',
+        link         VARCHAR(1000) NOT NULL,
+        done_at      DATETIME      NULL,
+        created_at   DATETIME      NOT NULL,
+        UNIQUE KEY uq_mc_hash (msg_hash)");
+}
