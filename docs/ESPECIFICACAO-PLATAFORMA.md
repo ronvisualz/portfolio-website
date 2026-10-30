@@ -4024,3 +4024,12 @@ Fluxo pedido: tudo acontece **no próprio formulário da tarefa**, sem gravar pr
 3. **Discord** → o link do canal (Definições) entra automaticamente na tarefa e no convite por email (enviado pelo serviço de envio, §31.1) aos mesmos convidados sugeridos.
 4. **Presencial** → campo «Local» com sugestão da morada da empresa/contacto e convite por email com ficheiro .ics.
 5. Convites por email em PT (EN se o contacto tiver idioma inglês), com o nome e o código do negócio no título.
+
+### 28.16 «Por confirmar · emails» — revisão (30 out 2026, primeira fatura real)
+Caso real: fatura da Gesvalor (contabilista) **à topper.** («Avença agosto – 196,80 EUR») ficou por confirmar em «A receber», com «Sem QR fiscal legível e sem IA». Era uma despesa.
+- **Identidade da empresa:** nome legal **Feitiço Constante, Lda.** + NIF da empresa (Definições › Financeiro › Empresa). Regra: documento cujo **adquirente/cliente** é Feitiço Constante / NIF da empresa → **despesa (A pagar)**; cujo **emitente** é a empresa → receita (A receber). Usar nome legal, NIF, «topper»/«Topper Digital» e o remetente (contabilista ⇒ quase sempre despesa, exceto quando responde a um «Pedir fatura» com o código).
+- **IA sempre como segunda leitura** quando não há QR (texto do PDF; PDF digitalizado → IA com visão). Se a IA não estiver configurada ou falhar, dizê-lo claramente («IA indisponível: …»), nunca só «sem IA».
+- **Painel único** «Por confirmar · emails» visível em **A pagar** e **A receber** (filtrado pela sugestão; os indecisos em ambos) e na Visão geral; contador no separador.
+- Cada cartão mostra: remetente, caixa, data, assunto, **texto do email** (até ~1 000 caracteres, só para emails classificados como documento financeiro; o resto continua a não ser guardado), **anexo com pré-visualização** (miniatura + botão «Abrir PDF» bem visível, abre em painel lateral), valores lidos (emitente, adquirente, NIF, nº, data, total, IVA) e o **motivo** de estar por confirmar.
+- **Ícone de classificação subtil** em cada cartão (e em qualquer lançamento): alternar **A pagar ⇄ A receber** num clique, com «Anular»; a escolha alimenta a regra (o mesmo emitente/NIF passa a ser classificado igual).
+- Ações claras: «Confirmar como despesa» / «Confirmar como fatura emitida» (abre o formulário já preenchido), «Pôr de parte» (com motivo).
