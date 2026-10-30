@@ -877,11 +877,20 @@ function fin_mail_read(PDO $pdo, array $docs): array {
         if ($a['mime'] === 'application/xml') foreach ($docs as $p) if ($p['mime'] === 'application/pdf') return [$d, $p, ''];
         // o QR não traz nomes nem o vencimento: vêm do texto do PDF, quando o há
         if ($a['mime'] === 'application/pdf' && ($t = fin_text_invoice(fin_pdf_text($a['bytes']), fin_our_nif($pdo), fin_text_names($pdo)))) {
+            // os nomes só se o texto pôs os mesmos NIFs do mesmo lado (senão troca-os)
+            if (($t['issuer_nif'] ?? '') !== '' && $t['issuer_nif'] === ($d['client_nif'] ?? '') && ($t['client_nif'] ?? '') !== ($d['client_nif'] ?? '')) [$t['issuer_name'], $t['client_name']] = [$t['client_name'] ?? '', $t['issuer_name'] ?? ''];
             foreach (['issuer_name', 'client_name', 'due_date'] as $k) if (($d[$k] ?? '') === '' && ($t[$k] ?? '') !== '') $d[$k] = $t[$k];
         }
         return [$d, $a, ''];
     }
     $files = array_values(array_filter($docs, fn($a) => $a['mime'] !== 'application/xml'));
+    // um comprovativo do banco lê-se do próprio texto: não se gasta IA (§28.17)
+    require_once __DIR__ . '/fin_proof.php';
+    foreach ($files as $a) {
+        if ($a['mime'] !== 'application/pdf') continue;
+        $t = fin_pdf_text($a['bytes']);
+        if ($t !== '' && fin_proof_read($t, ['our_nif' => fin_our_nif($pdo)])) return [fin_text_invoice($t, fin_our_nif($pdo), fin_text_names($pdo)), $a, ''];
+    }
     $why = fin_ai_why_off();
     if ($why === '') foreach ($files as $a) {
         try { return [fin_ai_read($pdo, $a['bytes'], $a['mime']) + ['source' => 'ai'], $a, '']; }
@@ -907,7 +916,23 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
     if (!$docs) return null;
     [$data, $pick, $aiWhy] = fin_mail_read($pdo, $docs);
     $our = fin_our_nif($pdo);
-    [$role, $roleWhy] = fin_mail_role($pdo, $data, $m, $code);
+    require_once __DIR__ . '/fin_proof.php';
+    $ourIbans = fin_our_ibans($pdo);
+    $ptext = ($pick['mime'] ?? '') === 'application/pdf' ? fin_pdf_text($pick['bytes']) : '';
+    // numa fatura, o IBAN para pagar e a referência Multibanco (para associar o comprovativo depois, §28.17)
+    if ($data && $ptext !== '') foreach (fin_text_payinfo($ptext, $ourIbans) as $k => $v) if ($v !== '' && empty($data[$k])) $data[$k] = $v;
+    // um comprovativo de pagamento (o PDF do banco; ou a imagem lida pela IA)?
+    $proof = null;
+    if ($code === '') {
+        foreach ($docs as $a) {
+            if ($a['mime'] !== 'application/pdf') continue;
+            $proof = fin_proof_read($a === $pick ? $ptext : fin_pdf_text($a['bytes']), ['our_nif' => $our, 'our_ibans' => $ourIbans, 'our_names' => fin_text_names($pdo), 'invoice' => $a === $pick ? $data : null]);
+            if ($proof) { $pick = $a; break; }
+        }
+        if (!$proof && $data && ($data['kind'] ?? '') === 'payment_proof') $proof = fin_proof_from_ai($data);
+        if ($proof && $proof['dir'] === '') $proof['dir'] = 'out';
+    }
+    [$role, $roleWhy] = $proof ? [$proof['dir'], 'comprovativo de pagamento'] : fin_mail_role($pdo, $data, $m, $code);
     $source = $data['source'] ?? ($code !== '' ? 'code' : '');
     $how = ['qr' => 'lida do QR fiscal', 'xml' => 'lida do XML', 'ai' => 'lida pela IA', 'text' => 'lida do texto do PDF (sem QR)'][$source] ?? '';
     $aiNote = $aiWhy !== '' ? ' · IA indisponível: ' . $aiWhy : '';
@@ -916,7 +941,8 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
     // o registo da mensagem e do anexo — só quando a mensagem fica
     $mailId = 0; $att = $redo['att'] ?? null;
     $cols = db_has_column($pdo, 'fin_mail', 'direction');
-    $keep = function (string $status, ?int $doc, string $note, array $extra = [], bool $store = true) use ($pdo, $m, $mid, $box, $uid, $code, $pick, $data, $source, $body, $cols, $redo, &$role, &$mailId, &$att): string {
+    $cols39 = db_has_column($pdo, 'fin_mail', 'kind');
+    $keep = function (string $status, ?int $doc, string $note, array $extra = [], bool $store = true) use ($pdo, $m, $mid, $box, $uid, $code, $pick, $data, $source, $body, $cols, $cols39, $redo, &$role, &$mailId, &$att): string {
         if ($store && $att === null) {
             try {
                 [$key, $name] = fin_file_store($pdo, $pick['bytes'], date('Y-m-d') . '_Email_' . preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $pick['name']), $pick['mime'], ['issue_date' => today_lisbon()], 'attach');
@@ -927,6 +953,7 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
               'suggestions' => isset($extra['sug']) ? json_encode($extra['sug'], JSON_UNESCAPED_UNICODE) : null, 'att' => json_encode($att ? [$att] : [], JSON_UNESCAPED_UNICODE),
               'ai' => $data ? json_encode($data, JSON_UNESCAPED_UNICODE) : null, 'source' => $source];
         if ($cols) { $v['direction'] = $role; $v['body_text'] = $body !== '' ? $body : null; }
+        if ($cols39) { $v['kind'] = (string)($extra['kind'] ?? ''); $v['proof'] = isset($extra['proof']) ? json_encode($extra['proof'], JSON_UNESCAPED_UNICODE) : null; }
         if ($redo) {
             if ($cols && $body === '') unset($v['body_text']);
             $pdo->prepare('UPDATE fin_mail SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($v))) . ' WHERE id = ?')->execute([...array_values($v), (int)$redo['id']]);
@@ -967,13 +994,20 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
             return $r;
         }
     }
-    // c) sem dados (sem QR, sem XML, sem texto legível e sem IA): fica por confirmar se parecer um documento financeiro
+    // c) comprovativo de pagamento (§28.17): fica por validar, com os lançamentos que pode pagar
+    if ($proof) {
+        $sug = fin_proof_suggest($pdo, $proof);
+        $who = $proof['dir'] === 'out' ? $proof['payee'] : $proof['payer'];
+        return $keep('review', null, 'Comprovativo de ' . ($proof['dir'] === 'out' ? 'pagamento' : 'recebimento') . ' de ' . eur((float)$proof['amount']) . ($who !== '' ? ($proof['dir'] === 'out' ? ' a ' : ' de ') . $who : '')
+                     . ($sug ? ' · sugestão: ' . $sug[0]['label'] . ' (' . $sug[0]['why'] . ')' : ' · sem lançamento correspondente') . ': valide', ['sug' => $sug, 'kind' => 'proof', 'proof' => $proof]);
+    }
+    // d) sem dados (sem QR, sem XML, sem texto legível e sem IA): fica por confirmar se parecer um documento financeiro
     if (!$data) {
         if ($role === '' && !fin_mail_looks_financial($pdo, $m, $pick)) return null;
         return $keep('review', null, 'Sem QR fiscal nem texto legível' . $aiNote . ($role !== '' ? ' · sugestão: ' . ($role === 'out' ? 'despesa' : 'receita') . ' (' . $roleWhy . ')' : '') . ': confirme à mão');
     }
     if (in_array($data['kind'], ['other', 'void', 'quote'], true) || ($data['source'] === 'ai' && $data['confidence'] < 0.4 && $role === '')) return null;   // orçamentos, guias, anulados…
-    // d) não sei de que lado está a empresa: fica por confirmar (aparece em A pagar e em A receber)
+    // e) não sei de que lado está a empresa: fica por confirmar (aparece em A pagar e em A receber)
     if ($role === '') {
         if ($our !== '' && in_array($data['source'], ['qr', 'xml'], true) && $data['issuer_nif'] !== '' && $data['client_nif'] !== '') return null;   // documento entre terceiros: ignorado
         return $keep('review', null, ($our === '' ? 'Falta o NIF da empresa em Definições › Financeiro › Empresa' : 'Não encontrei o NIF nem o nome da empresa no documento') . ' (' . $how . ')' . $aiNote . ': é despesa ou receita?');
@@ -982,18 +1016,11 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
     $data['party_nif'] = $role === 'in' ? $data['client_nif'] : $data['issuer_nif'];
     $data['party_name'] = $role === 'in' ? $data['client_name'] : $data['issuer_name'];
 
-    // e) receita: a fatura que o contabilista emitiu em nosso nome
+    // f) receita: a fatura que o contabilista emitiu em nosso nome
     if ($role === 'in') {
-        if ($data['kind'] === 'receipt') {
-            $st = $pdo->prepare("SELECT id FROM fin_docs WHERE direction = 'in' AND deleted_at IS NULL AND receipt_key = '' AND REPLACE(party_nif, ' ', '') = ? AND ABS(total - withholding - ?) < 0.02 ORDER BY id DESC LIMIT 1");
-            $st->execute([$data['client_nif'], $data['total']]);
-            if ($docId = (int)$st->fetchColumn()) {
-                $r = $keep('linked', $docId, 'Recibo junto a ' . fin_doc_label(fin_doc($pdo, $docId)));
-                $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
-                fin_doc_refresh($pdo, $docId);
-                return $r;
-            }
-            return $keep('review', null, 'Recibo emitido por nós sem fatura correspondente');
+        if ($data['kind'] === 'receipt') {   // recibo sem pedido: por validar (§28.17)
+            $sug = fin_receipt_suggest($pdo, $data, 'in', $ptext);
+            return $keep('review', null, 'Recibo emitido pela empresa (' . $how . ')' . ($sug ? ' · sugestão: ' . $sug[0]['label'] . ' (' . $sug[0]['why'] . ')' : ' sem fatura correspondente') . ': valide', ['sug' => $sug, 'kind' => 'receipt']);
         }
         if ($data['kind'] === 'credit_note') return $keep('review', null, 'Nota de crédito emitida por nós: confirme');
         if ($data['number'] !== '' && ($dup = fin_doc_dup($pdo, $data['client_nif'], $data['number'], 'in'))) return $keep('dup', (int)$dup['id'], 'Já lançada: ' . fin_doc_label($dup), [], false);
@@ -1010,17 +1037,11 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
         return $keep('review', null, ($cands ? 'Fatura emitida pela empresa: escolha o pedido certo' : 'Fatura emitida pela empresa sem pedido em aberto: confirme') . ' (' . $how . '; ' . $roleWhy . ')' . $aiNote, ['sug' => $cands]);
     }
 
-    // f) despesa: um documento passado à topper.
-    if ($data['kind'] === 'receipt') {
-        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE direction = 'out' AND deleted_at IS NULL AND receipt_key = '' AND REPLACE(party_nif, ' ', '') = ? AND ABS(total - ?) < 0.02 ORDER BY id DESC LIMIT 1");
-        $st->execute([$data['issuer_nif'], $data['total']]);
-        if ($docId = (int)$st->fetchColumn()) {
-            $r = $keep('linked', $docId, 'Recibo do fornecedor junto a ' . fin_doc_label(fin_doc($pdo, $docId)));
-            $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
-            fin_doc_refresh($pdo, $docId);
-            return $r;
-        }
-        return $keep('review', null, 'Recibo de fornecedor sem fatura correspondente');
+    // g) despesa: um documento passado à topper.
+    if ($data['kind'] === 'receipt') {   // recibo sem pedido: por validar (§28.17)
+        $sug = fin_receipt_suggest($pdo, $data, 'out', $ptext);
+        $iname = $data['issuer_name'] !== '' && !fin_is_us($pdo, $data['issuer_name']) ? $data['issuer_name'] : '';
+        return $keep('review', null, 'Recibo' . ($iname !== '' ? ' de ' . $iname : ' de fornecedor') . ' (' . $how . ')' . ($sug ? ' · sugestão: ' . $sug[0]['label'] . ' (' . $sug[0]['why'] . ')' : ' sem fatura correspondente') . ': valide', ['sug' => $sug, 'kind' => 'receipt']);
     }
     if ($data['number'] !== '' && ($dup = fin_doc_dup($pdo, $data['issuer_nif'], $data['number']))) return $keep('dup', (int)$dup['id'], 'Duplicado de ' . fin_doc_label($dup) . ' (mesmo NIF e número)', [], false);
     require_once __DIR__ . '/fin_ai.php';
@@ -1040,6 +1061,7 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
           'withholding' => $data['withholding'], 'issue_date' => $data['issue_date'] ?: null, 'due_date' => $data['due_date'] ?: null, 'currency' => $data['currency'] ?: 'EUR',
           'contact_id' => ($sug['contact_id'] ?? 0) ?: null, 'status' => 'review', 'needs_review' => 1, 'pdf_key' => $attKey(), 'pdf_name' => $pick['name'],
           'ai_data' => json_encode($data, JSON_UNESCAPED_UNICODE), 'notes' => 'Chegou por email de ' . $m['from'] . ' · ' . $m['subject'] . ($data['atcud'] ?? '' ? ' · ATCUD ' . $data['atcud'] : '')];
+    if (db_has_column($pdo, 'fin_docs', 'pay_iban')) $v += ['pay_iban' => (string)($data['pay_iban'] ?? ''), 'mb_entity' => (string)($data['mb_entity'] ?? ''), 'mb_ref' => (string)($data['mb_ref'] ?? '')];
     $id = fin_doc_create($pdo, $v, null);
     $pdo->prepare('UPDATE fin_mail SET doc_id = ? WHERE id = ?')->execute([$id, $mailId]);
     return $r;
@@ -1070,11 +1092,11 @@ function fin_mail_reread(PDO $pdo, int $id): string {
     return ['supplier' => 'Relido: é uma despesa — está em «A pagar», por confirmar.', 'linked' => 'Relido e ligado: ' . $now['note'], 'dup' => 'Relido: ' . $now['note'], 'review' => 'Relido: ' . $now['note']][$r] ?? 'Relido.';
 }
 
-/** Uma vez depois da atualização: reler os que estavam por confirmar (a leitura do QR e do texto melhorou). */
+/** Uma vez depois de cada atualização da leitura: reler os que estavam por confirmar (QR, texto, PDFs cifrados, comprovativos). */
 function fin_mail_reread_pending(PDO $pdo): int {
-    if (!db_has_column($pdo, 'fin_mail', 'direction') || (string)setting($pdo, 'fin_reread_38', '') !== '') return 0;
+    if (!db_has_column($pdo, 'fin_mail', 'kind') || (string)setting($pdo, 'fin_reread_39', '') !== '') return 0;   // (39: comprovativos e recibos, PDFs cifrados)
     require_once __DIR__ . '/ai.php';
-    ai_setting_set($pdo, 'fin_reread_38', date('c'));
+    ai_setting_set($pdo, 'fin_reread_39', date('c'));
     $n = 0;
     foreach ($pdo->query("SELECT id FROM fin_mail WHERE status = 'review' ORDER BY id LIMIT 30")->fetchAll(PDO::FETCH_COLUMN) as $id) {
         try { fin_mail_reread($pdo, (int)$id); $n++; } catch (Throwable $e) { error_log('[topper] reler email ' . $id . ': ' . $e->getMessage()); }

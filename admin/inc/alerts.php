@@ -395,7 +395,7 @@ function fin_todo(PDO $pdo, array $me): array {
         if ($n > 0) $out[] = ['key' => $key, 'n' => $n, 'label' => $n === 1 ? $one : $n . ' ' . $many, 'url' => $url, 'sev' => $sev, 'sub' => $sub];
     };
     $q = fn(string $sql) => (int)$pdo->query($sql)->fetchColumn();
-    $add('mail', $q("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'"), '1 documento por email por confirmar', 'documentos por email por confirmar', '/admin/financeiro.php?tab=geral#por-confirmar', 'warn', 'Despesa ou receita? Confirmar, ligar a um pedido ou pôr de parte');
+    $add('mail', $q("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'"), '1 documento por email por confirmar', 'documentos por email por confirmar', '/admin/financeiro.php?tab=geral#por-confirmar', 'warn', 'Faturas, comprovativos de pagamento e recibos: confirmar, validar ou pôr de parte');
     $add('review', $q("SELECT COUNT(*) FROM fin_docs WHERE direction = 'out' AND status = 'review' AND deleted_at IS NULL"), '1 despesa por confirmar', 'despesas por confirmar', '/admin/financeiro.php?tab=pagar&v=review', 'warn', 'Já lançadas a partir de um email: rever os dados');
     $add('ready', $q("SELECT COUNT(*) FROM fin_docs WHERE direction = 'in' AND status = 'issued' AND ready_at IS NOT NULL AND client_sent_at IS NULL AND deleted_at IS NULL"), '1 fatura pronta a enviar ao cliente', 'faturas prontas a enviar ao cliente', '/admin/financeiro.php?tab=receber', 'warn');
     $late = 0; $lateV = 0.0;

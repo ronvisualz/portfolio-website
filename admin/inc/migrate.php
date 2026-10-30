@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 38;
+const SCHEMA_VERSION = 39;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -340,6 +340,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 38 · Financeiro (§28.16): texto do email e sugestão (despesa/receita) nos «Por confirmar», regras de
     //        classificação por emitente/remetente ──
     migrate_finance_38($pdo);
+    // ── 39 · Comprovativos e recibos por email (§28.17): IBAN e referência Multibanco nas faturas, tipo do email
+    //        (comprovativo/recibo), pagamento ↔ email, IBANs aprendidos ──
+    migrate_finance_39($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

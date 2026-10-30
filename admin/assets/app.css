@@ -2983,6 +2983,17 @@ div.xs-ind:empty { display: none; }
 .fmc-ign summary::-webkit-details-marker { display: none; }
 .fmc-ign[open] form { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .fmc-ign input[type=text] { min-width: 220px; }
+.fmc-pick { display: grid; gap: 8px; flex: 1 1 100%; }
+.fmc-pick fieldset { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.fmc-pick legend { padding: 0 0 4px; color: var(--muted, #6b6b6b); }
+.fmc-opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.fmc-opt:has(input:checked) { border-color: var(--info-fg); background: var(--info-bg); }
+.fmc-opt input[type=radio], .fmc-pick .chk input[type=checkbox] { width: auto; height: auto; min-height: 0; margin: 3px 0 0; padding: 0; flex: 0 0 auto; box-shadow: none; }
+.fmc-opt > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.fmc-opt select { display: block; width: 100%; max-width: 100%; margin-top: 4px; }
+.fmc-pick .chk { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+.fmc-pick .chk input { margin-top: 2px; }
+.fmc-pick > .btn { justify-self: start; }
 @media (max-width: 640px) {
   .fmc { grid-template-columns: 1fr; }
   .fmc-prev { grid-template-columns: 96px 1fr; align-items: start; }

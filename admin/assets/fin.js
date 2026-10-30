@@ -304,3 +304,13 @@
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 })();
+
+// comprovativos e recibos (§28.17): escolher na lista «Outro lançamento» marca essa opção
+(function () {
+  document.addEventListener('change', function (e) {
+    var s = e.target;
+    if (!s.matches || !s.matches('.fmc-pick select[name=other]')) return;
+    var r = s.closest('label').querySelector('input[type=radio]');
+    if (r) r.checked = true;
+  });
+})();

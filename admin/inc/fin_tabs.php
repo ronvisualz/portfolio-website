@@ -676,12 +676,16 @@ elseif ($tab === 'tesouraria'):
 <h2 id="conciliar">Conciliação <?= $open ? '· ' . count($open) . ' por conciliar' : '' ?></h2>
 <?php if (!$open): ?><p class="muted small">Nada por conciliar.</p><?php endif; ?>
 <div class="fin-tx">
-<?php foreach (array_slice($open, 0, 60) as $t): $sug = fin_tx_suggest($pdo, $t, 3); ?>
+<?php require_once __DIR__ . '/fin_proof.php'; foreach (array_slice($open, 0, 60) as $t): $sug = fin_tx_suggest($pdo, $t, 3); $pcs = fin_tx_pay_cands($pdo, $t); ?>
   <div class="tx">
     <div class="tx-l"><span class="mono small"><?= fin_date_pt($t['tx_date']) ?></span> <b class="<?= (float)$t['amount'] < 0 ? 'neg' : 'pos' ?>"><?= ((float)$t['amount'] > 0 ? '+' : '−') . eur(abs((float)$t['amount'])) ?></b>
       <div class="small"><?= e($t['description']) ?> <span class="muted">· <?= e($t['account']) ?></span></div></div>
     <?php if ($canEdit): ?><div class="tx-a">
-      <?php foreach ($sug as $s): $d = $s['doc']; ?>
+      <?php foreach ($pcs as $pc): ?>
+        <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="tx_link"><input type="hidden" name="tx" value="<?= (int)$t['id'] ?>"><input type="hidden" name="pay" value="<?= (int)$pc['pay'] ?>">
+          <button class="btn sm" type="submit" data-tip="<?= e($pc['why']) ?>: liga sem registar outro pagamento"><?= icon('check') ?> Já pago: <?= e(shorten($pc['label'], 48)) ?></button></form>
+      <?php endforeach; ?>
+      <?php foreach ($pcs ? [] : $sug as $s): $d = $s['doc']; ?>
         <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="tx_match"><input type="hidden" name="tx" value="<?= (int)$t['id'] ?>"><input type="hidden" name="doc" value="<?= (int)$d['id'] ?>">
           <button class="btn <?= $s['score'] >= 70 ? '' : 'ghost ' ?>sm" type="submit" data-tip="<?= e($s['why'] . ' · ' . $s['score'] . '%') ?>">Conciliar com <?= e(shorten(fin_doc_label($d) . ' · ' . $d['party_name'], 40)) ?> (<?= eur($d['left']) ?>)</button></form>
       <?php endforeach; ?>

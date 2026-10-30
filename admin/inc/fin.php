@@ -23,7 +23,7 @@ require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/leads.php';   // LEAD_ORIGIN (canal do custo de aquisição)
 
 const FIN_CATS_DEFAULT = ['Software', 'Equipamento', 'Renda', 'Telecomunicações', 'Contabilidade', 'Seguros', 'Viaturas', 'Deslocações',
-                          'Freelancers', 'Fornecedores de produção', 'Marketing', 'Formação', 'Impostos', 'Salários', 'Outros'];
+                          'Freelancers', 'Fornecedores de produção', 'Marketing', 'Formação', 'Impostos', 'Salários', 'Comissões bancárias', 'Outros'];
 
 /** Estados (A receber: pedida → emitida → parcial → paga → recibo arquivado · anulada; A pagar: por confirmar → por pagar → paga → recibo arquivado · em disputa). */
 const FIN_ST = [
@@ -995,6 +995,13 @@ function fin_undo_apply(PDO $pdo, array $d): string {
             if (!empty($d['pay'])) fin_pay_del($pdo, (int)$d['pay']);
             $pdo->prepare("UPDATE fin_bank_tx SET status = 'open', doc_id = NULL, payment_id = NULL WHERE id = ?")->execute([(int)$d['id']]);
             if (!empty($d['doc_new'])) $pdo->prepare('UPDATE fin_docs SET deleted_at = ? WHERE id = ?')->execute([fin_now(), (int)$d['doc_new']]);
+            return 'Movimento por conciliar.';
+        case 'proof':     // a validação de um comprovativo/recibo: pagamentos e lançamentos novos saem, o email volta a «Por confirmar»
+            require_once __DIR__ . '/fin_proof.php';
+            return fin_proof_undo($pdo, $d);
+        case 'tx_link':   // o movimento deixa de estar ligado ao pagamento (que fica)
+            $pdo->prepare('UPDATE fin_payments SET bank_tx_id = NULL WHERE bank_tx_id = ?')->execute([(int)$d['id']]);
+            $pdo->prepare("UPDATE fin_bank_tx SET status = 'open', doc_id = NULL, payment_id = NULL WHERE id = ?")->execute([(int)$d['id']]);
             return 'Movimento por conciliar.';
         case 'scenario':
             $pdo->prepare('UPDATE fin_scenarios SET deleted_at = NULL WHERE id = ?')->execute([(int)$d['id']]);

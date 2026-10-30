@@ -518,3 +518,27 @@ function migrate_finance_38(PDO $pdo): void {
         UNIQUE KEY uq_fcr (nif, email)");
 }
 
+/**
+ * Passo 39 · Comprovativos de pagamento e recibos por email (§28.17):
+ *   fin_docs.pay_iban / mb_entity / mb_ref   o IBAN para pagar e a referência Multibanco lidos da fatura (as pistas
+ *                                            mais fortes para associar o comprovativo)
+ *   fin_mail.kind / proof                    'proof' comprovativo, 'receipt' recibo, '' documento; os dados lidos
+ *   fin_payments.mail_id                     o email (comprovativo ou recibo) que deu origem ao pagamento
+ *   fin_ibans                                os IBANs de quem pagamos/nos paga, aprendidos ao validar
+ */
+function migrate_finance_39(PDO $pdo): void {
+    if (!db_has_table($pdo, 'fin_docs')) return;
+    db_add_column($pdo, 'fin_docs', 'pay_iban', "VARCHAR(40) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'fin_docs', 'mb_entity', "VARCHAR(8) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'fin_docs', 'mb_ref', "VARCHAR(20) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'fin_mail', 'kind', "VARCHAR(8) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_add_column($pdo, 'fin_mail', 'proof', 'TEXT NULL', 'TEXT NULL');
+    db_add_column($pdo, 'fin_payments', 'mail_id', 'INT UNSIGNED NULL', 'INTEGER NULL');
+    db_create($pdo, 'fin_ibans', "
+        iban         VARCHAR(40)   NOT NULL PRIMARY KEY,
+        party_nif    VARCHAR(20)   NOT NULL DEFAULT '',
+        party_name   VARCHAR(190)  NOT NULL DEFAULT '',
+        contact_id   INT UNSIGNED  NULL,
+        uses         INT           NOT NULL DEFAULT 1,
+        updated_at   DATETIME      NOT NULL");
+}

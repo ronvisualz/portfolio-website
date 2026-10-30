@@ -233,6 +233,7 @@ function fin_tx_suggest(PDO $pdo, array $t, int $max = 5): array {
         }
         if ($d['party_nif'] !== '' && $descN !== '' && str_contains($descN, preg_replace('/\D/', '', $d['party_nif']))) { $score += 25; $why[] = 'NIF no descritivo'; }
         if ($d['number'] !== '' && str_contains($desc, mb_strtolower(preg_replace('/\s+/', ' ', $d['number'])))) { $score += 25; $why[] = 'nº da fatura no descritivo'; }
+        if (($d['mb_ref'] ?? '') !== '' && $descN !== '' && str_contains($descN, (string)$d['mb_ref'])) { $score += 40; $why[] = 'referência Multibanco no descritivo'; }
         $name = mb_strtolower((string)$d['party_name']);
         if ($name !== '') {
             foreach (preg_split('/[\s,.\-]+/', $name) as $w) {

@@ -179,6 +179,13 @@ function fin_doc_panel(PDO $pdo, array $d, bool $canEdit, string $back): string 
     if ($d['installment'] !== '') $h .= '<dt>Prestação</dt><dd>' . e($d['installment']) . '</dd>';
     if ($d['req_code'] !== '') $h .= '<dt>Pedido</dt><dd class="mono">' . e($d['req_code']) . ($d['req_sent_at'] ? ' · ' . e(date('d/m H:i', strtotime((string)$d['req_sent_at']))) : '') . '</dd>';
     if ($d['client_sent_at']) $h .= '<dt>Enviada ao cliente</dt><dd>' . e(date('d/m/Y H:i', strtotime((string)$d['client_sent_at']))) . '</dd>';
+    // como pagar (lido da fatura; serve para associar o comprovativo, §28.17)
+    if (!$in && (($d['pay_iban'] ?? '') !== '' || ($d['mb_ref'] ?? '') !== '')) {
+        $how = [];
+        if (($d['mb_ref'] ?? '') !== '') $how[] = 'Multibanco <span class="mono">' . e(trim(($d['mb_entity'] !== '' ? 'Ent. ' . $d['mb_entity'] . ' · ' : '') . 'Ref. ' . trim(chunk_split((string)$d['mb_ref'], 3, ' ')))) . '</span>';
+        if (($d['pay_iban'] ?? '') !== '') $how[] = 'IBAN <span class="mono">' . e(trim(chunk_split((string)$d['pay_iban'], 4, ' '))) . '</span>';
+        $h .= '<dt>Pagar por</dt><dd>' . implode('<br>', $how) . '</dd>';
+    }
     $h .= '</dl>';
     $files = [];
     if ($d['pdf_key'] !== '') $files[] = '<a class="lnk" href="' . e(fin_file_href('doc', (int)$d['id'])) . '" target="_blank" rel="noopener">' . icon('file') . ' ' . e($d['pdf_name'] ?: 'Documento') . '</a>';
@@ -427,6 +434,20 @@ function fin_inbox_card(PDO $pdo, array $m, bool $canEdit, bool $compact): strin
     }
     $body = trim((string)($m['body_text'] ?? ''));
     $text = $body !== '' ? '<details class="fmc-text"' . ($compact ? '' : ' open') . '><summary class="small">Texto do email</summary><p>' . nl2br(e($body)) . (mb_strlen($body) >= 1000 ? '…' : '') . '</p></details>' : '';
+    // comprovativos e recibos (§28.17): os valores lidos e a validação
+    $kind = (string)($m['kind'] ?? '');
+    if (in_array($kind, ['proof', 'receipt'], true)) {
+        [$vals2, $act, $live] = fin_inbox_validate_html($pdo, $m, $kind, $canEdit, $sug);
+        // o motivo com as sugestões de agora (podem ter aparecido lançamentos depois de o email chegar)
+        $m['note'] = preg_replace('/ · (sugestão: .*|sem (lançamento|fatura) correspondente)(: valide)?$/u', '', preg_replace('/ sem fatura correspondente: valide$/u', '', (string)$m['note']))
+                   . ($live ? ' · sugestão: ' . $live[0]['label'] . ' (' . $live[0]['why'] . ')' : ' · sem lançamento correspondente') . ': valide';
+        if ($kind === 'proof') { $vals = $vals2; $dirChip = $dir === 'in' ? '<span class="chip ok">Comprovativo · recebimento</span>' : '<span class="chip ok">Comprovativo · pagamento feito</span>'; $swap = ''; }
+        else $dirChip = '<span class="chip info">Recibo · ' . ($dir === 'in' ? 'emitido pela empresa' : 'de fornecedor') . '</span>';
+        $act .= $canEdit ? $post('mail_reread', icon('refresh') . ' Ler outra vez', 'btn ghost sm')
+              . '<details class="fmc-ign"><summary class="btn ghost sm">Pôr de parte</summary><form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_ignore"><input type="hidden" name="mail" value="' . $id . '">'
+              . '<label class="sr" for="ign-' . $id . '">Motivo</label><input type="text" id="ign-' . $id . '" name="why" maxlength="200" required placeholder="Motivo (ex.: repetido, não é da empresa)"><button class="btn sm" type="submit">Pôr de parte</button></form></details>' : '';
+        return fin_inbox_card_wrap($m, $prev, $dirChip . ($kind === 'receipt' ? $swap : ''), $vals, $text, $act);
+    }
     // as ações: a principal segue a sugestão
     $act = '';
     if ($canEdit) {
@@ -441,14 +462,80 @@ function fin_inbox_card(PDO $pdo, array $m, bool $canEdit, bool $compact): strin
               . '<details class="fmc-ign"><summary class="btn ghost sm">Pôr de parte</summary><form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_ignore"><input type="hidden" name="mail" value="' . $id . '">'
               . '<label class="sr" for="ign-' . $id . '">Motivo</label><input type="text" id="ign-' . $id . '" name="why" maxlength="200" required placeholder="Motivo (ex.: não é da empresa, repetido)"><button class="btn sm" type="submit">Pôr de parte</button></form></details>';
     }
-    return '<article class="fmc" id="fm-' . $id . '">'
+    return fin_inbox_card_wrap($m, $prev, $dirChip . $swap, $vals, $text, $act);
+}
+
+/** A moldura do cartão: pré-visualização, cabeçalho (assunto, remetente, sugestão), motivo, valores, texto e ações. */
+function fin_inbox_card_wrap(array $m, string $prev, string $dirHtml, string $vals, string $text, string $act): string {
+    return '<article class="fmc" id="fm-' . (int)$m['id'] . '">'
          . ($prev !== '' ? '<div class="fmc-prev">' . $prev . '</div>' : '')
          . '<div class="fmc-main"><header class="fmc-h"><div><b class="fmc-subj">' . e((string)$m['subject'] ?: '(sem assunto)') . '</b>'
          . '<div class="small muted">de <b>' . e((string)$m['from_addr']) . '</b>' . (($m['box'] ?? '') !== '' ? ' · em ' . e((string)$m['box']) : '') . ($m['received_at'] ? ' · ' . e(date('d/m/Y H:i', strtotime((string)$m['received_at']))) : '') . '</div></div>'
-         . '<div class="fmc-dir">' . $dirChip . $swap . '</div></header>'
+         . '<div class="fmc-dir">' . $dirHtml . '</div></header>'
          . '<p class="fmc-why small">' . icon('alert') . ' ' . e((string)$m['note']) . '</p>'
          . $vals . $text
          . ($act !== '' ? '<div class="fin-mail-act">' . $act . '</div>' : '') . '</div></article>';
+}
+
+/**
+ * Comprovativo ou recibo (§28.17): os valores lidos e o formulário de validação — escolher o lançamento (as sugestões
+ * de agora, outro da lista ou, num pagamento feito, criar a despesa já paga) e validar. Devolve [valores, ações].
+ */
+function fin_inbox_validate_html(PDO $pdo, array $m, string $kind, bool $canEdit, array $stored): array {
+    require_once __DIR__ . '/fin_proof.php';
+    $id = (int)$m['id'];
+    $dir = (string)($m['direction'] ?? '') === 'in' ? 'in' : 'out';
+    $row = fn(string $k, string $v) => $v !== '' ? '<dt>' . e($k) . '</dt><dd>' . $v . '</dd>' : '';
+    $vals = '';
+    if ($kind === 'proof') {
+        $p = json_decode((string)($m['proof'] ?? ''), true) ?: [];
+        $f = $p['fee_doc'] ?? null;
+        $sug = $p ? fin_proof_suggest($pdo, $p) : [];
+        $who = $dir === 'out' ? (string)($p['payee'] ?? '') : (string)($p['payer'] ?? '');
+        $iban = $dir === 'out' ? (string)($p['payee_iban'] ?? '') : (string)($p['payer_iban'] ?? '');
+        $vals = '<dl class="fmc-vals">'
+              . $row('Valor', '<b>' . eur((float)($p['amount'] ?? 0)) . '</b>' . ((float)($p['fees'] ?? 0) > 0 ? ' <span class="muted">· debitado ' . eur((float)$p['moved']) . ' com a comissão</span>' : ''))
+              . $row('Data', ($p['date'] ?? '') !== '' ? fin_date_pt((string)$p['date']) : '')
+              . $row($dir === 'out' ? 'Para' : 'De', e($who ?: '—') . ($iban !== '' ? ' <span class="mono small">' . e(fin_iban_fmt($iban)) . '</span>' : ''))
+              . $row('Descritivo', e(trim(($p['desc'] ?? '') . (($p['stmt_desc'] ?? '') !== '' && ($p['stmt_desc'] ?? '') !== ($p['desc'] ?? '') ? ' · ' . $p['stmt_desc'] : ''), ' ·')))
+              . $row('Referência MB', ($p['mb_ref'] ?? '') !== '' ? '<span class="mono">' . e(trim(($p['mb_entity'] ? 'Ent. ' . $p['mb_entity'] . ' · ' : '') . 'Ref. ' . trim(chunk_split((string)$p['mb_ref'], 3, ' ')))) . '</span>' : '')
+              . $row('Banco', e(trim(($p['bank'] ?? '') . (($p['ref'] ?? '') !== '' ? ' · ' . $p['ref'] : ''), ' ·')))
+              . $row('Comissão', (float)($p['fees'] ?? 0) > 0 ? eur((float)$p['fees']) . ($f ? ' · fatura-recibo <span class="mono">' . e((string)$f['number']) . '</span> (' . e((string)$f['issuer_name']) . ')' : '') : '')
+              . '</dl>';
+    } else {
+        $ai = json_decode((string)$m['ai'], true) ?: [];
+        $sug = $stored;
+        foreach ($ai ? fin_receipt_suggest($pdo, $ai, $dir) : [] as $s) if (!in_array($s['id'], array_column($sug, 'id'), true)) $sug[] = $s;
+        $sug = array_values(array_filter($sug, function ($s) use ($pdo) { $d = fin_doc($pdo, (int)$s['id']); return $d && !$d['deleted_at'] && (string)$d['receipt_key'] === ''; }));
+        usort($sug, fn($a, $b) => $b['score'] <=> $a['score']);
+        $sug = array_slice($sug, 0, 5);
+    }
+    if (!$canEdit) return [$vals, '', $sug];
+    $csrf = csrf_field();
+    $opts = '';
+    $sure = $sug && (int)$sug[0]['score'] >= 60;   // uma sugestão fraca (só pelo valor) não vem escolhida
+    foreach ($sug as $i => $s) {
+        $val = isset($s['pay']) ? 'pay:' . (int)$s['pay'] : (string)(int)$s['id'];
+        $opts .= '<label class="fmc-opt"><input type="radio" name="target" value="' . e($val) . '"' . ($i === 0 && ($sure || $kind === 'receipt') ? ' checked' : '') . '><span><b>' . e($s['label']) . '</b> <span class="small muted">' . e($s['why']) . ' · ' . (int)$s['score'] . '%</span></span></label>';
+    }
+    $others = fin_proof_open_docs($pdo, $dir, $kind === 'receipt');
+    if ($others) $opts .= '<label class="fmc-opt"><input type="radio" name="target" value="other"' . (!$sug && ($kind === 'receipt' || $dir === 'in') ? ' checked' : '') . ' required><span>Outro lançamento '
+        . '<select name="other" aria-label="Outro lançamento">' . implode('', array_map(fn($d) => '<option value="' . (int)$d['id'] . '">' . e(shorten(fin_doc_label($d) . ' · ' . $d['party_name'] . ' · ' . eur($kind === 'receipt' ? (float)$d['total'] : fin_doc_left($d)), 80)) . '</option>', $others)) . '</select></span></label>';
+    if ($kind === 'proof' && $dir === 'out') {
+        $p = json_decode((string)($m['proof'] ?? ''), true) ?: [];
+        $opts .= '<label class="fmc-opt"><input type="radio" name="target" value="new"' . (!$sure ? ' checked' : '') . '><span>Ainda não está lançado: criar a despesa já paga' . (($p['payee'] ?? '') !== '' ? ' (' . e((string)$p['payee']) . ')' : '') . ' <span class="small muted">— a fatura ou o recibo junta-se depois</span></span></label>';
+    }
+    if ($opts === '') return [$vals, '<p class="small muted">Não há lançamentos em aberto deste lado: crie-o primeiro e volte a «Ler outra vez».</p>', $sug];
+    $extra = '';
+    $pp = $kind === 'proof' ? (json_decode((string)($m['proof'] ?? ''), true) ?: []) : [];
+    if ((float)($pp['fees'] ?? 0) > 0) {
+        $extra ='<label class="chk small"><input type="checkbox" name="fee" value="1" checked> Lançar também a comissão do banco (' . eur((float)$pp['fees']) . '), já paga' . (!empty($pp['fee_doc']) ? ', com a fatura-recibo do banco' : '') . '</label>';
+    }
+    if ($kind === 'receipt') $extra = '<label class="chk small"><input type="checkbox" name="pay" value="1" checked> Se ainda faltar pagar, registar também o pagamento (o recibo prova-o)</label>';
+    $act = '<form method="post" class="fmc-pick">' . $csrf . '<input type="hidden" name="do" value="' . ($kind === 'proof' ? 'proof_ok' : 'receipt_ok') . '"><input type="hidden" name="mail" value="' . $id . '">'
+         . '<fieldset><legend class="small">' . ($kind === 'proof' ? ($dir === 'out' ? 'Este pagamento é de:' : 'Este recebimento é de:') : 'Este recibo é de:') . '</legend>' . $opts . '</fieldset>' . $extra
+         . '<button class="btn sm" type="submit">' . icon('check') . ' ' . ($kind === 'proof' ? 'Validar pagamento' : 'Validar e juntar o recibo') . '</button></form>';
+    return [$vals, $act, $sug];
 }
 
 /** O painel lateral para ver o PDF (um por página). */

@@ -2171,6 +2171,42 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   `inc/fin_ai.php`, `inc/ai.php`, `inc/fin_view.php`, `inc/fin_tabs.php`, `inc/fin.php`, `inc/alerts.php`,
   `inc/settings_def.php`, `inc/cron_run.php`, `inc/migrate_finance.php`, `inc/migrate.php`.
 
+### 10.29 Comprovativos de pagamento e recibos por email — §28.17 (30 out 2026)
+
+- **PDFs cifrados:** os comprovativos do Millennium vêm cifrados (AES-128, sem palavra-passe de abertura). `fin_pdf_decrypt`
+  decifra RC4/AES-128 (R2–R4) e AES-256 (R5/R6) em PHP puro (OpenSSL) e confirma que abre sem palavra-passe; o texto
+  e o QR passam a ler-se. O texto passou também a respeitar «'», «T*» e Td horizontais e a ignorar imagens embutidas.
+- **Leitura** (`inc/fin_proof.php`, `fin_proof_read`): valor, data do movimento, beneficiário e IBAN (validado mod 97),
+  ordenante, descritivo e descritivo do extrato, referência do banco, entidade + referência MB (ou referência de
+  pagamento ao Estado), comissões (com imposto do selo), total movimentado, banco, sentido (conta da empresa, DB/CR,
+  «a débito/a crédito») e a fatura-recibo do banco pelas comissões. Exige pelo menos dois sinais de comprovativo (uma
+  fatura que diga «envie o comprovativo» não chega). Um comprovativo lê-se do texto antes de chamar a IA (não a gasta);
+  a IA tem o tipo `payment_proof` para os digitalizados. Caso real: transferência de 615,00 € a um freelancer (IBAN de outro
+  banco), 29/10, comissão 1,25 € (fatura-recibo do BCP).
+- **Faturas:** ao chegarem, guardam o IBAN para pagar e a referência MB (`fin_docs.pay_iban`, `mb_entity`, `mb_ref`;
+  na ficha: «Pagar por»). A Gesvalor: Ent. 11683 · Ref. 835 691 114 · IBAN PT50 0018 …. O cron preenche uma vez as
+  faturas a pagar que já tinham PDF.
+- **Base de dados, passo 39:** essas três colunas, `fin_mail.kind` ('proof', 'receipt'), `fin_mail.proof` (o lido),
+  `fin_payments.mail_id` e `fin_ibans` (IBAN → NIF, nome, contacto, aprendido ao validar). Categoria nova «Comissões
+  bancárias».
+- **Cartão por validar** (A pagar ou A receber, e Visão geral): valor, data, para/de com IBAN, descritivo, referência
+  MB, banco e comissão; as sugestões de agora (referência MB, IBAN, valor, nome, nº, NIF, data; e os pagamentos já
+  registados pelo extrato sem comprovativo), «Outro lançamento» e, num pagamento feito, «criar a despesa já paga». Só
+  uma sugestão forte (≥ 60%) vem escolhida. «Validar pagamento»: confirma o lançamento se estava por confirmar, regista
+  o pagamento com o PDF como comprovativo, aprende o IBAN e lança a comissão (despesa «Comissões bancárias», fatura-
+  -recibo do banco, paga e arquivada; não repete se já estiver lançada). «Anular» desfaz tudo.
+- **Recibos sem pedido** ficam por validar (antes juntavam-se sozinhos por NIF + total); sugestão por NIF, nº da fatura
+  no texto do recibo e valor. «Validar e juntar o recibo» junta-o e, com a opção (marcada), regista o pagamento que
+  falta, com o recibo como prova. Os de «Pedir recibo» (REC-…) continuam automáticos.
+- **Extrato (Tesouraria › Conciliação):** um movimento igual a um pagamento já registado (±7 dias), ou ao pagamento +
+  comissão do mesmo comprovativo (ex.: −616,25 €), mostra «Já pago: …» e liga-se sem criar outro pagamento («Anular»
+  desliga). A referência MB de uma fatura no descritivo do movimento conta na sugestão.
+- Releitura única dos emails por confirmar depois da atualização. Os comprovativos que chegaram antes não ficaram no
+  Financeiro (não eram reconhecidos): reencaminhá-los para info@ se for preciso.
+- Ficheiros: `inc/fin_proof.php` (novo), `inc/fin_qr.php`, `inc/fin_mail.php`, `inc/fin_ai.php`, `inc/fin_view.php`,
+  `inc/fin_tabs.php`, `inc/fin_cash.php`, `inc/fin.php`, `inc/alerts.php`, `inc/cron_run.php`, `inc/migrate_finance.php`,
+  `inc/migrate.php`, `financeiro.php`, `assets/fin.js`, `assets/app.css`.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
@@ -4079,3 +4115,11 @@ Caso real: fatura da Gesvalor (contabilista) **à topper.** («Avença agosto �
 - Cada cartão mostra: remetente, caixa, data, assunto, **texto do email** (até ~1 000 caracteres, só para emails classificados como documento financeiro; o resto continua a não ser guardado), **anexo com pré-visualização** (miniatura + botão «Abrir PDF» bem visível, abre em painel lateral), valores lidos (emitente, adquirente, NIF, nº, data, total, IVA) e o **motivo** de estar por confirmar.
 - **Ícone de classificação subtil** em cada cartão (e em qualquer lançamento): alternar **A pagar ⇄ A receber** num clique, com «Anular»; a escolha alimenta a regra (o mesmo emitente/NIF passa a ser classificado igual).
 - Ações claras: «Confirmar como despesa» / «Confirmar como fatura emitida» (abre o formulário já preenchido), «Pôr de parte» (com motivo).
+
+### 28.17 Comprovativos de pagamento e recibos por email (30 out 2026, decidido com o caso real)
+Caso real: o Millennium envia para info@ o comprovativo de cada transferência («Fatura-Recibo» do banco com a comissão, PDF cifrado). Objetivo: o sistema lê o comprovativo e o recibo, sugere a fatura e **só fica pago depois de alguém validar**.
+- **Comprovativo:** valor, data do movimento, beneficiário e IBAN, ordenante, descritivo, referência Multibanco (entidade + referência) ou de pagamento ao Estado, comissões do banco. Lido do texto do PDF (sem IA; PDFs cifrados sem palavra-passe são decifrados); a IA só para comprovativos digitalizados (imagem).
+- **Associação** por pontos: referência MB igual à da fatura, IBAN da fatura / já conhecido (aprendido em validações anteriores, ficha de salário), valor igual ao que falta, nome/nº/NIF no descritivo, data perto do vencimento. Nas faturas que chegam guardam-se o IBAN para pagar e a referência MB.
+- **Validação humana sempre:** o cartão em «Por confirmar · emails» propõe o lançamento (ou outro da lista, ou «criar a despesa já paga» quando ainda não está lançado — a fatura/recibo junta-se depois). Validar regista o pagamento com o PDF como comprovativo; a comissão do banco é lançada à parte, já paga, com a fatura-recibo do banco. Tudo com «Anular».
+- **Extrato:** o movimento de um pagamento já registado (com ou sem a comissão do mesmo comprovativo) liga-se a ele — nunca dois pagamentos. Um comprovativo que chega depois de o extrato já ter pago a fatura junta-se a esse pagamento.
+- **Recibos:** os que respondem a «Pedir recibo» (código REC-…) continuam a juntar-se sozinhos; os outros ficam por validar, com a fatura sugerida (NIF, nº da fatura no recibo, valor). Ao validar, se ainda faltar pagar, o recibo serve de prova e regista também o pagamento.

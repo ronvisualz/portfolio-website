@@ -142,8 +142,166 @@ function fin_img_qr(string $bytes): ?string {
 
 // ── PDF ─────────────────────────────────────────────────────
 
-/** Os streams de um PDF: [dicionário, dados em bruto]. (Os PDFs cifrados ficam de fora: vão à IA.) */
+/**
+ * Um PDF cifrado sem palavra-passe de abertura (os bancos, como o Millennium, cifram os comprovativos só para impedir
+ * alterações) → o mesmo PDF com os streams decifrados e sem /Encrypt, para o resto da leitura. Norma: RC4 e AES-128
+ * (R2–R4) e AES-256 (R5/R6). Se precisar de palavra-passe (ou não houver OpenSSL), devolve o original.
+ */
+function fin_pdf_decrypt(string $pdf): string {
+    static $cache = [];
+    if (!preg_match('/\/Encrypt\s+(\d+)\s+(\d+)\s+R/', $pdf, $em)) return $pdf;
+    $ck = md5($pdf);
+    if (isset($cache[$ck])) return $cache[$ck];
+    if (count($cache) > 4) $cache = [];
+    try { $out = fin_pdf_decrypt_run($pdf, (int)$em[1]); }
+    catch (Throwable $e) { error_log('fin_pdf_decrypt: ' . $e->getMessage()); $out = $pdf; }
+    return $cache[$ck] = $out;
+}
+
+function fin_pdf_decrypt_run(string $pdf, int $encNum): string {
+    if (!function_exists('openssl_decrypt')) return $pdf;
+    // os objetos «n g obj … endobj» (posição, número, geração, corpo)
+    if (!preg_match_all('/(?<![\d])(\d+)\s+(\d+)\s+obj\b/', $pdf, $mm, PREG_OFFSET_CAPTURE)) return $pdf;
+    $objs = [];
+    foreach ($mm[0] as $k => [$tok, $at]) {
+        $end = strpos($pdf, 'endobj', $at);
+        if ($end === false) continue;
+        $objs[] = ['num' => (int)$mm[1][$k][0], 'gen' => (int)$mm[2][$k][0], 'at' => $at, 'body' => $at + strlen($tok), 'end' => $end];
+    }
+    $byNum = [];
+    foreach ($objs as $o) $byNum[$o['num']] = $o;
+    if (!isset($byNum[$encNum])) return $pdf;
+    $enc = substr($pdf, $byNum[$encNum]['body'], $byNum[$encNum]['end'] - $byNum[$encNum]['body']);
+    if (!preg_match('/\/Filter\s*\/Standard\b/', $enc)) return $pdf;   // só o método normal (sem certificados)
+    $top = preg_replace('/\/CF\s*<<.*?>>\s*>>/s', '', $enc);   // (o /Length dos filtros é outro)
+    $int = fn(string $k, int $d) => preg_match('/\/' . $k . '\s+(-?\d+)/', $top, $x) ? (int)$x[1] : $d;
+    $V = $int('V', 0); $R = $int('R', 2); $P = $int('P', 0); $len = $int('Length', 40);
+    $O = fin_pdf_dict_str($enc, 'O'); $U = fin_pdf_dict_str($enc, 'U');
+    $id0 = '';
+    if (preg_match('/\/ID\s*\[\s*(<[0-9A-Fa-f\s]*>|\()/', $pdf, $im, PREG_OFFSET_CAPTURE)) { $p = $im[1][1]; $id0 = fin_pdf_str_at($pdf, $p); }
+    // o método dos streams: RC4, AES-128 ou AES-256 (V4/V5 dizem-no no filtro StdCF); Identity = sem cifra
+    $cfm = $V >= 4 ? (preg_match('/\/StmF\s*\/Identity/', $enc) ? 'None' : (preg_match('/\/CFM\s*\/(\w+)/', $enc, $c) ? $c[1] : 'V2')) : 'V2';
+    if ($cfm === 'None') return preg_replace('/\/Encrypt\s+\d+\s+\d+\s+R/', '', $pdf);
+    $pad = hex2bin('28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E802F0CA9FE6453697A');
+    if ($R >= 5) {
+        // AES-256: a chave vem de UE, cifrada com o hash da palavra-passe (vazia) e do «key salt» de U
+        $UE = fin_pdf_dict_str($enc, 'UE');
+        if (strlen($U) < 48 || strlen($UE) < 32) return $pdf;
+        if (fin_pdf_hash6('', substr($U, 32, 8), '', $R) !== substr($U, 0, 32)) return $pdf;   // precisa de palavra-passe
+        $ik = fin_pdf_hash6('', substr($U, 40, 8), '', $R);
+        $key = (string)openssl_decrypt(substr($UE, 0, 32), 'aes-256-cbc', $ik, OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING, str_repeat("\0", 16));
+        if (strlen($key) !== 32) return $pdf;
+    } else {
+        $n = $R === 2 ? 5 : intdiv(max(40, min(128, $len)), 8);
+        $h = md5($pad . $O . pack('V', $P) . $id0 . ($R >= 4 && preg_match('/\/EncryptMetadata\s+false/', $enc) ? "\xff\xff\xff\xff" : ''), true);
+        if ($R >= 3) for ($i = 0; $i < 50; $i++) $h = md5(substr($h, 0, $n), true);
+        $key = substr($h, 0, $n);
+        // confirma que abre sem palavra-passe (o U calculado bate com o do ficheiro)
+        if ($R === 2) $ok = fin_rc4($key, $pad) === substr($U, 0, 32);
+        else {
+            $u = fin_rc4($key, md5($pad . $id0, true));
+            for ($i = 1; $i <= 19; $i++) { $k2 = ''; for ($j = 0; $j < $n; $j++) $k2 .= chr(ord($key[$j]) ^ $i); $u = fin_rc4($k2, $u); }
+            $ok = $u === substr($U, 0, 16);
+        }
+        if (!$ok) return $pdf;
+    }
+    $aes = in_array($cfm, ['AESV2', 'AESV3'], true);
+    $dec = function (string $data, int $num, int $gen) use ($key, $R, $aes): string {
+        if ($R >= 5) $k = $key;
+        else $k = substr(md5($key . substr(pack('V', $num), 0, 3) . substr(pack('V', $gen), 0, 2) . ($aes ? 'sAlT' : ''), true), 0, min(strlen($key) + 5, 16));
+        if (!$aes) return fin_rc4($k, $data);
+        if (strlen($data) < 32) return '';
+        $r = openssl_decrypt(substr($data, 16), strlen($k) === 32 ? 'aes-256-cbc' : 'aes-128-cbc', $k, OPENSSL_RAW_DATA, substr($data, 0, 16));
+        return $r === false ? '' : $r;
+    };
+    // reescreve: os streams decifrados (com o /Length novo); o resto fica igual
+    $out = ''; $pos = 0;
+    foreach ($objs as $o) {
+        if ($o['num'] === $encNum || $o['at'] < $pos) continue;
+        $body = substr($pdf, $o['body'], $o['end'] - $o['body']);
+        if (!preg_match('/>>\s*stream(\r\n|\n|\r)/', $body, $sm, PREG_OFFSET_CAPTURE)) continue;
+        $dict = substr($body, 0, $sm[0][1] + 2);
+        if (preg_match('/\/Type\s*\/XRef\b/', $dict)) continue;   // os streams de referências não são cifrados
+        $start = $o['body'] + $sm[0][1] + strlen($sm[0][0]);
+        $L = -1;
+        if (preg_match('/\/Length\s+(\d+)\s+(\d+)\s+R/', $dict, $lm) && isset($byNum[(int)$lm[1]])) {
+            $lo = $byNum[(int)$lm[1]];
+            if (preg_match('/^\s*(\d+)/', substr($pdf, $lo['body'], 40), $lv)) $L = (int)$lv[1];
+        } elseif (preg_match('/\/Length\s+(\d+)/', $dict, $lm)) $L = (int)$lm[1];
+        if ($L < 0 || $start + $L > $o['end']) { $e2 = strpos($pdf, 'endstream', $start); if ($e2 === false) continue; $L = strlen(rtrim(substr($pdf, $start, $e2 - $start), "\r\n")); }
+        $plain = $dec(substr($pdf, $start, $L), $o['num'], $o['gen']);
+        $dict2 = preg_replace('/\/Length\s+\d+(\s+\d+\s+R)?/', '/Length ' . strlen($plain), $dict, 1);
+        $out .= substr($pdf, $pos, $o['body'] - $pos) . substr($dict2, 0, -2) . '>>stream' . "\n" . $plain . "\nendstream\n";
+        $pos = $start + $L;
+        $e3 = strpos($pdf, 'endstream', $pos);
+        if ($e3 !== false && $e3 < $o['end']) $pos = $e3 + 9;
+    }
+    $out .= substr($pdf, $pos);
+    return preg_replace('/\/Encrypt\s+\d+\s+\d+\s+R/', '', $out);
+}
+
+/** Uma string de um dicionário PDF (/O, /U, /UE…) em bytes: literal «(…)» com escapes ou hexadecimal «<…>». */
+function fin_pdf_dict_str(string $dict, string $key): string {
+    if (!preg_match('/\/' . $key . '\s*(\(|<(?!<))/', $dict, $m, PREG_OFFSET_CAPTURE)) return '';
+    return fin_pdf_str_at($dict, $m[1][1]);
+}
+
+/** A string PDF que começa na posição $p (com «(» ou «<»). */
+function fin_pdf_str_at(string $s, int $p): string {
+    if ($s[$p] === '<') {
+        $e = strpos($s, '>', $p);
+        $h = preg_replace('/[^0-9A-Fa-f]/', '', substr($s, $p + 1, ($e === false ? strlen($s) : $e) - $p - 1));
+        return (string)hex2bin(strlen($h) % 2 ? $h . '0' : $h);
+    }
+    $out = ''; $depth = 0; $n = strlen($s);
+    for ($i = $p + 1; $i < $n; $i++) {
+        $c = $s[$i];
+        if ($c === '\\') {
+            $x = $s[++$i] ?? '';
+            if (ctype_digit($x) && $x < '8') { $o = $x; while (strlen($o) < 3 && isset($s[$i + 1]) && $s[$i + 1] >= '0' && $s[$i + 1] <= '7') $o .= $s[++$i]; $out .= chr(octdec($o) & 255); }
+            elseif ($x === "\r") { if (($s[$i + 1] ?? '') === "\n") $i++; }
+            elseif ($x !== "\n") $out .= ['n' => "\n", 'r' => "\r", 't' => "\t", 'b' => "\x08", 'f' => "\x0c"][$x] ?? $x;
+            continue;
+        }
+        if ($c === '(') $depth++;
+        elseif ($c === ')') { if ($depth === 0) break; $depth--; }
+        $out .= $c;
+    }
+    return $out;
+}
+
+/** RC4 (sem depender do OpenSSL, que o desliga nas versões novas). */
+function fin_rc4(string $key, string $data): string {
+    $s = range(0, 255); $j = 0; $kl = strlen($key);
+    if ($kl === 0) return $data;
+    for ($i = 0; $i < 256; $i++) { $j = ($j + $s[$i] + ord($key[$i % $kl])) & 255; [$s[$i], $s[$j]] = [$s[$j], $s[$i]]; }
+    $i = $j = 0; $out = ''; $n = strlen($data);
+    for ($k = 0; $k < $n; $k++) {
+        $i = ($i + 1) & 255; $j = ($j + $s[$i]) & 255; [$s[$i], $s[$j]] = [$s[$j], $s[$i]];
+        $out .= chr(ord($data[$k]) ^ $s[($s[$i] + $s[$j]) & 255]);
+    }
+    return $out;
+}
+
+/** O hash das palavras-passe do AES-256 (R5: SHA-256; R6: o algoritmo 2.B da ISO 32000-2). */
+function fin_pdf_hash6(string $pwd, string $salt, string $udata, int $R): string {
+    $k = hash('sha256', $pwd . $salt . $udata, true);
+    if ($R < 6) return $k;
+    for ($i = 0; ; ) {
+        $k1 = str_repeat($pwd . $k . $udata, 64);
+        $e = (string)openssl_encrypt($k1, 'aes-128-cbc', substr($k, 0, 16), OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING, substr($k, 16, 16));
+        $sum = 0; for ($j = 0; $j < 16; $j++) $sum += ord($e[$j]);
+        $k = hash(['sha256', 'sha384', 'sha512'][$sum % 3], $e, true);
+        $i++;
+        if ($i >= 64 && ord($e[strlen($e) - 1]) <= $i - 32) break;
+        if ($i > 1000) break;
+    }
+    return substr($k, 0, 32);
+}
+
+/** Os streams de um PDF: [dicionário, dados em bruto]. (Os PDFs cifrados sem palavra-passe são decifrados antes.) */
 function fin_pdf_streams(string $pdf): array {
+    $pdf = fin_pdf_decrypt($pdf);
     if (preg_match('/\/Encrypt\s+\d+\s+\d+\s+R/', $pdf)) return [];
     $out = [];
     if (!preg_match_all('/>>\s*stream\r?\n/', $pdf, $mm, PREG_OFFSET_CAPTURE)) return [];
@@ -264,6 +422,7 @@ function fin_pdf_predictor(string $dict, string $d): string {
  */
 function fin_pdf_qr(string $pdf, float $budget = 12.0): ?string {
     $t0 = microtime(true);
+    $pdf = fin_pdf_decrypt($pdf);
     $streams = fin_pdf_streams($pdf);
     $images = []; $content = [];
     foreach ($streams as [$dict, $data]) {
@@ -307,6 +466,7 @@ function fin_pdf_qr(string $pdf, float $budget = 12.0): ?string {
  * ler NIFs, nomes, total e número quando o QR não chega; PDFs digitalizados (só imagem) não têm texto: vão à IA.
  */
 function fin_pdf_text(string $pdf, int $max = 60000): string {
+    $pdf = fin_pdf_decrypt($pdf);
     if (preg_match('/\/Encrypt\s+\d+\s+\d+\s+R/', $pdf)) return '';
     // os objetos: «n 0 obj … endobj»
     $objs = [];
@@ -358,12 +518,16 @@ function fin_pdf_text(string $pdf, int $max = 60000): string {
     foreach ($objs as $body) {
         if (strpos($body, 'stream') === false || preg_match('/\/(Subtype\s*\/Image|Type\s*\/(XRef|ObjStm|Metadata)|Length1|FontFile)/', $body)) continue;
         $c = $stream($body);
-        if ($c === '' || !preg_match('/\b(Tj|TJ)\b/', $c)) continue;
+        if ($c === '' || !preg_match('/\b(Tj|TJ)\b|\)\s*\'/', $c)) continue;
+        $c = preg_replace('/\bBI\b.*?\bID\s.*?\sEI\b/s', ' ', $c);   // imagens embutidas no conteúdo (binário com parênteses soltos)
         $font = [[], false];
-        preg_match_all('/\/([\w.+-]+)\s+[\d.]+\s+Tf|(<[0-9A-Fa-f\s]*>|\((?:\\\\.|[^\\\\)])*\))\s*(Tj|\'|")|\[((?:[^\]\\\\]|\\\\.)*)\]\s*TJ|\b(Td|TD|T\*|ET|Tm)\b/s', $c, $ops, PREG_SET_ORDER);
+        preg_match_all('/\/([\w.+-]+)\s+[\d.]+\s+Tf|(<[0-9A-Fa-f\s]*>|\((?:\\\\.|[^\\\\)])*\))\s*(Tj|\'|")|\[((?:[^\]\\\\]|\\\\.)*)\]\s*TJ|(\bET\b|\bTm\b|T\*)|(-?[\d.]+)\s+(-?[\d.]+)\s+T[dD]\b/s', $c, $ops, PREG_SET_ORDER);
         foreach ($ops as $o) {
             if (($o[1] ?? '') !== '') { $font = $cmaps[$o[1]] ?? [[], false]; continue; }
-            if (($o[5] ?? '') !== '') { if (!str_ends_with($out, "\n")) $out .= "\n"; continue; }
+            // mudança de linha (T*, Tm, ET, ou Td com deslocamento vertical); Td só na horizontal é um espaço
+            if (($o[5] ?? '') !== '' || (($o[7] ?? '') !== '' && abs((float)$o[7]) > 0.01)) { if (!str_ends_with($out, "\n")) $out .= "\n"; continue; }
+            if (($o[6] ?? '') !== '') { if (!str_ends_with($out, "\n") && !str_ends_with($out, ' ')) $out .= ' '; continue; }
+            if (in_array($o[3] ?? '', ["'", '"'], true) && !str_ends_with($out, "\n")) $out .= "\n";   // «'» e «"» passam à linha seguinte
             $parts = ($o[2] ?? '') !== '' ? [$o[2]] : [];
             if (($o[4] ?? '') !== '') { preg_match_all('/<[0-9A-Fa-f\s]*>|\((?:\\\\.|[^\\\\)])*\)|-?\d+\.?\d*/', $o[4], $pp); $parts = $pp[0]; }
             foreach ($parts as $p) {

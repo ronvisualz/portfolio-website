@@ -224,6 +224,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'number' => (string)($ai['number'] ?? ''), 'description' => (string)($ai['description'] ?? $m['subject']), 'base' => (float)($ai['base'] ?? 0), 'vat_rate' => (float)($ai['vat_rate'] ?? 0),
                     'vat' => (float)($ai['vat'] ?? 0), 'total' => (float)($ai['total'] ?? 0), 'issue_date' => ($ai['issue_date'] ?? '') ?: null, 'due_date' => ($ai['due_date'] ?? '') ?: null,
                     'pdf_key' => (string)$att['key'], 'pdf_name' => (string)$att['name'], 'status' => 'review', 'needs_review' => 1, 'ai_data' => $m['ai'], 'notes' => 'Chegou por email (' . ($m['box'] ?: $m['from_addr']) . '): ' . $m['subject']], $uid);
+                if ($dir === 'out' && db_has_column($pdo, 'fin_docs', 'pay_iban'))   // como pagar, lido da fatura (§28.17)
+                    $pdo->prepare('UPDATE fin_docs SET pay_iban = ?, mb_entity = ?, mb_ref = ? WHERE id = ?')->execute([(string)($ai['pay_iban'] ?? ''), (string)($ai['mb_entity'] ?? ''), (string)($ai['mb_ref'] ?? ''), $id]);
                 $pdo->prepare("UPDATE fin_mail SET status = 'linked', doc_id = ?, done_by = ?, done_at = ? WHERE id = ?")->execute([$id, $uid, fin_now(), $mid]);
                 flash('Lançamento criado a partir do email: confirme os dados.', 'ok', undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null, 'doc_new' => $id]));
                 redirect(fin_url(['tab' => $dir === 'in' ? 'receber' : 'pagar', 'edit' => $id]));
@@ -266,6 +268,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $st->execute([$mid]);
                 // posto de parte pela releitura: «Anular» volta a pô-lo por confirmar
                 flash($msg, 'ok', ($st->fetch()['status'] ?? '') === 'ignored' ? undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null, 'note' => (string)$before['note']]) : '');
+                break;
+            }
+            case 'proof_ok': case 'receipt_ok': {
+                // validar um comprovativo ou um recibo que chegou por email (§28.17): só aqui o pagamento fica registado
+                require_once __DIR__ . '/inc/fin_proof.php';
+                $mid = (int)($_POST['mail'] ?? 0);
+                $target = (string)($_POST['target'] ?? '');
+                if ($target === 'other') $target = (string)(int)($_POST['other'] ?? 0);
+                if ($target === '' || $target === '0') throw new RuntimeException('Escolha o lançamento.');
+                [$msg, $u] = $do === 'proof_ok' ? fin_proof_validate($pdo, $mid, $target, !empty($_POST['fee']), $uid)
+                                                : fin_receipt_validate($pdo, $mid, (int)$target, !empty($_POST['pay']), $uid);
+                flash($msg, 'ok', undo_push('fin', $u));
                 break;
             }
             case 'doc_flip': {
@@ -436,6 +450,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ((int)$f['size'] > 5 * 1048576) throw new RuntimeException('O extrato tem mais de 5 MB.');
                 $r = fin_import($pdo, (int)($_POST['account'] ?? 0), (string)file_get_contents($f['tmp_name']), (string)$f['name'], $uid);
                 flash('Extrato ' . $r['fmt'] . ' importado: ' . $r['new'] . ' movimentos novos' . ($r['dup'] ? ', ' . $r['dup'] . ' já estavam' : '') . ($r['balance'] !== null ? ' · saldo ' . eur($r['balance']) : '') . '. Concilie abaixo.');
+                redirect(fin_url(['tab' => 'tesouraria']) . '#conciliar');
+            }
+            case 'tx_link': {
+                // o movimento é um pagamento já registado com comprovativo: liga-se a ele (sem pagar duas vezes)
+                require_once __DIR__ . '/inc/fin_cash.php';
+                require_once __DIR__ . '/inc/fin_proof.php';
+                $t = fin_tx($pdo, (int)($_POST['tx'] ?? 0));
+                if (!$t) throw new RuntimeException('Esse movimento já não existe.');
+                $ids = fin_tx_link_pay($pdo, $t, (int)($_POST['pay'] ?? 0));
+                flash('Movimento ligado ao pagamento já registado' . (count($ids) > 1 ? ' (e à comissão do mesmo comprovativo)' : '') . '.', 'ok', undo_push('fin', ['op' => 'tx_link', 'id' => (int)$t['id']]));
                 redirect(fin_url(['tab' => 'tesouraria']) . '#conciliar');
             }
             case 'tx_match': case 'tx_new': case 'tx_ignore': {

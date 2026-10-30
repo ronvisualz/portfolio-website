@@ -30,9 +30,15 @@ function fin_ai_schema(): array {
     $s = ['type' => 'string'];
     $n = ['type' => 'number'];
     return ['type' => 'object', 'additionalProperties' => false,
-        'required' => ['kind', 'issuer_name', 'issuer_nif', 'client_name', 'client_nif', 'number', 'issue_date', 'due_date', 'base', 'vat_rate', 'vat', 'total', 'withholding', 'currency', 'description', 'confidence'],
+        'required' => ['kind', 'issuer_name', 'issuer_nif', 'client_name', 'client_nif', 'number', 'issue_date', 'due_date', 'base', 'vat_rate', 'vat', 'total', 'withholding', 'currency', 'description', 'pay_iban', 'mb_entity', 'mb_ref', 'proof', 'confidence'],
         'properties' => [
-            'kind' => ['type' => 'string', 'enum' => ['invoice', 'invoice_receipt', 'receipt', 'credit_note', 'green_receipt', 'quote', 'other']],
+            'kind' => ['type' => 'string', 'enum' => ['invoice', 'invoice_receipt', 'receipt', 'credit_note', 'green_receipt', 'payment_proof', 'quote', 'other']],
+            'pay_iban' => ['type' => 'string', 'description' => 'IBAN indicado para pagar (vazio se não houver)'],
+            'mb_entity' => ['type' => 'string', 'description' => 'Entidade Multibanco (5 algarismos) ou vazio'], 'mb_ref' => ['type' => 'string', 'description' => 'Referência Multibanco (9 algarismos) ou vazio'],
+            'proof' => ['type' => 'object', 'additionalProperties' => false, 'description' => 'Só num comprovativo de pagamento (kind payment_proof); senão valores vazios/0',
+                'required' => ['amount', 'date', 'direction', 'payee_name', 'payee_iban', 'payer_name', 'payer_iban', 'description', 'mb_entity', 'mb_ref', 'bank'],
+                'properties' => ['amount' => $n, 'date' => ['type' => 'string', 'description' => 'AAAA-MM-DD'], 'direction' => ['type' => 'string', 'enum' => ['out', 'in', '']],
+                    'payee_name' => $s, 'payee_iban' => $s, 'payer_name' => $s, 'payer_iban' => $s, 'description' => $s, 'mb_entity' => $s, 'mb_ref' => $s, 'bank' => $s]],
             'issuer_name' => $s, 'issuer_nif' => $s, 'client_name' => $s, 'client_nif' => $s, 'number' => $s,
             'issue_date' => ['type' => 'string', 'description' => 'AAAA-MM-DD ou vazio'], 'due_date' => ['type' => 'string', 'description' => 'AAAA-MM-DD ou vazio'],
             'base' => $n, 'vat_rate' => $n, 'vat' => $n, 'total' => $n, 'withholding' => $n, 'currency' => $s, 'description' => $s,
@@ -52,7 +58,7 @@ function fin_ai_read(PDO $pdo, string $bytes, string $mime): array {
         : ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => base64_encode($bytes)]];
     $co = trim((string)setting($pdo, 'company_name', 'topper.'));
     $nif = trim((string)setting($pdo, 'company_nif', ''));
-    $prompt = 'Este documento pode ser uma fatura, fatura-recibo, recibo, nota de crédito ou recibo verde português (ou estrangeiro), um orçamento (kind quote) ou outra coisa (kind other). '
+    $prompt = 'Este documento pode ser uma fatura, fatura-recibo, recibo, nota de crédito ou recibo verde português (ou estrangeiro), um comprovativo de pagamento/transferência de um banco (kind payment_proof: preencha proof; direction out se a nossa empresa pagou, in se recebeu), um orçamento (kind quote) ou outra coisa (kind other). '
             . 'Extraia os dados tal como estão no documento. A nossa empresa é «' . $co . '»' . ($nif !== '' ? ' (NIF ' . $nif . ')' : '') . '. '
             . 'Valores em números (ponto decimal), sem símbolos. base = total sem IVA; vat_rate = taxa de IVA em % (0 se isento); withholding = retenção na fonte de IRS (0 se não houver). '
             . 'Se houver várias taxas de IVA, use a predominante e some o IVA. description = o serviço ou produto em poucas palavras. '
@@ -72,10 +78,13 @@ function fin_ai_read(PDO $pdo, string $bytes, string $mime): array {
             'issue_date' => $date($d['issue_date'] ?? ''), 'due_date' => $date($d['due_date'] ?? ''), 'base' => $m($d['base'] ?? 0), 'vat_rate' => round((float)($d['vat_rate'] ?? 0), 2),
             'vat' => $m($d['vat'] ?? 0), 'total' => $m($d['total'] ?? 0), 'withholding' => $m($d['withholding'] ?? 0),
             'currency' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string)($d['currency'] ?? 'EUR')), 0, 3)) ?: 'EUR',
-            'description' => mb_substr(trim((string)($d['description'] ?? '')), 0, 300), 'confidence' => max(0.0, min(1.0, (float)($d['confidence'] ?? 0)))];
+            'description' => mb_substr(trim((string)($d['description'] ?? '')), 0, 300), 'confidence' => max(0.0, min(1.0, (float)($d['confidence'] ?? 0))),
+            'pay_iban' => preg_match('/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/', $ib = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['pay_iban'] ?? '')))) ? $ib : '',
+            'mb_entity' => mb_substr(preg_replace('/\D/', '', (string)($d['mb_entity'] ?? '')), 0, 8), 'mb_ref' => mb_substr(preg_replace('/\D/', '', (string)($d['mb_ref'] ?? '')), 0, 20),
+            'proof' => is_array($d['proof'] ?? null) ? $d['proof'] : []];
     // coerência: base + IVA = total; senão baixa a confiança
     if ($out['total'] > 0 && $out['base'] <= 0) $out['base'] = round($out['total'] - $out['vat'], 2);
-    if (abs($out['base'] + $out['vat'] - $out['total']) > 0.05) $out['confidence'] = min($out['confidence'], 0.5);
+    if ($out['kind'] !== 'payment_proof' && abs($out['base'] + $out['vat'] - $out['total']) > 0.05) $out['confidence'] = min($out['confidence'], 0.5);
     // quem é a contraparte: se o emitente somos nós, é uma fatura emitida (receita)
     $ours = $nif !== '' && preg_replace('/\D/', '', $nif) === preg_replace('/\D/', '', $out['issuer_nif']);
     $out['direction'] = $ours ? 'in' : 'out';
