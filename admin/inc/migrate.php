@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -337,6 +337,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 37 · Reuniões no formulário da tarefa (§31.6): convidados externos, organizador, convites por email (.ics)
     //        das reuniões Discord e presenciais, idioma do contacto ──
     migrate_auth_37($pdo);
+    // ── 38 · Financeiro (§28.16): texto do email e sugestão (despesa/receita) nos «Por confirmar», regras de
+    //        classificação por emitente/remetente ──
+    migrate_finance_38($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

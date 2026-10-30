@@ -64,6 +64,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
         redirect('/admin/definicoes.php?t=integracoes#set-int_google');
     }
+    if (isset($_POST['ai_key'])) {   // a chave da Anthropic (IA): confirmada na API e gravada só no servidor (§28.16)
+        require_once __DIR__ . '/inc/ai.php';
+        try {
+            $cap = trim((string)($_POST['ai_cap'] ?? '')) !== '' ? (float)str_replace(',', '.', (string)$_POST['ai_cap']) : null;
+            $msg = ai_key_save((string)$_POST['ai_key'], $cap);
+            setting_log($pdo, 'int_ai', 'IA (Anthropic)', null, 'chave guardada no servidor');   // nunca a chave
+            flash($msg . ' Os documentos por confirmar podem ser relidos com «Ler outra vez».');
+        } catch (RuntimeException $e) { flash($e->getMessage(), 'err'); }
+        redirect('/admin/definicoes.php?t=integracoes#set-int_ai');
+    }
     if (isset($_POST['mail_confirm_done'])) {   // confirmação de reencaminhamento já usada (§31.5): sai da lista
         $pdo->prepare('UPDATE mail_confirm SET done_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), (int)$_POST['mail_confirm_done']]);
         redirect('/admin/definicoes.php?t=integracoes#set-mail_cf');
@@ -308,7 +318,7 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                             : '<p class="small muted">Sem palavras-passe: cada caixa ligada reencaminha uma cópia; os emails de caixas que não estão ligadas são ignorados e o corpo dos emails nunca é guardado.</p>';
             $h .= '<p class="small">' . ($s['pending'] ? '<a class="chip info" href="/admin/financeiro.php?tab=receber">' . $s['pending'] . ' por confirmar</a> ' : '')
                 . 'Contabilista: ' . ($s['accountant'] !== '' ? e($s['accountant']) : '<span class="muted">por indicar em Definições › Financeiro</span>') . '</p>';
-            if ($s['company_nif'] === '') $h .= '<p class="small neg">Falta o NIF da empresa em Definições › Geral: sem ele não sei se um documento é despesa (o nosso NIF como adquirente) ou receita (como emitente), e fica tudo por confirmar.</p>';
+            if ($s['company_nif'] === '') $h .= '<p class="small neg">Falta o NIF da empresa em Definições › Financeiro › Empresa: sem ele não sei se um documento é despesa (o nosso NIF como adquirente) ou receita (como emitente), e fica tudo por confirmar.</p>';
             return $h;
         case 'info':
             $show = (string)$d['show'];
@@ -447,8 +457,16 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             $spent = ai_month_spend_usd($pdo);
             $usd = fn($v) => number_format((float)$v, 4, ',', ' ') . ' US$';
             $log = db_has_table($pdo, 'mkt_ai_log') ? $pdo->query('SELECT l.*, u.name AS who FROM mkt_ai_log l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT 8')->fetchAll() : [];
-            $h = '<div class="set-ai"><span class="chip ' . (ai_config() ? 'ok' : 'wait') . '">' . (ai_config() ? 'Ligada' : 'Sem chave neste servidor') . '</span>'
+            $h = '<div class="set-ai"><span class="chip ' . (ai_config() ? 'ok' : 'wait') . '">' . (ai_config() ? 'Ligada' : (is_file(__DIR__ . '/inc/ai_config.php') ? 'A chave guardada não é válida' : 'Sem chave neste servidor')) . '</span>'
                . ' <span class="mono">' . e($usd($spent)) . '</span> <span class="muted small">em ' . e($mLabel) . ' · limite ' . e(ai_eur(ai_cap_usd())) . ' (contado como US$)</span></div>';
+            // colar a chave: confirmada na Anthropic e gravada só no servidor (nunca volta ao browser)
+            $h .= '<details class="set-ai-key"' . (ai_config() ? '' : ' open') . '><summary class="small">' . (ai_config() ? 'Trocar a chave' : 'Ligar a IA: colar a chave da Anthropic') . '</summary>'
+                . '<form method="post" class="set-ai-form" autocomplete="off">' . csrf_field()
+                . '<label for="ai-key">Chave da API (console.anthropic.com › Settings › API Keys; começa por «sk-ant-»)</label>'
+                . '<input type="password" id="ai-key" name="ai_key" required minlength="20" maxlength="300" placeholder="sk-ant-…" spellcheck="false" autocomplete="off">'
+                . '<label for="ai-cap">Limite mensal (€)</label><input type="number" id="ai-cap" name="ai_cap" min="0" max="1000" step="1" value="' . e((string)(int)round(ai_cap_usd())) . '">'
+                . '<button class="btn sm" type="submit">Confirmar e guardar</button>'
+                . '<p class="small muted">A plataforma confirma a chave na Anthropic (sem gastar) antes de a guardar no servidor, fora do Git. Usada na leitura das faturas que chegam por email, no Estúdio e no assistente.</p></form></details>';
             if ($log) {
                 $h .= '<ul class="set-list small">';
                 foreach ($log as $l) $h .= '<li><span class="mono">' . e(lisbon_fmt(strtotime((string)$l['created_at']), 'd/m H:i')) . '</span> ' . e($l['who'] ?? '—') . ' · ' . e((string)$l['action']) . ' · <span class="mono">' . e($usd($l['cost_usd'])) . '</span></li>';

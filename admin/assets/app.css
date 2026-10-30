@@ -2944,6 +2944,71 @@ div.xs-ind:empty { display: none; }
 .fin-mail:first-of-type { border-top: 0; }
 .fin-mail-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .fin-mail-act select { max-width: 360px; }
+/* «Por confirmar · emails» (§28.16): cartões com o anexo, os valores lidos, o motivo e a sugestão */
+.fin-inbox-h h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
+.fin-inbox-h h3 .ico { width: 18px; height: 18px; }
+.fin-inbox-h p { margin: 2px 0 10px; }
+.fin-tabs .nb, .fin-inbox .nb, .fin-todo .nb { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--warn-bg); color: var(--warn-fg); font-size: 12px; font-weight: 700; margin-left: 4px; vertical-align: 1px; }
+.fmc { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.fmc:first-of-type { border-top: 0; }
+.fmc-prev { display: grid; gap: 6px; align-content: start; }
+.fmc-att { display: grid; gap: 6px; }
+.fmc-thumb { position: relative; display: block; width: 168px; height: 220px; padding: 0; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; background: #fff; cursor: zoom-in; }
+.fmc-thumb iframe { width: 600px; height: 790px; border: 0; transform: scale(.28); transform-origin: 0 0; pointer-events: none; }
+.fmc-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.fmc-thumb.none { display: grid; place-items: center; padding: 10px; cursor: default; background: var(--chip); }
+.fmc-thumb:focus-visible { outline: 2px solid var(--info-fg); outline-offset: 2px; }
+.fmc-open { justify-content: center; }
+.fmc-fn { word-break: break-all; }
+.fmc-main { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.fmc-h { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.fmc-subj { font-size: 15px; }
+.fmc-dir { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fin-swap { width: 28px; height: 28px; opacity: .6; }
+.fin-swap:hover, .fin-swap:focus-visible { opacity: 1; }
+.fin-swap .ico { width: 15px; height: 15px; }
+.fin-flip { margin-left: 4px; }
+.btn.xs { padding: 2px 8px; font-size: 12px; min-height: 24px; }
+.fmc-why { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-fg); }
+.fmc-why .ico { width: 14px; height: 14px; vertical-align: -2px; }
+.fmc-vals { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0; font-size: 13px; }
+.fmc-vals dt { color: var(--muted, #6b6b6b); }
+.fmc-vals dd { margin: 0; overflow-wrap: anywhere; }
+.fmc-text summary { cursor: pointer; }
+.fmc-text p { margin: 6px 0 0; padding: 8px 10px; border-left: 3px solid var(--line-2); background: var(--chip); border-radius: 0 8px 8px 0; font-size: 13px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
+.fmc .fin-mail-act form.inl, .fmc-dir form.inl, .fin-flip { display: inline-flex; margin: 0; flex: 0 0 auto; }
+.fmc .fin-mail-act { justify-content: flex-start; }
+.fmc-ign { display: inline-block; }
+.fmc-ign summary { list-style: none; }
+.fmc-ign summary::-webkit-details-marker { display: none; }
+.fmc-ign[open] form { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.fmc-ign input[type=text] { min-width: 220px; }
+@media (max-width: 640px) {
+  .fmc { grid-template-columns: 1fr; }
+  .fmc-prev { grid-template-columns: 96px 1fr; align-items: start; }
+  .fmc-thumb { width: 96px; height: 126px; }
+  .fmc-thumb iframe { transform: scale(.16); }
+}
+/* o PDF num painel lateral */
+.fin-pdfp { position: fixed; inset: 0; z-index: 80; display: flex; justify-content: flex-end; }
+.fin-pdfp[hidden] { display: none; }
+.fin-pdfp-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .35); }
+.fin-pdfp-box { position: relative; width: min(820px, 100vw); height: 100%; background: var(--surface); box-shadow: var(--shadow, 0 0 30px rgba(0,0,0,.25)); display: grid; grid-template-rows: auto 1fr; }
+.fin-pdfp-box header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.fin-pdfp-box header b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-pdfp-box iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+html.fin-pdfp-on { overflow: hidden; }
+/* «Por tratar» (o número do menu Financeiro) */
+.fin-todo h3 { display: flex; align-items: center; gap: 6px; margin: 0; }
+.fin-todo > p { margin: 2px 0 8px; }
+.fin-todo-l { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fin-todo-l a { display: grid; grid-template-columns: 34px minmax(0, 1fr) 16px; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--chip); color: inherit; text-decoration: none; }
+.fin-todo-l a:hover, .fin-todo-l a:focus-visible { background: var(--hover); }
+.fin-todo-l .n { display: grid; place-items: center; height: 28px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-fg); }
+.fin-todo-l .bad .n { background: var(--bad-bg); color: var(--bad-fg); }
+.fin-todo-l span { display: grid; }
+.fin-todo-l small { font-size: 12px; }
+.fin-todo-l .ico { width: 14px; height: 14px; opacity: .5; }
 /* conciliação */
 .fin-tx { display: grid; gap: 8px; margin-bottom: 18px; }
 .fin-tx .tx { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr); gap: 10px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }

@@ -19,6 +19,13 @@ function fin_ai_on(): bool {
     return ai_config() !== null;
 }
 
+/** Porque é que a IA não pode ler agora, em palavras para o ecrã ('' = pode). */
+function fin_ai_why_off(): string {
+    if (fin_ai_on()) return '';
+    return is_file(__DIR__ . '/ai_config.php') ? 'a chave da Anthropic guardada no servidor não é válida (Definições › Integrações › IA)'
+                                               : 'falta a chave da Anthropic no servidor (Definições › Integrações › IA)';
+}
+
 function fin_ai_schema(): array {
     $s = ['type' => 'string'];
     $n = ['type' => 'number'];

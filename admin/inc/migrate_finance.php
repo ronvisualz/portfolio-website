@@ -497,3 +497,24 @@ function migrate_finance_32(PDO $pdo): void {
     db_add_column($pdo, 'fin_mail', 'box', "VARCHAR(190) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
     db_add_column($pdo, 'fin_mail', 'source', "VARCHAR(4) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
 }
+
+/**
+ * Passo 38 · «Por confirmar · emails» revisto (§28.16):
+ *   fin_mail.body_text   o texto do email (até ~1 000 caracteres), só nos emails que ficam como documento financeiro
+ *   fin_mail.direction   a sugestão: 'out' despesa (A pagar), 'in' receita (A receber), '' indeciso (aparece nos dois)
+ *   fin_class_rules      a classificação escolhida à mão para um emitente (NIF) ou remetente: os próximos vão igual
+ */
+function migrate_finance_38(PDO $pdo): void {
+    if (!db_has_table($pdo, 'fin_mail')) return;
+    db_add_column($pdo, 'fin_mail', 'body_text', 'TEXT NULL', 'TEXT NULL');
+    db_add_column($pdo, 'fin_mail', 'direction', "VARCHAR(3) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''");
+    db_create($pdo, 'fin_class_rules', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        nif          VARCHAR(20)   NOT NULL DEFAULT '',
+        email        VARCHAR(190)  NOT NULL DEFAULT '',
+        direction    VARCHAR(3)    NOT NULL,
+        created_by   INT UNSIGNED  NULL,
+        created_at   DATETIME      NOT NULL,
+        UNIQUE KEY uq_fcr (nif, email)");
+}
+

@@ -381,6 +381,42 @@ function notifications_mark(PDO $pdo, ?array $keys = null): void {
     }
 }
 
+/**
+ * O que o Financeiro tem por tratar: cada linha com o número real, o que é e onde se trata. O número do menu
+ * Financeiro é a soma destas linhas e a lista «Por tratar» da Visão geral mostra as mesmas — o número bate sempre
+ * com o que se vê.
+ */
+function fin_todo(PDO $pdo, array $me): array {
+    if (!can('financeiro') || !db_has_table($pdo, 'fin_docs')) return [];
+    require_once __DIR__ . '/fin.php';
+    if (!fin_ready($pdo)) return [];
+    $out = [];
+    $add = function (string $key, int $n, string $one, string $many, string $url, string $sev, string $sub = '') use (&$out) {
+        if ($n > 0) $out[] = ['key' => $key, 'n' => $n, 'label' => $n === 1 ? $one : $n . ' ' . $many, 'url' => $url, 'sev' => $sev, 'sub' => $sub];
+    };
+    $q = fn(string $sql) => (int)$pdo->query($sql)->fetchColumn();
+    $add('mail', $q("SELECT COUNT(*) FROM fin_mail WHERE status = 'review'"), '1 documento por email por confirmar', 'documentos por email por confirmar', '/admin/financeiro.php?tab=geral#por-confirmar', 'warn', 'Despesa ou receita? Confirmar, ligar a um pedido ou pôr de parte');
+    $add('review', $q("SELECT COUNT(*) FROM fin_docs WHERE direction = 'out' AND status = 'review' AND deleted_at IS NULL"), '1 despesa por confirmar', 'despesas por confirmar', '/admin/financeiro.php?tab=pagar&v=review', 'warn', 'Já lançadas a partir de um email: rever os dados');
+    $add('ready', $q("SELECT COUNT(*) FROM fin_docs WHERE direction = 'in' AND status = 'issued' AND ready_at IS NOT NULL AND client_sent_at IS NULL AND deleted_at IS NULL"), '1 fatura pronta a enviar ao cliente', 'faturas prontas a enviar ao cliente', '/admin/financeiro.php?tab=receber', 'warn');
+    $late = 0; $lateV = 0.0;
+    foreach (receivables($pdo) as $r) if ($r['age'] > 0) { $late++; $lateV += $r['gross']; }
+    $add('recv', $late, '1 por receber em atraso', 'por receber em atraso', '/admin/financeiro.php?tab=receber&v=late', 'bad', eur0($lateV) . ' em atraso');
+    $pl = $pdo->query("SELECT COUNT(*), COALESCE(SUM(total - withholding - paid_amount), 0) FROM fin_docs WHERE direction = 'out' AND status IN ('to_pay','partial') AND due_date < '" . today_lisbon() . "' AND deleted_at IS NULL")->fetch(PDO::FETCH_NUM);
+    $add('pay', (int)$pl[0], '1 fatura a pagar vencida', 'faturas a pagar vencidas', '/admin/financeiro.php?tab=pagar&v=late', 'bad', eur((float)$pl[1]) . ' em atraso');
+    require_once __DIR__ . '/fin_tax.php';
+    $ob = fin_obligations($pdo, today_lisbon(), 7);
+    $add('tax', count($ob), '1 obrigação fiscal nos próximos 7 dias', 'obrigações fiscais nos próximos 7 dias', '/admin/financeiro.php?tab=impostos', $ob && min(array_column($ob, 'date')) <= today_lisbon() ? 'bad' : 'warn', implode(' · ', array_map(fn($o) => $o['name'], array_slice($ob, 0, 2))));
+    require_once __DIR__ . '/fin_cash.php';
+    require_once __DIR__ . '/fin_res.php';
+    $old = array_values(array_filter(fin_accounts($pdo, true), 'fin_balance_stale'));
+    $add('bal', count($old), '1 conta com o saldo desatualizado', 'contas com o saldo desatualizado', '/admin/financeiro.php?tab=tesouraria', 'warn', 'Atualizar uma vez por semana');
+    if (role_is_admin((string)$me['role'])) {
+        $rw = fin_runway($pdo);
+        if ($rw['burn'] > 0 && $rw['useful'] !== null && $rw['useful'] < fin_p($pdo, 'runway_alert', 6)) $add('runway', 1, $rw['useful'] <= 0 ? 'Entrámos na reserva de emergência' : 'Runway útil abaixo do limite', '', '/admin/financeiro.php#runway', $rw['useful'] <= 0 ? 'bad' : 'warn');
+    }
+    return $out;
+}
+
 /** Contadores do menu: separador → [n, al (alerta), tip]. Só o que pede atenção. */
 function nav_badges(PDO $pdo): array {
     $a = my_alerts($pdo);
@@ -396,7 +432,12 @@ function nav_badges(PDO $pdo): array {
     }
     $abs = count(array_filter($a['team'], fn($t) => $t['kind'] === 'absence'));
     if ($abs) $out['equipa'] = ['n' => $abs, 'al' => false, 'tip' => $abs === 1 ? '1 pedido de férias por aprovar' : "$abs pedidos de férias por aprovar"];
-    if ($a['invoice']) $out['financeiro'] = ['n' => count($a['invoice']), 'al' => true, 'tip' => count($a['invoice']) . ' por receber em atraso'];
+    // Financeiro: a soma do que está «Por tratar» (a mesma lista da Visão geral), não o número de avisos
+    try {
+        $todo = fin_todo($pdo, (array)(current_user() ?? []));
+        $n = array_sum(array_column($todo, 'n'));
+        if ($n) $out['financeiro'] = ['n' => $n, 'al' => in_array('bad', array_column($todo, 'sev'), true), 'tip' => 'Por tratar: ' . implode(' · ', array_column($todo, 'label'))];
+    } catch (Throwable $e) { error_log('nav financeiro: ' . $e->getMessage()); }
     // Relatórios › Atenção (§29.3): o mesmo número do separador
     if (can('relatorios')) {
         try {
@@ -431,7 +472,7 @@ function today_columns(PDO $pdo): array {
     if (can('tarefas'))    $out[] = ['task', 'Tarefas a vencer', 'As suas tarefas atrasadas ou a vencer nos próximos dias', $a['task'], '/admin/calendar.php', 'Sem tarefas a vencer.'];
     if (can('leads'))      $out[] = ['lead', 'Leads em atraso', 'As suas leads em atraso ou a aproximar-se do prazo (e a fila por atribuir, se a gere)', array_merge($a['queue'], $a['lead']), '/admin/leads.php?urgente=1', 'Todas as leads dentro do prazo.'];
     if (can('pipeline'))   $out[] = ['deal', 'Negócios parados', 'Os seus negócios sem movimento no Pipeline e o que pede resposta', $a['deal'], '/admin/pipeline.php?vista=risco', 'Tudo a andar.'];
-    if (can('financeiro')) $out[] = ['invoice', 'Por receber em atraso', 'Faturas em atraso e o que o Financeiro pede', $a['invoice'], '/admin/financeiro.php?tab=receber', 'Nada em atraso.'];
+    if (can('financeiro')) $out[] = ['invoice', 'Financeiro · por tratar', 'Faturas em atraso e o que o Financeiro pede', $a['invoice'], '/admin/financeiro.php#por-tratar', 'Nada por tratar.'];
     return $out;
 }
 

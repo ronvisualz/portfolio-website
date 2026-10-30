@@ -72,8 +72,6 @@ function settings_defs(): array {
         // ── Geral ──
         'company_name'    => ['tab' => 'geral', 'group' => 'Empresa', 'label' => 'Nome da empresa', 'type' => 'text', 'max' => 120, 'default' => 'topper.',
                               'help' => 'Aparece no rodapé das propostas em PDF e nos emails enviados pela plataforma.'],
-        'company_nif'     => ['tab' => 'geral', 'group' => 'Empresa', 'label' => 'NIF', 'type' => 'text', 'max' => 20, 'default' => '',
-                              'help' => 'O número de contribuinte da empresa, para o rodapé das propostas.'],
         'company_address' => ['tab' => 'geral', 'group' => 'Empresa', 'label' => 'Morada', 'type' => 'textarea', 'max' => 300, 'default' => '',
                               'help' => 'A morada da empresa, para o rodapé das propostas.'],
         'company_logo'    => ['tab' => 'geral', 'group' => 'Empresa', 'label' => 'Logótipo', 'type' => 'info', 'show' => 'O logótipo topper. da marca (menu e propostas)',
@@ -282,6 +280,10 @@ function settings_defs(): array {
                                'help' => 'Onde fica o que se guarda com a extensão «Guardar na topper.», o menu Partilhar do Android ou o Atalho do iOS. Tudo passa pela análise da IA e entra na Caixa de entrada; com um quadro, também fica lá como cartão.'],
 
         // ── Financeiro ──
+        'company_legal_name' => ['tab' => 'financeiro', 'group' => 'Empresa', 'label' => 'Nome legal da empresa', 'type' => 'text', 'max' => 160, 'default' => 'Feitiço Constante, Lda.',
+                              'help' => 'Como aparece nas faturas como emitente ou adquirente. Com o NIF, decide se um documento que chega é despesa (a empresa é o cliente → A pagar) ou receita (a empresa emitiu → A receber).'],
+        'company_nif'     => ['tab' => 'financeiro', 'group' => 'Empresa', 'label' => 'NIF da empresa', 'type' => 'text', 'max' => 20, 'default' => '',
+                              'help' => 'O número de contribuinte da empresa: lido no QR fiscal e no texto das faturas para saber de que lado está a empresa. Vai também no rodapé das propostas.'],
         'fin_accountant_email' => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'Email do contabilista', 'type' => 'email', 'max' => 190, 'default' => '',
                                'help' => 'Para onde vão os pedidos de fatura e de recibo («Pedir fatura»), com o código de referência no assunto. A resposta é lida nas caixas de email (Definições › Integrações) e liga-se sozinha ao pedido.'],
         'fin_iban'         => ['tab' => 'financeiro', 'group' => 'Contabilista e pagamentos', 'label' => 'IBAN para os clientes', 'type' => 'text', 'max' => 40, 'default' => '',

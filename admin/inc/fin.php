@@ -953,13 +953,19 @@ function fin_undo_apply(PDO $pdo, array $d): string {
         case 'payout':
             $pdo->prepare('UPDATE fin_reserve_payouts SET deleted_at = ' . (!empty($d['new']) ? '?' : 'NULL') . ' WHERE id = ?')->execute(!empty($d['new']) ? [fin_now(), (int)$d['id']] : [(int)$d['id']]);
             return !empty($d['new']) ? 'Levantamento retirado.' : 'Levantamento reposto.';
-        case 'doc':       // um lançamento volta a ser o que era (campos e estado)
+        case 'doc':       // um lançamento volta a ser o que era (campos e estado; e a regra de classificação, se mudou)
             $row = (array)$d['row'];
             $id = (int)$row['id'];
             unset($row['id'], $row['deal_code'], $row['deal_name'], $row['deal_owner']);
             $pdo->prepare('UPDATE fin_docs SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($row))) . ' WHERE id = ?')->execute([...array_values($row), $id]);
             fin_doc_refresh($pdo, $id);
+            if (!empty($d['rule'])) { require_once __DIR__ . '/fin_mail.php'; fin_class_rule_restore($pdo, (array)$d['rule']); }
             return 'Lançamento reposto.';
+        case 'mail_dir':  // a sugestão de um email por confirmar (despesa/receita) e a regra voltam a ser o que eram
+            require_once __DIR__ . '/fin_mail.php';
+            $pdo->prepare('UPDATE fin_mail SET direction = ? WHERE id = ?')->execute([(string)$d['dir'], (int)$d['id']]);
+            if (!empty($d['rule'])) fin_class_rule_restore($pdo, (array)$d['rule']);
+            return 'Classificação reposta.';
         case 'doc_new':   // um lançamento acabado de criar sai (fica marcado como apagado)
             $pdo->prepare('UPDATE fin_docs SET deleted_at = ? WHERE id = ?')->execute([fin_now(), (int)$d['id']]);
             $pdo->prepare('UPDATE fin_payments SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL')->execute([fin_now(), (int)$d['id']]);
@@ -1002,7 +1008,8 @@ function fin_undo_apply(PDO $pdo, array $d): string {
             $pdo->prepare('UPDATE fin_accounts SET ' . implode(', ', array_map(fn($c) => $c . ' = ?', array_keys($row))) . ' WHERE id = ?')->execute([...array_values($row), $id]);
             return 'Conta reposta.';
         case 'mail':
-            $pdo->prepare('UPDATE fin_mail SET status = ?, doc_id = ?, done_by = NULL, done_at = NULL WHERE id = ?')->execute([(string)$d['status'], $d['doc'] ?? null, (int)$d['id']]);
+            $pdo->prepare('UPDATE fin_mail SET status = ?, doc_id = ?, done_by = NULL, done_at = NULL' . (isset($d['note']) ? ', note = ?' : '') . ' WHERE id = ?')
+                ->execute(isset($d['note']) ? [(string)$d['status'], $d['doc'] ?? null, (string)$d['note'], (int)$d['id']] : [(string)$d['status'], $d['doc'] ?? null, (int)$d['id']]);
             if (!empty($d['doc_row'])) return fin_undo_apply($pdo, ['op' => 'doc', 'row' => $d['doc_row']]);
             if (!empty($d['doc_new'])) return fin_undo_apply($pdo, ['op' => 'doc_new', 'id' => $d['doc_new']]);
             return 'Email por confirmar.';

@@ -2125,6 +2125,52 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   `inc/contacts.php`, `inc/contact_view.php`, `ui_api.php`, `inc/undo.php`, `inc/cron_run.php`,
   `inc/migrate_auth.php`, `inc/migrate.php`.
 
+### 10.28 «Por confirmar · emails» revisto — §28.16 (30 out 2026)
+
+- **Porque é que a fatura da Gesvalor não foi lida** (verificado no servidor e no próprio PDF): (1) o QR fiscal desse
+  PDF (FastReport) é desenhado com polígonos «m l l l h f*», não com retângulos «re», e os módulos vêm arredondados a
+  1,71 e 1,78 pt — o leitor só conhecia retângulos e acumulava erro ao contar os módulos; (2) a IA não está ligada no
+  servidor (não existe `inc/ai_config.php`); (3) o texto do PDF está em glifos hexadecimais, ilegível sem o mapa
+  ToUnicode da fonte. Corrigido: o leitor vetorial aceita polígonos e lê cada módulo pelo centro com o passo real
+  (tamanho do QR pelos padrões dos cantos) — a fatura passa a ler-se em 0,01 s (emitente 513939610 → adquirente
+  519503147, FT 1.1/16488, 196,80 €, ATCUD); todos os PDFs de teste anteriores continuam a ler.
+- **Ordem de leitura:** QR / XML → IA (o PDF vai inteiro: texto e, se for digitalizado, a imagem) → texto do próprio
+  PDF (`fin_pdf_text`: Tj/TJ com os mapas ToUnicode; `fin_text_invoice`: NIFs válidos sem telefones, quem emite pelo
+  contexto de cada NIF — capital social/IBAN/sede vs. Exmo./cliente/contribuinte —, nome da outra entidade, nº,
+  ATCUD, base e IVA pelo par que soma o total a uma taxa legal, data de emissão e vencimento). Com QR, os nomes e o
+  vencimento vêm do texto. Sem IA, o motivo exato aparece no cartão («IA indisponível: falta a chave da Anthropic no
+  servidor…», «…a chave guardada não é válida», ou o erro da leitura).
+- **Identidade:** Definições › Financeiro › Empresa — «Nome legal da empresa» (Feitiço Constante, Lda.) e «NIF da
+  empresa» (passou de Geral para aqui). Lado do documento: NIF da empresa como emitente → receita (A receber); como
+  adquirente → despesa (A pagar); senão o nome legal («Topper Digital»; «topper» sozinho não conta no texto); senão a
+  regra escolhida antes para o emitente/remetente; senão o contabilista sem código de «Pedir fatura» → despesa (com
+  o código FAT-… é a resposta a um pedido: fatura emitida). Documento entre terceiros (QR/XML com os dois NIFs, sem o
+  nosso): ignorado.
+- **Base de dados, passo 38:** `fin_mail.body_text` (o texto do email até 1 000 caracteres, só nos emails guardados
+  como documento financeiro), `fin_mail.direction` (sugestão: `out` / `in` / '' indeciso) e `fin_class_rules`
+  (emitente por NIF, ou remetente sem NIF → direção).
+- **Painel «Por confirmar · emails»** em A pagar (despesas e indecisos), A receber (faturas emitidas e indecisos) e na
+  Visão geral (todos); contador nos separadores. Cada cartão: miniatura do anexo e «Abrir PDF» (painel lateral, com
+  «Abrir noutro separador»), assunto, remetente, caixa, data, a sugestão com o ícone discreto ⇄ (A pagar ⇄ A receber,
+  com «Anular»; a escolha vira regra para o mesmo emitente/remetente), o motivo, os valores lidos (emitente,
+  adquirente, NIF, nº, data, total, IVA, de onde foram lidos) e o texto do email. Ações: «Ligar a este pedido»,
+  «Confirmar como despesa» / «Confirmar como fatura emitida» (abre o formulário preenchido, com a contraparte certa;
+  a escolha também vira regra), «Ler outra vez» e «Pôr de parte» (com motivo; «Anular» repõe).
+- **Lançamentos:** o mesmo ícone ⇄ em cada linha de A pagar e A receber passa o lançamento para o outro lado (contraparte
+  do documento lido, estado «Por confirmar»/«Emitida»), com «Anular» (repõe também a regra). Não aparece em
+  lançamentos com pagamentos, de salários, custos fixos ou faturação de negócios.
+- **Releitura:** uma vez depois da atualização, o cron relê os emails por confirmar (a Gesvalor passa a despesa em A
+  pagar, por confirmar). Ligar a IA em Definições › Integrações › IA (colar a chave da Anthropic: confirmada na API sem
+  gastar e guardada só no servidor, com o limite mensal) e depois «Ler outra vez».
+- **Número do menu Financeiro e «Por tratar»:** o número contava avisos (ex.: «3 documentos por confirmar» valia 1) e
+  a dica dizia sempre «por receber em atraso». Agora é a soma real do que está por tratar — documentos por email,
+  despesas por confirmar, faturas prontas a enviar, por receber em atraso, a pagar vencidas, obrigações fiscais nos
+  próximos 7 dias, saldos desatualizados, runway (admins) — e a Visão geral abre com a lista «Por tratar» com as
+  mesmas linhas (cada uma leva ao sítio onde se trata). A dica do menu e «O teu dia» dizem «Financeiro · por tratar».
+- Ficheiros: `financeiro.php`, `definicoes.php`, `assets/fin.js`, `assets/app.css`, `inc/fin_qr.php`, `inc/fin_mail.php`,
+  `inc/fin_ai.php`, `inc/ai.php`, `inc/fin_view.php`, `inc/fin_tabs.php`, `inc/fin.php`, `inc/alerts.php`,
+  `inc/settings_def.php`, `inc/cron_run.php`, `inc/migrate_finance.php`, `inc/migrate.php`.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das

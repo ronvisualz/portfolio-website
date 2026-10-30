@@ -68,6 +68,7 @@ try {
             require_once __DIR__ . '/fin_mail.php';
             try { $out .= fin_mail_poll($pdo, (float)min(60, $sec / 4)) . "\n"; } catch (Throwable $e) { $out .= 'Caixas de email: ' . $e->getMessage() . "\n"; }
             try { $out .= fin_tick($pdo) . "\n"; } catch (Throwable $e) { $out .= 'Financeiro: ' . $e->getMessage() . "\n"; }
+            try { if (($n = fin_mail_reread_pending($pdo)) > 0) $out .= 'Emails por confirmar relidos: ' . $n . "\n"; } catch (Throwable $e) { $out .= 'Reler emails: ' . $e->getMessage() . "\n"; }
         }
         // Relatórios (§29): a fotografia diária das métricas (uma vez por dia) e o resumo semanal (segunda, 9h)
         require_once __DIR__ . '/metrics.php';

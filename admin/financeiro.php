@@ -214,8 +214,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ai = json_decode((string)$m['ai'], true) ?: [];
                 $att = (json_decode((string)$m['att'], true) ?: [])[0] ?? ['key' => '', 'name' => ''];
                 $dir = ($_POST['dir'] ?? ($ai['direction'] ?? 'out')) === 'in' ? 'in' : 'out';
+                require_once __DIR__ . '/inc/fin_mail.php';
+                [$rn, $re] = fin_rule_keys($ai ?: null, (string)$m['from_addr']);
+                if ($dir !== (string)($m['direction'] ?? '')) fin_class_rule_set($pdo, $rn, $re, $dir, $uid);   // a escolha passa a regra
+                // a contraparte: o outro lado do documento lido
+                if ($ai) { $ai['party_name'] = $dir === 'in' ? ($ai['client_name'] ?? '') : ($ai['issuer_name'] ?? ''); $ai['party_nif'] = $dir === 'in' ? ($ai['client_nif'] ?? '') : ($ai['issuer_nif'] ?? ''); }
                 $id = fin_doc_create($pdo, ['direction' => $dir, 'doc_type' => 'invoice', 'scope' => 'company', 'party_kind' => $dir === 'in' ? 'client' : 'supplier',
-                    'party_name' => (string)($ai['party_name'] ?? $m['from_addr']), 'party_nif' => (string)($ai['party_nif'] ?? ''), 'category' => $dir === 'out' ? (($ai['category'] ?? '') ?: 'Outros') : '',
+                    'party_name' => (string)(($ai['party_name'] ?? '') ?: $m['from_addr']), 'party_nif' => (string)($ai['party_nif'] ?? ''), 'category' => $dir === 'out' ? (($ai['category'] ?? '') ?: 'Outros') : '',
                     'number' => (string)($ai['number'] ?? ''), 'description' => (string)($ai['description'] ?? $m['subject']), 'base' => (float)($ai['base'] ?? 0), 'vat_rate' => (float)($ai['vat_rate'] ?? 0),
                     'vat' => (float)($ai['vat'] ?? 0), 'total' => (float)($ai['total'] ?? 0), 'issue_date' => ($ai['issue_date'] ?? '') ?: null, 'due_date' => ($ai['due_date'] ?? '') ?: null,
                     'pdf_key' => (string)$att['key'], 'pdf_name' => (string)$att['name'], 'status' => 'review', 'needs_review' => 1, 'ai_data' => $m['ai'], 'notes' => 'Chegou por email (' . ($m['box'] ?: $m['from_addr']) . '): ' . $m['subject']], $uid);
@@ -225,9 +230,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             case 'mail_ignore': {
                 $mid = (int)($_POST['mail'] ?? 0);
-                $pdo->prepare("UPDATE fin_mail SET status = 'ignored', done_by = ?, done_at = ? WHERE id = ? AND status IN ('review','noattach','dup')")->execute([$uid, fin_now(), $mid]);
-                flash('Email posto de parte (continua na pasta «Processadas» da caixa).', 'ok', undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null]));
+                $why = trim(mb_substr((string)($_POST['why'] ?? ''), 0, 200));
+                $st = $pdo->prepare('SELECT note FROM fin_mail WHERE id = ?');
+                $st->execute([$mid]);
+                $oldNote = (string)$st->fetchColumn();
+                $pdo->prepare("UPDATE fin_mail SET status = 'ignored', done_by = ?, done_at = ?, note = ? WHERE id = ? AND status IN ('review','noattach','dup')")
+                    ->execute([$uid, fin_now(), mb_substr('Posto de parte' . ($why !== '' ? ': ' . $why : ''), 0, 300), $mid]);
+                flash('Email posto de parte' . ($why !== '' ? ' (' . $why . ')' : '') . '.', 'ok', undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null, 'note' => $oldNote]));
                 break;
+            }
+            case 'mail_dir': {
+                // a sugestão de um email por confirmar: despesa (A pagar) ⇄ receita (A receber); passa a regra para o emitente
+                require_once __DIR__ . '/inc/fin_mail.php';
+                $mid = (int)($_POST['mail'] ?? 0);
+                $st = $pdo->prepare("SELECT * FROM fin_mail WHERE id = ? AND status = 'review'");
+                $st->execute([$mid]);
+                $m = $st->fetch();
+                if (!$m) throw new RuntimeException('Esse email já foi tratado.');
+                $to = ($_POST['dir'] ?? '') === 'in' ? 'in' : 'out';
+                [$rn, $re] = fin_rule_keys(json_decode((string)$m['ai'], true) ?: null, (string)$m['from_addr']);
+                $snap = fin_class_rule_snapshot($pdo, $rn, $re);
+                $pdo->prepare('UPDATE fin_mail SET direction = ? WHERE id = ?')->execute([$to, $mid]);
+                fin_class_rule_set($pdo, $rn, $re, $to, $uid);
+                flash(($to === 'out' ? 'Marcado como despesa (A pagar)' : 'Marcado como fatura emitida (A receber)') . ' — ' . ($rn !== '' ? 'os próximos deste emitente vão igual.' : 'os próximos deste remetente vão igual.'),
+                      'ok', undo_push('fin', ['op' => 'mail_dir', 'id' => $mid, 'dir' => (string)$m['direction'], 'rule' => $snap]));
+                break;
+            }
+            case 'mail_reread': {
+                require_once __DIR__ . '/inc/fin_mail.php';
+                $mid = (int)($_POST['mail'] ?? 0);
+                $st = $pdo->prepare('SELECT status, note FROM fin_mail WHERE id = ?');
+                $st->execute([$mid]);
+                $before = $st->fetch() ?: ['status' => '', 'note' => ''];
+                $msg = fin_mail_reread($pdo, $mid);
+                $st->execute([$mid]);
+                // posto de parte pela releitura: «Anular» volta a pô-lo por confirmar
+                flash($msg, 'ok', ($st->fetch()['status'] ?? '') === 'ignored' ? undo_push('fin', ['op' => 'mail', 'id' => $mid, 'status' => 'review', 'doc' => null, 'note' => (string)$before['note']]) : '');
+                break;
+            }
+            case 'doc_flip': {
+                require_once __DIR__ . '/inc/fin_mail.php';
+                [$old, $snap, $msg] = fin_doc_flip($pdo, (int)($_POST['id'] ?? 0), $uid);
+                flash($msg, 'ok', undo_push('fin', ['op' => 'doc', 'row' => fin_snap($old), 'rule' => $snap]));
+                $to = $old['direction'] === 'out' ? 'receber' : 'pagar';
+                redirect(fin_url(['tab' => $to, 'doc' => (int)$old['id']]));
             }
             case 'fixed_save': {
                 $id = (int)($_POST['id'] ?? 0);
@@ -478,8 +524,11 @@ echo paginate_css();
 </div>
 <?= fin_kpis($pdo) ?>
 <nav class="tabs fin-tabs" aria-label="Separadores do Financeiro">
-  <?php foreach (FIN_TABS as $k => $label): ?>
-    <a href="<?= e(fin_url(['tab' => $k])) ?>" class="<?= $tab === $k ? 'on' : '' ?>"<?= $tab === $k ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+  <?php // o que está por confirmar em cada lado: emails (os indecisos contam nos dois) e despesas já lançadas
+    $ic = fin_inbox_counts($pdo);
+    $tabN = ['receber' => $ic['in'], 'pagar' => $ic['out'] + (int)$pdo->query("SELECT COUNT(*) FROM fin_docs WHERE direction = 'out' AND status = 'review' AND deleted_at IS NULL")->fetchColumn()];
+    foreach (FIN_TABS as $k => $label): ?>
+    <a href="<?= e(fin_url(['tab' => $k])) ?>" class="<?= $tab === $k ? 'on' : '' ?>"<?= $tab === $k ? ' aria-current="page"' : '' ?>><?= e($label) ?><?= !empty($tabN[$k]) ? ' <span class="nb" data-tip="Por confirmar">' . (int)$tabN[$k] . '</span>' : '' ?></a>
   <?php endforeach; ?>
 </nav>
 <?php

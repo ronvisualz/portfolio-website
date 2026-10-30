@@ -741,12 +741,121 @@ function fin_mail_docs(array $m): array {
         || (in_array($a['mime'], ['image/jpeg', 'image/png'], true) && strlen($a['bytes']) > 30000)));
 }
 
-/** O NIF da empresa (Definições › Geral), só algarismos. */
+/** O NIF da empresa (Definições › Financeiro › Empresa), só algarismos. */
 function fin_our_nif(PDO $pdo): string {
     return preg_replace('/\D/', '', preg_replace('/^PT/i', '', trim((string)setting($pdo, 'company_nif', ''))));
 }
 
-/** Sem QR nem IA: parece um documento financeiro? (vem do contabilista, ou o assunto/nome do ficheiro di-lo) */
+/** Os nomes por que a empresa aparece nas faturas: o nome legal, o comercial, «topper», «Topper Digital». */
+function fin_our_names(PDO $pdo): array {
+    $n = [trim((string)setting($pdo, 'company_legal_name', 'Feitiço Constante, Lda.')), trim((string)setting($pdo, 'company_name', 'topper.')), 'Topper Digital', 'topper'];
+    return array_values(array_unique(array_filter($n, fn($x) => mb_strlen(trim($x, ' .')) >= 5)));
+}
+
+/** Os nomes a procurar no texto de um PDF: só os inconfundíveis (o nome legal e «Topper Digital»; «topper» sozinho aparece em emails e domínios). */
+function fin_text_names(PDO $pdo): array {
+    return array_values(array_unique(array_filter([trim((string)setting($pdo, 'company_legal_name', 'Feitiço Constante, Lda.')), 'Topper Digital'], 'strlen')));
+}
+
+/** Este nome é o da empresa? (sem acentos, maiúsculas, «Lda.», pontuação) */
+function fin_is_us(PDO $pdo, string $name): bool {
+    $norm = fn(string $s) => trim(preg_replace('/\s+/', ' ', preg_replace('/\b(lda|sa|unipessoal|limitada)\b/', '', strtolower(preg_replace('/[^a-z0-9 ]/i', ' ', (string)iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s))))));
+    $n = $norm($name);
+    if (strlen($n) < 5) return false;
+    foreach (fin_our_names($pdo) as $o) { $k = $norm($o); if (strlen($k) >= 5 && (str_contains($n, $k) || str_contains($k, $n))) return true; }
+    return false;
+}
+
+/** A classificação escolhida à mão para este emitente (NIF) ou remetente: 'in' | 'out' | ''. */
+function fin_class_rule(PDO $pdo, string $nif, string $email): string {
+    if (!db_has_table($pdo, 'fin_class_rules')) return '';
+    $nif = preg_replace('/\D/', '', $nif);
+    $st = $pdo->prepare("SELECT direction FROM fin_class_rules WHERE (nif <> '' AND nif = ?) OR (nif = '' AND email <> '' AND email = ?) ORDER BY nif = '' LIMIT 1");
+    $st->execute([$nif, strtolower(trim($email))]);
+    return (string)$st->fetchColumn();
+}
+
+/** Guarda a escolha como regra: o mesmo emitente (pelo NIF; sem NIF, pelo remetente) passa a ser classificado igual. */
+function fin_class_rule_set(PDO $pdo, string $nif, string $email, string $dir, ?int $by): void {
+    if (!db_has_table($pdo, 'fin_class_rules') || !in_array($dir, ['in', 'out'], true)) return;
+    $nif = preg_replace('/\D/', '', $nif);
+    $email = $nif !== '' ? '' : strtolower(trim($email));
+    if ($nif === '' && $email === '') return;
+    $pdo->prepare('DELETE FROM fin_class_rules WHERE nif = ? AND email = ?')->execute([$nif, $email]);
+    $pdo->prepare('INSERT INTO fin_class_rules (nif, email, direction, created_by, created_at) VALUES (?,?,?,?,?)')->execute([$nif, $email, $dir, $by, fin_now()]);
+}
+
+/** O estado de uma regra antes de mexer (para o «Anular»): [nif, email, direção atual ou '']. */
+function fin_class_rule_snapshot(PDO $pdo, string $nif, string $email): array {
+    $nif = preg_replace('/\D/', '', $nif);
+    $email = $nif !== '' ? '' : strtolower(trim($email));
+    $cur = '';
+    if (db_has_table($pdo, 'fin_class_rules')) {
+        $st = $pdo->prepare('SELECT direction FROM fin_class_rules WHERE nif = ? AND email = ?');
+        $st->execute([$nif, $email]);
+        $cur = (string)$st->fetchColumn();
+    }
+    return ['nif' => $nif, 'email' => $email, 'dir' => $cur];
+}
+
+/** Repõe uma regra como estava (sem regra, ou a direção de antes). */
+function fin_class_rule_restore(PDO $pdo, array $snap): void {
+    if (!db_has_table($pdo, 'fin_class_rules') || ($snap['nif'] === '' && $snap['email'] === '')) return;
+    if ($snap['dir'] === '') $pdo->prepare('DELETE FROM fin_class_rules WHERE nif = ? AND email = ?')->execute([$snap['nif'], $snap['email']]);
+    else fin_class_rule_set($pdo, $snap['nif'], $snap['email'], $snap['dir'], null);
+}
+
+/** O emitente de um documento lido (NIF) e o remetente, para as regras. */
+function fin_rule_keys(?array $data, string $from): array {
+    return [preg_replace('/\D/', '', (string)($data['issuer_nif'] ?? '')), strtolower(trim($from))];
+}
+
+/**
+ * Passa um lançamento de A pagar para A receber (ou ao contrário): direção, contraparte (o outro lado do documento,
+ * se foi lido), tipo de contraparte e estado («Por confirmar» numa despesa, «Emitida» numa receita). Não mexe em
+ * lançamentos com pagamentos. Devolve [o lançamento antes, a regra antes, a mensagem].
+ */
+function fin_doc_flip(PDO $pdo, int $id, ?int $by): array {
+    $d = fin_doc($pdo, $id);
+    if (!$d) throw new RuntimeException('Esse lançamento já não existe.');
+    if ((float)$d['paid_amount'] > 0) throw new RuntimeException('Já tem pagamentos registados: anule-os antes de o passar entre A pagar e A receber.');
+    if ($d['payroll_id'] || $d['fixed_id'] || $d['billing_id']) throw new RuntimeException('Este lançamento vem de salários, custos fixos ou da faturação de um negócio: não muda de lado.');
+    $to = $d['direction'] === 'out' ? 'in' : 'out';
+    $ai = json_decode((string)$d['ai_data'], true) ?: [];
+    $upd = ['direction' => $to, 'party_kind' => $to === 'in' ? 'client' : 'supplier', 'status' => $to === 'in' ? 'issued' : 'review', 'needs_review' => 1];
+    $name = (string)($to === 'in' ? ($ai['client_name'] ?? '') : ($ai['issuer_name'] ?? ''));
+    $nif = (string)($to === 'in' ? ($ai['client_nif'] ?? '') : ($ai['issuer_nif'] ?? ''));
+    if ($nif !== '' && $nif !== fin_our_nif($pdo)) { $upd['party_nif'] = $nif; if ($name !== '') $upd['party_name'] = $name; }
+    if ($to === 'in') { $upd['category'] = ''; $upd['vat_deductible'] = 0; }
+    elseif ((string)$d['category'] === '') $upd['category'] = 'Outros';
+    [$rn, $re] = fin_rule_keys($ai ?: ['issuer_nif' => $d['direction'] === 'out' ? $d['party_nif'] : ''], (string)$d['party_email']);
+    $snap = fin_class_rule_snapshot($pdo, $rn, $re);
+    fin_doc_update($pdo, $id, $upd);
+    fin_class_rule_set($pdo, $rn, $re, $to, $by);
+    return [$d, $snap, $to === 'in' ? 'Passou para «A receber» (fatura emitida), por confirmar.' : 'Passou para «A pagar» (despesa), por confirmar.'];
+}
+
+/**
+ * De que lado está a empresa num documento que chegou: ['out' despesa | 'in' receita | '' não sei, porquê].
+ * Ordem: o NIF da empresa como emitente/adquirente; o nome legal; a regra escolhida à mão para o emitente/remetente;
+ * o contabilista sem código de «Pedir fatura» (é quase sempre a avença dele, uma despesa).
+ */
+function fin_mail_role(PDO $pdo, ?array $data, array $m, string $code): array {
+    $our = fin_our_nif($pdo);
+    $dig = fn($v) => preg_replace('/\D/', '', (string)$v);
+    if ($data) {
+        if ($our !== '' && $dig($data['issuer_nif'] ?? '') === $our) return ['in', 'o NIF da empresa é o do emitente'];
+        if ($our !== '' && $dig($data['client_nif'] ?? '') === $our) return ['out', 'o NIF da empresa é o do adquirente'];
+        if (!empty($data['we_issue']) || fin_is_us($pdo, (string)($data['issuer_name'] ?? ''))) return ['in', 'a empresa é a emitente'];
+        if (!empty($data['named_us']) || fin_is_us($pdo, (string)($data['client_name'] ?? ''))) return ['out', 'a empresa (nome legal) é a adquirente'];
+    }
+    if (($r = fin_class_rule($pdo, (string)($data['issuer_nif'] ?? ''), (string)$m['from'])) !== '') return [$r, 'como escolhido antes para este ' . (($data['issuer_nif'] ?? '') !== '' ? 'emitente' : 'remetente')];
+    $acc = strtolower(fin_accountant_email($pdo));
+    if ($acc !== '' && $acc === strtolower((string)$m['from']) && !str_starts_with($code, 'FAT-')) return ['out', 'enviado pelo contabilista sem código de «Pedir fatura»'];
+    return ['', ''];
+}
+
+/** Sem dados lidos: parece um documento financeiro? (vem do contabilista, ou o assunto/nome do ficheiro di-lo) */
 function fin_mail_looks_financial(PDO $pdo, array $m, array $a): bool {
     $acc = fin_accountant_email($pdo);
     if ($acc !== '' && strtolower($acc) === strtolower($m['from'])) return true;
@@ -754,27 +863,36 @@ function fin_mail_looks_financial(PDO $pdo, array $m, array $a): bool {
 }
 
 /**
- * Lê o documento sem IA (QR fiscal, XML da fatura eletrónica); só sem QR claro, a IA. Devolve
- * [dados ou null, o anexo a guardar]. Se os dados vierem do XML e houver o PDF, guarda-se o PDF.
+ * Lê o documento: primeiro sem IA (QR fiscal, XML da fatura eletrónica); sem QR, a IA (lê o texto do PDF e, se
+ * for digitalizado, a imagem); sem IA (ou se falhar), o texto do próprio PDF. Devolve [dados ou null, o anexo a
+ * guardar, porque é que a IA não leu ('' se leu ou não foi preciso)]. Se os dados vierem do XML e houver o PDF,
+ * guarda-se o PDF.
  */
 function fin_mail_read(PDO $pdo, array $docs): array {
     require_once __DIR__ . '/fin_qr.php';
+    require_once __DIR__ . '/fin_ai.php';
     foreach ($docs as $a) {
         $d = fin_doc_scan($a['bytes'], $a['mime']);
         if ($d === null) continue;
-        if ($a['mime'] === 'application/xml') foreach ($docs as $p) if ($p['mime'] === 'application/pdf') return [$d, $p];
-        return [$d, $a];
+        if ($a['mime'] === 'application/xml') foreach ($docs as $p) if ($p['mime'] === 'application/pdf') return [$d, $p, ''];
+        // o QR não traz nomes nem o vencimento: vêm do texto do PDF, quando o há
+        if ($a['mime'] === 'application/pdf' && ($t = fin_text_invoice(fin_pdf_text($a['bytes']), fin_our_nif($pdo), fin_text_names($pdo)))) {
+            foreach (['issuer_name', 'client_name', 'due_date'] as $k) if (($d[$k] ?? '') === '' && ($t[$k] ?? '') !== '') $d[$k] = $t[$k];
+        }
+        return [$d, $a, ''];
     }
-    foreach ($docs as $a) {
-        if ($a['mime'] === 'application/xml') continue;
-        try {
-            require_once __DIR__ . '/fin_ai.php';
-            if (!fin_ai_on()) break;
-            return [fin_ai_read($pdo, $a['bytes'], $a['mime']) + ['source' => 'ai'], $a];
-        } catch (Throwable $e) { break; }
+    $files = array_values(array_filter($docs, fn($a) => $a['mime'] !== 'application/xml'));
+    $why = fin_ai_why_off();
+    if ($why === '') foreach ($files as $a) {
+        try { return [fin_ai_read($pdo, $a['bytes'], $a['mime']) + ['source' => 'ai'], $a, '']; }
+        catch (Throwable $e) { $why = 'a leitura falhou — ' . rtrim($e->getMessage(), '.'); break; }
     }
-    $pdf = array_values(array_filter($docs, fn($a) => $a['mime'] !== 'application/xml'));
-    return [null, $pdf[0] ?? $docs[0]];
+    foreach ($files as $a) {
+        if ($a['mime'] !== 'application/pdf') continue;
+        $d = fin_text_invoice(fin_pdf_text($a['bytes']), fin_our_nif($pdo), fin_text_names($pdo));
+        if ($d !== null) return [$d, $a, $why];
+    }
+    return [null, $files[0] ?? $docs[0], $why];
 }
 
 /**
@@ -782,33 +900,41 @@ function fin_mail_read(PDO $pdo, array $docs): array {
  * (nesse caso nada fica guardado). Ordem: código do pedido no assunto; o QR/XML (ou a IA) diz quem emitiu e
  * para quem: o nosso NIF como adquirente → despesa; como emitente → receita; os outros documentos, ignorados.
  */
-function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', string $uid = ''): ?string {
+function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', string $uid = '', ?array $redo = null): ?string {
     $code = '';
     if (preg_match('/\b((?:FAT|REC)-\d{4}-\d{4})\b/', $m['subject'] . ' ' . $m['text'], $mm)) $code = $mm[1];
     $docs = fin_mail_docs($m);
     if (!$docs) return null;
-    [$data, $pick] = fin_mail_read($pdo, $docs);
+    [$data, $pick, $aiWhy] = fin_mail_read($pdo, $docs);
     $our = fin_our_nif($pdo);
-    $dig = fn($v) => preg_replace('/\D/', '', (string)$v);
-    $role = null;
-    if ($data && $our !== '') {
-        if ($dig($data['issuer_nif']) === $our) $role = 'in';
-        elseif ($dig($data['client_nif']) === $our) $role = 'out';
-    }
+    [$role, $roleWhy] = fin_mail_role($pdo, $data, $m, $code);
     $source = $data['source'] ?? ($code !== '' ? 'code' : '');
-    // o registo da mensagem e do anexo — só quando a mensagem fica (o corpo nunca é guardado)
-    $mailId = 0; $att = null;
-    $keep = function (string $status, ?int $doc, string $note, array $extra = [], bool $store = true) use ($pdo, $m, $mid, $box, $uid, $code, $pick, $data, $source, &$mailId, &$att): string {
+    $how = ['qr' => 'lida do QR fiscal', 'xml' => 'lida do XML', 'ai' => 'lida pela IA', 'text' => 'lida do texto do PDF (sem QR)'][$source] ?? '';
+    $aiNote = $aiWhy !== '' ? ' · IA indisponível: ' . $aiWhy : '';
+    // o texto do email (até ~1 000 caracteres) só fica nos emails guardados como documento financeiro
+    $body = mb_substr(trim(preg_replace("/[ \t]+/", ' ', preg_replace("/\n{3,}/", "\n\n", str_replace("\r", '', (string)$m['text'])))), 0, 1000);
+    // o registo da mensagem e do anexo — só quando a mensagem fica
+    $mailId = 0; $att = $redo['att'] ?? null;
+    $cols = db_has_column($pdo, 'fin_mail', 'direction');
+    $keep = function (string $status, ?int $doc, string $note, array $extra = [], bool $store = true) use ($pdo, $m, $mid, $box, $uid, $code, $pick, $data, $source, $body, $cols, $redo, &$role, &$mailId, &$att): string {
         if ($store && $att === null) {
             try {
                 [$key, $name] = fin_file_store($pdo, $pick['bytes'], date('Y-m-d') . '_Email_' . preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $pick['name']), $pick['mime'], ['issue_date' => today_lisbon()], 'attach');
                 $att = ['name' => $pick['name'], 'mime' => $pick['mime'], 'key' => $key, 'size' => strlen($pick['bytes'])];
             } catch (Throwable $e) { $att = ['name' => $pick['name'], 'mime' => $pick['mime'], 'key' => '', 'size' => strlen($pick['bytes']), 'error' => $e->getMessage()]; }
         }
-        $pdo->prepare('INSERT INTO fin_mail (uid, box, message_id, from_addr, subject, received_at, code, status, doc_id, note, suggestions, att, ai, source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-            ->execute([$uid, mb_substr($box, 0, 190), $mid, mb_substr($m['from'], 0, 190), mb_substr($m['subject'], 0, 300), $m['date'], $code, $status, $doc, mb_substr($note, 0, 300),
-                       isset($extra['sug']) ? json_encode($extra['sug'], JSON_UNESCAPED_UNICODE) : null, json_encode($att ? [$att] : [], JSON_UNESCAPED_UNICODE),
-                       $data ? json_encode($data, JSON_UNESCAPED_UNICODE) : null, $source, fin_now()]);
+        $v = ['code' => $code, 'status' => $status, 'doc_id' => $doc, 'note' => mb_substr($note, 0, 300),
+              'suggestions' => isset($extra['sug']) ? json_encode($extra['sug'], JSON_UNESCAPED_UNICODE) : null, 'att' => json_encode($att ? [$att] : [], JSON_UNESCAPED_UNICODE),
+              'ai' => $data ? json_encode($data, JSON_UNESCAPED_UNICODE) : null, 'source' => $source];
+        if ($cols) { $v['direction'] = $role; $v['body_text'] = $body !== '' ? $body : null; }
+        if ($redo) {
+            if ($cols && $body === '') unset($v['body_text']);
+            $pdo->prepare('UPDATE fin_mail SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($v))) . ' WHERE id = ?')->execute([...array_values($v), (int)$redo['id']]);
+            $mailId = (int)$redo['id'];
+            return $status;
+        }
+        $v += ['uid' => $uid, 'box' => mb_substr($box, 0, 190), 'message_id' => $mid, 'from_addr' => mb_substr($m['from'], 0, 190), 'subject' => mb_substr($m['subject'], 0, 300), 'received_at' => $m['date'], 'created_at' => fin_now()];
+        $pdo->prepare('INSERT INTO fin_mail (' . implode(', ', array_keys($v)) . ') VALUES (' . implode(',', array_fill(0, count($v), '?')) . ')')->execute(array_values($v));
         $mailId = (int)$pdo->lastInsertId();
         return $status;
     };
@@ -820,6 +946,7 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
         $st->execute([$code]);
         if ($docId = (int)$st->fetchColumn()) {
             $d = fin_doc($pdo, $docId);
+            $role = 'in';
             $r = $keep('linked', $docId, 'Recibo junto a ' . fin_doc_label($d));
             $pdo->prepare('UPDATE fin_docs SET receipt_key = ?, receipt_name = ?, updated_at = ? WHERE id = ?')->execute([$attKey(), $pick['name'], fin_now(), $docId]);
             fin_doc_refresh($pdo, $docId);
@@ -827,27 +954,30 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
             return $r;
         }
     }
-    // b) fatura pedida (código FAT-…)
+    // b) fatura pedida (código FAT-…): a resposta a um «Pedir fatura» é uma fatura emitida por nós
     if (str_starts_with($code, 'FAT-')) {
         $st = $pdo->prepare('SELECT id FROM fin_docs WHERE req_code = ? AND deleted_at IS NULL LIMIT 1');
         $st->execute([$code]);
         $req = ($id = (int)$st->fetchColumn()) ? fin_doc($pdo, $id) : null;
-        if ($req && $req['status'] === 'requested' && (!$data || $role !== 'out')) {
+        if ($req && $req['status'] === 'requested' && $role !== 'out') {
+            $role = 'in';
             $r = $keep('linked', (int)$req['id'], 'Ligado pelo código ' . $code);
             $warn = fin_mail_register($pdo, $req, $att, $pick, $data, null);
             if ($warn) $pdo->prepare('UPDATE fin_mail SET note = ? WHERE id = ?')->execute([mb_substr('Ligado pelo código ' . $code . ' · ' . implode(' · ', $warn), 0, 300), $mailId]);
             return $r;
         }
     }
-    // c) sem dados (sem QR, sem XML e sem IA): fica por confirmar só se parecer uma fatura
+    // c) sem dados (sem QR, sem XML, sem texto legível e sem IA): fica por confirmar se parecer um documento financeiro
     if (!$data) {
-        if (!fin_mail_looks_financial($pdo, $m, $pick)) return null;
-        return $keep('review', null, 'Sem QR fiscal legível' . (function_exists('fin_ai_on') && fin_ai_on() ? '' : ' e sem IA') . ': confirme à mão');
+        if ($role === '' && !fin_mail_looks_financial($pdo, $m, $pick)) return null;
+        return $keep('review', null, 'Sem QR fiscal nem texto legível' . $aiNote . ($role !== '' ? ' · sugestão: ' . ($role === 'out' ? 'despesa' : 'receita') . ' (' . $roleWhy . ')' : '') . ': confirme à mão');
     }
-    if (in_array($data['kind'], ['other', 'void', 'quote'], true) || ($data['source'] === 'ai' && $data['confidence'] < 0.4 && $role === null)) return null;   // orçamentos, guias, anulados…
-    // d) sem o NIF da empresa não sei de que lado estamos: fica por confirmar
-    if ($our === '') return $keep('review', null, 'Falta o NIF da empresa em Definições › Geral: confirme se é despesa ou receita');
-    if ($role === null) return null;   // documento entre terceiros: ignorado
+    if (in_array($data['kind'], ['other', 'void', 'quote'], true) || ($data['source'] === 'ai' && $data['confidence'] < 0.4 && $role === '')) return null;   // orçamentos, guias, anulados…
+    // d) não sei de que lado está a empresa: fica por confirmar (aparece em A pagar e em A receber)
+    if ($role === '') {
+        if ($our !== '' && in_array($data['source'], ['qr', 'xml'], true) && $data['issuer_nif'] !== '' && $data['client_nif'] !== '') return null;   // documento entre terceiros: ignorado
+        return $keep('review', null, ($our === '' ? 'Falta o NIF da empresa em Definições › Financeiro › Empresa' : 'Não encontrei o NIF nem o nome da empresa no documento') . ' (' . $how . ')' . $aiNote . ': é despesa ou receita?');
+    }
     $data['direction'] = $role;
     $data['party_nif'] = $role === 'in' ? $data['client_nif'] : $data['issuer_nif'];
     $data['party_name'] = $role === 'in' ? $data['client_name'] : $data['issuer_name'];
@@ -872,13 +1002,12 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
         $sure = $best && $best['score'] >= 80 && $data['confidence'] >= 0.8 && (count($cands) === 1 || $cands[1]['score'] < $best['score'] - 20);
         if ($sure) {
             $d = fin_doc($pdo, $best['id']);
-            $how = $data['source'] === 'qr' ? 'pelo QR fiscal' : ($data['source'] === 'xml' ? 'pelo XML' : 'pela IA');
-            $r = $keep('linked', (int)$d['id'], 'Ligado ' . $how . ' (NIF, total e data)', ['sug' => $cands]);
+            $r = $keep('linked', (int)$d['id'], 'Ligado (' . $how . ': NIF, total e data)', ['sug' => $cands]);
             $warn = fin_mail_register($pdo, $d, $att, $pick, $data, null);
-            if ($warn) $pdo->prepare('UPDATE fin_mail SET note = ? WHERE id = ?')->execute([mb_substr('Ligado ' . $how . ' · ' . implode(' · ', $warn), 0, 300), $mailId]);
+            if ($warn) $pdo->prepare('UPDATE fin_mail SET note = ? WHERE id = ?')->execute([mb_substr('Ligado (' . $how . ') · ' . implode(' · ', $warn), 0, 300), $mailId]);
             return $r;
         }
-        return $keep('review', null, $cands ? 'Por confirmar: escolha o pedido certo' : 'Fatura emitida sem pedido em aberto: confirme', ['sug' => $cands]);
+        return $keep('review', null, ($cands ? 'Fatura emitida pela empresa: escolha o pedido certo' : 'Fatura emitida pela empresa sem pedido em aberto: confirme') . ' (' . $how . '; ' . $roleWhy . ')' . $aiNote, ['sug' => $cands]);
     }
 
     // f) despesa: um documento passado à topper.
@@ -903,7 +1032,7 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
         if ($ct = $st->fetch()) { $name = (string)$ct['name']; $sug['contact_id'] ??= (int)$ct['id']; }
     }
     if ($name === '') $name = $m['from_name'] ?: $m['from'];
-    $r = $keep('supplier', null, 'Despesa em «A pagar», por confirmar' . ($data['source'] === 'qr' ? ' (lida do QR fiscal)' : ($data['source'] === 'xml' ? ' (lida do XML)' : '')));
+    $r = $keep('supplier', null, 'Despesa em «A pagar», por confirmar (' . $how . '; ' . $roleWhy . ')' . $aiNote);
     $v = ['direction' => 'out', 'doc_type' => $data['kind'] === 'credit_note' ? 'credit' : 'invoice', 'scope' => $sug['scope'] ?? 'company',
           'party_kind' => $sug['party_kind'] ?? 'supplier', 'party_name' => $name, 'party_nif' => $data['issuer_nif'], 'party_email' => $m['from'],
           'category' => ($sug['category'] ?? '') ?: 'Outros', 'number' => $data['number'], 'description' => $data['description'] ?: $m['subject'],
@@ -914,6 +1043,43 @@ function fin_mail_handle(PDO $pdo, array $m, string $mid, string $box = '', stri
     $id = fin_doc_create($pdo, $v, null);
     $pdo->prepare('UPDATE fin_mail SET doc_id = ? WHERE id = ?')->execute([$id, $mailId]);
     return $r;
+}
+
+/**
+ * «Ler outra vez» um email por confirmar (depois de ligar a IA, de pôr o NIF da empresa ou de uma regra nova): o mesmo
+ * anexo e o texto guardado, a leitura e a classificação de novo. Devolve a mensagem para o ecrã.
+ */
+function fin_mail_reread(PDO $pdo, int $id): string {
+    $st = $pdo->prepare('SELECT * FROM fin_mail WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch();
+    if (!$row || $row['status'] !== 'review') throw new RuntimeException('Esse email já foi tratado.');
+    $att = (json_decode((string)$row['att'], true) ?: [])[0] ?? null;
+    if (!$att || ($att['key'] ?? '') === '') throw new RuntimeException('O anexo deste email não ficou guardado: não há o que reler.');
+    $bytes = fin_file_bytes((string)$att['key']);
+    if ($bytes === null) throw new RuntimeException('Não encontrei o anexo no Drive.');
+    $m = ['from' => (string)$row['from_addr'], 'from_name' => '', 'subject' => (string)$row['subject'], 'text' => (string)($row['body_text'] ?? ''),
+          'date' => $row['received_at'], 'att' => [['name' => (string)$att['name'], 'mime' => (string)$att['mime'], 'bytes' => $bytes]]];
+    $r = fin_mail_handle($pdo, $m, (string)$row['message_id'], (string)$row['box'], (string)$row['uid'], ['id' => (int)$row['id'], 'att' => $att]);
+    if ($r === null) {
+        $pdo->prepare("UPDATE fin_mail SET status = 'ignored', note = ? WHERE id = ?")->execute(['Relido: não parece um documento da empresa', (int)$row['id']]);
+        return 'Relido: não parece um documento da empresa, ficou de parte.';
+    }
+    $st->execute([$id]);
+    $now = $st->fetch();
+    return ['supplier' => 'Relido: é uma despesa — está em «A pagar», por confirmar.', 'linked' => 'Relido e ligado: ' . $now['note'], 'dup' => 'Relido: ' . $now['note'], 'review' => 'Relido: ' . $now['note']][$r] ?? 'Relido.';
+}
+
+/** Uma vez depois da atualização: reler os que estavam por confirmar (a leitura do QR e do texto melhorou). */
+function fin_mail_reread_pending(PDO $pdo): int {
+    if (!db_has_column($pdo, 'fin_mail', 'direction') || (string)setting($pdo, 'fin_reread_38', '') !== '') return 0;
+    require_once __DIR__ . '/ai.php';
+    ai_setting_set($pdo, 'fin_reread_38', date('c'));
+    $n = 0;
+    foreach ($pdo->query("SELECT id FROM fin_mail WHERE status = 'review' ORDER BY id LIMIT 30")->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        try { fin_mail_reread($pdo, (int)$id); $n++; } catch (Throwable $e) { error_log('[topper] reler email ' . $id . ': ' . $e->getMessage()); }
+    }
+    return $n;
 }
 
 /** Os pedidos em aberto que podem corresponder a uma fatura lida pela IA: NIF do cliente, total e data. */

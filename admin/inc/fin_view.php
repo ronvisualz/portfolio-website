@@ -338,3 +338,133 @@ function fin_emp_summary(PDO $pdo, ?array $e): string {
     foreach (fin_employee_warnings($pdo, $e) as $w) $h .= '<p class="small neg">' . e($w) . '</p>';
     return $h;
 }
+
+// ── «Por confirmar · emails» (§28.16) ──────────────────────
+
+/** Os emails por confirmar de um lado: 'out' (A pagar), 'in' (A receber) ou 'all'. Os indecisos aparecem nos dois. */
+function fin_inbox_rows(PDO $pdo, string $side): array {
+    if (!fin_ready($pdo)) return [];
+    $hasDir = db_has_column($pdo, 'fin_mail', 'direction');
+    $where = "status = 'review'" . ($hasDir && $side !== 'all' ? " AND direction IN ('" . ($side === 'in' ? 'in' : 'out') . "', '')" : '');
+    return $pdo->query("SELECT * FROM fin_mail WHERE $where ORDER BY id DESC LIMIT 30")->fetchAll();
+}
+
+/** Quantos emails por confirmar em cada separador (o indeciso conta nos dois). */
+function fin_inbox_counts(PDO $pdo): array {
+    $c = ['in' => 0, 'out' => 0, 'all' => 0];
+    if (!fin_ready($pdo)) return $c;
+    $hasDir = db_has_column($pdo, 'fin_mail', 'direction');
+    foreach ($pdo->query("SELECT " . ($hasDir ? 'direction' : "''") . " AS d, COUNT(*) AS n FROM fin_mail WHERE status = 'review' GROUP BY d")->fetchAll() as $r) {
+        $c['all'] += (int)$r['n'];
+        if ($r['d'] !== 'in') $c['out'] += (int)$r['n'];
+        if ($r['d'] !== 'out') $c['in'] += (int)$r['n'];
+    }
+    return $c;
+}
+
+/**
+ * O painel «Por confirmar · emails»: cada cartão com remetente, caixa, data, assunto, o texto do email, o anexo
+ * (miniatura + «Abrir PDF» num painel lateral), os valores lidos, o motivo, a sugestão (com o ícone para trocar
+ * A pagar ⇄ A receber) e as ações. $side: 'out' | 'in' | 'all'.
+ */
+function fin_inbox_html(PDO $pdo, string $side, bool $canEdit, bool $compact = false): string {
+    $rows = fin_inbox_rows($pdo, $side);
+    if (!$rows) return '';
+    $h = '<section class="panel fin-inbox" aria-labelledby="h-inb-' . $side . '"><div class="fin-inbox-h"><h3 id="h-inb-' . $side . '">' . icon('mail') . ' Por confirmar · emails <span class="nb">' . count($rows) . '</span></h3>'
+       . '<p class="small muted">' . ($side === 'out' ? 'Despesas que chegaram por email (e as que não sei de que lado são).' : ($side === 'in' ? 'Faturas emitidas pela empresa que chegaram por email (e as que não sei de que lado são).' : 'Documentos que chegaram por email e esperam por si.')) . '</p></div>';
+    foreach ($rows as $m) $h .= fin_inbox_card($pdo, $m, $canEdit, $compact);
+    return $h . '</section>' . fin_pdf_panel_html();
+}
+
+/** Um cartão do «Por confirmar · emails». */
+function fin_inbox_card(PDO $pdo, array $m, bool $canEdit, bool $compact): string {
+    $id = (int)$m['id'];
+    $ai = json_decode((string)$m['ai'], true) ?: [];
+    $att = json_decode((string)$m['att'], true) ?: [];
+    $sug = json_decode((string)$m['suggestions'], true) ?: [];
+    $dir = (string)($m['direction'] ?? '');
+    $csrf = csrf_field();
+    $post = fn(string $do, string $label, string $cls = 'btn ghost sm', array $extra = []) => '<form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="' . $do . '"><input type="hidden" name="mail" value="' . $id . '">'
+        . implode('', array_map(fn($k, $v) => '<input type="hidden" name="' . e($k) . '" value="' . e((string)$v) . '">', array_keys($extra), $extra)) . '<button class="' . $cls . '" type="submit">' . $label . '</button></form>';
+    // a sugestão e o ícone discreto para a trocar (vira regra para o mesmo emitente)
+    $dirChip = $dir === 'out' ? '<span class="chip wait">Despesa · A pagar</span>' : ($dir === 'in' ? '<span class="chip info">Fatura emitida · A receber</span>' : '<span class="chip">Despesa ou receita?</span>');
+    $swap = '';
+    if ($canEdit) {
+        $to = $dir === 'out' ? 'in' : 'out';
+        $tip = $dir === '' ? 'Marcar como despesa (A pagar)' : ($to === 'in' ? 'Passar para A receber (fatura emitida)' : 'Passar para A pagar (despesa)');
+        $swap = '<form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_dir"><input type="hidden" name="mail" value="' . $id . '"><input type="hidden" name="dir" value="' . $to . '">'
+              . '<button type="submit" class="ibtn fin-swap" data-tip="' . e($tip) . '" aria-label="' . e($tip) . '">' . icon('arrows') . '</button></form>';
+        if ($dir === '') $swap .= '<form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_dir"><input type="hidden" name="mail" value="' . $id . '"><input type="hidden" name="dir" value="in"><button type="submit" class="btn ghost xs">É receita</button></form>';
+    }
+    // o anexo: miniatura (a primeira página) e «Abrir PDF» no painel lateral
+    $prev = '';
+    foreach ($att as $i => $a) {
+        if (($a['key'] ?? '') === '') { $prev .= '<div class="fmc-thumb none small muted">O anexo não ficou guardado' . (!empty($a['error']) ? ': ' . e($a['error']) : '') . '</div>'; continue; }
+        $src = fin_file_href('mail', $id) . '&n=' . $i;
+        $isPdf = ($a['mime'] ?? '') === 'application/pdf';
+        $prev .= '<div class="fmc-att"><button type="button" class="fmc-thumb" data-pdf-open="' . e($src) . '" data-pdf-title="' . e((string)$a['name']) . '" aria-label="Abrir ' . e((string)$a['name']) . '">'
+               . ($isPdf ? '<iframe src="' . e($src) . '#toolbar=0&navpanes=0&scrollbar=0&view=FitH" title="Pré-visualização de ' . e((string)$a['name']) . '" tabindex="-1" loading="lazy"></iframe>'
+                         : '<img src="' . e($src) . '" alt="" loading="lazy">') . '</button>'
+               . '<button type="button" class="btn sm fmc-open" data-pdf-open="' . e($src) . '" data-pdf-title="' . e((string)$a['name']) . '">' . icon('eye') . ' Abrir ' . ($isPdf ? 'PDF' : 'anexo') . '</button>'
+               . '<span class="small muted fmc-fn">' . e(shorten((string)$a['name'], 48)) . '</span></div>';
+        break;
+    }
+    // os valores lidos
+    $vals = '';
+    if ($ai) {
+        $src = ['qr' => 'QR fiscal', 'xml' => 'XML', 'ai' => 'IA', 'text' => 'texto do PDF'][$ai['source'] ?? ''] ?? 'IA';
+        $nif = fn($n) => $n !== '' ? ' <span class="mono">' . e($n) . '</span>' : '';
+        $row = fn(string $k, string $v) => $v !== '' ? '<dt>' . e($k) . '</dt><dd>' . $v . '</dd>' : '';
+        $vals = '<dl class="fmc-vals">'
+              . $row('Emitente', e((string)($ai['issuer_name'] ?? '') ?: '—') . $nif((string)($ai['issuer_nif'] ?? '')))
+              . $row('Adquirente', e((string)($ai['client_name'] ?? '') ?: '—') . $nif((string)($ai['client_nif'] ?? '')))
+              . $row('Nº', e((string)($ai['number'] ?? '')))
+              . $row('Data', ($ai['issue_date'] ?? '') !== '' ? fin_date_pt((string)$ai['issue_date']) : '')
+              . $row('Total', (float)($ai['total'] ?? 0) > 0 ? '<b>' . eur((float)$ai['total']) . '</b>' : '')
+              . $row('IVA', (float)($ai['vat'] ?? 0) > 0 ? eur((float)$ai['vat']) . ((float)($ai['vat_rate'] ?? 0) > 0 ? ' (' . fin_num((float)$ai['vat_rate'], 0) . '%)' : '') : '')
+              . $row('Lido de', e($src) . (($ai['source'] ?? '') === 'ai' ? ' · confiança ' . round((float)($ai['confidence'] ?? 0) * 100) . '%' : '') . (!empty($ai['atcud']) ? ' · ATCUD <span class="mono">' . e((string)$ai['atcud']) . '</span>' : ''))
+              . '</dl>';
+    }
+    $body = trim((string)($m['body_text'] ?? ''));
+    $text = $body !== '' ? '<details class="fmc-text"' . ($compact ? '' : ' open') . '><summary class="small">Texto do email</summary><p>' . nl2br(e($body)) . (mb_strlen($body) >= 1000 ? '…' : '') . '</p></details>' : '';
+    // as ações: a principal segue a sugestão
+    $act = '';
+    if ($canEdit) {
+        if ($sug) {
+            $act .= '<form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_confirm"><input type="hidden" name="mail" value="' . $id . '">'
+                  . '<select name="doc" aria-label="Pedido">' . implode('', array_map(fn($s) => '<option value="' . (int)$s['id'] . '">' . e($s['label'] . ' (' . $s['why'] . ')') . '</option>', $sug)) . '</select>'
+                  . '<button class="btn sm" type="submit">Ligar a este pedido</button></form>';
+        }
+        $act .= $post('mail_new', 'Confirmar como despesa', $dir === 'out' && !$sug ? 'btn sm' : 'btn ghost sm', ['dir' => 'out'])
+              . $post('mail_new', 'Confirmar como fatura emitida', $dir === 'in' && !$sug ? 'btn sm' : 'btn ghost sm', ['dir' => 'in'])
+              . $post('mail_reread', icon('refresh') . ' Ler outra vez', 'btn ghost sm')
+              . '<details class="fmc-ign"><summary class="btn ghost sm">Pôr de parte</summary><form method="post" class="inl">' . $csrf . '<input type="hidden" name="do" value="mail_ignore"><input type="hidden" name="mail" value="' . $id . '">'
+              . '<label class="sr" for="ign-' . $id . '">Motivo</label><input type="text" id="ign-' . $id . '" name="why" maxlength="200" required placeholder="Motivo (ex.: não é da empresa, repetido)"><button class="btn sm" type="submit">Pôr de parte</button></form></details>';
+    }
+    return '<article class="fmc" id="fm-' . $id . '">'
+         . ($prev !== '' ? '<div class="fmc-prev">' . $prev . '</div>' : '')
+         . '<div class="fmc-main"><header class="fmc-h"><div><b class="fmc-subj">' . e((string)$m['subject'] ?: '(sem assunto)') . '</b>'
+         . '<div class="small muted">de <b>' . e((string)$m['from_addr']) . '</b>' . (($m['box'] ?? '') !== '' ? ' · em ' . e((string)$m['box']) : '') . ($m['received_at'] ? ' · ' . e(date('d/m/Y H:i', strtotime((string)$m['received_at']))) : '') . '</div></div>'
+         . '<div class="fmc-dir">' . $dirChip . $swap . '</div></header>'
+         . '<p class="fmc-why small">' . icon('alert') . ' ' . e((string)$m['note']) . '</p>'
+         . $vals . $text
+         . ($act !== '' ? '<div class="fin-mail-act">' . $act . '</div>' : '') . '</div></article>';
+}
+
+/** O painel lateral para ver o PDF (um por página). */
+function fin_pdf_panel_html(): string {
+    static $done = false;
+    if ($done) return '';
+    $done = true;
+    return '<div class="fin-pdfp" data-pdf-panel hidden role="dialog" aria-modal="true" aria-labelledby="fin-pdfp-t"><div class="fin-pdfp-back" data-pdf-close></div>'
+         . '<aside class="fin-pdfp-box"><header><b id="fin-pdfp-t"></b><a class="btn ghost sm" data-pdf-new target="_blank" rel="noopener">' . icon('external') . ' Abrir noutro separador</a>'
+         . '<button type="button" class="ibtn" data-pdf-close aria-label="Fechar" data-tip="Fechar (Esc)">' . icon('x') . '</button></header><iframe title="Documento" data-pdf-frame></iframe></aside></div>';
+}
+
+/** O ícone discreto para passar um lançamento entre A pagar e A receber (com «Anular»). */
+function fin_flip_btn(array $d): string {
+    if ((float)$d['paid_amount'] > 0 || $d['payroll_id'] || $d['fixed_id'] || $d['billing_id'] || $d['deleted_at']) return '';
+    $tip = $d['direction'] === 'out' ? 'Não é despesa: passar para A receber' : 'Não é receita: passar para A pagar';
+    return '<form method="post" class="inl fin-flip">' . csrf_field() . '<input type="hidden" name="do" value="doc_flip"><input type="hidden" name="id" value="' . (int)$d['id'] . '">'
+         . '<button type="submit" class="ibtn fin-swap" data-tip="' . e($tip) . '" aria-label="' . e($tip) . '">' . icon('arrows') . '</button></form>';
+}

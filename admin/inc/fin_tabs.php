@@ -19,7 +19,16 @@ if ($tab === 'geral'):
     $fx = $rw['fixed'];
     $tr = fin_trend($pdo);
     $N = $rw['reserve_months'];
+    $todo = fin_todo($pdo, $user);
 ?>
+<?php if ($todo): ?>
+<section class="panel fin-todo" id="por-tratar" aria-labelledby="h-todo"><h3 id="h-todo">Por tratar <span class="nb"><?= array_sum(array_column($todo, 'n')) ?></span></h3>
+  <p class="small muted">É este o número que aparece no menu Financeiro.</p>
+  <ul class="fin-todo-l"><?php foreach ($todo as $t): ?>
+    <li class="<?= $t['sev'] === 'bad' ? 'bad' : 'warn' ?>"><a href="<?= e($t['url']) ?>"><b class="n"><?= (int)$t['n'] ?></b><span><?= e($t['label']) ?><?= $t['sub'] !== '' ? '<small class="muted">' . e($t['sub']) . '</small>' : '' ?></span><?= icon('chev-right') ?></a></li>
+  <?php endforeach; ?></ul></section>
+<?php endif; ?>
+<div id="por-confirmar"><?= fin_inbox_html($pdo, 'all', $canEdit, true) ?></div>
 <div class="fin-grid">
   <section class="flow fin-runway" id="runway" aria-labelledby="h-rw">
     <h3 id="h-rw">Runway</h3>
@@ -118,33 +127,12 @@ elseif ($tab === 'receber'):
     $q = trim((string)($_GET['q'] ?? ''));
     $self = fin_url(['tab' => 'receber', 'v' => $v !== 'open' ? $v : null, 'aging' => $ag, 'q' => $q]);
     $views = ['open' => 'Em aberto', 'requested' => 'Pedidas', 'late' => 'Em atraso', 'paid' => 'Pagas', 'void' => 'Anuladas', 'all' => 'Todas'];
-    // os emails por confirmar (faturas do contabilista que não liguei sozinho)
-    $mails = $pdo->query("SELECT * FROM fin_mail WHERE status = 'review' ORDER BY id DESC LIMIT 20")->fetchAll();
     $recv = fin_receivables($pdo);
     $parts = [];
     foreach (FIN_AGING as $k => $l) $parts[$k] = ['label' => $l, 'value' => 0.0, 'n' => 0, 'url' => fin_url(['tab' => 'receber', 'aging' => $ag === $k ? null : $k]), 'on' => $ag === $k];
     foreach ($recv as $r) { $parts[$r['bucket']]['value'] += $r['gross']; $parts[$r['bucket']]['n']++; }
 ?>
-<?php if ($mails && $canEdit): ?>
-<section class="panel fin-inbox" aria-labelledby="h-inb"><h3 id="h-inb">Por confirmar · emails</h3>
-  <?php foreach ($mails as $m): $sug = json_decode((string)$m['suggestions'], true) ?: []; $ai = json_decode((string)$m['ai'], true) ?: []; $att = json_decode((string)$m['att'], true) ?: []; ?>
-  <div class="fin-mail">
-    <div><b><?= e($m['subject']) ?></b> <span class="muted small">de <?= e($m['from_addr']) ?><?= ($m['box'] ?? '') !== '' ? ' · em ' . e($m['box']) : '' ?> · <?= e($m['received_at'] ? date('d/m H:i', strtotime((string)$m['received_at'])) : '') ?></span>
-      <?php foreach ($att as $i => $a): ?> · <a class="lnk" href="<?= e(fin_file_href('mail', (int)$m['id']) . '&n=' . $i) ?>" target="_blank" rel="noopener"><?= e($a['name']) ?></a><?php endforeach; ?>
-      <?php if ($ai): $src = ['qr' => 'Lido do QR fiscal', 'xml' => 'Lido do XML'][$ai['source'] ?? ''] ?? 'A IA leu'; ?><div class="small muted"><?= e($src) ?>: <?= e(trim(($ai['number'] ?? '') . ' · emitente NIF ' . (($ai['issuer_nif'] ?? '') ?: '—') . ' → adquirente NIF ' . (($ai['client_nif'] ?? '') ?: '—') . ' · ' . eur((float)($ai['total'] ?? 0)) . ' · ' . fin_date_pt($ai['issue_date'] ?? ''))) ?><?= ($ai['source'] ?? '') === 'ai' || !isset($ai['source']) ? ' (confiança ' . round((float)($ai['confidence'] ?? 0) * 100) . '%)' : '' ?><?= !empty($ai['atcud']) ? ' · ATCUD ' . e($ai['atcud']) : '' ?></div><?php endif; ?>
-      <div class="small"><?= e($m['note']) ?></div></div>
-    <div class="fin-mail-act">
-      <?php if ($sug): ?><form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="mail_confirm"><input type="hidden" name="mail" value="<?= (int)$m['id'] ?>">
-        <select name="doc" aria-label="Pedido"><?php foreach ($sug as $s): ?><option value="<?= (int)$s['id'] ?>"><?= e($s['label'] . ' (' . $s['why'] . ')') ?></option><?php endforeach; ?></select>
-        <button class="btn sm" type="submit">Ligar a este pedido</button></form><?php endif; ?>
-      <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="mail_new"><input type="hidden" name="mail" value="<?= (int)$m['id'] ?>"><input type="hidden" name="dir" value="in"><button class="btn ghost sm" type="submit">Lançar como fatura emitida</button></form>
-      <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="mail_new"><input type="hidden" name="mail" value="<?= (int)$m['id'] ?>"><input type="hidden" name="dir" value="out"><button class="btn ghost sm" type="submit">É de um fornecedor</button></form>
-      <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="do" value="mail_ignore"><input type="hidden" name="mail" value="<?= (int)$m['id'] ?>"><button class="btn ghost sm" type="submit">Pôr de parte</button></form>
-    </div>
-  </div>
-  <?php endforeach; ?>
-</section>
-<?php endif; ?>
+<?= fin_inbox_html($pdo, 'in', $canEdit) ?>
 
 <?php if (($new || $editId) && $canEdit):
     $d = $editId ? fin_doc($pdo, $editId) : null;
@@ -217,7 +205,7 @@ elseif ($tab === 'receber'):
         <td class="hide-sm nowrap"><?= $d['deal_code'] ? e($d['deal_code']) : '<span class="muted">Empresa</span>' ?></td>
         <td class="hide-sm nowrap<?= $open && $od > 0 ? ' neg' : '' ?>"><?= fin_date_pt($d['due_date']) ?><?= $open && $od > 0 ? ' · ' . $od . ' d' : '' ?></td>
         <td class="num"><?= eur((float)$d['total']) ?></td><td class="num b"><?= in_array($d['status'], ['void'], true) ? '—' : eur(fin_doc_left($d)) ?></td>
-        <td><?= fin_chip((string)$d['status']) ?><?= (int)$d['needs_review'] ? ' <span class="chip info" data-tip="Os valores lidos não batem com o pedido: confirme">!</span>' : '' ?></td></tr>
+        <td class="nowrap"><?= fin_chip((string)$d['status']) ?><?= $canEdit ? fin_flip_btn($d) : '' ?><?= (int)$d['needs_review'] ? ' <span class="chip info" data-tip="Os valores lidos não batem com o pedido: confirme">!</span>' : '' ?></td></tr>
     <?php endforeach; ?>
     <?php foreach ($legacy as $r): ?>
       <tr class="<?= (int)($_GET['deal'] ?? 0) === $r['id'] && !$req && !$new ? 'sel' : '' ?>"><td class="nowrap"><a class="lnk id" href="<?= e($r['url']) ?>"><?= e($r['code']) ?></a></td><td><?= e(shorten((string)$r['contact_name'], 34)) ?></td>
@@ -253,6 +241,7 @@ elseif ($tab === 'pagar'):
     $nRev = (int)$pdo->query("SELECT COUNT(*) FROM fin_docs WHERE direction = 'out' AND status = 'review' AND deleted_at IS NULL")->fetchColumn();
     $views = ['open' => 'Em aberto', 'week' => 'A pagar esta semana', 'late' => 'Vencidas', 'month' => 'Próximos 30 dias', 'review' => 'Por confirmar' . ($nRev ? ' · ' . $nRev : ''), 'dispute' => 'Em disputa', 'paid' => 'Pagas', 'all' => 'Todas'];
 ?>
+<?= fin_inbox_html($pdo, 'out', $canEdit) ?>
 <?php if (($new || $editId) && $canEdit):
     $d = $editId ? fin_doc($pdo, $editId) : null;
     $vals = $form && ($form['direction'] ?? '') === 'out' ? $form : ($d ?? ['direction' => 'out', 'vat_rate' => fin_p($pdo, 'vat_normal', 23), 'issue_date' => today_lisbon(), 'vat_deductible' => 1]);
@@ -295,7 +284,7 @@ elseif ($tab === 'pagar'):
         <td class="nowrap"><?= $d['deal_code'] ? '<a class="lnk" href="/admin/negocio.php?id=' . (int)$d['deal_id'] . '">' . e($d['deal_code']) . '</a>' : '<span class="muted">Empresa</span>' ?></td>
         <td class="hide-sm nowrap<?= $open && $od > 0 ? ' neg' : '' ?>"><?= fin_date_pt($d['due_date']) ?></td>
         <td class="num"><?= eur((float)$d['total']) ?></td><td class="num b"><?= $d['status'] === 'void' ? '—' : eur(fin_doc_left($d)) ?></td>
-        <td><?= fin_chip((string)$d['status']) ?></td></tr>
+        <td class="nowrap"><?= fin_chip((string)$d['status']) ?><?= $canEdit ? fin_flip_btn($d) : '' ?></td></tr>
     <?php endforeach; ?>
     </tbody></table></div>
   <div class="doc-wrap">

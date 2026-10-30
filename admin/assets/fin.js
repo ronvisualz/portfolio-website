@@ -274,3 +274,33 @@
   var hint = function () { var v = rates[k.value]; r.placeholder = v ? String(v).replace('.', ',') + ' (a do tipo)' : 'taxa anual'; };
   k.addEventListener('change', hint); hint();
 })();
+
+/* «Por confirmar · emails» (§28.16): o PDF abre num painel lateral; Esc ou o fundo fecham. */
+(function () {
+  'use strict';
+  var panel = document.querySelector('[data-pdf-panel]');
+  if (!panel) return;
+  var frame = panel.querySelector('[data-pdf-frame]'), title = panel.querySelector('#fin-pdfp-t'), out = panel.querySelector('[data-pdf-new]'), last = null;
+  function open(src, name, from) {
+    last = from || null;
+    frame.src = src + '#view=FitH';
+    title.textContent = name || 'Documento';
+    out.href = src;
+    panel.hidden = false;
+    document.documentElement.classList.add('fin-pdfp-on');
+    var c = panel.querySelector('button[data-pdf-close]'); if (c) c.focus();
+  }
+  function close() {
+    if (panel.hidden) return;
+    panel.hidden = true;
+    frame.src = 'about:blank';
+    document.documentElement.classList.remove('fin-pdfp-on');
+    if (last) last.focus();
+  }
+  document.addEventListener('click', function (e) {
+    var o = e.target.closest && e.target.closest('[data-pdf-open]');
+    if (o) { e.preventDefault(); open(o.getAttribute('data-pdf-open'), o.getAttribute('data-pdf-title'), o); return; }
+    if (e.target.closest && e.target.closest('[data-pdf-close]')) { e.preventDefault(); close(); }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();

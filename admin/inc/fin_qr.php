@@ -301,6 +301,181 @@ function fin_pdf_qr(string $pdf, float $budget = 12.0): ?string {
     return null;
 }
 
+/**
+ * O texto de um PDF (sem programas externos): os operadores Tj/TJ das páginas, com os mapas ToUnicode das fontes
+ * (as faturas de programas como o FastReport escrevem os glifos em hexadecimal, ilegíveis sem o mapa). Serve para
+ * ler NIFs, nomes, total e número quando o QR não chega; PDFs digitalizados (só imagem) não têm texto: vão à IA.
+ */
+function fin_pdf_text(string $pdf, int $max = 60000): string {
+    if (preg_match('/\/Encrypt\s+\d+\s+\d+\s+R/', $pdf)) return '';
+    // os objetos: «n 0 obj … endobj»
+    $objs = [];
+    if (preg_match_all('/(\d+)\s+\d+\s+obj\b/', $pdf, $mm, PREG_OFFSET_CAPTURE)) {
+        foreach ($mm[0] as $k => [$tok, $at]) {
+            $end = strpos($pdf, 'endobj', $at);
+            if ($end === false) continue;
+            $objs[(int)$mm[1][$k][0]] = substr($pdf, $at + strlen($tok), $end - $at - strlen($tok));
+            if (count($objs) > 4000) break;
+        }
+    }
+    $stream = function (string $body): string {
+        if (!preg_match('/^(.*?)>>\s*stream\r?\n(.*)$/s', $body, $m)) return '';
+        $data = preg_replace('/\r?\n?endstream\s*$/s', '', rtrim($m[2]));
+        [$d, $left] = fin_pdf_decode($m[1] . '>>', $data);
+        return $left === '' ? $d : '';
+    };
+    // fontes com ToUnicode: nome do recurso (/F0) → mapa [código → texto] e largura do código (1 ou 2 bytes)
+    $cmaps = [];
+    $parse = function (string $c): array {
+        $map = []; $two = (bool)preg_match('/begincodespacerange\s*<[0-9A-Fa-f]{4}>/', $c);
+        $u = fn(string $h) => (string)@mb_convert_encoding((string)hex2bin(strlen($h) % 2 ? '0' . $h : $h), 'UTF-8', 'UTF-16BE');
+        if (preg_match_all('/beginbfchar(.*?)endbfchar/s', $c, $bb)) foreach ($bb[1] as $blk) {
+            preg_match_all('/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]*)>/', $blk, $pp, PREG_SET_ORDER);
+            foreach ($pp as $p) $map[hexdec($p[1])] = $u($p[2]);
+        }
+        if (preg_match_all('/beginbfrange(.*?)endbfrange/s', $c, $bb)) foreach ($bb[1] as $blk) {
+            preg_match_all('/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]+>|\[[^\]]*\])/', $blk, $pp, PREG_SET_ORDER);
+            foreach ($pp as $p) {
+                $lo = hexdec($p[1]); $hi = min(hexdec($p[2]), $lo + 2000);
+                if ($p[3][0] === '[') { preg_match_all('/<([0-9A-Fa-f]+)>/', $p[3], $ll); foreach ($ll[1] as $i => $h) $map[$lo + $i] = $u($h); }
+                else { $base = hexdec(trim($p[3], '<>')); for ($c2 = $lo; $c2 <= $hi; $c2++) $map[$c2] = (string)@mb_convert_encoding(pack('n', $base + $c2 - $lo), 'UTF-8', 'UTF-16BE'); }
+            }
+        }
+        return [$map, $two];
+    };
+    foreach ($objs as $body) {
+        if (!preg_match('/\/Font\s*<<(.*?)>>/s', $body, $fm)) continue;
+        preg_match_all('/\/([\w.+-]+)\s+(\d+)\s+\d+\s+R/', $fm[1], $ff, PREG_SET_ORDER);
+        foreach ($ff as [, $name, $num]) {
+            if (isset($cmaps[$name]) || !isset($objs[(int)$num])) continue;
+            $cmaps[$name] = preg_match('/\/ToUnicode\s+(\d+)\s+\d+\s+R/', $objs[(int)$num], $tu) && isset($objs[(int)$tu[1]]) ? $parse($stream($objs[(int)$tu[1]])) : [[], false];
+        }
+    }
+    $lit = function (string $s): string {
+        return preg_replace_callback('/\\\\([nrtbf()\\\\]|[0-7]{1,3})/', fn($m) => ['n' => "\n", 'r' => '', 't' => ' ', 'b' => '', 'f' => '', '(' => '(', ')' => ')', '\\' => '\\'][$m[1]] ?? chr(octdec($m[1])), $s);
+    };
+    $out = '';
+    foreach ($objs as $body) {
+        if (strpos($body, 'stream') === false || preg_match('/\/(Subtype\s*\/Image|Type\s*\/(XRef|ObjStm|Metadata)|Length1|FontFile)/', $body)) continue;
+        $c = $stream($body);
+        if ($c === '' || !preg_match('/\b(Tj|TJ)\b/', $c)) continue;
+        $font = [[], false];
+        preg_match_all('/\/([\w.+-]+)\s+[\d.]+\s+Tf|(<[0-9A-Fa-f\s]*>|\((?:\\\\.|[^\\\\)])*\))\s*(Tj|\'|")|\[((?:[^\]\\\\]|\\\\.)*)\]\s*TJ|\b(Td|TD|T\*|ET|Tm)\b/s', $c, $ops, PREG_SET_ORDER);
+        foreach ($ops as $o) {
+            if (($o[1] ?? '') !== '') { $font = $cmaps[$o[1]] ?? [[], false]; continue; }
+            if (($o[5] ?? '') !== '') { if (!str_ends_with($out, "\n")) $out .= "\n"; continue; }
+            $parts = ($o[2] ?? '') !== '' ? [$o[2]] : [];
+            if (($o[4] ?? '') !== '') { preg_match_all('/<[0-9A-Fa-f\s]*>|\((?:\\\\.|[^\\\\)])*\)|-?\d+\.?\d*/', $o[4], $pp); $parts = $pp[0]; }
+            foreach ($parts as $p) {
+                if ($p[0] !== '<' && $p[0] !== '(') { if ((float)$p < -200) $out .= ' '; continue; }
+                $bytes = $p[0] === '<' ? (string)hex2bin(preg_replace('/\s+/', '', trim($p, '<>')) . (strlen(preg_replace('/\s+/', '', trim($p, '<>'))) % 2 ? '0' : '')) : $lit(substr($p, 1, -1));
+                [$map, $two] = $font;
+                if (!$map) { $out .= (string)@mb_convert_encoding($bytes, 'UTF-8', 'Windows-1252'); continue; }
+                $step = $two ? 2 : 1;
+                for ($i = 0; $i + $step <= strlen($bytes); $i += $step) $out .= $map[$step === 2 ? unpack('n', substr($bytes, $i, 2))[1] : ord($bytes[$i])] ?? '';
+            }
+            if (strlen($out) > $max) break 2;
+        }
+        $out .= "\n";
+    }
+    return trim(preg_replace("/[ \\t]+/", ' ', preg_replace("/\\n{3,}/", "\n\n", $out)));
+}
+
+/** Um valor «1 234,56» ou «1234.56» → número. */
+function fin_text_amount(string $v): float {
+    $v = preg_replace('/[^\d,.]/', '', $v);
+    if (preg_match('/,\d{2}$/', $v)) $v = str_replace([' ', '.', ','], ['', '', '.'], $v);
+    else $v = str_replace(',', '', $v);
+    return round((float)$v, 2);
+}
+
+/**
+ * Os campos de uma fatura lidos do texto do PDF (sem QR nem IA): NIFs válidos, o da empresa como emitente ou
+ * adquirente (também pelo nome legal), número, ATCUD, data, total e IVA. Confiança 0,6–0,75: fica sempre por confirmar.
+ */
+function fin_text_invoice(string $text, string $ourNif = '', array $ourNames = []): ?array {
+    if (mb_strlen($text) < 40) return null;
+    $flat = preg_replace('/\s+/', ' ', $text);
+    $norm = fn(string $s) => strtolower(preg_replace('/[^a-z0-9 ]/i', '', (string)iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s)));
+    $nifs = [];
+    if (preg_match_all('/(?<!\d)(?:PT\s?)?(\d{3}\s?\d{3}\s?\d{3})(?!\d)/', $flat, $mm, PREG_OFFSET_CAPTURE)) foreach ($mm[1] as [$n, $at]) {
+        if (preg_match('/(tel|telef|telem|fax|tlm|phone|móvel|movel)[^\d]{0,15}$/iu', substr($flat, max(0, $at - 20), 20))) continue;   // telefones
+        $n = preg_replace('/\D/', '', $n);
+        if (fin_nif_ok($n) && !in_array($n, $nifs, true)) $nifs[] = $n;
+    }
+    // os NIFs com rótulo colado («NIF: …», «NIPC …», «Contribuinte n.º …»): o do cabeçalho é o do emitente
+    $labeled = [];
+    if (preg_match_all('/\b(?:NIF|NIPC|N\.?\s?º?\s?(?:de\s)?contribuinte|contribuinte\s?n\.?\s?º?|VAT(?:\s?n[or]\.?)?)\s*:?\s*(?:PT\s?)?(\d{3}\s?\d{3}\s?\d{3})(?!\d)/iu', $flat, $lm)) {
+        foreach ($lm[1] as $n) { $n = preg_replace('/\D/', '', $n); if (fin_nif_ok($n) && !in_array($n, $labeled, true)) $labeled[] = $n; }
+    }
+    $ours = $ourNif !== '' && in_array($ourNif, $nifs, true);
+    $flatN = $norm($flat);
+    $named = false;
+    foreach ($ourNames as $nm) { $k = trim(preg_replace('/\b(lda|sa|unipessoal)\b/', '', $norm($nm))); if (strlen($k) >= 5 && str_contains($flatN, $k)) { $named = true; break; } }
+    $others = array_values(array_diff($nifs, [$ourNif]));
+    $othersLab = array_values(array_diff($labeled, [$ourNif]));
+    // quem emite: pelo contexto de cada NIF (capital social, conservatória, IBAN, sede → emitente; Exmo., cliente,
+    // adquirente, contribuinte → cliente); empatado, um NIF de outra entidade com rótulo → somos o adquirente
+    $side = function (string $nif) use ($flat): int {
+        $sc = 0;
+        if (preg_match_all('/' . substr($nif, 0, 3) . '\s?' . substr($nif, 3, 3) . '\s?' . substr($nif, 6) . '/', $flat, $oo, PREG_OFFSET_CAPTURE)) foreach ($oo[0] as [, $at]) {
+            $w = mb_strtolower(substr($flat, max(0, $at - 160), 320));
+            $sc += preg_match_all('/capital social|conservat|registo comercial|c\.\s?r\.\s?c|\biban\b|\bsede\b|www\.|e-?mail|matr[ií]cula/u', $w);
+            $sc -= preg_match_all('/exmo|cliente|adquirente|contribuinte|v\/\s?n|destinat/u', $w);
+        }
+        return $sc;
+    };
+    $weIssue = false;
+    if ($ours) {
+        $us = $side($ourNif);
+        $them = $others ? max(array_map($side, $others)) : -99;
+        $weIssue = $us !== $them ? $us > $them : (!$othersLab && in_array($ourNif, $labeled, true));
+    }
+    $amt = '(\d{1,3}(?:[ .]\d{3})*,\d{2}|\d+\.\d{2})';
+    $total = 0.0;
+    if (preg_match_all('/total(?:\s+(?:documento|a pagar|geral|final|do documento))?\s*:?\s*(?:€|eur(?:os)?)?\s*' . $amt . '/i', $flat, $tm)) $total = fin_text_amount(end($tm[1]));
+    // base e IVA: o par de valores do documento que soma o total a uma taxa legal
+    $vals = [];
+    if (preg_match_all('/(?<![\d,.])' . $amt . '(?![\d])/', $flat, $am2)) foreach ($am2[1] as $v) $vals[(string)fin_text_amount($v)] = true;
+    $base = $total; $vat = 0.0; $rate = 0;
+    if ($total > 0) foreach (array_keys($vals) as $bv) {
+        $bv = (float)$bv;
+        foreach (FIN_VAT_RATES as $r) {
+            $v = round($bv * $r / 100, 2);
+            if ($bv > 0 && abs($bv + $v - $total) < 0.02 && isset($vals[(string)$v])) { $base = $bv; $vat = $v; $rate = $r; break 2; }
+        }
+    }
+    $number = preg_match('/\b(FT|FR|FS|NC|ND|RC|RG)\s?[A-Z0-9.]*\s?\d*\/\d+/', $flat, $nm) ? trim($nm[0]) : '';
+    $atcud = preg_match('/ATCUD\s*:?\s*([A-Z0-9]{8,}-\d+)/i', $flat, $am) ? $am[1] : '';
+    // datas: a mais antiga é a de emissão, a mais recente (se houver) o vencimento
+    $dates = [];
+    if (preg_match_all('/\b(\d{2})[-\/.](\d{2})[-\/.](20\d{2})\b/', $flat, $dm, PREG_SET_ORDER)) foreach ($dm as $d) if (checkdate((int)$d[2], (int)$d[1], (int)$d[3])) $dates[] = "$d[3]-$d[2]-$d[1]";
+    if (preg_match_all('/\b(20\d{2})-(\d{2})-(\d{2})\b/', $flat, $dm, PREG_SET_ORDER)) foreach ($dm as $d) if (checkdate((int)$d[2], (int)$d[3], (int)$d[1])) $dates[] = $d[0];
+    sort($dates);
+    $date = $dates[0] ?? '';
+    $due = count($dates) > 1 && end($dates) !== $date ? end($dates) : '';
+    if (!$nifs && !$named && $total <= 0) return null;
+    $code = $number !== '' ? substr($number, 0, 2) : '';
+    $kind = FIN_QR_DOC_KIND[$code] ?? (preg_match('/nota de cr[eé]dito/i', $flat) ? 'credit_note' : (preg_match('/\brecibo\b/i', $flat) && !preg_match('/fatura|factura/i', $flat) ? 'receipt' : 'invoice'));
+    // o nome da outra entidade: a primeira linha com forma de sociedade que não seja a nossa
+    $otherName = '';
+    foreach (preg_split('/\R/', $text) as $ln) {
+        $ln = trim($ln);
+        if (mb_strlen($ln) < 4 || mb_strlen($ln) > 120 || !preg_match('/\b(Lda\.?|L\.da|S\.?\s?A\.?|Unipessoal|SGPS|Sociedade)\b/iu', $ln)) continue;
+        $isOurs = false;
+        foreach ($ourNames as $nm) { $k = trim(preg_replace('/\b(lda|sa|unipessoal)\b/', '', $norm($nm))); if (strlen($k) >= 5 && str_contains($norm($ln), $k)) $isOurs = true; }
+        if (!$isOurs) { $otherName = $ln; break; }
+    }
+    $client = $weIssue ? ($others[0] ?? '') : ($ours ? $ourNif : '');
+    $iss = $weIssue ? $ourNif : ($othersLab[0] ?? ($others[0] ?? ''));
+    $conf = 0.6 + ($iss !== '' && ($client !== '' || $named) ? 0.1 : 0) + ($total > 0 ? 0.05 : 0);
+    return ['source' => 'text', 'kind' => $kind, 'doc_code' => $code, 'issuer_name' => $weIssue ? (string)($ourNames[0] ?? '') : $otherName, 'issuer_nif' => $iss,
+            'client_name' => $weIssue ? $otherName : ($named || $ours ? (string)($ourNames[0] ?? '') : ''), 'client_nif' => $client,
+            'client_country' => 'PT', 'number' => mb_substr($number, 0, 60), 'atcud' => $atcud, 'issue_date' => $date, 'due_date' => $due, 'base' => $base,
+            'vat_rate' => $rate, 'vat' => $vat, 'total' => $total, 'withholding' => 0, 'stamp' => 0, 'currency' => 'EUR',
+            'description' => '', 'confidence' => min(0.75, $conf), 'named_us' => $named, 'we_issue' => $weIssue];
+}
+
 /** Uma imagem de um PDF → o QR, se tiver. */
 function fin_pdf_image_qr(string $dict, string $data, int $w, int $h): ?string {
     [$raw, $left] = fin_pdf_decode($dict, $data);
@@ -334,15 +509,29 @@ function fin_pdf_image_qr(string $dict, string $data, int $w, int $h): ?string {
 
 /** Um QR desenhado com retângulos («x y w h re») num stream de conteúdo. */
 function fin_pdf_vector_qr(string $c): ?string {
-    if (substr_count($c, ' re') < 60) return null;
-    if (!preg_match_all('/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+re\b/', $c, $mm, PREG_SET_ORDER)) return null;
     $rects = [];
-    foreach ($mm as $m) {
-        [$x, $y, $w, $h] = [(float)$m[1], (float)$m[2], (float)$m[3], (float)$m[4]];
-        if ($w < 0) { $x += $w; $w = -$w; }
-        if ($h < 0) { $y += $h; $h = -$h; }
-        if ($w > 0 && $h > 0) $rects[] = [$x, $y, $w, $h];
+    if (substr_count($c, ' re') >= 60 && preg_match_all('/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+(-?\d*\.?\d+)\s+re\b/', $c, $mm, PREG_SET_ORDER)) {
+        foreach ($mm as $m) {
+            [$x, $y, $w, $h] = [(float)$m[1], (float)$m[2], (float)$m[3], (float)$m[4]];
+            if ($w < 0) { $x += $w; $w = -$w; }
+            if ($h < 0) { $y += $h; $h = -$h; }
+            if ($w > 0 && $h > 0) $rects[] = [$x, $y, $w, $h];
+        }
     }
+    // módulos desenhados como polígonos de 4 cantos («x y m  x y l  x y l  x y l  h  f*», ex.: FastReport)
+    if (preg_match_all('/(?:^|\s)m\b/', $c) >= 60) {
+        $n = '(-?\d*\.?\d+)';
+        if (preg_match_all('/' . $n . '\s+' . $n . '\s+m\s+' . $n . '\s+' . $n . '\s+l\s+' . $n . '\s+' . $n . '\s+l\s+' . $n . '\s+' . $n . '\s+l\s+(?:' . $n . '\s+' . $n . '\s+l\s+)?h\s+f\*?/', $c, $mm, PREG_SET_ORDER)) {
+            foreach ($mm as $m) {
+                $xs = [(float)$m[1], (float)$m[3], (float)$m[5], (float)$m[7]];
+                $ys = [(float)$m[2], (float)$m[4], (float)$m[6], (float)$m[8]];
+                $ux = array_unique(array_map(fn($v) => round($v, 2), $xs)); $uy = array_unique(array_map(fn($v) => round($v, 2), $ys));
+                if (count($ux) !== 2 || count($uy) !== 2) continue;   // só retângulos alinhados
+                $rects[] = [min($xs), min($ys), max($xs) - min($xs), max($ys) - min($ys)];
+            }
+        }
+    }
+    if (count($rects) < 60) return null;
     // o módulo: o lado menor mais frequente
     $hist = [];
     foreach ($rects as $r) { $k = (string)round(min($r[2], $r[3]), 2); $hist[$k] = ($hist[$k] ?? 0) + 1; }
@@ -358,6 +547,26 @@ function fin_pdf_vector_qr(string $c): ?string {
         }
         if (count($cells) < 40) continue;
         $x0 = min(array_column($cells, 0)); $y0 = min(array_column($cells, 1));
+        // o passo real: os padrões dos cantos dão o tamanho do QR; com módulos arredondados ao desenhar
+        // (ex.: 1,71 e 1,78), contar pelo módulo mais frequente acumula erro de um lado ao outro
+        $x1 = $x0; $y1 = $y0;
+        foreach ($cells as [$x, $y, $kw, $kh]) { $x1 = max($x1, $x + $kw * $mod); $y1 = max($y1, $y + $kh * $mod); }
+        $span = max($x1 - $x0, $y1 - $y0);
+        $nMod = (int)round($span / $mod);
+        foreach ([0, 1, -1, 2, -2] as $dn) if (($nMod + $dn - 17) % 4 === 0 && $nMod + $dn >= 21) { $nMod += $dn; break; }
+        // com o tamanho certo, cada módulo lê-se pelo seu centro (aguenta os módulos de 1,71 e 1,78)
+        if ($nMod >= 21 && ($nMod - 17) % 4 === 0 && abs($span / $nMod - $mod) / $mod < 0.08) {
+            $px = ($x1 - $x0) / $nMod; $py = ($y1 - $y0) / $nMod;
+            $g = array_fill(0, $nMod, str_repeat("\0", $nMod));
+            foreach ($rects as [$x, $y, $w, $h]) {
+                if ($x < $x0 - $px / 2 || $y < $y0 - $py / 2 || $x + $w > $x1 + $px / 2 || $y + $h > $y1 + $py / 2 || $w > $span * 0.9) continue;
+                for ($yy = $y + $py / 2; $yy < $y + $h; $yy += $py) for ($xx = $x + $px / 2; $xx < $x + $w; $xx += $px) {
+                    $i = (int)floor(($xx - $x0) / $px); $j = $nMod - 1 - (int)floor(($yy - $y0) / $py);
+                    if ($i >= 0 && $i < $nMod && $j >= 0 && $j < $nMod) $g[$j][$i] = "\1";
+                }
+            }
+            foreach ([$g, array_reverse($g)] as $mtx) { $r = FinQr::decodeMatrix($mtx); if ($r !== null) return $r; }
+        }
         $cols = 0; $rows = 0;
         foreach ($cells as [$x, $y, $kw, $kh]) { $cols = max($cols, (int)round(($x - $x0) / $mod) + $kw); $rows = max($rows, (int)round(($y - $y0) / $mod) + $kh); }
         if ($cols < 21 || $rows < 21 || $cols > 400 || $rows > 400) continue;

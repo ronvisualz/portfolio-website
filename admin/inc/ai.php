@@ -408,3 +408,23 @@ function ai_ts($s): int {
     $t = strtotime((string)$s . ' UTC');
     return $t === false ? 0 : $t;
 }
+
+/**
+ * Guarda a chave da Anthropic no servidor (inc/ai_config.php, fora do Git), depois de a confirmar na API (sem gastar:
+ * só lista os modelos). A chave nunca volta ao browser. Devolve a mensagem para o ecrã.
+ */
+function ai_key_save(string $key, ?float $capEur = null): string {
+    require_once __DIR__ . '/secrets.php';
+    $key = trim($key);
+    if (!preg_match('/^sk-ant-[A-Za-z0-9_-]{20,}$/', $key)) throw new RuntimeException('A chave não parece certa: as chaves da Anthropic começam por «sk-ant-».');
+    [$code] = http_call('GET', ext_url('https://api.anthropic.com/v1/models?limit=1'), ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01'], null, 15);
+    if ($code === 401 || $code === 403) throw new RuntimeException('A Anthropic recusou a chave (' . $code . '). Nada foi gravado.');
+    if ($code < 200 || $code >= 300) throw new RuntimeException('Não consegui confirmar a chave na Anthropic agora (resposta ' . $code . '). Nada foi gravado; tente daqui a pouco.');
+    $f = __DIR__ . '/ai_config.php';
+    $raw = (is_file($f) ? config_file_read($f) : null) ?? [];
+    $raw['api_key'] = $key;
+    $raw['monthly_cap_eur'] = $capEur !== null ? max(0.0, $capEur) : (float)($raw['monthly_cap_eur'] ?? AI_CAP_DEFAULT);
+    config_file_write($f, "<?php\n// A chave da Anthropic (IA), escrita pela plataforma em Definições › Integrações › IA. Só no servidor: fora do Git e fechado à web.\nreturn " . var_export($raw, true) . ";\n");
+    return 'Chave da Anthropic confirmada e guardada no servidor: a IA está ligada (limite de ' . ai_eur($raw['monthly_cap_eur']) . ' por mês).';
+}
+
