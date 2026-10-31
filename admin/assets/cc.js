@@ -1498,18 +1498,72 @@
       target.addEventListener('keydown', key);
       target.addEventListener('paste', paste);
     }
-    function pickColor(c) {
-      var inp = document.createElement('input');
-      inp.type = 'color'; inp.value = (c.c.hex || '#FFC718').toLowerCase();
-      inp.style.position = 'fixed'; inp.style.left = '-50px';
-      document.body.appendChild(inp);
-      inp.addEventListener('change', function () {
-        var before = Object.assign({}, c.c);
-        c.c = Object.assign({}, c.c, { hex: inp.value.toUpperCase() });
-        push({ t: 'content', id: c.id, before: before, after: c.c });
-        rerender(c); save([{ id: c.id, content: c.c }]); inp.remove();
+    // ── cor: seletor ancorado (§33.2) ──
+    var cpop = null;
+    function closeColorPop() { if (cpop) { var o = cpop; cpop = null; o.el.remove(); document.removeEventListener('pointerdown', o.out, true); if (o.back && o.back.isConnected) try { o.back.focus({ preventScroll: true }); } catch (x) {} } }
+    function recordColor(hex) {
+      if (!window.CCL) return;
+      var p = B.data.prefs || (B.data.prefs = {});
+      p.colors = CCL.recentColors(p.colors || [], hex);
+      api('pref', { k: 'colors', v: JSON.stringify(p.colors) }).catch(function () {});
+    }
+    /** Seletor de cor junto de `anchor`: cores da marca, últimas 8, cor livre, campo #HEX, copiar/colar. onPick(hex, keepOpen). */
+    function colorPop(anchor, hex, onPick) {
+      closeColorPop();
+      var cur = (window.CCL && CCL.hexParse(hex)) || '#FFC718', recent = ((B.data && B.data.prefs && B.data.prefs.colors) || []).slice(0, 8);
+      var sw = function (h, i) { return '<button type="button" class="cp-sw" data-hex="' + h + '" style="background:' + h + '" aria-label="' + h + (i != null ? ' (' + (i + 1) + ')' : '') + '" title="' + h + '"></button>'; };
+      var el = document.createElement('div');
+      el.className = 'cc-cpop';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', 'Escolher cor');
+      el.innerHTML = '<div class="cp-h">Cores da marca</div><div class="cp-row">' + ((window.CCL && CCL.BRAND) || []).map(sw).join('') + '</div>'
+        + (recent.length ? '<div class="cp-h">Recentes</div><div class="cp-row cp-recent">' + recent.map(function (h) { return sw(h); }).join('') + '</div>' : '')
+        + '<div class="cp-hex"><input type="color" class="cp-free" value="' + cur.toLowerCase() + '" aria-label="Cor livre"><input type="text" class="cp-in" value="' + cur + '" maxlength="24" spellcheck="false" autocomplete="off" aria-label="Código da cor (#HEX)"></div>'
+        + '<div class="cp-act"><button type="button" class="btn sm" data-a="copy">Copiar #HEX</button><button type="button" class="btn sm" data-a="paste">Colar #HEX</button></div>'
+        + '<div class="cp-err" role="status" aria-live="polite"></div>';
+      document.body.appendChild(el);
+      // junto do cartão: por baixo se couber, senão por cima; sempre dentro da janela
+      var r = anchor.getBoundingClientRect(), pw = el.offsetWidth, ph = el.offsetHeight, M = 8, G = 8;
+      var top = r.bottom + G + ph <= innerHeight - M ? r.bottom + G : r.top - G - ph >= M ? r.top - G - ph : Math.max(M, innerHeight - M - ph);
+      var left = Math.min(Math.max(M, r.left), innerWidth - M - pw);
+      el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(top) + 'px';
+      var inp = $('.cp-in', el), err = $('.cp-err', el), free = $('.cp-free', el);
+      function say(m, bad) { err.textContent = m || ''; err.classList.toggle('bad', !!bad); inp.setAttribute('aria-invalid', bad ? 'true' : 'false'); }
+      function pick(h, keep) { var v = window.CCL ? CCL.hexParse(h) : h; if (!v) { say('Isto não é uma cor. Use #RRGGBB, por exemplo #FFC718.', true); return false; } cur = v; inp.value = v; free.value = v.toLowerCase(); say(''); onPick(v); if (!keep) closeColorPop(); return true; }
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-hex')) pick(b.getAttribute('data-hex'));
+        else if (b.getAttribute('data-a') === 'copy') {
+          var v = (window.CCL && CCL.hexParse(inp.value)) || cur;
+          (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(v) : Promise.reject()).then(function () { say(v + ' copiado.'); })
+            .catch(function () { inp.focus(); inp.select(); say('Use Ctrl C (⌘ C) para copiar o código selecionado.'); });
+        } else if (b.getAttribute('data-a') === 'paste') {
+          (navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : Promise.reject()).then(function (t) { pick(t, true); })
+            .catch(function () { inp.focus(); inp.select(); say('O browser não deixou ler a área de transferência. Cole no campo com Ctrl V (⌘ V).'); });
+        }
       });
-      inp.click();
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pick(inp.value); } });
+      inp.addEventListener('input', function () { if (err.classList.contains('bad')) say(''); });
+      free.addEventListener('change', function () { pick(free.value, true); });
+      var out = function (e) { if (!el.contains(e.target) && !(anchor.contains && anchor.contains(e.target))) closeColorPop(); };
+      document.addEventListener('pointerdown', out, true);
+      cpop = { el: el, out: out, back: document.activeElement };
+      setTimeout(function () { inp.focus(); inp.select(); }, 0);
+      return el;
+    }
+    function setSwatch(c, hex) {
+      if (!c || (c.c.hex || '').toUpperCase() === hex) return;
+      var before = Object.assign({}, c.c);
+      c.c = Object.assign({}, c.c, { hex: hex });
+      push({ t: 'content', id: c.id, before: before, after: c.c });
+      rerender(c); save([{ id: c.id, content: c.c }]);
+      recordColor(hex);
+    }
+    function pickColor(c) {
+      var el = B.els.get(c.id);
+      if (!el || !EDIT) return;
+      colorPop(el, c.c.hex || '#FFC718', function (h) { setSwatch(B.cards.get(c.id) || c, h); });
     }
     function delSel() {
       if (!EDIT || !B.sel.size) return;
@@ -1711,6 +1765,11 @@
         if (!dt) return;
         if (dt.files && dt.files.length) { e.preventDefault(); addFiles(dt.files); return; }
         var t = dt.getData('text/plain');
+        // §33.2: um #HEX colado com uma amostra selecionada troca-lhe a cor (com Anular), em vez de criar um cartão
+        if (t && B.sel.size === 1 && window.CCL && CCL.hexParse(t)) {
+          var sc = B.cards.get(Array.from(B.sel)[0]);
+          if (sc && sc.type === 'swatch') { e.preventDefault(); setSwatch(sc, CCL.hexParse(t)); toast('Cor trocada para ' + CCL.hexParse(t) + '.'); return; }
+        }
         if (t) { e.preventDefault(); pasteText(t); }
       });
       window.addEventListener('keydown', keys, true);
@@ -1965,7 +2024,9 @@
     function keys(e) {
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
+      if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
       var ae = document.activeElement;
+      if (cpop && ae && cpop.el.contains(ae)) return;
       if (typing(ae)) return;
       if (slash && e.key !== 'Escape') return;
       var mod = e.metaKey || e.ctrlKey, k = e.key;

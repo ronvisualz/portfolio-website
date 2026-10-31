@@ -24,6 +24,7 @@
  *   a=rt_token          board — um token novo para o serviço de tempo real (ler)
  *   a=versions          board — as versões do Topperboard (ler) · a=version_view  board, id — os cartões de uma versão (ler)
  *   version_restore, version_mark (editar) · rt_usage (o que o browser enviou; só pede o token CSRF)
+ * Preferências da pessoa (§33): pref  k=colors (JSON, últimas 8 cores) | side_w (largura do painel, 280–4000) — só pede o token CSRF
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/cc.php';
@@ -53,7 +54,7 @@ if (!in_array($a, $reads, true)) {
     if (!$post) cfail('Pedido inválido.', 405);
     $sent = $_POST['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
     if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) cfail('Pedido inválido. Recarregue a página e tente outra vez.');
-    if ($a !== 'rt_usage' && !can('criativo', PERM_EDIT)) cfail('A sua conta vê o Toppernote mas não o edita.', 403);
+    if (!in_array($a, ['rt_usage', 'pref'], true) && !can('criativo', PERM_EDIT)) cfail('A sua conta vê o Toppernote mas não o edita.', 403);
 }
 
 function rq(string $k, $d = '') { return $_REQUEST[$k] ?? $d; }
@@ -204,7 +205,7 @@ case 'board': {
                'pages' => $pages ?: new stdClass(), 'treatment' => $treat ? json_decode((string)$treat, true) : null,
                'edit' => can('criativo', PERM_EDIT) && $b['status'] === 'active', 'manage' => can('criativo', PERM_MANAGE),
                'users' => users_light($pdo), 'ai' => (bool)cc_ai_config(), 'embed' => (bool)cc_embed_config(), 'me' => $by,
-               'brief' => cc_brief_text($pdo, $b), 'reactions' => CC_REACTIONS, 'now' => (int)round(microtime(true) * 1000),
+               'prefs' => cc_prefs($pdo, $by), 'brief' => cc_brief_text($pdo, $b), 'reactions' => CC_REACTIONS, 'now' => (int)round(microtime(true) * 1000),
                'rt' => cc_rt_connect_info($pdo, $b, $user, can('criativo', PERM_EDIT) && $b['status'] === 'active')]);
 }
 
@@ -890,6 +891,26 @@ case 'react': {
     if (!$cm || !($b = cc_board_get($pdo, (int)$cm['board_id'])) || !cc_board_access($pdo, $b)) cfail('Comentário não encontrado.', 404);
     cc_comment_react($pdo, (int)$cm['id'], (string)rq('emoji'), $by);
     cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$cm['board_id'], $cm['card_id'] ? (int)$cm['card_id'] : null)]);
+}
+
+// ── preferências da pessoa (§33.2 últimas cores, §33.7 largura do painel) ─────
+
+case 'pref': {
+    $k = (string)rq('k');
+    $v = (string)rq('v');
+    if ($k === 'colors') {
+        $l = json_decode($v, true);
+        $out = [];
+        foreach (is_array($l) ? $l : [] as $h) if (is_string($h) && preg_match('/^#[0-9a-f]{6}$/i', $h) && !in_array(strtoupper($h), $out, true)) $out[] = strtoupper($h);
+        $val = array_slice($out, 0, 8);
+    } elseif ($k === 'side_w') {
+        $val = (int)$v;
+        if ($val < 280 || $val > 4000) cfail('Largura inválida.');
+    } else cfail('Preferência desconhecida.');
+    $p = user_prefs($pdo, $by);
+    $p['cc'] = array_merge(is_array($p['cc'] ?? null) ? $p['cc'] : [], [$k => $val]);
+    $pdo->prepare('UPDATE users SET prefs = ? WHERE id = ?')->execute([json_encode($p, JSON_UNESCAPED_UNICODE), $by]);
+    cout(200, ['ok' => true, 'v' => $val]);
 }
 
 // ── importação (mecanismo pronto; nada importado ainda) ─────

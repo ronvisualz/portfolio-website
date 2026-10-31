@@ -287,6 +287,21 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-ment button.on, .cc-ment button:hover { background: var(--chip); }
 
 /* menu «/» */
+/* §33.2: seletor de cor junto do cartão */
+.cc-cpop { position: fixed; z-index: 95; width: 232px; background: var(--raise); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 10px 12px 12px; animation: pop-in .16s cubic-bezier(.2,.7,.2,1); }
+.cc-cpop .cp-h { font: 600 10.5px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin: 2px 0 6px; }
+.cc-cpop .cp-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.cc-cpop .cp-sw { width: 28px; height: 28px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); cursor: pointer; padding: 0; }
+.cc-cpop .cp-sw:hover { transform: scale(1.08); }
+.cc-cpop .cp-sw:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.cc-cpop .cp-hex { display: flex; gap: 6px; align-items: center; }
+.cc-cpop .cp-free { width: 36px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; flex: none; }
+.cc-cpop .cp-in { flex: 1; min-width: 0; font: 500 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; padding: 6px 8px; }
+.cc-cpop .cp-act { display: flex; gap: 6px; margin-top: 8px; }
+.cc-cpop .cp-act .btn { flex: 1; justify-content: center; }
+.cc-cpop .cp-err { font-size: 12px; color: var(--mute); margin-top: 6px; min-height: 0; }
+.cc-cpop .cp-err:empty { display: none; }
+.cc-cpop .cp-err.bad { color: var(--bad-fg, #c0392b); }
 .cc-slash { position: fixed; z-index: 90; width: 300px; background: var(--raise); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 6px; animation: pop-in .16s cubic-bezier(.2,.7,.2,1); }
 .cc-slash input { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 10px; background: none; font-size: 13.5px; }
 .cc-slash input:focus { outline: none; box-shadow: none; }

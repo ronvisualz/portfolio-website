@@ -935,6 +935,14 @@ function cc_board_get(PDO $pdo, int $id): ?array {
     return $st->fetch() ?: null;
 }
 
+/** As preferências da pessoa no Toppernote (§33): últimas 8 cores e largura do painel lateral. */
+function cc_prefs(PDO $pdo, int $uid): array {
+    $p = user_prefs($pdo, $uid)['cc'] ?? [];
+    $p = is_array($p) ? $p : [];
+    return ['colors' => array_values(array_filter((array)($p['colors'] ?? []), fn($h) => is_string($h) && preg_match('/^#[0-9A-F]{6}$/', $h))),
+            'side_w' => isset($p['side_w']) ? max(280, min(4000, (int)$p['side_w'])) : null];
+}
+
 function cc_board_create(PDO $pdo, array $d, ?int $by): int {
     $now = cc_now();
     $pdo->prepare('INSERT INTO cc_boards (deal_id, line_id, parent_id, kind, stage_key, title, brief, status, position, exec_owner_id, created_by, created_at, updated_at)

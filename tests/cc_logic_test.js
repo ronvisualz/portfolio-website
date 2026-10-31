@@ -58,5 +58,18 @@ eq(CCL.listClean([{ t: 'a' }, { t: '' }, { t: ' ' }]), [{ t: 'a' }], 'listClean 
 eq(CCL.listClean([{ t: '' }, { t: 'a' }, { t: '' }]), [{ t: '' }, { t: 'a' }], 'listClean só tira os do fim');
 eq(CCL.listClean([{ t: '' }, { t: '' }]), [{ t: '' }], 'listClean deixa pelo menos 1');
 
+// ── cores (§33.2) ──
+eq(CCL.hexParse('  ffc718 '), '#FFC718', 'hexParse aceita sem # e com espaços');
+eq(CCL.hexParse('#abc'), '#AABBCC', 'hexParse alarga 3 dígitos');
+eq(CCL.hexParse('#2f77b1'), '#2F77B1', 'hexParse põe em maiúsculas');
+eq(CCL.hexParse('azul'), null, 'hexParse recusa texto que não é cor');
+eq(CCL.hexParse('#12345'), null, 'hexParse recusa 5 dígitos');
+eq(CCL.hexParse('rgb(47, 119, 177)'), '#2F77B1', 'hexParse aceita rgb()');
+eq(CCL.recentColors(['#111111'], '#ffc718'), ['#FFC718', '#111111'], 'recentColors põe a nova à frente');
+eq(CCL.recentColors(['#FFC718', '#111111'], '#111111'), ['#111111', '#FFC718'], 'recentColors sem duplicados');
+eq(CCL.recentColors(['#000001', '#000002', '#000003', '#000004', '#000005', '#000006', '#000007', '#000008'], '#000009').length, 8, 'recentColors corta a 8');
+eq(CCL.recentColors(['#111111'], 'azul'), ['#111111'], 'recentColors ignora o que não é cor');
+eq(CCL.BRAND, ['#111111', '#FFC718', '#E8846D', '#81CFE3', '#2F77B1'], 'cores da marca (1–5)');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

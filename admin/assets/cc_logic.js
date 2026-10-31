@@ -67,5 +67,27 @@
     return l;
   }
 
-  return { version: 1, listKey: listKey, listPaste: listPaste, listClean: listClean };
+  // ── cores (§33.2, §33.3) ──
+  var BRAND = ['#111111', '#FFC718', '#E8846D', '#81CFE3', '#2F77B1'];   // teclas 1–5 na caneta
+
+  /** Texto → '#RRGGBB' (com ou sem #, 3 ou 6 dígitos, espaços, rgb(r, g, b)); null se não for cor. */
+  function hexParse(s) {
+    s = String(s == null ? '' : s).trim();
+    var m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i.exec(s);
+    if (m) {
+      if (+m[1] > 255 || +m[2] > 255 || +m[3] > 255) return null;
+      return '#' + [m[1], m[2], m[3]].map(function (v) { return ('0' + (+v).toString(16)).slice(-2); }).join('').toUpperCase();
+    }
+    s = s.replace(/^#/, '');
+    if (/^[0-9a-f]{3}$/i.test(s)) s = s.replace(/(.)/g, '$1$1');
+    return /^[0-9a-f]{6}$/i.test(s) ? '#' + s.toUpperCase() : null;
+  }
+  /** As últimas cores usadas: a nova à frente, sem duplicados, no máximo `max` (8). */
+  function recentColors(list, hex, max) {
+    var h = hexParse(hex), out = h ? [h] : [];
+    (list || []).forEach(function (x) { var y = hexParse(x); if (y && out.indexOf(y) < 0) out.push(y); });
+    return out.slice(0, max || 8);
+  }
+
+  return { version: 1, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
