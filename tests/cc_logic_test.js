@@ -130,5 +130,12 @@ eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
 eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
 eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');
 
+// ── seleção por retângulo (§33.12) ──
+const boxes = [{ id: 1, x: 0, y: 0, w: 100, h: 100 }, { id: 2, x: 200, y: 0, w: 100, h: 100 }, { id: 3, x: 0, y: 300, w: 100, h: 100 }];
+eq(CCL.marqueeHit(boxes, { x: 90, y: 50, w: 150, h: 10 }), [1, 2], 'marqueeHit: toca a borda de dois cartões → os dois');
+eq(CCL.marqueeHit(boxes, { x: 110, y: 110, w: 80, h: 80 }), [], 'marqueeHit: não toca nenhum');
+eq(CCL.marqueeHit(boxes, { x: 250, y: 50, w: -200, h: 300 }), [1, 2, 3], 'marqueeHit: arrasto para trás (largura/altura negativas) normalizado');
+eq(CCL.marqueeHit(boxes, { x: 100, y: 0, w: 0, h: 0 }), [1], 'marqueeHit: um ponto na borda conta');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

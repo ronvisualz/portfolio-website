@@ -181,7 +181,20 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-lane > b small { font: 500 15px var(--body); color: var(--mute); margin-left: 10px; }
 .ccb-lane.drop { background: color-mix(in srgb, var(--lane) 18%, transparent); }
 
-.ccb-marq { position: absolute; border: 1px solid var(--cc-sel); background: color-mix(in srgb, var(--cc-sel) 12%, transparent); pointer-events: none; z-index: 9; }
+.ccb-marq { position: absolute; border: 1.5px dashed var(--cc-sel); background: rgba(47, 119, 177, .12); border-radius: 2px; pointer-events: none; z-index: 9; }
+.ccb-vp.alt:not(.panning) { cursor: crosshair; }
+.ccb-vp.alt .ccc { cursor: default; }
+/* §33.12: barra da seleção múltipla */
+.ccb-selbar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-card); }
+.ccb-selbar[hidden] { display: none; }
+.ccb-selbar .sb-n { font: 600 12.5px var(--body); margin-right: 6px; white-space: nowrap; }
+.ccb-selbar .sb-wrap { position: relative; }
+.ccb-selbar .sb-menu { position: absolute; bottom: calc(100% + 6px); left: 0; min-width: 200px; display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 4px; }
+.ccb-selbar .sb-menu[hidden] { display: none; }
+.ccb-selbar .sb-menu button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 7px; font: 500 13px var(--body); color: var(--fg); cursor: pointer; }
+.ccb-selbar .sb-menu button:hover, .ccb-selbar .sb-menu button:focus-visible { background: var(--chip); outline: none; }
+.ccb-selbar .danger { color: var(--bad-fg); }
+@media (pointer: coarse) { .ccb-selbar .btn, .ccb-selbar .sb-menu button { min-height: 44px; } }
 .ccb-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 2px; background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 3px; box-shadow: var(--sh-card); }
 .ccb-zoom button { width: 30px; height: 28px; border: 0; background: none; color: var(--fg); border-radius: 7px; cursor: pointer; display: grid; place-items: center; }
 .ccb-zoom button:hover { background: var(--chip); }

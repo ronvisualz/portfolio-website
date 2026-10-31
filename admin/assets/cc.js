@@ -1435,8 +1435,56 @@
         if (c && el && !c.col && c.type !== 'arrow') { var rh = document.createElement('span'); rh.className = 'ccc-res'; rh.setAttribute('aria-hidden', 'true'); el.appendChild(rh); }
       }
       drawArrows();
+      selBar();
       if (RT) RT.decorate();
     }
+    // §33.12: barra da seleção múltipla — «N selecionados», Copiar, Alinhar, Apagar
+    function selBar() {
+      var ids = Array.from(B.sel).filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; });
+      var bar = $('.ccb-selbar', root);
+      if (ids.length < 2) { if (bar) bar.hidden = true; return; }
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'ccb-selbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Seleção');
+        vp.appendChild(bar);
+        bar.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+        bar.addEventListener('click', function (e) {
+          var b = e.target.closest('button'); if (!b) return;
+          var k = b.getAttribute('data-sb'), al = b.getAttribute('data-align');
+          if (k === 'copy') copySel(false);
+          else if (k === 'del') delSel();
+          else if (k === 'align') { var m = $('.sb-menu', bar); m.hidden = !m.hidden; b.setAttribute('aria-expanded', m.hidden ? 'false' : 'true'); if (!m.hidden) $('button', m).focus(); }
+          else if (al) { $('.sb-menu', bar).hidden = true; alignSel(al); }
+        });
+      }
+      bar.hidden = false;
+      bar.innerHTML = '<span class="sb-n" aria-live="polite">' + ids.length + ' selecionados</span>'
+        + '<button type="button" class="btn sm ghost" data-sb="copy" title="Copiar ( ' + MODK + ' C )">Copiar</button>'
+        + (EDIT ? '<span class="sb-wrap"><button type="button" class="btn sm ghost" data-sb="align" aria-haspopup="menu" aria-expanded="false">Alinhar ▾</button><div class="sb-menu" role="menu" hidden>'
+          + '<button type="button" role="menuitem" data-align="left">À esquerda</button><button type="button" role="menuitem" data-align="top">Em cima</button>'
+          + '<button type="button" role="menuitem" data-align="hdist">Distribuir na horizontal</button><button type="button" role="menuitem" data-align="vdist">Distribuir na vertical</button></div></span>'
+          + '<button type="button" class="btn sm ghost danger" data-sb="del" title="Apagar ( Delete )">Apagar</button>' : '');
+    }
+    function alignSel(how) {
+      var cs = Array.from(B.sel).map(function (id) { return B.cards.get(id); }).filter(function (c) { return c && !c.col && c.type !== 'arrow'; });
+      if (cs.length < 2) return;
+      var before = cs.map(snapshot);
+      if (how === 'left') { var mx = Math.min.apply(null, cs.map(function (c) { return c.x; })); cs.forEach(function (c) { c.x = mx; }); }
+      else if (how === 'top') { var my = Math.min.apply(null, cs.map(function (c) { return c.y; })); cs.forEach(function (c) { c.y = my; }); }
+      else {
+        var hz = how === 'hdist', k = hz ? 'x' : 'y', sz = function (c) { return hz ? c.w : cardH(c); };
+        cs.sort(function (a, b) { return a[k] - b[k]; });
+        var first = cs[0][k], last = cs[cs.length - 1][k] + sz(cs[cs.length - 1]), total = cs.reduce(function (t, c) { return t + sz(c); }, 0);
+        var gap = (last - first - total) / (cs.length - 1), at = first;
+        cs.forEach(function (c) { c[k] = Math.round(at); at += sz(c) + gap; });
+      }
+      var after = cs.map(snapshot);
+      push({ t: 'move', items: before.map(function (b, i) { return { before: b, after: after[i] }; }) });
+      cs.forEach(function (c) { place(c); });
+      drawArrows();
+      save(after.map(function (a) { return { id: a.id, x: a.x, y: a.y }; }));
+    }
+    function copySel() { /* §33.6: tarefa seguinte */ }
     function select(ids, add) {
       if (!add) B.sel.clear();
       ids.forEach(function (id) { if (add && B.sel.has(id)) B.sel.delete(id); else B.sel.add(id); });
@@ -2120,6 +2168,10 @@
         if (t) { e.preventDefault(); pasteText(t); }
       });
       window.addEventListener('keydown', keys, true);
+      // §33.12: com Alt/Option premido, o cursor sobre o fundo fica em mira (vai desenhar o retângulo)
+      var altOn = function (e) { vp.classList.toggle('alt', !!e.altKey); };
+      window.addEventListener('keydown', altOn, true); window.addEventListener('keyup', altOn, true);
+      window.addEventListener('blur', function () { vp.classList.remove('alt'); });
       window.addEventListener('keyup', function (e) {
         if (e.key !== ' ' || !spaceDown) return;
         spaceDown = false; vp.classList.remove('space');
@@ -2174,13 +2226,25 @@
         drag = { kind: 'drag', c: c, ids: ids, p0: p, w0: w, moved: false, wasSel: wasSel, at: { x: e.clientX, y: e.clientY }, shift: e.shiftKey || e.metaKey || e.ctrlKey, before: ids.map(function (id) { return snapshot(B.cards.get(id)); }) };
         return;
       }
-      if (e.shiftKey) { drag = { kind: 'marq', p0: p, el: null }; return; }
+      // §33.12: Alt/Option + arrastar no fundo = retângulo de seleção (Shift soma); arrastar sem Alt continua a mover a tela
+      if (e.altKey || e.shiftKey) { drag = { kind: 'marq', p0: p, el: null, add: e.shiftKey }; return; }
       drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view), bg: true };
       vp.classList.add('panning');
+      // iPad: tocar e manter 0,4 s sem mexer → passa a retângulo de seleção
+      if (e.pointerType === 'touch' && pointers.size === 1) {
+        var lp = drag;
+        lp.hold = setTimeout(function () {
+          if (drag !== lp || lp.moved) return;
+          vp.classList.remove('panning');
+          drag = { kind: 'marq', p0: lp.p0, el: null, add: false };
+          if (navigator.vibrate) navigator.vibrate(8);
+        }, 400);
+      }
     }
     function move(e) {
       if (!pointers.has(e.pointerId)) return;
       var p = vpPoint(e);
+      if (drag && drag.hold && Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) > 8) { clearTimeout(drag.hold); drag.hold = 0; }
       pointers.set(e.pointerId, p);
       if (pinch && pointers.size >= 2) {
         var ps = Array.from(pointers.values()), d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y), m = { x: (ps[0].x + ps[1].x) / 2, y: (ps[0].y + ps[1].y) / 2 };
@@ -2337,11 +2401,12 @@
       } else if (d.kind === 'marq') {
         if (d.el) {
           var r = d.el.getBoundingClientRect(), vr = vp.getBoundingClientRect();
-          var a = toWorld(r.left - vr.left, r.top - vr.top), b = toWorld(r.right - vr.left, r.bottom - vr.top), ids = [];
-          B.cards.forEach(function (c) { if (c.col || c.type === 'arrow') return; var bb = bbox(c); if (bb.x < b.x && bb.x + bb.w > a.x && bb.y < b.y && bb.y + bb.h > a.y) ids.push(c.id); });
+          var a = toWorld(r.left - vr.left, r.top - vr.top), b = toWorld(r.right - vr.left, r.bottom - vr.top), boxes = [];
+          B.cards.forEach(function (c) { if (c.col || c.type === 'arrow') return; var bb = bbox(c); boxes.push({ id: c.id, x: bb.x, y: bb.y, w: bb.w, h: bb.h }); });
           d.el.remove();
-          select(ids, true);
-        }
+          var hit = CCL.marqueeHit(boxes, { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y });
+          if (d.add) { hit.forEach(function (id) { B.sel.add(id); }); select(Array.from(B.sel)); } else select(hit);
+        } else if (!d.add) select([]);
       } else if (d.kind === 'erase') {
         finishErase(d);
       } else if (d.kind === 'draw') {

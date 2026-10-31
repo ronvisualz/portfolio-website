@@ -199,5 +199,12 @@
     return 'hsl(' + hh + ', ' + Math.round(ss * 100) + '%, ' + Math.round(l * 100) + '%)';
   }
 
-  return { version: 1, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── seleção por retângulo (§33.12) ──
+  /** Os ids das caixas [{id,x,y,w,h}] que o retângulo toca (interseção, bordas incluídas; largura/altura negativas aceites). */
+  function marqueeHit(boxes, rect) {
+    var x1 = Math.min(rect.x, rect.x + rect.w), x2 = Math.max(rect.x, rect.x + rect.w), y1 = Math.min(rect.y, rect.y + rect.h), y2 = Math.max(rect.y, rect.y + rect.h);
+    return (boxes || []).filter(function (b) { return b.x <= x2 && b.x + b.w >= x1 && b.y <= y2 && b.y + b.h >= y1; }).map(function (b) { return b.id; });
+  }
+
+  return { version: 1, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
