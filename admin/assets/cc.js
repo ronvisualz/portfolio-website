@@ -947,11 +947,12 @@
         + '<div class="ccb-hint" aria-hidden="true"><span class="kbd">Espaço</span> mover · <span class="kbd">Ctrl</span>+roda zoom · <span class="kbd">/</span> IA</div>'
         + '<div class="ccb-zoom"><button type="button" data-z="-1" aria-label="Afastar ( - )">' + ico('minus') + '</button><output data-zo>100%</output><button type="button" data-z="1" aria-label="Aproximar ( + )">' + ico('plus') + '</button><button type="button" data-z="0" aria-label="Ver tudo ( 0 )">' + ico('fit') + '</button></div>'
         + '</div>'
-        + '<aside class="ccb-side" data-side aria-label="Painel lateral"><div class="ccb-side-h" role="tablist"><button type="button" class="tab" data-tab="ia" role="tab">IA</button><button type="button" class="tab" data-tab="det" role="tab">Detalhe</button><button type="button" class="tab" data-tab="com" role="tab">Comentários</button><button type="button" class="tab" data-tab="hist" role="tab">Histórico</button>'
+        + '<aside class="ccb-side" data-side aria-label="Painel lateral"><div class="ccb-side-grip" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Largura do painel" title="Arraste para mudar a largura · duplo clique repõe" aria-valuemin="280" aria-valuemax="' + Math.round(innerWidth * 0.6) + '" aria-valuenow="340"></div><div class="ccb-side-h" role="tablist"><button type="button" class="tab" data-tab="ia" role="tab">IA</button><button type="button" class="tab" data-tab="det" role="tab">Detalhe</button><button type="button" class="tab" data-tab="com" role="tab">Comentários</button><button type="button" class="tab" data-tab="hist" role="tab">Histórico</button>'
         + '<button type="button" class="ibtn" data-a="side" aria-label="Fechar o painel">' + ico('x') + '</button></div><div class="ccb-side-b" data-side-b></div></aside>'
         + '</div>';
       vp = $('[data-vp]', root); world = $('.ccb-world', root); layer = $('[data-layer]', root); svg = $('.ccb-arrows', root); lanesEl = $('[data-lanes]', root);
       zoomOut = $('[data-zo]', root); sideEl = $('[data-side]', root); sideBody = $('[data-side-b]', root); emptyEl = $('.ccb-empty', root);
+      sideGrip();
       if (window.innerWidth < 1100) sideEl.hidden = true;
       setTool('select');
       bindBoard();
@@ -1505,6 +1506,40 @@
       target.addEventListener('keydown', key);
       target.addEventListener('paste', paste);
     }
+    // ── painel lateral redimensionável (§33.7): 280 px a 60% da janela; duplo clique repõe 340; largura por pessoa ──
+    var SIDE_W = 340, sideW = SIDE_W;
+    function sideMax() { return Math.max(280, Math.round(innerWidth * 0.6)); }
+    function setSideW(w, persist) {
+      sideW = Math.round(clamp(w, 280, sideMax()));
+      sideEl.style.width = sideW + 'px';
+      var g = $('.ccb-side-grip', sideEl);
+      if (g) { g.setAttribute('aria-valuenow', String(sideW)); g.setAttribute('aria-valuemax', String(sideMax())); }
+      if (persist) { clearTimeout(setSideW.t); setSideW.t = setTimeout(function () { if (B.data.prefs) B.data.prefs.side_w = sideW; api('pref', { k: 'side_w', v: sideW }).catch(function () {}); }, 300); }
+      applyView();
+    }
+    function sideGrip() {
+      var g = $('.ccb-side-grip', sideEl);
+      if (!g) return;
+      var pw = B.data && B.data.prefs && B.data.prefs.side_w;
+      if (pw) setSideW(pw); else sideEl.style.width = '';
+      var st = null;
+      g.addEventListener('pointerdown', function (e) { e.preventDefault(); g.setPointerCapture(e.pointerId); st = { x: e.clientX, w: sideEl.getBoundingClientRect().width }; g.classList.add('on'); });
+      g.addEventListener('pointermove', function (e) { if (st) setSideW(st.w + (st.x - e.clientX)); });
+      g.addEventListener('pointerup', function () { if (!st) return; st = null; g.classList.remove('on'); setSideW(sideW, true); });
+      g.addEventListener('pointercancel', function () { st = null; g.classList.remove('on'); });
+      g.addEventListener('dblclick', function () { setSideW(SIDE_W, true); });
+      g.addEventListener('keydown', function (e) {
+        var k = e.key, d = k === 'ArrowLeft' ? 16 : k === 'ArrowRight' ? -16 : 0;
+        if (d) setSideW(sideEl.getBoundingClientRect().width + d, true);
+        else if (k === 'Home') setSideW(280, true);
+        else if (k === 'End') setSideW(sideMax(), true);
+        else if (k === 'Enter') setSideW(SIDE_W, true);
+        else return;
+        e.preventDefault(); e.stopPropagation();
+      });
+      window.addEventListener('resize', function () { if (sideEl.style.width) setSideW(sideW); });
+    }
+
     // ── balão de comentários (§33.4): os últimos 3, só de leitura, e «Ver todos» ──
     var nball = null, lastTouch = 0;
     function closeBalloon() { if (nball) { clearTimeout(nball.t); nball.el.remove(); nball = null; } }

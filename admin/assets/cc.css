@@ -275,7 +275,13 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc-res { position: absolute; right: -6px; bottom: -6px; width: 14px; height: 14px; border-radius: 4px; background: var(--cc-sel); border: 2px solid var(--panel); cursor: nwse-resize; z-index: 4; touch-action: none; }
 
 /* painel lateral (IA, detalhe, comentários) */
-.ccb-side { flex: none; width: 340px; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.ccb-side { position: relative; flex: none; width: 340px; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+/* §33.7: pega da borda para mudar a largura */
+.ccb-side-grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 3; touch-action: none; }
+.ccb-side-grip::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; transition: background .12s; }
+.ccb-side-grip:hover::after, .ccb-side-grip.on::after, .ccb-side-grip:focus-visible::after { width: 2px; left: 3px; background: var(--hi); }
+.ccb-side-grip:focus-visible { outline: none; }
+@media (pointer: coarse) { .ccb-side-grip { width: 22px; left: -11px; } .ccb-side-grip::after { left: 10px; } }
 .ccb-side[hidden] { display: none; }
 .ccb-side-h { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); align-items: center; }
 .ccb-side-h button.tab { flex: 1; border: 0; background: none; padding: 7px 8px; border-radius: 8px; font: 500 12.5px var(--body); color: var(--mute); cursor: pointer; }
@@ -367,7 +373,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-pres button:hover { background: rgba(255,255,255,.14); }
 
 @media (max-width: 1100px) {
-  .ccb-side { position: absolute; right: 0; top: 0; bottom: 0; z-index: 7; box-shadow: var(--shadow-lg); width: min(340px, 92vw); }
+  .ccb-side { position: absolute; right: 0; top: 0; bottom: 0; z-index: 7; box-shadow: var(--shadow-lg); width: min(340px, 92vw); max-width: 92vw; }
 }
 @media (max-width: 860px) {
   .ccl { grid-template-columns: minmax(0, 1fr); }
