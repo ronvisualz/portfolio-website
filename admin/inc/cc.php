@@ -1014,7 +1014,7 @@ function cc_card_content(string $type, $raw): array {
             $items = [];
             foreach (array_slice((array)($c['items'] ?? []), 0, 200) as $it) {
                 if (!is_array($it)) continue;
-                $items[] = ['t' => $s($it['t'] ?? '', 500), 'd' => !empty($it['d'])];
+                $items[] = ['t' => $s($it['t'] ?? '', 500), 'd' => !empty($it['d']), 'l' => max(0, min(2, (int)($it['l'] ?? 0)))];   // l: sub-item (§33.1)
             }
             return ['title' => $s($c['title'] ?? '', 200), 'items' => $items];
         case 'column':

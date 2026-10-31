@@ -202,15 +202,24 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc.t-note.brief::before { content: 'BRIEF'; display: block; font: 700 9.5px var(--body); letter-spacing: .14em; color: var(--warn-fg); margin-bottom: 4px; }
 .ccc-text { white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.5; min-height: 1.5em; outline: none; cursor: text; }
 .ccc-text:empty::before { content: attr(data-ph); color: var(--mute-2); }
-.ccc-text[contenteditable="true"] { cursor: text; user-select: text; -webkit-user-select: text; }
+/* §33.1: a tela não deixa selecionar texto (arrastar), mas qualquer campo em edição tem de deixar — no Safari, sem isto não se escreve */
+.ccb-vp [contenteditable="true"] { cursor: text; user-select: text; -webkit-user-select: text; }
 .ccc.t-note .ccc-text::first-line { font-weight: 600; }
 .ccc.dark-ink, .ccc.dark-ink .ccc-text { color: #111; }
 .ccc.t-list { padding: 10px 12px; }
 .ccc-lt { font-weight: 600; font-size: 13.5px; margin: 0 0 6px; outline: none; }
-.ccc-li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; font-size: 13px; padding: 2px 0; }
+.ccc-li { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; font-size: 13px; padding: 2px 0; }
+.ccc-li[data-l="1"] { padding-left: 18px; }
+.ccc-li[data-l="2"] { padding-left: 36px; }
 .ccc-li input { margin: 3px 0 0; accent-color: var(--hi); }
-.ccc-li.d span { text-decoration: line-through; color: var(--mute-2); }
-.ccc-li span { outline: none; min-height: 1.3em; white-space: pre-wrap; word-break: break-word; }
+.ccc-li.d .ccc-lx { text-decoration: line-through; color: var(--mute-2); }
+.ccc-lx { outline: none; min-height: 1.3em; white-space: pre-wrap; word-break: break-word; }
+.ccc-lh { position: absolute; left: -12px; top: 2px; width: 11px; font-size: 11px; line-height: 1.3; letter-spacing: -2px; color: var(--mute-2); cursor: grab; opacity: 0; transition: opacity .12s; user-select: none; -webkit-user-select: none; }
+.ccc-li:hover .ccc-lh, .ccc-li.dragging .ccc-lh { opacity: 1; }
+@media (hover: none) { .ccc-lh { opacity: .55; } }
+.ccc-li.dragging { opacity: .45; }
+.ccc-li.drop-a { box-shadow: 0 -2px 0 var(--hi); }
+.ccc-li.drop-b { box-shadow: 0 2px 0 var(--hi); }
 .ccc-add { font: 500 12px var(--body); color: var(--mute); background: none; border: 0; padding: 4px 0 0; cursor: pointer; }
 .ccc.t-swatch { overflow: hidden; }
 .ccc-sw { height: 96px; border-radius: 9px 9px 0 0; }

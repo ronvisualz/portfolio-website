@@ -1072,7 +1072,10 @@
           break;
         case 'list':
           h = '<div class="ccc-lt" data-ph="Lista">' + esc(x.title || 'Lista') + '</div>' + (x.items || []).map(function (it, i) {
-            return '<div class="ccc-li' + (it.d ? ' d' : '') + '" data-i="' + i + '"><input type="checkbox"' + (it.d ? ' checked' : '') + (EDIT ? '' : ' disabled') + ' aria-label="Feito"><span>' + esc(it.t) + '</span></div>';
+            // §33.1: sub-itens (l 0–2) recuados; pega ⋮⋮ para arrastar e reordenar
+            return '<div class="ccc-li' + (it.d ? ' d' : '') + '" data-i="' + i + '"' + (it.l ? ' data-l="' + it.l + '"' : '') + '>'
+              + (EDIT ? '<span class="ccc-lh" data-cact="li-drag" draggable="true" title="Arrastar para reordenar (ou Alt ↑ ↓ ao escrever)" aria-hidden="true">⋮⋮</span>' : '')
+              + '<input type="checkbox"' + (it.d ? ' checked' : '') + (EDIT ? '' : ' disabled') + ' aria-label="Feito"><span class="ccc-lx">' + esc(it.t) + '</span></div>';
           }).join('') + (EDIT ? '<button type="button" class="ccc-add" data-cact="li-add">+ item</button>' : '');
           break;
         case 'swatch':
@@ -1397,59 +1400,103 @@
     }
 
     // ── editar no próprio cartão ──
-    function startEdit(c, itemIndex) {
+    // ── cursor num campo editável (§33.1, §33.10) ──
+    function caretOffset(el) {
+      var s = window.getSelection();
+      if (!s.rangeCount || !el.contains(s.anchorNode)) return (el.textContent || '').length;
+      var r = s.getRangeAt(0).cloneRange(); r.selectNodeContents(el); r.setEnd(s.anchorNode, s.anchorOffset);
+      return r.toString().length;
+    }
+    function setCaret(el, pos) {
+      var r = document.createRange(), s = window.getSelection();
+      if (pos === 'all') r.selectNodeContents(el);
+      else if (pos === 'start' || pos === 0) { r.setStart(el, 0); r.collapse(true); }
+      else if (typeof pos === 'number') {
+        var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n, left = pos, done = false;
+        while ((n = w.nextNode())) { if (left <= n.length) { r.setStart(n, left); done = true; break; } left -= n.length; }
+        if (!done) { r.selectNodeContents(el); r.collapse(false); } else r.collapse(true);
+      } else { r.selectNodeContents(el); r.collapse(false); }
+      s.removeAllRanges(); s.addRange(r);
+    }
+    /** Editar no sítio. opts: {before: estado da sessão (as listas encadeiam itens numa só anulação), caret: 'start'|'end'|'all'|n}. */
+    function startEdit(c, itemIndex, opts) {
       if (!EDIT) return;
+      opts = opts || {};
       var el = B.els.get(c.id);
       if (!el) return;
-      var target = c.type === 'note' ? $('.ccc-text', el) : c.type === 'column' ? $('.ccc-ch b', el) : c.type === 'list' ? (itemIndex != null ? $$('.ccc-li span', el)[itemIndex] : $('.ccc-lt', el)) : c.type === 'board' ? $('.ccc-bt b', el) : null;
+      var isItem = c.type === 'list' && itemIndex != null;
+      var target = c.type === 'note' ? $('.ccc-text', el) : c.type === 'column' ? $('.ccc-ch b', el) : c.type === 'list' ? (isItem ? $$('.ccc-li .ccc-lx', el)[itemIndex] : $('.ccc-lt', el)) : c.type === 'board' ? $('.ccc-bt b', el) : null;
       if (c.type === 'swatch') { pickColor(c); return; }
       if (!target) return;
       B.editing = c.id;
       if (RT) RT.typing(c.id);
-      var before = JSON.parse(JSON.stringify(c.c || {}));
+      var before = opts.before || JSON.parse(JSON.stringify(c.c || {}));
+      var off = false;   // a sessão passou para outro item (Enter, Backspace, Tab…): este já não grava ao sair
       target.contentEditable = 'true';
       target.focus();
       // um título por defeito («Coluna», «Lista») fica selecionado: escrever substitui-o
-      var rng = document.createRange(); rng.selectNodeContents(target);
-      if (!(c.type === 'column' && (c.c.title || '') === 'Coluna') && !(c.type === 'list' && itemIndex == null && (c.c.title || '') === 'Lista')) rng.collapse(false);
-      var s = window.getSelection(); s.removeAllRanges(); s.addRange(rng);
-      function end() {
+      var dflt = (c.type === 'column' && (c.c.title || '') === 'Coluna') || (c.type === 'list' && !isItem && (c.c.title || '') === 'Lista');
+      setCaret(target, opts.caret != null ? opts.caret : dflt ? 'all' : 'end');
+      function text() { return target.innerText.replace(/ /g, ' ').replace(/\n$/, ''); }
+      function detach() {
+        off = true;
         target.removeEventListener('blur', end);
         target.removeEventListener('keydown', key);
+        target.removeEventListener('paste', paste);
         target.contentEditable = 'false';
         B.editing = null;
+      }
+      function end() {
+        if (off) return;
+        detach();
         if (RT) RT.typing(null);
-        var txt = target.innerText.replace(/ /g, ' ').replace(/\n$/, '');
+        var txt = text();
         var nc = JSON.parse(JSON.stringify(c.c || {}));
         if (c.type === 'note') nc.text = txt;
         else if (c.type === 'column' || c.type === 'board') nc.title = txt.trim() || (c.type === 'column' ? 'Coluna' : 'Sub-Topperboard');
         else if (c.type === 'list') {
-          if (itemIndex != null) { if (!txt.trim() && nc.items.length > 1) nc.items.splice(itemIndex, 1); else nc.items[itemIndex].t = txt; }
+          if (isItem) { if (nc.items[itemIndex]) nc.items[itemIndex].t = txt.replace(/\n/g, ' '); nc.items = window.CCL ? CCL.listClean(nc.items) : nc.items; }
           else nc.title = txt.trim() || 'Lista';
         }
-        if (JSON.stringify(nc) === JSON.stringify(before)) { rerender(c); return; }
         c.c = nc;
+        if (JSON.stringify(nc) === JSON.stringify(before)) { rerender(c); if (opts.before) save([{ id: c.id, content: nc }]); return; }
         push({ t: 'content', id: c.id, before: before, after: nc });
         rerender(c);
         save([{ id: c.id, content: nc }]);
       }
+      // listas: a tecla muda a estrutura → grava já e continua a editar no item certo, na mesma anulação
+      function relist(items, focus, caret) {
+        detach();
+        var cc = B.cards.get(c.id) || c;
+        cc.c = Object.assign({}, cc.c, { items: items });
+        rerender(cc);
+        save([{ id: cc.id, content: cc.c }]);
+        startEdit(cc, focus, { before: before, caret: caret });
+      }
+      function liveItems() { var l = JSON.parse(JSON.stringify(c.c.items || [])); if (l[itemIndex]) l[itemIndex].t = text().replace(/\n/g, ' '); return l; }
       function key(e) {
+        var mod = e.ctrlKey || e.metaKey;
         if (e.key === 'Escape') { e.preventDefault(); target.blur(); }
-        else if (e.key === 'Enter' && (c.type === 'column' || c.type === 'board' || (c.type === 'list' && itemIndex == null))) { e.preventDefault(); target.blur(); }
-        else if (e.key === 'Enter' && c.type === 'list' && !e.shiftKey) {
-          e.preventDefault();
-          var at = itemIndex + 1;
-          target.blur();
-          var cc = B.cards.get(c.id);
-          cc.c.items.splice(at, 0, { t: '', d: false });
-          rerender(cc);
-          save([{ id: cc.id, content: cc.c }]);
-          setTimeout(function () { startEdit(cc, at); }, 0);
+        else if (e.key === 'Enter' && (c.type === 'column' || c.type === 'board' || (c.type === 'list' && !isItem))) { e.preventDefault(); target.blur(); }
+        else if (isItem && window.CCL && (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Tab' || (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')))) {
+          var t = text(), at = caretOffset(target);
+          var r = CCL.listKey(liveItems(), itemIndex, e.key, { shift: e.shiftKey, ctrl: mod, alt: e.altKey, atStart: at === 0, atEnd: at >= t.length, empty: t === '', caret: at });
+          if (r.handled) { e.preventDefault(); relist(r.items, r.focus, e.key === 'Backspace' ? 'end' : e.key === 'Enter' && !mod ? 'start' : at); }
         }
         e.stopPropagation();
       }
+      // colar: só texto; numa lista, várias linhas = vários itens
+      function paste(e) {
+        var dt = e.clipboardData || window.clipboardData, t = dt ? dt.getData('text/plain') : '';
+        e.stopPropagation();
+        if (!dt || (!t && dt.files && dt.files.length)) return;
+        e.preventDefault();
+        if (isItem && window.CCL && /\n/.test(t.trim())) { var r = CCL.listPaste(liveItems(), itemIndex, t); relist(r.items, r.focus, 'end'); return; }
+        document.execCommand('insertText', false, isItem ? t.replace(/\s*\n\s*/g, ' ') : t);
+      }
       target.addEventListener('blur', end);
       target.addEventListener('keydown', key);
+      target.addEventListener('paste', paste);
     }
     function pickColor(c) {
       var inp = document.createElement('input');
@@ -1607,12 +1654,45 @@
           startEdit(c, c.c.items.length - 1);
         }
       });
+      // §33.1: arrastar a pega ⋮⋮ reordena os itens dentro da mesma lista
+      vp.addEventListener('dragstart', function (e) {
+        var h = e.target.closest && e.target.closest('.ccc-lh');
+        if (!h || !EDIT) return;
+        var li = h.closest('.ccc-li'), el = h.closest('.ccc');
+        liDrag = { id: +el.getAttribute('data-id'), i: +li.getAttribute('data-i'), to: null };
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/x-topper-li', String(liDrag.i));
+        try { e.dataTransfer.setDragImage(li, 8, 8); } catch (x) {}
+        li.classList.add('dragging');
+      });
+      vp.addEventListener('dragend', function () { liDrag = null; $$('.ccc-li.dragging, .ccc-li.drop-a, .ccc-li.drop-b', vp).forEach(function (x) { x.classList.remove('dragging', 'drop-a', 'drop-b'); }); });
       vp.addEventListener('dragover', function (e) {
+        if (liDrag) {
+          var li = e.target.closest && e.target.closest('.ccc-li'), el = li && li.closest('.ccc');
+          $$('.ccc-li.drop-a, .ccc-li.drop-b', vp).forEach(function (x) { x.classList.remove('drop-a', 'drop-b'); });
+          if (!li || +el.getAttribute('data-id') !== liDrag.id) { liDrag.to = null; return; }
+          e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+          var r = li.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2, i = +li.getAttribute('data-i');
+          li.classList.add(after ? 'drop-b' : 'drop-a');
+          liDrag.to = after ? i + 1 : i;
+          return;
+        }
         if (!EDIT || !e.dataTransfer) return;
         var t = e.dataTransfer.types;
         if (t.indexOf('Files') >= 0 || t.indexOf('text/x-cc-asset') >= 0 || t.indexOf('application/x-td-keys') >= 0 || t.indexOf('text/uri-list') >= 0 || t.indexOf('text/plain') >= 0) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
       });
       vp.addEventListener('drop', function (e) {
+        if (liDrag) {
+          e.preventDefault();
+          var d = liDrag, c = B.cards.get(d.id); liDrag = null;
+          if (!c || d.to == null || d.to === d.i || d.to === d.i + 1) return;
+          var before = JSON.parse(JSON.stringify(c.c)), items = c.c.items.slice(), it = items.splice(d.i, 1)[0];
+          items.splice(d.to > d.i ? d.to - 1 : d.to, 0, it);
+          c.c = Object.assign({}, c.c, { items: items });
+          push({ t: 'content', id: c.id, before: before, after: JSON.parse(JSON.stringify(c.c)) });
+          rerender(c); save([{ id: c.id, content: c.c }]);
+          return;
+        }
         if (!EDIT || !e.dataTransfer) return;
         e.preventDefault();
         var p = vpPoint(e), w = toWorld(p.x, p.y), at = { x: Math.round((w.x - 140) / GRID) * GRID, y: Math.round((w.y - 40) / GRID) * GRID };
@@ -1921,7 +2001,7 @@
     }
 
     // ── menu «/» (IA) ──
-    var slash = null;
+    var slash = null, liDrag = null;
     function aiActs() {
       var sel = Array.from(B.sel).map(function (id) { return B.cards.get(id); }).filter(Boolean);
       var asset = sel.length === 1 && sel[0].asset ? sel[0] : null;
