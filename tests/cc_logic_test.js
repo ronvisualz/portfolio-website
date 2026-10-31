@@ -162,5 +162,12 @@ pl = CCL.clipPlace(pk, { x: 1000, y: 2000 }, true);
 eq([pl[0].x, pl[0].y, pl[3].x, pl[3].y], [1000, 2000, 1300, 2050], 'clipPlace: com cursor, o canto vai para o cursor');
 eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)');
 
+// §33.6 (revisão final): o pacote guardado só se reconhece pelo texto igual ao que foi copiado; sem texto não cola nada antigo
+{ const st = { ts: Date.now() - 3600e3, txt: 'Col\na\nb', pack: pk };
+  eq(CCL.clipMatch(st, 'Col\na\nb'), pk, 'clipMatch: texto igual → o pacote');
+  eq(CCL.clipMatch(st, ''), null, 'clipMatch: área de transferência sem texto → nada (não cola o pacote antigo)');
+  eq(CCL.clipMatch(st, 'outra coisa'), null, 'clipMatch: texto diferente → nada');
+  eq(CCL.clipMatch(null, 'x'), null, 'clipMatch: sem pacote guardado → nada'); }
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

@@ -78,12 +78,15 @@ if ($mime === '' || $size > 0) {
     $mime = ['webp' => 'image/webp', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png'][$ext] ?? ($mime ?: 'application/octet-stream');
 }
 
-if (strncmp($key, 'r2:', 3) === 0 && !$public && !empty($_GET['px']) && str_starts_with($mime, 'image/')) {
-    // conta-gotas (§33.11): os píxeis têm de vir do mesmo domínio (um canvas com imagem de outro domínio não se lê)
+if (strncmp($key, 'r2:', 3) === 0 && !$public && !empty($_GET['px'])) {
+    // conta-gotas (§33.11): os píxeis têm de vir do mesmo domínio (um canvas com imagem de outro domínio não se lê).
+    // Só imagens raster: um SVG servido aqui, no domínio do admin, correria <script> com a sessão de quem o abre.
+    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/bmp'], true)) ccf_404();
     $head = r2_head(substr($key, 3));
     if (!$head || (int)($head['size'] ?? 0) > 62914560) ccf_404();
     header('Content-Type: ' . $mime);
     header('X-Content-Type-Options: nosniff');
+    header('Content-Security-Policy: sandbox');
     header('Cache-Control: private, max-age=3600');
     header('Content-Length: ' . (int)$head['size']);
     r2_stream(substr($key, 3), function (string $c) { echo $c; });

@@ -1052,7 +1052,10 @@
     var RT = null;   // tempo real (cc_rt.js): presença, cursores, alterações dos outros logo
 
     function load() {
-      return api('board', { id: B.id }, 'GET').then(function (j) {
+      var id = B.id;
+      return api('board', { id: id }, 'GET').then(function (j) {
+        // entretanto abriu-se outro Topperboard (§33.10): esta resposta já não serve
+        if (B.id !== id) { var st = new Error('stale'); st.stale = true; throw st; }
         B.data = j;
         B.rev = j.board.rev;
         B.loadedAt = j.now || Date.now();
@@ -1081,18 +1084,21 @@
             + (MANAGE ? '<button type="button" class="ibtn" data-a="more" aria-label="Mais" data-tip>⋯</button>' : '');
       return '<nav class="ccb-crumb" aria-label="Caminho">' + crumbs + '</nav>' + stages + '<div class="ccb-acts">' + acts + '</div>';
     }
-    function frame() {
-      root.innerHTML = '<header class="ccb-top">' + topHtml() + '</header>'
-        + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
-        + '<div class="ccb-main">'
-        + '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
+    function toolsHtml() {
+      return '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
         + tb('select', 'cursor', 'Selecionar e mover ( V )')
         + (EDIT ? '<button type="button" data-undo="0" aria-label="Anular (' + MODK + ' Z)" data-tip disabled>' + ico('undo') + '</button><button type="button" data-undo="1" aria-label="Refazer (' + MODK + ' Shift Z)" data-tip disabled>' + ico('redo') + '</button><hr>' : '')
         + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
           + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
           + '<hr>' + '<button type="button" data-upmenu aria-haspopup="menu" aria-label="Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)" data-tip>' + ico('upload') + '</button><input type="file" multiple hidden data-up>'
           + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
-        + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>'
+        + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>';
+    }
+    function frame() {
+      root.innerHTML = '<header class="ccb-top">' + topHtml() + '</header>'
+        + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
+        + '<div class="ccb-main">'
+        + toolsHtml()
         + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
         + '<div class="ccb-world"><div data-lanes></div><svg class="ccb-arrows" width="1" height="1"><defs><marker id="cc-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g data-ar></g></svg><div data-layer></div></div>'
         + '<div class="ccb-empty" hidden><div><b>Topperboard vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
@@ -1620,8 +1626,10 @@
         if (b.getAttribute('data-gone') === 'remove') { select(g.map(function (x) { return x.card; }).filter(function (id) { return B.cards.has(id); })); delSel(); return; }
         b.disabled = true;
         var ids = Array.from(new Set(canRestore.map(function (x) { return x.trash_id; })));
-        ids.reduce(function (p, id) { return p.then(function (bad) { return driveRun({ do: 'restore', id: id }).then(function (j) { return bad + (j.ok ? 0 : 1); }); }); }, Promise.resolve(0)).then(function (bad) {
-          if (bad) toast('Não foi possível restaurar: já não está no Lixo (foi apagado de vez). Pode retirá-lo do Topperboard.', { err: true });
+        var why = '';
+        ids.reduce(function (p, id) { return p.then(function (bad) { return driveRun({ do: 'restore', id: id }).then(function (j) { if (!j.ok && !why) why = j.error || ''; return bad + (j.ok ? 0 : 1); }); }); }, Promise.resolve(0)).then(function (bad) {
+          // a razão vem da Drive (nome repetido, pasta que já não existe…); sem razão, o item já saiu do Lixo
+          if (bad) toast('Não foi possível restaurar: ' + (why ? why.replace(/\.?$/, '.') : 'já não está no Lixo (foi apagado de vez). Pode retirá-lo do Topperboard.'), { err: true });
           else toast(ids.length === 1 && canRestore.length === 1 ? 'Ficheiro restaurado do Lixo.' : 'Ficheiros restaurados do Lixo.');
           if (RT) RT.signal();
           reload();
@@ -1646,8 +1654,7 @@
     }
     function readClip(text) {
       try {
-        var o = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null');
-        if (o && o.pack && (text === o.txt || (!text && Date.now() - o.ts < 864e5))) return o.pack;
+        return CCL.clipMatch(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'), text);
       } catch (e) {}
       return null;
     }
@@ -1804,7 +1811,7 @@
       var kind = kindOf(file), type = kind === 'image' || kind === 'video' || kind === 'audio' ? kind : 'file';
       var url = (kind === 'image' && SHOWABLE.test(file.type)) || (kind === 'video' && file.type) ? URL.createObjectURL(file) : '';
       var c = { id: -(++localSeq), type: type, x: q.x, y: q.y, w: 280, h: 0, z: 9999, col: null, ord: 0, lane: laneAt(q.y), c: {}, asset: null, nc: 0,
-                local: { url: url, name: file.name, kind: kind, p: 0, state: 'up', err: '' } };
+                local: { url: url, name: file.name, kind: kind, p: 0, state: 'up', err: '', board: B.id } };
       localFiles.set(c.id, { file: file, q: q });
       B.cards.set(c.id, c);
       return c;
@@ -1813,15 +1820,18 @@
     function sendLocal(c) {
       var lf = localFiles.get(c.id);
       c.local.state = 'up'; c.local.err = ''; c.local.p = 0; rerender(c);
-      return uploadFile(lf.file, { board: B.id, x: c.x, y: c.y, lane: c.lane, cw: 280, onp: function (p) { localProgress(c, p); } }).then(function (j) {
+      var bid = c.local.board;
+      return uploadFile(lf.file, { board: bid, x: c.x, y: c.y, lane: c.lane, cw: 280, onp: function (p) { localProgress(c, p); } }).then(function (j) {
         var sel = B.sel.has(c.id);
         dropLocal(c);
+        if (B.id !== bid) return;   // entretanto abriu-se outro Topperboard: o cartão ficou no de origem
         if (j && j.card) {
           B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); if (RT) RT.added([j.card]);
           if (sel) select([j.card.id], true);
         }
         B.rev = j && j.rev ? j.rev : B.rev;
       }).catch(function (e) {
+        if (B.id !== bid) { dropLocal(c); toast('Não foi possível enviar «' + c.local.name + '» para o Topperboard anterior: ' + ((e && e.message) || 'o envio falhou.'), { err: true }); return; }
         c.local.state = 'fail'; c.local.err = (e && e.message) || 'O envio falhou.';
         rerender(c);
       });
@@ -2207,8 +2217,7 @@
         var pb = e.target.closest('[data-page-both]');
         if (pb) { var on = !pb.classList.contains('on'); api('page_both', { board: B.id, lane: pb.getAttribute('data-page-both'), on: on ? 1 : '' }).then(function (j) { toast(j.msg); if (RT) RT.signal(); reload(); }).catch(fail); return; }
       });
-      var up = $('[data-up]', root);
-      if (up) up.addEventListener('change', function () { addFiles(up.files); up.value = ''; });
+      bindEditBits();
       var title = $('[data-title]', root);
       if (title && EDIT) title.addEventListener('dblclick', function () {
         title.contentEditable = 'true'; title.focus();
@@ -2391,8 +2400,20 @@
       }, true);
       window.addEventListener('resize', function () { applyView(); });
       sideEl.addEventListener('click', sideClick);
+    }
+    /** O que só existe quando se pode editar: o campo de envio e a barra da caneta (de novo quando a permissão muda). */
+    function bindEditBits() {
+      var up = $('[data-up]', root);
+      if (up) up.addEventListener('change', function () { addFiles(up.files); up.value = ''; });
       var pbar = $('.ccb-pen', root);
       if (pbar) { pbar.addEventListener('click', penClick); pbar.addEventListener('change', penClick); pbar.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); }
+    }
+    function editChrome() {
+      var tools = $('.ccb-tools', root); if (tools) tools.outerHTML = toolsHtml();
+      var pb = $('.ccb-pen', root); if (pb) pb.remove();
+      if (EDIT) $('.ccb-hint', root).insertAdjacentHTML('beforebegin', penBarHtml());
+      setTool('select');
+      bindEditBits();
     }
     function down(e) {
       if (e.button === 2) return;
@@ -2782,6 +2803,7 @@
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
       if (viewer) { viewerKey(e); return; }
+      if (document.querySelector('.cc-dpick')) return;   // seletor da Drive aberto: as teclas (Esc, Tab) são dele, mesmo com o foco no corpo
       if (root.classList.contains('present')) return;   // em Apresentar, as teclas são da apresentação
       if ((pickState || pmenu) && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (pmenu) closePalMenu(); else stopPick(); return; }
       if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
@@ -3358,14 +3380,16 @@
         if (RT) RT.reconcile();
         renderAll();
         sideSync();
-      }).catch(function (e) { if (!e.offline) fail(e); });
+      }).catch(function (e) { if (!e.offline && !e.stale) fail(e); });
     }
     var lastPoll = 0;
     setInterval(function () {
       if (document.hidden || drag || B.editing || !B.data) return;
       if (RT && RT.connected && Date.now() - lastPoll < 30000) return;   // em tempo real, a sondagem é só a rede de segurança
       lastPoll = Date.now();
-      api('poll', { id: B.id, rev: B.rev }, 'GET').then(function (j) {
+      var pid = B.id;
+      api('poll', { id: pid, rev: B.rev }, 'GET').then(function (j) {
+        if (B.id !== pid) return;
         if (j.changed && !drag && !B.editing) { B.rev = j.rev; reload(); }
         if (j.jobs && EDIT) kickWorker();
       }).catch(function () {});
@@ -3418,7 +3442,11 @@
         RT = null;
         closeViewer(true); closeColorPop(); closeBalloon(); closePalMenu(); stopPick(); closeSlash && closeSlash();
         B.id = id; root.setAttribute('data-board', id); root.removeAttribute('data-card');
+        var wasEdit = EDIT, upNow = 0;
+        localFiles.forEach(function (lf, cid) { var lc = B.cards.get(cid); if (lc && lc.local && lc.local.state === 'up') upNow++; else if (lc) dropLocal(lc); });
+        if (upNow) toast(upNow === 1 ? 'O envio continua no Topperboard anterior.' : 'Os ' + upNow + ' envios continuam no Topperboard anterior.');
         B.data = j; B.rev = j.board.rev; B.loadedAt = j.now || Date.now(); EDIT = !!j.edit;
+        if (EDIT !== wasEdit) editChrome();
         B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
         B.cards.clear(); j.cards.forEach(function (c) { B.cards.set(c.id, c); });
         B.sel.clear(); B.undo = []; B.redo = []; B.editing = null; B.arrowFrom = null;

@@ -250,5 +250,10 @@
     }).filter(Boolean).join('\n');
   }
 
-  return { version: 1, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  /** O pacote guardado ao copiar, se o texto da área de transferência for o que se copiou (senão null). */
+  function clipMatch(stored, text) {
+    return stored && stored.pack && text && text === stored.txt ? stored.pack : null;
+  }
+
+  return { version: 1, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

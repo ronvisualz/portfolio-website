@@ -56,6 +56,13 @@ const ccObjs = () => +php(`echo $pdo->query("SELECT COUNT(*) FROM cc_assets WHER
   // outra vez para o Lixo → «Retirar do Topperboard» tira o cartão (com Anular)
   php(`tests_http("POST", "/admin/drive_api.php", ["do" => "trash", "key" => ${JSON.stringify(k1)}], 1);`);
   await p.reload(); await p.waitForSelector('.ccb-gone'); await p.waitForTimeout(300);
+  // restaurar falha por outra razão (ex.: nome repetido no destino) → mostra a razão do servidor, não «apagado de vez»
+  const ERR = 'Já existe um ficheiro com esse nome na pasta de destino.';
+  await p.route('**/admin/drive_api.php', r => /"restore"/.test(r.request().postData() || '') ? r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ ok: false, error: ERR }) }) : r.continue());
+  await p.locator('.ccb-gone button', { hasText: 'Restaurar do Lixo' }).click(); await p.waitForTimeout(900);
+  const tst = (await p.locator('.tst.err').allInnerTexts()).join(' | ');
+  check(tst.includes(ERR) && !/apagado de vez/.test(tst), 'restaurar falhado mostra a razão do servidor (' + tst + ')');
+  await p.unroute('**/admin/drive_api.php'); await p.waitForSelector('.ccb-gone'); await p.waitForTimeout(300);
   const n1 = await p.locator('.ccc[data-id]').count();
   await p.locator('.ccb-gone button', { hasText: 'Retirar do Topperboard' }).click(); await p.waitForTimeout(1200);
   check(await p.locator('.ccc[data-id]').count() === n1 - 1 && await p.locator('.ccb-gone').count() === 0, '«Retirar do Topperboard» tira o cartão e o aviso');
@@ -65,6 +72,14 @@ const ccObjs = () => +php(`echo $pdo->query("SELECT COUNT(*) FROM cc_assets WHER
   php(`tests_http("POST", "/admin/drive_api.php", ["do" => "purge", "id" => ${+tid || 0}], 1);`);
   await p.reload(); await p.waitForSelector('.ccb-gone'); await p.waitForTimeout(300);
   check(await p.locator('.ccb-gone button', { hasText: 'Restaurar do Lixo' }).count() === 0 && /já não está no Lixo|apagado de vez/i.test(await p.locator('.ccb-gone').innerText()), 'depois de apagado de vez: aviso claro e só «Retirar do Topperboard»');
+  // Esc fecha o seletor da Drive também com cartões selecionados e o foco no corpo da página; a seleção fica
+  await p.locator('.ccc.t-note').first().click(); await p.waitForTimeout(200);
+  await p.locator('[data-upmenu]').click(); await p.locator('.cc-upmenu button', { hasText: 'Da Drive' }).click();
+  await p.locator('.cc-dpick').waitFor({ timeout: 5000 }).catch(() => {});
+  await p.evaluate(() => document.activeElement && document.activeElement.blur());
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  check(await p.locator('.cc-dpick').count() === 0, 'Esc fecha o seletor da Drive com cartões selecionados');
+  check(await p.locator('.ccc.sel').count() === 1, 'e a seleção do Topperboard mantém-se (' + await p.locator('.ccc.sel').count() + ')');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);
