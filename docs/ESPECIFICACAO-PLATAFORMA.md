@@ -4264,3 +4264,72 @@ Verificado no main: mover/copiar faz uma **cópia servidor a servidor no R2 fich
 
 ### 32.7 Bug visual: árvore de pastas no modo escuro
 Ao passar o cursor numa pasta da árvore lateral (ex.: «Leads»), a linha fica **branca e o texto também branco** — ilegível. Corrigir o estado hover (e focus/selecionado) com os tokens de cor dos dois modos (§11): no escuro, fundo ligeiramente mais claro que o painel (ex.: branco a 6–8% de opacidade) com o texto e o tamanho a manter o contraste; no claro, cinzento suave. Transição curta (120 ms), raio igual ao item ativo, sem mexer no amarelo do item selecionado. Verificar o mesmo padrão em todas as listas/árvores da plataforma (menus, Centro Criativo, Definições).
+
+## 33. Toppernote (ex-Centro Criativo) — melhorias pedidas pela equipa (31 out 2026)
+
+### 33.0 Nome
+A aba **Centro Criativo** passa a chamar-se **Toppernote** em toda a interface (menu lateral, títulos, migalhas, Definições, notificações, emails, portal do cliente, ajuda e IA). O endereço antigo (`criativo.php`) redireciona; o código interno (`cc_*`) pode manter-se. Atualizar a especificação nas referências visíveis.
+
+### 33.0.1 Topperboards (31 out 2026)
+Os **quadros** passam a chamar-se **Topperboards** em toda a interface: «Projetos» (no Toppernote) → **«Topperboards»**; «Quadros livres» → **«Topperboards livres»**; «quadro» / «sub-quadro» / «novo quadro» → «Topperboard» / «sub-Topperboard» / «novo Topperboard»; o mesmo em notificações, emails, portal do cliente, partilhas, IA e ajuda. Plural «Topperboards».
+
+### 33.1 Listas
+- Enter no fim de um item cria logo o seguinte (vazio, com o cursor lá); vários itens seguidos sem nome; itens vazios no fim não se gravam.
+- O **primeiro item é editável** como os outros (bug atual: não deixa escrever).
+- Backspace num item vazio apaga-o e sobe; colar várias linhas cria um item por linha; arrastar para reordenar.
+
+### 33.2 Amostra de cor
+- O seletor de cor abre **junto do cartão** (popover ancorado, que se reposiciona para caber no ecrã), não no canto superior esquerdo.
+- Campo **#HEX** editável (aceita com ou sem #, 3 ou 6 dígitos), botão **copiar #HEX** e **colar** um #HEX da área de transferência (Ctrl V sobre a amostra selecionada também troca a cor).
+
+### 33.3 Desenhar
+- **Cor da caneta escolhida numa paleta** (as cores da marca + seletor livre com #HEX), em vez de mudar de cor a cada clique.
+- **Espessura** (fina/média/grossa) e **borracha** (apaga traços tocados; atalho E).
+- **Escala corrigida:** redimensionar um desenho escala os traços na proporção (viewBox/transform), sem deformar nem cortar; espessura acompanha opcionalmente.
+
+### 33.4 Comentários ao passar o cursor
+- Passar o cursor (ou tocar) no **ícone com o número** no canto inferior direito do cartão mostra um balão com os últimos comentários (autor, data, texto curto) e «Ver todos»; sem abrir o detalhe.
+
+### 33.5 Qualidade das imagens
+- Bug: logo após o envio (e às vezes após recarregar) a imagem aparece em baixa resolução até se clicar. Causa provável: o cartão escolhe a miniatura disponível no momento (antes de as maiores estarem geradas) e não volta a pedir. Corrigir: usar `srcset`/escolha pela largura real × zoom × densidade do ecrã, trocar automaticamente para a miniatura maior quando ficar pronta (e ao fazer zoom), e mostrar o original enquanto as miniaturas não existem.
+
+### 33.6 Copiar e colar qualquer item
+- **Ctrl/Cmd C, X, V e D (duplicar)** com qualquer cartão ou seleção múltipla (notas, listas, imagens, vídeos, links, amostras, desenhos, colunas, setas entre os itens copiados), entre quadros e entre separadores; cola na posição do cursor. Colar texto/imagem de fora continua como hoje.
+
+### 33.7 Painel de detalhes redimensionável
+- Arrastar a borda esquerda do painel lateral de detalhes muda a largura (mín. 280 px, máx. 60% do ecrã); duplo clique repõe; largura lembrada por pessoa.
+
+### 33.8 Cartões de link com título e miniatura
+- YouTube, Vimeo, Instagram, TikTok, Behance, Dribbble, ArtStation, X, Spotify, SoundCloud e sites genéricos: **título, miniatura e autor** no cartão (oEmbed onde existir; senão metadados Open Graph do servidor), como já acontece com o Pinterest. Vídeos com botão ▶ e duração; reprodução dentro do detalhe quando o site o permitir.
+
+### 33.9 Enviar ficheiros: dispositivo ou Drive
+- O botão de enviar abre a escolha **«Do dispositivo»** ou **«Da Drive»**. «Da Drive» abre um seletor da Drive (pesquisa, pastas, recentes, seleção múltipla) e coloca os ficheiros no Topperboard **sem os copiar** (o cartão aponta para o ficheiro da Drive). Confirmado: se o ficheiro for **movido ou renomeado** na Drive, o cartão acompanha; se for **apagado** (ou ir para o Lixo), o cartão fica marcado «Ficheiro apagado da Drive» e aparece um **aviso no respetivo Topperboard** (e notificação a quem o criou), com «Restaurar do Lixo» enquanto lá estiver e «Retirar do Topperboard».
+
+### 33.10 Segunda ronda de melhorias (31 out 2026, aprovadas)
+- **Navegação entre sub-Topperboards sem recarregar** (hoje `location.href` recarrega a página): abrir dentro da mesma página com transição curta de zoom para o cartão; pré-carregar os dados dos sub-Topperboards visíveis em tempo ocioso; **migalhas** no topo («Projeto › Referências › Luz»); Voltar/Avançar do browser funcionam (History API).
+- **Editar nota no ponto do clique:** duplo clique (ou segundo clique numa nota já selecionada) entra em edição com o cursor no sítio exato.
+- **Envio otimista:** ao largar ficheiros, o cartão aparece logo com pré-visualização local, progresso no cartão e estado «a enviar»; troca sozinho para a versão do servidor; em erro fica marcado com «Tentar outra vez», nunca desaparece.
+- **Visualizador interno:** clique seleciona; duplo clique ou Espaço abre ecrã inteiro dentro da plataforma (fundo escuro, zoom com roda/pinça, setas para a imagem anterior/seguinte do Topperboard, Esc fecha).
+- **Anular/Refazer visíveis:** botões na barra do Topperboard (Ctrl Z / Ctrl Shift Z já existem, 80 passos); ações destrutivas também com aviso «Anular». **Anular por pessoa em tempo real:** cada pessoa só anula as suas próprias ações, nunca as de um colega no mesmo Topperboard.
+- Ajustes às anteriores: listas com Tab (sub-itens) e Ctrl Enter (marcar); seletor de cor com as últimas 8 cores usadas; balão de comentários só de leitura (responder abre o detalhe); colar no mesmo Topperboard desloca ligeiramente a cópia; atalhos P caneta, E borracha, 1–5 cores.
+- **Fase futura (não agora):** personalização com paleta fixa (cores da marca + 6 neutros) para fundos, contornos e setas, e 3 formas (retângulo, círculo, losango).
+
+### 33.11 Conta-gotas na paleta das imagens (31 out 2026)
+No detalhe de uma imagem (e de um vídeo, no fotograma em pausa), a «Paleta» automática ganha:
+- Botão **«+ Escolher da imagem»** (ícone conta-gotas, atalho **I**) que liga o **modo conta-gotas** só enquanto se escolhe — o cursor normal não é afetado o resto do tempo. Esc ou clique fora sai.
+- Ao mover o cursor sobre a imagem aparece uma **lupa** (círculo com píxeis ampliados ×8 e a mira no centro) e, por baixo, o **#HEX** do tom e uma amostra; amostra feita no **original em resolução total** (não na miniatura), média 3×3 para evitar ruído (opção 1 px com Alt).
+- **Clique adiciona** a cor à paleta (fica marcada como «escolhida por» quem a adicionou, distinta das automáticas); Shift + clique adiciona várias seguidas sem sair do modo.
+- **Clique em qualquer cor** da paleta copia o **#HEX** (aviso «#7C7774 copiado»); menu ⋯ na cor: copiar como RGB/HSL, renomear (ex.: «Pele»), remover (só as adicionadas à mão; as automáticas podem esconder-se), criar **cartão Amostra de cor** no Topperboard. Botão **«Copiar paleta»** copia todos os #HEX.
+- A paleta (automática + manual) fica guardada na referência e entra na pesquisa por cor da Biblioteca. Leitura de píxeis no mesmo domínio (cc_file.php) para o canvas não ficar bloqueado.
+
+### 33.12 Selecionar várias coisas com Alt (31 out 2026)
+Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar várias coisas:
+- **Alt + arrastar** (Windows) / **Option + arrastar** (Mac) no fundo desenha um **retângulo de seleção** (contorno tracejado com fundo azul translúcido); ao largar ficam selecionados os cartões **tocados** pelo retângulo; com Shift também, soma à seleção atual. Mostrar «3 selecionados» e a barra de ações da seleção (mover, copiar, alinhar, apagar com Anular).
+- **Shift + clique** acrescenta/retira cartões um a um; **Ctrl/Cmd A** seleciona tudo.
+- **iPad / toque:** tocar e manter ~0,4 s no fundo e depois arrastar desenha o retângulo (dois dedos continuam a mover/zoom).
+- O cursor muda para mira enquanto Alt está premido sobre o fundo, para se perceber o modo. Alt enquanto se arrasta um cartão continua a desligar o encaixe (já existe).
+
+### 33.13 Som só em «Apresentar» (31 out 2026)
+Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
+- **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
+- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
