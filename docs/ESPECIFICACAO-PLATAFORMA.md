@@ -2207,6 +2207,92 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   `inc/fin_tabs.php`, `inc/fin_cash.php`, `inc/fin.php`, `inc/alerts.php`, `inc/cron_run.php`, `inc/migrate_finance.php`,
   `inc/migrate.php`, `financeiro.php`, `assets/fin.js`, `assets/app.css`.
 
+### 10.30 Drive — melhorias pedidas pela equipa — §32 (31 out 2026)
+
+- **Mover instantâneo (§32.1):** mover e renomear já não esperam pela cópia no R2. O servidor decide os conflitos como
+  antes (409 → diálogo), grava uma linha em `drive_moves` e responde logo. O item aparece no destino com «Anular», e
+  um aviso «A arrumar N ficheiros… Já pode abrir e usar» fica enquanto a cópia corre.
+  - **Onde corre a cópia:** no servidor, por ordem e uma de cada vez (`GET_LOCK`). Corre logo a seguir à resposta
+    (LiteSpeed/FPM fecham o pedido antes), nos pedidos de estado da Drive e no cron `cc`.
+  - **Enquanto não acaba:** o catálogo mostra os itens no destino (`drive_moves_overlay`). Abrir ou descarregar lê da
+    origem (`drive_resolve`). Mover ou renomear outra vez funciona, mesmo em cadeia. Copiar, Lixo e partilhar
+    respondem «ainda está a ser arrumado».
+  - **Referências da plataforma** (favoritos, partilhas, registo de ficheiros): passam para o destino quando a cópia
+    acaba. Até lá os outros módulos continuam a abrir a origem, que ainda existe.
+  - **«Anular»:** na fila, cancela sem mexer no armazenamento; já a correr ou feito, enfileira o movimento inverso.
+    Só quem moveu (ou um admin) anula.
+- **Avaliação do armazenamento por ID imutável** (caminhos só na base de dados; mover e renomear = só base):
+  **viável, mas como fase própria.** Hoje a chave do R2 é o caminho, e esse caminho está guardado em muitos sítios:
+  - no Financeiro, no Review e Centro Criativo, nos negócios, nos favoritos e nas partilhas;
+  - nos envios diretos do browser (que escrevem no caminho);
+  - no catálogo, que é a própria listagem do bucket.
+
+  Para mudar seria preciso:
+  - uma tabela de objetos (id ↔ caminho, tamanho, ETag) como fonte de verdade;
+  - a migração de todas as chaves (cópia para `obj/<id>`);
+  - envios que escrevem no id;
+  - a listagem e a pesquisa a partir da base;
+  - o ZIP, as partilhas e a IA a resolver o id.
+
+  O `drive_resolve()` desta fase é o ponto de troca: hoje traduz o caminho que se vê para a chave onde o objeto ainda
+  está; com IDs, traduz o caminho para `obj/<id>`. Ganho: mover pastas enormes passa a ser imediato e sem cópia. Custo:
+  uma migração de dados com janela de manutenção, e a Drive passa a depender da base de dados para listar.
+- **Partilha «Só ver» / «Pode editar» (§32.2):** escolhe-se ao criar o link e muda-se depois na lista do diálogo, sem
+  mudar o link. A validade continua obrigatória (pastas podem ficar sem prazo) e a password é opcional.
+  - **Quem pode fazer o quê:** «Pode editar» exige poder editar a Drive. Só quem criou o link (ou um admin) o altera,
+    e um link de faturação só por quem tem o Financeiro.
+  - **«Pode editar» numa pasta:** carregar (direto para o armazenamento, com progresso; nome repetido → «nome (2)»),
+    criar subpastas, renomear ficheiros e pastas, e substituir. A versão anterior fica em `.topper/versions/`, e o
+    painel de detalhes mostra «Versões anteriores».
+  - **«Pode editar» num ficheiro:** só substituir.
+  - **Nunca se apaga:** não existe nenhuma ação que apague, verificado no servidor (`drive_share_allows`). Os caminhos
+    ficam sempre dentro da pasta partilhada (`drive_share_rel`).
+  - **Regras dos envios:** cada pedido leva o token do formulário da página (`X-Share-Form`) e o nome de quem envia. O
+    limite por envio está em Definições › Drive (2 GB).
+  - **Registo e aviso ao dono:** fica registado quem fez o quê (nome, data, IP parcial; `drive_share_log`). O dono é
+    avisado nas notificações e por email (o primeiro de cada meia hora).
+- **Pasta partilhada (§32.3):** a página mostra uma grelha de miniaturas.
+  - **Miniaturas:** a da Drive, por ETag; uma imagem serve a si própria; um PDF mostra a 1.ª página num iframe pequeno
+    e preguiçoso; o vídeo leva um «play».
+  - **Navegação:** pastas primeiro, subpastas com migalhas (`&p=`, nunca acima da pasta partilhada) e um visualizador
+    em ecrã inteiro (setas, Esc, deslizar no telemóvel, Descarregar).
+  - **Aspeto:** modo escuro automático e sem deslocamento horizontal no telemóvel.
+  - **Privados:** os documentos privados e a faturação só aparecem se a partilha os incluir (`drive_share_sees`) — na
+    página, nos downloads, nas pré-visualizações, no ZIP e nas ações de «Pode editar». Antes, um documento privado
+    descarregava-se pelo URL direto.
+- **Descarregar tudo / seleção (§32.4):** «Descarregar tudo (.zip)» e caixas de seleção com «Descarregar seleção (n)».
+  - **Como é gerado:** o ZIP sai em streaming do R2 para o browser (`ZipStream`, método «store», ZIP64 acima de 4 GB),
+    com a estrutura de pastas e as pastas vazias.
+  - **Partes:** de 2000 ficheiros / 4 GB cada.
+  - **Se falhar a meio:** o ZIP fica sem fim, e o browser dá o download como falhado.
+- **Copiar link (§32.5), causa:**
+  1. o URL seguia o Host do pedido (agora vem sempre de `team_app_url()`);
+  2. o diálogo copiava depois de esperar pelo servidor, fora do gesto, e no iPad o recurso antigo dizia «copiado» sem
+     copiar.
+
+  Agora a cópia começa no clique e, se falhar, aparece o link num campo selecionável (`TD.linkBox`). «Copiar caminho»
+  diz que não é um link.
+- **Partilha rápida (§32.6):** «Copiar link de partilha» no clique direito, na barra de ações e no toque longo (500 ms).
+  Reaproveita um link «Só ver» ativo (sem password, com mais de 1 h) ou cria um com a validade por defeito (Definições
+  › Drive, 24 h). Uma pasta com documentos privados abre o diálogo.
+- **Hover (§32.7):** token `--row-hover`: cinzento suave no claro, branco a 7% no escuro. Tem transição de 120 ms e
+  aplica-se à árvore, às linhas, aos atalhos, à pesquisa e à importação; o amarelo do selecionado mantém-se.
+- **Base de dados, passo 40:**
+  - `drive_shares` ganha `perm`, `created_by` e `inc_private`;
+  - tabelas novas `drive_moves`, `drive_versions` e `drive_share_log`.
+- **Testes** (`tests/`, scripts PHP e Playwright; correm na bancada):
+  - `share_*`, `versions`, `zipstream`, `share_zip`, `drive_moves`, `drive_move_http`, `migrate40`;
+  - `ui/hover`, `copylink`, `quickshare`, `share_perm`, `versions_ui`, `share_folder`, `move_instant`.
+- **Ficheiros:**
+  - novos: `inc/drive_share.php`, `inc/drive_moves.php`, `inc/zipstream.php`, `assets/partilha.js`,
+    `assets/partilha.css`;
+  - alterados: `partilha.php`, `drive_api.php`, `drive.php`, `inc/drive_store.php`, `inc/r2.php` (`r2_stream`),
+    `inc/migrate_files.php`, `inc/migrate.php`, `inc/settings_def.php`, `inc/alerts.php`, `inc/bootstrap.php`,
+    `inc/cron_run.php`, `assets/drive/app.js`, `core.js`, `drive.css`, `core.css`, `io.css`, `assets/app.css`.
+- **Por decidir:**
+  - hoje quem só pode ver a Drive ainda consegue mover, apagar e partilhar (só «Pode editar» exige poder editar);
+  - `share_list` e `share_revoke` (já no main) não filtram a faturação nem o dono.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
