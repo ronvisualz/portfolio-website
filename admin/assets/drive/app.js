@@ -1390,17 +1390,19 @@
   }
   /** «A arrumar N ficheiros…»: enquanto a cópia corre no servidor (abrir já funciona, lê da origem). */
   let movesT = null, movesToast = null;
-  function watchMoves() {
+  function watchMoves(boot) {
     clearTimeout(movesT);
     TD.api({ do: 'moves_status' }).then(j => {
       if (!j.ok) return;
-      (j.failed || []).forEach(f => {
-        const id = f.from + '>' + f.to;
-        if (S.movesFailed && S.movesFailed.has(id)) return;
-        (S.movesFailed = S.movesFailed || new Set()).add(id);
-        TD.toast('Não foi possível arrumar «' + P.base(f.from) + '»: ' + (f.error || 'erro') + ' Fica na origem.', 'err', { ms: 0 });
-        scheduleRefresh(0);
-      });
+      // cada falha avisa uma vez neste browser (e não em cada página aberta durante a hora seguinte)
+      let seen = [];
+      try { seen = JSON.parse(localStorage.getItem('td.movesFailedSeen') || '[]'); } catch (e) { seen = []; }
+      const fresh = (j.failed || []).filter(f => seen.indexOf(f.id) < 0);
+      fresh.forEach(f => TD.toast('Não foi possível arrumar «' + P.base(f.from) + '»: ' + (f.error || 'erro') + ' Fica na origem.', 'err', { ms: 12000 }));
+      if (fresh.length) {
+        try { localStorage.setItem('td.movesFailedSeen', JSON.stringify(seen.concat(fresh.map(f => f.id)).slice(-50))); } catch (e) { /* sem armazenamento: volta a avisar */ }
+        if (!boot) scheduleRefresh(0);   // ao abrir a página o catálogo acabou de chegar e já está certo
+      }
       if (j.files > 0) {
         const txt = 'A arrumar ' + n(j.files, 'ficheiro', 'ficheiros') + '… Já pode abrir e usar.';
         if (!movesToast) movesToast = TD.toast(txt, 'info', { ms: 0 });
@@ -3313,7 +3315,7 @@
   }
   renderAll();
   load(false).then(() => {
-    watchMoves();   // movimentos de antes ainda a arrumar
+    watchMoves(true);   // movimentos de antes ainda a arrumar
     if (S.view === 'search') contentSearch();
     else if (f0 && S.view === 'folder') go({ view: 'folder', prefix: S.prefix }, { push: false, replace: true, focusKey: f0, select: true });
   });

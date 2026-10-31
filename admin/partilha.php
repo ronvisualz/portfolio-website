@@ -195,6 +195,17 @@ function share_gone(int $code): void {
     exit;
 }
 
+/** Pasta grande demais para um ZIP de uma vez (mais de 50 000 itens): melhor dizê-lo do que entregar um ZIP incompleto. */
+function share_too_big(): void {
+    http_response_code(413);
+    share_head('Pasta grande demais');
+    echo '<section class="card gone"><div class="badge">', share_icon('folder'), '</div>',
+         '<h1>Esta pasta é grande demais para um só download.</h1>',
+         '<p>Abra uma subpasta e descarregue-a, ou peça a quem partilhou um link para cada subpasta.</p></section>';
+    share_foot();
+    exit;
+}
+
 function share_failed(): void {
     http_response_code(502);
     share_head('Indisponível');
@@ -341,11 +352,19 @@ try {
         $zcur = $zsub === '' ? $prefix : $inside($zsub, true);
         $sel = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sel']) ? $_POST['sel'] : null;
         $objs = [];
+        // r2_list_all para no número de páginas pedido sem avisar: lista-se uma página a mais e, se passar o limite,
+        // recusa-se (um ZIP a que faltam ficheiros parece completo a quem o recebe)
+        $maxObjs = IS_LOCAL && isset($_GET['maxobjs']) ? max(1, (int)$_GET['maxobjs']) : 50000;
+        $listAll = static function (string $prefix) use ($maxObjs): array {
+            $l = r2_list_all($prefix, intdiv($maxObjs, 1000) + 1);
+            if (count($l) > $maxObjs) share_too_big();
+            return $l;
+        };
         $take = static function (array $o) use (&$objs, $s, $zcur): void {
             if (strncmp($o['key'], $zcur, strlen($zcur)) === 0 && drive_share_sees($s, $o['key'])) $objs[$o['key']] = $o;
         };
         if ($sel === null) {
-            foreach (r2_list_all($zcur, 50) as $o) $take($o);
+            foreach ($listAll($zcur) as $o) $take($o);
         } else {
             if (!is_array($sel) || !$sel || count($sel) > 5000) share_gone(404);
             foreach ($sel as $rel) {
@@ -353,12 +372,13 @@ try {
                 $isDir = substr($rel, -1) === '/';
                 $k = $inside($rel, $isDir);
                 if (strncmp($k, $zcur, strlen($zcur)) !== 0) share_gone(404);
-                if ($isDir) { foreach (r2_list_all($k, 50) as $o) $take($o); if (!drive_folder_exists($k)) share_gone(404); continue; }
+                if ($isDir) { foreach ($listAll($k) as $o) $take($o); if (!drive_folder_exists($k)) share_gone(404); continue; }
                 $h = r2_head($k);
                 if ($h === null) share_gone(404);
                 $take(['key' => $k, 'size' => (int)$h['size'], 'modified' => (int)($h['modified'] ?? 0)]);
             }
         }
+        if (count($objs) > $maxObjs) share_too_big();
         if ($sel === null && !$objs && !drive_folder_exists($zcur)) share_gone(404);
         ksort($objs, SORT_STRING);
         // partes: no máximo 2000 itens e 4 GB cada (um ficheiro maior vai sozinho, em ZIP64)

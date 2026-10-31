@@ -536,14 +536,21 @@ function api_purge_rows(PDO $pdo, array $rows, callable $more, int $batch, int &
 
 // §32.1: um item movido de forma instantânea já aparece no destino, mas ainda está a ser copiado. Mover/renomear
 // outra vez e abrir funcionam (fila e resolvedor); o resto espera que fique arrumado, com uma mensagem clara.
-if (in_array($do, ['copy', 'trash', 'share_create', 'share_quick', 'versions', 'index_one', 'zip_list'], true) && ($pendingMoves = drive_moves_pending($pdo))) {
+if (in_array($do, ['copy', 'trash', 'restore', 'mkdir', 'share_create', 'share_quick', 'versions', 'index_one', 'zip_list'], true) && ($pendingMoves = drive_moves_pending($pdo))) {
     $keysAsked = [];
     foreach (['key', 'from'] as $f) if (is_string($in[$f] ?? null)) $keysAsked[] = $in[$f];
     foreach ((array)($in['keys'] ?? []) as $k) if (is_string($k)) $keysAsked[] = $k;
+    if ($do === 'mkdir' && is_string($in['prefix'] ?? null) && is_string($in['name'] ?? null)) $keysAsked[] = $in['prefix'] . $in['name'] . '/';
+    if ($do === 'restore') {   // o sítio para onde volta cada item do Lixo
+        $tids = array_values(array_filter(array_map('intval', array_merge(isset($in['id']) ? [$in['id']] : [], (array)($in['ids'] ?? [])))));
+        foreach ($tids ? drive_trash_get_many($pdo, $tids) : [] as $t) $keysAsked[] = (string)$t['k'];
+    }
     foreach ($keysAsked as $k) {
         $moving = drive_resolve_with($pendingMoves, $k) !== $k || drive_forward_with($pendingMoves, $k) !== $k;
-        if (!$moving) {   // uma pasta que contém (ou está dentro de) algo a caminho também espera
-            foreach ($pendingMoves as $m) if (strncmp((string)$m['dst'], $k, strlen($k)) === 0 && substr($k, -1) === '/') { $moving = true; break; }
+        if (!$moving && substr($k, -1) === '/') {   // uma pasta que contém (ou é) uma origem ou um destino a caminho
+            foreach ($pendingMoves as $m) {
+                if (strncmp((string)$m['dst'], $k, strlen($k)) === 0 || strncmp((string)$m['src'], $k, strlen($k)) === 0) { $moving = true; break; }
+            }
         }
         if ($moving) api_err('«' . drive_base(rtrim($k, '/')) . '» ainda está a ser arrumado no armazenamento. Tente daqui a um minuto.', 409);
     }
@@ -849,7 +856,7 @@ try {
         $st = drive_moves_status($pdo, (int)(current_user()['id'] ?? 0));
         if ($st['moves'] > 0) register_shutdown_function(static fn() => drive_moves_after_response($pdo));   // e adianta a fila
         api_out(200, ['ok' => true, 'moves' => $st['moves'], 'files' => $st['files'],
-                      'failed' => array_map(static fn($f) => ['from' => $f['src'], 'to' => $f['dst'], 'error' => $f['error']], $st['failed'])]);
+                      'failed' => array_map(static fn($f) => ['id' => (int)$f['id'], 'from' => $f['src'], 'to' => $f['dst'], 'error' => $f['error']], $st['failed'])]);
     }
 
     // ── Lixo ────────────────────────────────────────────────

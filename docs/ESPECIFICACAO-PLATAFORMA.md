@@ -2289,6 +2289,16 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   - alterados: `partilha.php`, `drive_api.php`, `drive.php`, `inc/drive_store.php`, `inc/r2.php` (`r2_stream`),
     `inc/migrate_files.php`, `inc/migrate.php`, `inc/settings_def.php`, `inc/alerts.php`, `inc/bootstrap.php`,
     `inc/cron_run.php`, `assets/drive/app.js`, `core.js`, `drive.css`, `core.css`, `io.css`, `assets/app.css`.
+- **Correções da revisão final** (31 out):
+  - mover com «Substituir» mostra e abre logo o ficheiro novo;
+  - se o destino ficar ocupado depois de pôr na fila, a cópia não escreve por cima (fica «falhou», o item fica na
+    origem e a Drive avisa uma vez);
+  - Lixo, restaurar e criar pastas esperam pelo que está a ser arrumado;
+  - envios do visitante: o URL assina o tamanho; «Substituir» envia para `.topper/incoming/` e a versão anterior só
+    se guarda quando o envio chega; o «done» só aceita o bilhete assinado do pedido;
+  - renomear por link uma pasta com mais de 1000 ficheiros é recusado com mensagem;
+  - ZIP de mais de 50 000 itens é recusado com mensagem, em vez de sair incompleto;
+  - hover da lista de conversas do assistente legível no escuro.
 - **Permissões da Drive no servidor** (decidido com a equipa, 31 out): quem só pode ver a Drive não muda nada — envios,
   pastas, mover, copiar, renomear, Lixo, apagar e links de partilha dão 403 («Só quem pode editar a Drive…»).
   Favoritos, recentes e miniaturas em cache continuam abertos. Nos links: a lista esconde os de faturação a quem não

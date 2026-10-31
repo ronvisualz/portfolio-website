@@ -63,6 +63,11 @@ t_true(str_contains($r['body'], 'part=2') && str_contains($r['body'], 'Parte 1')
 $z = $open(tests_http('GET', $P . '&zip=1&maxfiles=2&part=2', [], 0), 'share-p2.zip');
 t_true($z && $z->numFiles >= 1, 'a parte 2 é um ZIP válido');
 
+// revisão final: acima do limite de objetos não sai um ZIP incompleto (limite baixo só na bancada)
+$r = tests_http('GET', $P . '&zip=1&maxobjs=2', [], 0);
+t_true($r['code'] === 413 && str_contains($r['body'], 'grande demais') && !str_starts_with($r['body'], 'PK'), 'pasta grande demais → 413 com mensagem, nunca um ZIP a meio (' . $r['code'] . ')');
+$r = tests_http('POST', $P . '&zip=1&maxobjs=2', ['sel' => ['Sub/', 'a.txt']], 0, true);
+t_eq($r['code'], 413, 'o mesmo na seleção');
 // revogado → 410
 $pdo->prepare('UPDATE drive_shares SET revoked = 1 WHERE id IN (?,?,?)')->execute([$s['id'], $e['id'], $e2['id']]);
 t_eq(tests_http('GET', $P . '&zip=1', [], 0)['code'], 410, 'link revogado → 410');

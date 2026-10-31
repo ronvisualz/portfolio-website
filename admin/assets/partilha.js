@@ -167,7 +167,7 @@
     status(label + file.name + '…');
     return post({ a: 'sign', rel: rel, size: file.size, replace: !!replaceRel }).then(function (j) {
       return put(j.url, file, function (p) { status(label + file.name + ' (' + Math.round(p * 100) + '%)'); })
-        .then(function () { return post({ a: 'done', rel: j.rel, replaced: !!replaceRel }); });
+        .then(function () { return post({ a: 'done', ticket: j.ticket }); });
     });
   }
   function busy(on) { document.querySelectorAll('[data-up], [data-mkdir], .sh-more').forEach(function (b) { b.disabled = on; }); }

@@ -48,6 +48,12 @@ for (const f of fs.readdirSync(path.join(ADM, 'drive')).filter(f => f.endsWith('
     check(r && r.transition.split(',').some(t => t.trim() === '0.12s'), `árvore em ${theme}: transição 120 ms (${r && r.transition})`);
     const cur = await p.evaluate(() => { const e = document.querySelector('.dr-tn.is-cur'); return e ? getComputedStyle(e).backgroundColor : ''; });
     check(cur === 'rgb(255, 199, 24)', `árvore em ${theme}: selecionado continua amarelo (${cur})`);
+    // a lista de conversas do assistente (revisão final): um item com o estilo real, medido com o rato por cima
+    await p.evaluate(() => { const b = document.createElement('button'); b.className = 'tdc-conv'; b.id = 'hv-conv'; b.textContent = 'Conversa de teste'; b.style.cssText = 'position:fixed;left:20px;top:300px;z-index:9999;width:240px'; document.body.appendChild(b); });
+    await p.hover('#hv-conv'); await p.waitForTimeout(300);
+    const cv = await measure(p, '#hv-conv');
+    check(cv && cv.ratio >= 4.5, `conversas do assistente em ${theme}: contraste ${cv && cv.ratio.toFixed(2)} (fundo ${cv && cv.bg})`);
+    await p.evaluate(() => document.getElementById('hv-conv').remove());
     for (const s of ['.dr-row', '.dr-search']) {
       if (!(await p.$(s))) continue;
       await p.hover(s); await p.waitForTimeout(300);

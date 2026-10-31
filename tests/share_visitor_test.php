@@ -35,8 +35,12 @@ $edit = $mk('edit');
 $P = parse_url($edit['url'], PHP_URL_PATH) . '?' . parse_url($edit['url'], PHP_URL_QUERY);
 $s = visit($P, ['a' => 'sign', 'rel' => 'novo.txt', 'size' => 5]);
 t_eq($s['code'], 200, 'pede para carregar');
+t_true(str_contains((string)($s['json']['url'] ?? ''), 'X-Amz-SignedHeaders=content-length%3Bhost'), 'o URL de envio assina o tamanho (o armazenamento recusa outro)');
+t_eq(visit($P, ['a' => 'done', 'rel' => 'a.txt'])['code'], 400, 'confirmar sem o bilhete do pedido → 400 (não regista um envio que não houve)');
 t_eq($put((string)($s['json']['url'] ?? ''), 'hello'), 200, 'o browser envia direto para o armazenamento');
-$d = visit($P, ['a' => 'done', 'rel' => 'novo.txt']);
+$bad = (string)($s['json']['ticket'] ?? '');
+t_eq(visit($P, ['a' => 'done', 'ticket' => substr($bad, 0, -2) . (substr($bad, -2) === 'aa' ? 'bb' : 'aa')])['code'], 400, 'bilhete alterado → 400');
+$d = visit($P, ['a' => 'done', 'ticket' => $s['json']['ticket'] ?? '']);
 t_eq($d['code'], 200, 'confirma o envio');
 t_eq(r2_get($dir . 'novo.txt'), 'hello', 'o ficheiro ficou na pasta, com o conteúdo enviado');
 $log = $pdo->query('SELECT action, visitor, ip_part FROM drive_share_log WHERE share_id = ' . (int)$edit['id'] . ' ORDER BY id')->fetchAll();
@@ -49,13 +53,21 @@ $s2 = visit($P, ['a' => 'sign', 'rel' => 'novo.txt', 'size' => 5]);
 t_eq($s2['json']['rel'] ?? '', 'novo (2).txt', 'nome repetido sem substituir: «novo (2).txt»');
 
 // substituir guarda a versão anterior
+$vcount = fn() => (int)$pdo->query("SELECT COUNT(*) FROM drive_versions WHERE obj_key = " . $pdo->quote($dir . 'a.txt'))->fetchColumn();
 $r = visit($P, ['a' => 'sign', 'rel' => 'a.txt', 'size' => 8, 'replace' => true]);
 t_eq($r['code'], 200, 'pede para substituir');
+t_eq($vcount(), 0, 'pedir para substituir ainda não guarda versão nenhuma (sem envio, sem versão fantasma)');
+t_eq(r2_get($dir . 'a.txt'), 'versao 1', 'e o ficheiro não muda enquanto o envio não chega');
+$put((string)($r['json']['url'] ?? ''), 'versao 2');
+visit($P, ['a' => 'done', 'ticket' => $r['json']['ticket'] ?? '']);
 $ver = $pdo->query("SELECT ver_key FROM drive_versions WHERE obj_key = " . $pdo->quote($dir . 'a.txt') . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
 t_true($ver && r2_get((string)$ver) === 'versao 1', 'a versão anterior fica no histórico');
-$put((string)($r['json']['url'] ?? ''), 'versao 2');
-visit($P, ['a' => 'done', 'rel' => 'a.txt', 'replaced' => true]);
 t_eq(r2_get($dir . 'a.txt'), 'versao 2', 'o ficheiro passa a ser a versão nova');
+t_true(!array_filter(r2_list_all('.topper/incoming/' . (int)$edit['id'] . '/', 1)), 'a passagem temporária é limpa');
+$r3 = visit($P, ['a' => 'sign', 'rel' => 'a.txt', 'size' => 8, 'replace' => true]);
+$put((string)($r3['json']['url'] ?? ''), 'mais comprido do que o declarado');
+t_eq(visit($P, ['a' => 'done', 'ticket' => $r3['json']['ticket'] ?? ''])['code'], 413, 'tamanho diferente do declarado → recusado');
+t_eq(r2_get($dir . 'a.txt'), 'versao 2', 'e o ficheiro fica como estava');
 
 // renomear para um nome que existe → 409; nunca sobrescreve
 t_eq(visit($P, ['a' => 'rename', 'rel' => 'a.txt', 'to' => 'novo.txt'])['code'], 409, 'renomear para um nome existente → 409');
@@ -68,6 +80,11 @@ t_true(drive_folder_exists($dir . 'Fotos/'), 'a subpasta existe');
 tests_put($dir . 'Fotos/um.jpg', 'jpg');
 t_eq(visit($P, ['a' => 'rename', 'rel' => 'Fotos/', 'to' => 'Imagens'])['code'], 200, 'renomear uma pasta');
 t_true(drive_folder_exists($dir . 'Imagens/') && r2_get($dir . 'Imagens/um.jpg') === 'jpg' && !drive_folder_exists($dir . 'Fotos/'), 'a pasta e o que tem dentro passam ao nome novo');
+// revisão final: uma pasta grande demais não se renomeia por aqui (seria a meio, sem fila); limite baixo só na bancada
+foreach (['1', '2', '3'] as $i) tests_put($dir . 'Grande/' . $i . '.txt', $i);
+$g = visit($P, ['a' => 'rename', 'rel' => 'Grande/', 'to' => 'Outra', '_test_max' => 2]);
+t_true($g['code'] === 413 && str_contains((string)($g['json']['error'] ?? ''), 'grande demais'), 'pasta grande demais → 413 com mensagem (' . $g['code'] . ')');
+t_true(r2_head($dir . 'Grande/3.txt') !== null && !drive_folder_exists($dir . 'Outra/'), 'e nada mudou');
 
 // nunca apagar, nunca sair da pasta
 foreach (['delete', 'purge', 'trash', 'move', 'restore'] as $a) t_eq(visit($P, ['a' => $a, 'rel' => 'b.txt'])['code'], 400, "ação «{$a}» não existe → 400");

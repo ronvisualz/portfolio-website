@@ -52,15 +52,23 @@ function drive_resolve_with(array $pending, string $key): string {
 
 /** O mesmo, no sentido da cópia: onde $key vai parar quando a fila acabar. */
 function drive_forward_with(array $pending, string $key): string {
+    return drive_forward_info($pending, $key)[0];
+}
+
+/** [onde vai parar, se algum dos movimentos que o levam lá é «Substituir»]. */
+function drive_forward_info(array $pending, string $key): array {
+    $over = false;
     foreach ($pending as $m) {
         $src = (string)$m['src']; $dst = (string)$m['dst'];
         if (!empty($m['is_folder'])) {
-            if (strncmp($key, $src, strlen($src)) === 0) $key = $dst . substr($key, strlen($src));
+            if (strncmp($key, $src, strlen($src)) !== 0) continue;
+            $key = $dst . substr($key, strlen($src));
         } elseif ($key === $src) {
             $key = $dst;
-        }
+        } else continue;
+        if (($m['policy'] ?? '') === 'overwrite') $over = true;
     }
-    return $key;
+    return [$key, $over];
 }
 
 /** Os objetos do catálogo como ficam depois da fila: cada item já no destino (marcado «pending»), sem duplicados. */
@@ -69,11 +77,12 @@ function drive_moves_overlay(array $objects, array $pending): array {
     usort($pending, static fn($a, $b) => (int)$a['id'] <=> (int)$b['id']);
     $out = []; $moved = [];
     foreach ($objects as $o) {
-        $k = drive_forward_with($pending, (string)$o['key']);
-        if ($k === $o['key']) { $out[$k] = $o; continue; }   // os que já lá estão ganham aos «a caminho»
-        $moved[$k] = ['key' => $k, 'pending' => true] + $o;
+        [$k, $over] = drive_forward_info($pending, (string)$o['key']);
+        if ($k === $o['key']) { $out[$k] = $o; continue; }
+        $moved[$k] = ['key' => $k, 'pending' => true, 'over' => $over] + $o;
     }
-    foreach ($moved as $k => $o) if (!isset($out[$k])) $out[$k] = $o;
+    // o que já lá está ganha ao «a caminho» (já foi copiado), salvo com «Substituir»: aí o novo é o que vale
+    foreach ($moved as $k => $o) if (!isset($out[$k]) || $o['over']) { unset($o['over']); $out[$k] = $o; }
     return array_values($out);
 }
 
@@ -87,7 +96,7 @@ function drive_moves_ready(PDO $pdo): bool {
 /** Os movimentos por acabar (na fila ou a meio), por ordem. */
 function drive_moves_pending(PDO $pdo): array {
     if (!drive_moves_ready($pdo)) return [];
-    return $pdo->query("SELECT id, src, dst, is_folder, status FROM drive_moves WHERE status IN ('queued','running') ORDER BY id")->fetchAll();
+    return $pdo->query("SELECT id, src, dst, is_folder, policy, status FROM drive_moves WHERE status IN ('queued','running') ORDER BY id")->fetchAll();
 }
 
 /** A chave física de $key agora (o próprio, ou a origem por onde ainda está a passar). */
@@ -96,7 +105,9 @@ function drive_resolve(PDO $pdo, string $key): string {
     if (!$pending) return $key;
     $chain = drive_resolve_chain_with($pending, $key);
     if (count($chain) === 1) return $key;
-    foreach ($chain as $k) if (drive_exists($k)) return $k;
+    // do mais antigo para o mais recente: a origem só desaparece depois de a cópia estar confirmada, por isso
+    // enquanto existe é ela a versão certa (também com «Substituir», em que o destino ainda tem o ficheiro antigo)
+    foreach (array_reverse($chain) as $k) if (drive_exists($k)) return $k;
     return $key;
 }
 
@@ -181,6 +192,11 @@ function drive_moves_run(PDO $pdo, float $budget): string {
             };
             try {
                 if ($r['status'] === 'queued') {
+                    // a decisão de conflito foi tomada ao pôr na fila: se entretanto alguém ocupou o destino, não se
+                    // escreve por cima (só «Substituir» e o «Anular», que junta de volta, o fazem)
+                    if (!in_array($r['policy'], ['overwrite', 'merge'], true) && drive_exists($dst)) {
+                        throw new RuntimeException('Já existe «' . drive_base(rtrim($dst, '/')) . '» no destino. Ficou onde estava.');
+                    }
                     $pdo->prepare("UPDATE drive_moves SET status = 'running' WHERE id = ? AND status = 'queued'")->execute([$id]);
                     $mk = $r['is_folder'] ? $dst : drive_parent($dst);
                     if ($mk !== '') r2_mkdir_p($mk);

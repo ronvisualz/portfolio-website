@@ -16,6 +16,7 @@ require_once __DIR__ . '/drive_store.php';
 
 const DRIVE_SHARE_PERMS = ['view' => 'Só ver', 'edit' => 'Pode editar'];
 const DRIVE_SHARE_EDIT_ACTIONS = ['upload', 'mkdir', 'rename', 'replace'];
+const DRIVE_SHARE_RENAME_MAX = 1000;   // ficheiros numa pasta que um visitante pode renomear (cópia síncrona no R2)
 
 function drive_share_allows(array $share, string $action): bool {
     if (($share['state'] ?? 'ok') !== 'ok') return false;
@@ -102,6 +103,27 @@ function drive_ip_part(): string {
 function drive_share_form_token(array $s): string {
     require_once __DIR__ . '/secrets.php';
     return hash_hmac('sha256', 'share-form|' . $s['id'] . '|' . $s['token'], app_key());
+}
+
+/**
+ * O bilhete de um envio (§32.2): o «sign» devolve-o e o «done» só aceita o que foi pedido — para onde vai o envio
+ * (t), o sítio final (d), o tamanho anunciado (z), se substitui (r) e até quando vale (e). Assinado com a app_key.
+ */
+function drive_share_ticket(array $s, array $data): string {
+    require_once __DIR__ . '/secrets.php';
+    $json = json_encode($data + ['s' => (int)$s['id']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return rtrim(strtr(base64_encode($json), '+/', '-_'), '=') . '.' . hash_hmac('sha256', 'share-ticket|' . $json, app_key());
+}
+
+function drive_share_ticket_read(array $s, string $ticket): ?array {
+    require_once __DIR__ . '/secrets.php';
+    $p = strpos($ticket, '.');
+    if ($p === false) return null;
+    $json = (string)base64_decode(strtr(substr($ticket, 0, $p), '-_', '+/'), true);
+    if ($json === '' || !hash_equals(hash_hmac('sha256', 'share-ticket|' . $json, app_key()), substr($ticket, $p + 1))) return null;
+    $d = json_decode($json, true);
+    if (!is_array($d) || (int)($d['s'] ?? 0) !== (int)$s['id'] || (int)($d['e'] ?? 0) < time()) return null;
+    return $d;
 }
 
 /** Um nome livre ao lado: «nome (2).ext», «nome (3).ext»… */
@@ -199,6 +221,7 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
     $who = trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', (string)($in['name'] ?? '')));
     if ($who === '' || mb_strlen($who) > 80) return [400, ['ok' => false, 'error' => 'Escreva o seu nome (até 80 caracteres).']];
     $base = $s['folder'] ? $s['k'] : '';
+    if ($a === 'done') return drive_share_done($pdo, $s, is_string($in['ticket'] ?? null) ? $in['ticket'] : '', $who);
     $rel = is_string($in['rel'] ?? null) ? $in['rel'] : '';
     $isReplace = !empty($in['replace']) || !empty($in['replaced']);
     // o alvo: dentro da pasta partilhada; num link de ficheiro, só o próprio ficheiro
@@ -216,21 +239,16 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
             if (!is_int($size) || $size < 0) return [400, ['ok' => false, 'error' => 'Tamanho inválido.']];
             if ($size > $max) return [413, ['ok' => false, 'error' => 'O ficheiro passa o limite de ' . drive_size($max) . ' por envio.']];
             if ($isReplace) {
+                // substituir: o envio vai para uma passagem; a versão atual só se guarda quando ele chegar («done»)
                 if (r2_head($key) === null) return [404, ['ok' => false, 'error' => 'Esse ficheiro já não existe.']];
-                drive_version_keep($pdo, $key, $who, (int)$s['id']);
+                $target = DRIVE_SYS . 'incoming/' . (int)$s['id'] . '/' . bin2hex(random_bytes(8));
             } else {
-                $key = drive_free_key($key);
+                $key = $target = drive_free_key($key);
             }
-            return [200, ['ok' => true, 'rel' => $relOf($key), 'url' => r2_presign('PUT', $key, 900), 'method' => 'PUT']];
-        }
-        case 'done': {
-            $h = r2_head($key);
-            if ($h === null) return [404, ['ok' => false, 'error' => 'O envio não chegou.']];
-            $max = max(1, (int)setting($pdo, 'drive_share_upload_mb', 2048)) * 1048576;
-            if ((int)$h['size'] > $max) return [413, ['ok' => false, 'error' => 'O ficheiro passa o limite por envio.']];
-            drive_catalog_invalidate();
-            drive_share_log_add($pdo, (int)$s['id'], $action, $key, drive_size((int)$h['size']), $who);
-            return [200, ['ok' => true, 'rel' => $relOf($key)]];
+            $ticket = drive_share_ticket($s, ['t' => $target, 'd' => $key, 'z' => $size, 'r' => $isReplace ? 1 : 0, 'e' => time() + 6 * 3600]);
+            // o tamanho fica assinado: o armazenamento recusa um envio maior (ou menor) do que o anunciado
+            return [200, ['ok' => true, 'rel' => $relOf($key), 'url' => r2_presign('PUT', $target, 900, [], null, ['content-length' => (string)$size]),
+                          'method' => 'PUT', 'ticket' => $ticket]];
         }
         case 'mkdir': {
             if (drive_folder_exists($key)) return [409, ['ok' => false, 'error' => 'Já existe uma pasta com esse nome.']];
@@ -252,12 +270,47 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
             if ($new === $key) return [200, ['ok' => true, 'rel' => $relOf($new)]];
             if ($isFolder ? drive_folder_exists($new) : r2_head($new) !== null) return [409, ['ok' => false, 'error' => 'Já existe um item com esse nome: escolha outro.']];
             if (!$isFolder && r2_head($key) === null) return [404, ['ok' => false, 'error' => 'Esse ficheiro já não existe.']];
+            if ($isFolder) {   // renomear uma pasta copia tudo neste pedido: só até um tamanho que caiba nele
+                $max = PHP_SAPI === 'cli-server' && is_int($in['_test_max'] ?? null) ? max(1, $in['_test_max']) : DRIVE_SHARE_RENAME_MAX;
+                if (count(r2_list_all($key, intdiv($max, 1000) + 1)) > $max) {
+                    return [413, ['ok' => false, 'error' => 'Esta pasta é grande demais para renomear por este link (mais de ' . $max . ' ficheiros). Peça a quem partilhou.']];
+                }
+                @set_time_limit(300);
+            }
             drive_share_rename($pdo, $key, $new);
             drive_share_log_add($pdo, (int)$s['id'], 'rename', $new, 'antes: ' . drive_base(rtrim($key, '/')), $who);
             return [200, ['ok' => true, 'rel' => $relOf($new)]];
         }
     }
     return [400, ['ok' => false, 'error' => 'Ação inválida.']];
+}
+
+/**
+ * Confirmar um envio: só com o bilhete do «sign». Confere o tamanho; ao substituir, guarda a versão atual no
+ * histórico, põe o envio no lugar e limpa a passagem. Regista e avisa o dono.
+ */
+function drive_share_done(PDO $pdo, array $s, string $ticket, string $who): array {
+    $t = drive_share_ticket_read($s, $ticket);
+    if ($t === null) return [400, ['ok' => false, 'error' => 'Pedido inválido. Volte a carregar o ficheiro.']];
+    $replace = !empty($t['r']);
+    if (!drive_share_allows($s, $replace ? 'replace' : 'upload')) return [403, ['ok' => false, 'error' => 'Este link não deixa fazer isto.']];
+    $target = (string)$t['t']; $dest = (string)$t['d']; $size = (int)$t['z'];
+    $h = r2_head($target);
+    if ($h === null) return [404, ['ok' => false, 'error' => 'O envio não chegou.']];
+    $max = max(1, (int)setting($pdo, 'drive_share_upload_mb', 2048)) * 1048576;
+    if ((int)$h['size'] !== $size || (int)$h['size'] > $max) {
+        if ($replace) r2_delete($target);   // só a passagem (em .topper/), nunca um ficheiro da pasta
+        return [413, ['ok' => false, 'error' => 'O ficheiro enviado não corresponde ao anunciado ou passa o limite por envio.']];
+    }
+    if ($replace) {
+        if (r2_head($dest) === null) { r2_delete($target); return [404, ['ok' => false, 'error' => 'Esse ficheiro já não existe.']]; }
+        drive_version_keep($pdo, $dest, $who, (int)$s['id']);
+        r2_copy_any($target, $dest, $size);
+        r2_delete($target);
+    }
+    drive_catalog_invalidate();
+    drive_share_log_add($pdo, (int)$s['id'], $replace ? 'replace' : 'upload', $dest, drive_size($size), $who);
+    return [200, ['ok' => true, 'rel' => $s['folder'] ? substr($dest, strlen($s['k'])) : drive_base($dest)]];
 }
 
 /** Renomear (sem sobrescrever — já confirmado): o objeto (ou a pasta) passa ao nome novo e as referências seguem-no. */

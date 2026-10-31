@@ -134,8 +134,11 @@ function r2_target(array $c, string $key): array {
     return [$host, '/' . r2_enc($c['bucket']) . ($key !== '' ? '/' . r2_enc($key, true) : '')];
 }
 
-/** Um URL pré-assinado (o browser usa-o diretamente). */
-function r2_presign(string $method, string $key, int $ttl, array $query = [], ?int $now = null): string {
+/**
+ * Um URL pré-assinado (o browser usa-o diretamente). $signHeaders: cabeçalhos que também ficam assinados, p.ex.
+ * ['content-length' => '1234'] — o armazenamento recusa um envio com outro tamanho.
+ */
+function r2_presign(string $method, string $key, int $ttl, array $query = [], ?int $now = null, array $signHeaders = []): string {
     $c = r2_config();
     if (!$c) throw new R2Exception('O armazenamento R2 não está configurado.');
     $now = $now ?? time();
@@ -146,9 +149,13 @@ function r2_presign(string $method, string $key, int $ttl, array $query = [], ?i
         'X-Amz-Credential'    => $c['access_key_id'] . '/' . gmdate('Ymd', $now) . '/' . $c['region'] . '/s3/aws4_request',
         'X-Amz-Date'          => $amz,
         'X-Amz-Expires'       => (string)max(1, min($ttl, 604800)),
-        'X-Amz-SignedHeaders' => 'host',
+        'X-Amz-SignedHeaders' => '',
     ];
-    $s = r2_sigv4($method, $uri, $q, ['host' => $host], 'UNSIGNED-PAYLOAD', $amz, $c['region'], 's3', $c['secret_access_key']);
+    $hdr = ['host' => $host];
+    foreach ($signHeaders as $k => $v) $hdr[strtolower((string)$k)] = (string)$v;
+    ksort($hdr, SORT_STRING);
+    $q['X-Amz-SignedHeaders'] = implode(';', array_keys($hdr));
+    $s = r2_sigv4($method, $uri, $q, $hdr, 'UNSIGNED-PAYLOAD', $amz, $c['region'], 's3', $c['secret_access_key']);
     $q['X-Amz-Signature'] = $s['signature'];
     return $c['endpoint'] . $uri . '?' . r2_canonical_query($q);
 }

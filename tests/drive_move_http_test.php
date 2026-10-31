@@ -41,6 +41,11 @@ foreach ([['do' => 'copy', 'from' => $base . 'dst/G/f01.txt', 'to' => $base . 'd
     t_true($x['code'] === 409 && str_contains((string)($x['json']['error'] ?? ''), 'a ser arrumad'), $b['do'] . ' de um item a caminho → 409 «a ser arrumado» (' . $x['code'] . ' ' . ($x['json']['error'] ?? '') . ')');
 }
 
+// revisão final: também a pasta que contém uma origem a caminho, e criar uma pasta em cima de um destino a caminho
+$x = $api(['do' => 'trash', 'key' => $base . 'src/']);
+t_eq($x['code'], 409, 'Lixo da pasta que contém a origem a caminho → 409 (' . ($x['json']['error'] ?? '') . ')');
+t_eq($api(['do' => 'mkdir', 'key' => $base . 'dst/G/'])['code'], 409, 'criar uma pasta em cima de um destino a caminho → 409');
+
 // 3. o trabalho em segundo plano
 drive_moves_run($pdo, 60.0);
 t_true(r2_head($base . 'dst/G/f01.txt') !== null && r2_head($base . 'dst/G/f30.txt') !== null, 'depois de correr, os ficheiros estão no destino final');
@@ -73,6 +78,29 @@ t_true(r2_head($base . 'u/H/a.txt') !== null && r2_head($base . 'dst/H2/a.txt') 
 // 6. conflitos decididos antes, como hoje
 tests_put($base . 'c/a.txt', '1'); tests_put($base . 'c2/a.txt', '2');
 t_eq($api(['do' => 'move', 'from' => $base . 'c/a.txt', 'to' => $base . 'c2/a.txt', 'on_conflict' => 'error', 'instant' => true])['code'], 409, 'conflito → 409 (diálogo)');
+// 6b. revisão final: «Substituir» mostra e serve logo o ficheiro novo (não o antigo que lá estava)
+tests_put($base . 'ow/novo.txt', 'NOVO-NOVO'); tests_put($base . 'ow2/novo.txt', 'velho');
+$api(['do' => 'move', 'from' => $base . 'ow/novo.txt', 'to' => $base . 'ow2/novo.txt', 'on_conflict' => 'overwrite', 'instant' => true]);
+$u = $api(['do' => 'url', 'key' => $base . 'ow2/novo.txt'])['json']['url'] ?? '';
+t_true(str_contains(rawurldecode($u), 'ow/novo.txt') && !str_contains(rawurldecode($u), 'ow2/novo.txt'), 'substituir: abrir lê o novo (da origem) enquanto não acaba');
+$cat = array_column($api(['do' => 'catalog', 'fresh' => true])['json']['objects'] ?? [], null, 'k');
+t_eq((int)($cat[$base . 'ow2/novo.txt']['s'] ?? -1), 9, 'substituir: o catálogo mostra o tamanho do novo');
+drive_moves_run($pdo, 30.0);
+t_eq(r2_get($base . 'ow2/novo.txt'), 'NOVO-NOVO', 'substituir: depois de correr, o destino tem o novo');
+// 6c. o destino ficou ocupado depois de pôr na fila (sem «Substituir»): não escreve por cima
+tests_put($base . 'cf/x.txt', 'meu');
+$api(['do' => 'move', 'from' => $base . 'cf/x.txt', 'to' => $base . 'cf2/x.txt', 'on_conflict' => 'error', 'instant' => true]);
+tests_put($base . 'cf2/x.txt', 'de outra pessoa');
+drive_moves_run($pdo, 30.0);
+t_eq(r2_get($base . 'cf2/x.txt'), 'de outra pessoa', 'conflito tardio: o que outra pessoa pôs no destino fica');
+t_eq(r2_get($base . 'cf/x.txt'), 'meu', 'e o ficheiro movido fica na origem');
+t_eq((string)$pdo->query("SELECT status FROM drive_moves WHERE src = " . $pdo->quote($base . 'cf/x.txt') . " ORDER BY id DESC LIMIT 1")->fetchColumn(), 'failed', 'a linha fica «failed» (a Drive avisa)');
+tests_put($base . 'cg/F/a.txt', 'a');
+$api(['do' => 'move', 'from' => $base . 'cg/F/', 'to' => $base . 'cg2/F/', 'on_conflict' => 'error', 'instant' => true]);
+tests_put($base . 'cg2/F/a.txt', 'outro');
+drive_moves_run($pdo, 30.0);
+t_eq(r2_get($base . 'cg2/F/a.txt'), 'outro', 'conflito tardio numa pasta: não escreve por cima');
+
 // 7. outra pessoa não anula o que não é seu
 $b4 = bin2hex(random_bytes(8));
 $api(['do' => 'move', 'from' => $base . 'c/a.txt', 'to' => $base . 'c3/a.txt', 'on_conflict' => 'error', 'instant' => true, 'batch' => $b4]);
