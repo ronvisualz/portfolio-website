@@ -14,7 +14,7 @@
  *   a=deals             q — negócios para ligar um Topperboard
  * Mudar (editar; apagar Topperboards pede gerir). Todos pedem o token CSRF:
  *   board_new, board_save, board_archive, board_delete, project_create, pre_create
- *   card_add, cards_update, cards_delete, cards_restore, cards_dup, card_swap
+ *   card_add, cards_update, cards_delete, cards_restore, cards_dup, cards_paste (§33.6: items, arrows), card_swap
  *   upload_init, upload_done, link_add, asset_save, asset_delete, asset_restore, inbox_done
  *   analyze, analyze_all (gerir), work
  *   ai (angles | refs | similar | tidy | treatment | shots | shots_tasks), prepare, page_gen, page_both, send_budget
@@ -498,6 +498,53 @@ case 'cards_dup': {
         $new[] = cc_card_public($n, $n['asset_id'] ? cc_asset_get($pdo, (int)$n['asset_id']) : null);
     }
     cout(200, ['ok' => true, 'cards' => $new, 'rev' => cc_board_touch($pdo, (int)$b['id'])]);
+}
+
+// §33.6: colar (também noutro Topperboard ou separador) — copia o conteúdo e a referência, nunca o ficheiro
+case 'cards_paste': {
+    $b = board_req($pdo);
+    board_editable($b);
+    $items = json_decode((string)rq('items'), true);
+    $arrows = json_decode((string)rq('arrows'), true);
+    if (!is_array($items) || !$items) cfail('Nada para colar.');
+    $items = array_slice($items, 0, 400);
+    $map = [];   // ref (do que se copiou) → id novo
+    $new = [];
+    // primeiro o que não está dentro de uma coluna (as colunas têm de existir antes dos filhos)
+    usort($items, fn($x, $y) => (int)!empty($x['col']) <=> (int)!empty($y['col']));
+    foreach ($items as $it) {
+        if (!is_array($it)) continue;
+        $type = (string)($it['type'] ?? '');
+        if (!in_array($type, CC_CARD_TYPES, true) || $type === 'arrow') continue;
+        $d = ['type' => $type, 'x' => (float)($it['x'] ?? 0), 'y' => (float)($it['y'] ?? 0), 'w' => (float)($it['w'] ?? 0) ?: null, 'h' => (float)($it['h'] ?? 0),
+              'ord' => (int)($it['ord'] ?? 0), 'lane' => (string)($it['lane'] ?? ''), 'content' => is_array($it['c'] ?? null) ? $it['c'] : []];
+        if ($d['w'] === null) unset($d['w']);
+        if (!empty($it['asset'])) {
+            $x = cc_asset_get($pdo, (int)$it['asset']);
+            if (!$x || $x['deleted_at']) continue;   // a referência já não existe: fica de fora
+            $d['asset_id'] = (int)$x['id'];
+        } elseif (in_array($type, ['image', 'video', 'audio', 'link', 'file'], true)) continue;
+        if ($type === 'board') {
+            $sb = !empty($it['sub']) ? cc_board_get($pdo, (int)$it['sub']) : null;
+            if (!$sb || $sb['status'] === 'deleted' || !cc_board_access($pdo, $sb)) continue;   // aponta para o mesmo; nunca duplica o Topperboard
+            $d['ref_board_id'] = (int)$sb['id'];
+        }
+        if (!empty($it['col'])) {
+            if (!isset($map[(string)$it['col']])) continue;
+            $d['column_id'] = $map[(string)$it['col']];
+        }
+        $nid = cc_card_add($pdo, (int)$b['id'], $d, $by);
+        $map[(string)($it['ref'] ?? '')] = $nid;
+        $new[] = $nid;
+    }
+    foreach (is_array($arrows) ? array_slice($arrows, 0, 400) : [] as $a2) {
+        $f = $map[(string)($a2['from'] ?? '')] ?? null; $t = $map[(string)($a2['to'] ?? '')] ?? null;
+        if (!$f || !$t) continue;
+        $new[] = cc_card_add($pdo, (int)$b['id'], ['type' => 'arrow', 'x' => 0, 'y' => 0, 'content' => array_merge(is_array($a2['c'] ?? null) ? $a2['c'] : [], ['from' => $f, 'to' => $t])], $by);
+    }
+    $out = [];
+    foreach ($new as $nid) { $n = cc_card_get($pdo, $nid); $out[] = cc_card_public($n, $n['asset_id'] ? cc_asset_get($pdo, (int)$n['asset_id']) : null); }
+    cout(200, ['ok' => true, 'cards' => $out, 'map' => $map, 'rev' => cc_board_touch($pdo, (int)$b['id'])]);
 }
 
 case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida, que ainda não esteja no Topperboard

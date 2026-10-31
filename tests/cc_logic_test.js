@@ -137,5 +137,30 @@ eq(CCL.marqueeHit(boxes, { x: 110, y: 110, w: 80, h: 80 }), [], 'marqueeHit: nã
 eq(CCL.marqueeHit(boxes, { x: 250, y: 50, w: -200, h: 300 }), [1, 2, 3], 'marqueeHit: arrasto para trás (largura/altura negativas) normalizado');
 eq(CCL.marqueeHit(boxes, { x: 100, y: 0, w: 0, h: 0 }), [1], 'marqueeHit: um ponto na borda conta');
 
+// ── copiar e colar (§33.6) ──
+const cm = new Map([
+  [10, { id: 10, type: 'column', x: 100, y: 100, w: 300, h: 0, c: { title: 'Col' }, col: null, ord: 0 }],
+  [11, { id: 11, type: 'note', x: 0, y: 0, w: 240, h: 0, c: { text: 'a' }, col: 10, ord: 0 }],
+  [12, { id: 12, type: 'image', x: 0, y: 0, w: 240, h: 0, c: {}, col: 10, ord: 1, asset: { id: 7 } }],
+  [20, { id: 20, type: 'note', x: 400, y: 150, w: 240, h: 0, c: { text: 'b' }, col: null, ord: 0 }],
+  [25, { id: 25, type: 'board', x: 700, y: 150, w: 240, h: 0, c: { title: 'Sub' }, col: null, ord: 0, ref: 55 }],
+  [30, { id: 30, type: 'arrow', x: 0, y: 0, w: 0, h: 0, c: { from: 20, to: 11, label: 'x' } }],
+  [31, { id: 31, type: 'arrow', x: 0, y: 0, w: 0, h: 0, c: { from: 20, to: 99 } }],
+]);
+const pk = CCL.clipPack(cm, [10, 20, 30, 31], 5);
+eq(pk.items.map(i => i.ref), [10, 11, 12, 20], 'clipPack: a coluna leva os cartões de dentro, pela ordem');
+eq([pk.ox, pk.oy, pk.board], [100, 100, 5], 'clipPack: canto de cima à esquerda e Topperboard de origem');
+eq([pk.items[3].x, pk.items[3].y], [300, 50], 'clipPack: coordenadas relativas ao canto');
+eq([pk.items[1].col, pk.items[2].asset], [10, 7], 'clipPack: filhos apontam para a coluna; a referência vai pelo id');
+eq(pk.arrows, [{ from: 20, to: 11, c: { from: 20, to: 11, label: 'x' } }], 'clipPack: só as setas com as duas pontas copiadas');
+eq(CCL.clipPack(cm, [25], 5).items[0].sub, 55, 'clipPack: sub-Topperboard copia-se como cartão que aponta para o mesmo');
+let pl = CCL.clipPlace(pk, null, true);
+eq([pl[0].x, pl[0].y, pl[3].x, pl[3].y], [124, 124, 424, 174], 'clipPlace: no mesmo Topperboard sem cursor desloca +24');
+pl = CCL.clipPlace(pk, null, false);
+eq([pl[0].x, pl[3].x], [100, 400], 'clipPlace: noutro Topperboard sem cursor fica na posição original');
+pl = CCL.clipPlace(pk, { x: 1000, y: 2000 }, true);
+eq([pl[0].x, pl[0].y, pl[3].x, pl[3].y], [1000, 2000, 1300, 2050], 'clipPlace: com cursor, o canto vai para o cursor');
+eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

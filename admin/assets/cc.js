@@ -1484,7 +1484,52 @@
       drawArrows();
       save(after.map(function (a) { return { id: a.id, x: a.x, y: a.y }; }));
     }
-    function copySel() { /* §33.6: tarefa seguinte */ }
+    // ── copiar, cortar, colar, duplicar (§33.6) ──
+    // o que se copia fica no localStorage (colar noutro separador do mesmo browser) e o texto legível na área de transferência
+    var CLIP_KEY = 'cc.clip';
+    function packSel() {
+      var ids = Array.from(B.sel).filter(function (id) { return id > 0; });
+      if (!ids.length || !window.CCL) return null;
+      var pack = CCL.clipPack(B.cards, ids, B.id);
+      return pack.items.length ? pack : null;
+    }
+    function nCards(pack) { var n = pack.items.filter(function (i) { return !i.col; }).length; return n === 1 ? '1 cartão' : n + ' cartões'; }
+    function storeClip(pack) {
+      var txt = CCL.clipText(pack) || (nCards(pack) + ' do Toppernote');
+      try { localStorage.setItem(CLIP_KEY, JSON.stringify({ ts: Date.now(), txt: txt, pack: pack })); } catch (e) {}
+      return txt;
+    }
+    function readClip(text) {
+      try {
+        var o = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null');
+        if (o && o.pack && (text === o.txt || (!text && Date.now() - o.ts < 864e5))) return o.pack;
+      } catch (e) {}
+      return null;
+    }
+    /** Copiar pelo botão (sem evento de cópia): escreve o texto com a API da área de transferência. */
+    function copySel(cut) {
+      var pack = packSel(); if (!pack) return;
+      var txt = storeClip(pack);
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).catch(function () {});
+      toast(nCards(pack) + (cut ? ' cortado' : ' copiado') + (pack.items.filter(function (i) { return !i.col; }).length === 1 ? '.' : 's.'));
+      if (cut && EDIT) delSel();
+    }
+    function pasteClip(pack, at) {
+      if (!EDIT) { toast('A sua conta vê este Topperboard mas não o edita.'); return Promise.resolve(); }
+      var items = CCL.clipPlace(pack, at, pack.board === B.id);
+      return api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
+        B.rev = j.rev;
+        j.cards.forEach(function (c) { B.cards.set(c.id, c); });
+        if (RT) RT.added(j.cards);
+        renderAll();
+        var ids = j.cards.map(function (c) { return c.id; });
+        push({ t: 'add', ids: ids });
+        select(ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }));
+        var n = ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }).length;
+        if (n < pack.items.filter(function (i) { return !i.col; }).length) toast('Alguns cartões não foram colados: a referência já não existe ou não tem acesso.');
+      }).catch(fail);
+    }
+    function ptrWorld() { return ptr.inside ? (function (w) { return { x: Math.round(w.x), y: Math.round(w.y) }; })(toWorld(ptr.x, ptr.y)) : null; }
     function select(ids, add) {
       if (!add) B.sel.clear();
       ids.forEach(function (id) { if (add && B.sel.has(id)) B.sel.delete(id); else B.sel.add(id); });
@@ -1925,6 +1970,8 @@
     }
     function dupSel() {
       if (!EDIT || !B.sel.size) return;
+      var pk = packSel();
+      if (pk) { pasteClip(pk, null); return; }   // §33.6: o mesmo caminho do colar (+24 px, setas e colunas incluídas)
       api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
@@ -2154,10 +2201,26 @@
         var t = u || e.dataTransfer.getData('text/plain');
         if (t) pasteText(t, at);
       });
+      // §33.6: Ctrl/Cmd C e X com cartões selecionados (fora de campos de texto)
+      ['copy', 'cut'].forEach(function (evn) {
+        document.addEventListener(evn, function (e) {
+          if (typing(document.activeElement) || (T.topMdl && T.topMdl()) || viewer || !B.sel.size) return;
+          var sel = window.getSelection(); if (sel && String(sel).trim()) return;   // texto selecionado na página: cópia normal
+          var pack = packSel(); if (!pack) return;
+          e.preventDefault();
+          var txt = storeClip(pack);
+          if (e.clipboardData) e.clipboardData.setData('text/plain', txt);
+          var one = pack.items.filter(function (i) { return !i.col; }).length === 1;
+          toast(nCards(pack) + (evn === 'cut' ? ' cortado' : ' copiado') + (one ? '.' : 's.'));
+          if (evn === 'cut' && EDIT) delSel();
+        });
+      });
       document.addEventListener('paste', function (e) {
         if (!EDIT || typing(document.activeElement) || (T.topMdl && T.topMdl())) return;
         var dt = e.clipboardData;
         if (!dt) return;
+        var mine = readClip(dt.getData('text/plain'));
+        if (mine && !(dt.files && dt.files.length)) { e.preventDefault(); pasteClip(mine, ptrWorld()); return; }
         if (dt.files && dt.files.length) { e.preventDefault(); addFiles(dt.files); return; }
         var t = dt.getData('text/plain');
         // §33.2: um #HEX colado com uma amostra selecionada troca-lhe a cor (com Anular), em vez de criar um cartão

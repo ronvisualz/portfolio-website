@@ -206,5 +206,49 @@
     return (boxes || []).filter(function (b) { return b.x <= x2 && b.x + b.w >= x1 && b.y <= y2 && b.y + b.h >= y1; }).map(function (b) { return b.id; });
   }
 
-  return { version: 1, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── copiar e colar (§33.6) ──
+  /** O que se copia: cartões (com os de dentro das colunas), coordenadas relativas ao canto da seleção, e as setas cujas
+   *  duas pontas vão. cards: Map id → cartão. */
+  function clipPack(cards, ids, boardId) {
+    var get = function (id) { return cards.get ? cards.get(id) : cards[id]; };
+    var want = [], seen = {};
+    var add = function (c) { if (c && !seen[c.id] && c.type !== 'arrow' && !(c.id < 0)) { seen[c.id] = 1; want.push(c); } };
+    (ids || []).forEach(function (id) {
+      var c = get(id);
+      if (!c || c.type === 'arrow') return;
+      add(c);
+      if (c.type === 'column') {
+        var kids = [];
+        (cards.forEach ? cards : new Map()).forEach(function (k) { if (k.col === c.id) kids.push(k); });
+        kids.sort(function (a, b) { return (a.ord || 0) - (b.ord || 0); }).forEach(add);
+      }
+    });
+    var top = want.filter(function (c) { return !(c.col && seen[c.col]); });
+    var pos = function (c) { var p = c.col && !seen[c.col] && get(c.col) ? get(c.col) : c; return { x: p.x, y: p.y }; };
+    var ox = Math.min.apply(null, top.map(function (c) { return pos(c).x; })), oy = Math.min.apply(null, top.map(function (c) { return pos(c).y; }));
+    var items = want.map(function (c) {
+      var inCol = !!(c.col && seen[c.col]), p = pos(c);
+      return { ref: c.id, type: c.type, x: inCol ? 0 : p.x - ox, y: inCol ? 0 : p.y - oy, w: c.w, h: c.h || 0, c: JSON.parse(JSON.stringify(c.c || {})),
+               asset: c.asset ? c.asset.id : null, sub: c.ref || null, col: inCol ? c.col : null, ord: c.ord || 0, lane: c.lane || '' };
+    });
+    var arrows = [];
+    (cards.forEach ? cards : new Map()).forEach(function (a) {
+      if (a.type === 'arrow' && a.c && seen[a.c.from] && seen[a.c.to]) arrows.push({ from: a.c.from, to: a.c.to, c: JSON.parse(JSON.stringify(a.c)) });
+    });
+    return { v: 1, board: boardId, ox: isFinite(ox) ? ox : 0, oy: isFinite(oy) ? oy : 0, items: items, arrows: arrows };
+  }
+  /** Onde colar: com o cursor (at, ponto do mundo) o canto vai para lá; sem cursor fica onde estava (+24 no mesmo Topperboard). */
+  function clipPlace(pack, at, sameBoard) {
+    var d = sameBoard ? 24 : 0, bx = at ? at.x : pack.ox + d, by = at ? at.y : pack.oy + d;
+    return pack.items.map(function (it) { var o = JSON.parse(JSON.stringify(it)); if (!it.col) { o.x = Math.round(bx + it.x); o.y = Math.round(by + it.y); } return o; });
+  }
+  /** Resumo em texto do que se copiou (vai também para a área de transferência do sistema). */
+  function clipText(pack) {
+    return pack.items.map(function (it) {
+      var c = it.c || {};
+      return c.title || c.text || c.caption || c.hex || (c.items ? c.items.map(function (x) { return '- ' + x.t; }).join('\n') : '');
+    }).filter(Boolean).join('\n');
+  }
+
+  return { version: 1, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
