@@ -1075,7 +1075,13 @@ try {
         $id = (int)($in['id'] ?? 0);
         $cur = $id > 0 ? drive_share_get($pdo, $id) : null;
         if (!$cur) api_err('Este link já não existe.', 404);
-        want_any((string)$cur['k']);   // a mesma regra de acesso da chave (faturação)
+        want_any((string)$cur['k']);
+        // a regra da faturação vale também para a chave guardada (o pedido só traz o id)
+        if (!$FIN && drive_billing((string)$cur['k'])) api_err(DRIVE_BILLING_ERR, 403);
+        // password, prazo e permissão: só quem criou o link (ou um admin); os links antigos, sem dono, só um admin
+        if (!is_admin() && (int)($cur['created_by'] ?? 0) !== (int)(current_user()['id'] ?? 0)) {
+            api_err('Só quem criou este link (ou um administrador) o pode alterar. Pode criar um link seu.', 403);
+        }
         if (($in['perm'] ?? '') === 'edit' && !can('drive', PERM_EDIT)) api_err('Só quem pode editar a Drive dá permissão para editar.', 403);
         try { $s = drive_share_update($pdo, $id, array_intersect_key($in, array_flip(['perm', 'hours', 'forever', 'password', 'clear_password']))); }
         catch (RuntimeException $e) { api_err($e->getMessage(), $e->getCode() ?: 400); }

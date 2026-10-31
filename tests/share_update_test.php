@@ -28,5 +28,23 @@ try {
     $pdo->prepare("DELETE FROM permissions WHERE role = '' AND user_id = 3 AND tab = 'drive'")->execute();
 }
 t_eq($api(['do' => 'share_update', 'id' => $id, 'perm' => 'tudo'])['code'], 400, 'permissão inválida → 400');
+
+// revisão de segurança: quem não criou a partilha (e não é admin) não a altera; faturação só com o Financeiro
+$member = (int)$pdo->query("SELECT id FROM users WHERE is_active = 1 AND role NOT IN ('admin','superadmin') ORDER BY id LIMIT 1")->fetchColumn();
+$bill = tests_put('Empresa/Financeiro/2026/10/upd-' . bin2hex(random_bytes(2)) . '.pdf', '%PDF-1.4', 'application/pdf');
+$b = $api(['do' => 'share_create', 'key' => $bill, 'hours' => 24, 'password' => 'segredo123']);
+$bid = (int)($b['json']['share']['id'] ?? 0);
+if ($member) {
+    $x = $api(['do' => 'share_update', 'id' => $bid, 'clear_password' => true], $member);
+    t_eq($x['code'], 403, 'sem Financeiro não altera um link de faturação');
+    t_true(!str_contains((string)$x['body'], 'partilha.php?t='), 'e não recebe o link');
+    t_true((bool)$pdo->query('SELECT pw_hash IS NOT NULL FROM drive_shares WHERE id = ' . $bid)->fetchColumn(), 'a password continua lá');
+    t_eq($api(['do' => 'share_update', 'id' => $id, 'hours' => 168], $member)['code'], 403, 'não altera um link criado por outra pessoa');
+    $own = $api(['do' => 'share_create', 'key' => $dir . 'a.txt', 'hours' => 24], $member);
+    t_eq($api(['do' => 'share_update', 'id' => (int)($own['json']['share']['id'] ?? 0), 'hours' => 48], $member)['code'], 200, 'altera o seu próprio link');
+}
+t_eq($api(['do' => 'share_update', 'id' => $bid, 'hours' => 48])['code'], 200, 'um admin com Financeiro altera');
+$pdo->exec('UPDATE drive_shares SET revoked = 1 WHERE id = ' . $bid);
+r2_delete($bill);
 r2_delete($dir . 'a.txt'); drive_catalog_invalidate();
 t_done();
