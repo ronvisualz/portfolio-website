@@ -2317,6 +2317,122 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   tem o Financeiro; alterar ou revogar um link só para quem o criou (ou um admin) e, na faturação, só com o Financeiro.
   Os links antigos, sem dono registado, só um admin os altera ou revoga. Teste: `tests/drive_perm_test.php`.
 
+### 10.31 Toppernote e Topperboards — §33 (31 out 2026)
+
+- **Nomes (§33.0, §33.0.1):** a aba chama-se «Toppernote» e os quadros «Topperboards» em toda a interface.
+  - Abrange menu, títulos, migalhas, Definições, notificações, emails, portal (PT/EN), partilha, captura e extensão,
+    ajuda e IA.
+  - Renomeações: «Projetos» → «Topperboards», «Quadros livres» → «Topperboards livres», sub-Topperboard.
+  - `toppernote.php` é a página; `criativo.php` redireciona (301) com a mesma pergunta.
+  - A pesquisa ⌘K encontra a aba por «toppernote» e «topperboard».
+  - Ficam como estavam: o código interno `cc_*`, a permissão «criativo», as notificações antigas e «quadro» fora do
+    Toppernote.
+- **Listas (§33.1):**
+  - Enter cria o item seguinte vazio, e podem ficar vários vazios seguidos.
+  - Backspace num item vazio apaga-o e sobe; colar várias linhas cria vários itens.
+  - Tab / Shift Tab mudam o nível (até 3); Ctrl Enter marca o item.
+  - Os itens reordenam-se pela pega.
+  - Causa do 1.º item não editável no Safari: a tela tinha `user-select: none` e só as notas o repunham em edição.
+- **Amostra de cor (§33.2):**
+  - O seletor abre junto ao cartão: cores da marca, #HEX editável, copiar #HEX e as últimas 8 cores (por pessoa,
+    `cc_api pref`).
+  - Ctrl V de um #HEX com a amostra selecionada troca a cor, com Anular.
+- **Desenhar (§33.3):**
+  - Barra da caneta: P, cores 1–5 (#111111, #FFC718, #E8846D, #81CFE3, #2F77B1), cor livre, espessura 2/4/8 e a
+    opção «espessura acompanha».
+  - Borracha: E.
+  - Causa da escala: o servidor deitava fora a caixa do desenho (`vw/vh`). Agora guarda-a e o SVG usa `viewBox` com
+    `xMidYMid meet`, por isso os traços ficam proporcionais, sem deformar nem cortar.
+- **Comentários (§33.4):**
+  - Passar o cursor, tocar ou Enter no número abre um balão só de leitura com os últimos 3 e «Ver todos»
+    (`comments&last=N`).
+- **Imagens (§33.5):**
+  - A miniatura escolhe-se pela largura real × zoom × densidade (`CCL.thumbPick`).
+  - Sem miniaturas, ou com zoom acima da maior, usa-se o original.
+  - `will-change` só durante o movimento.
+  - Causas encontradas: o teto de 1600 px sem recurso ao original, e o `will-change` permanente (rasteriza a camada na
+    resolução do momento).
+  - Na produção as miniaturas estavam completas (verificado no servidor).
+- **Copiar, cortar, colar, duplicar (§33.6):** Ctrl/Cmd C, X, V e D funcionam com qualquer seleção, entre
+  Topperboards e separadores do mesmo browser.
+  - Onde se cola: na posição do cursor; colar no mesmo sítio desloca a cópia 24 px.
+  - O que vai junto: setas e colunas.
+  - Referências: só se existirem e a pessoa as puder ver (`cards_paste`).
+  - Copiar um sub-Topperboard cria um cartão que aponta para o mesmo.
+  - O pacote guardado só se reconhece pelo texto igual ao que foi copiado (`CCL.clipMatch`).
+- **Painel de detalhes (§33.7):**
+  - Redimensiona-se pela borda, de 280 px a 60%; também com o teclado (setas, Home, End).
+  - Duplo clique repõe a largura, que fica lembrada por pessoa.
+- **Cartões de link (§33.8):**
+  - oEmbed, só de uma lista fixa de endpoints, para YouTube, Vimeo, TikTok, X, Spotify e SoundCloud.
+  - Open Graph para o resto. Instagram, Behance, Dribbble e ArtStation não têm oEmbed público sem chave, por isso vão
+    por Open Graph e a miniatura não é garantida.
+  - O cartão mostra título, miniatura, autor e serviço; ▶ e duração nos vídeos.
+  - O Detalhe toca YouTube (youtube-nocookie) e Vimeo; acrescentados à `frame-src`.
+  - Os pedidos vão só por `cc_fetch` (IP público verificado em cada salto, ≤ 1,5 MB, ≤ 8 s) e o `html` do oEmbed nunca
+    se usa.
+- **Enviar «Do dispositivo» / «Da Drive» (§33.9):**
+  - O seletor da Drive tem pesquisa e seleção múltipla.
+  - O cartão aponta para o ficheiro (`r2:<chave>`), sem o copiar, e acompanha mover e renomear.
+  - **Lixo:** o cartão fica com a faixa «Ficheiro apagado da Drive» e aparece um aviso no Topperboard com «Restaurar
+    do Lixo» e «Retirar do Topperboard». Quem criou o cartão recebe uma notificação, uma por pessoa e Topperboard.
+  - **Restaurar:** limpa a faixa. Apagado de vez, fica só «Retirar».
+  - **Quem vê:** `cc_file.php` só serve um ficheiro da Drive a quem o vê na Drive (Faturação → Financeiro).
+- **Segunda ronda (§33.10):**
+  - **Sub-Topperboards abrem sem recarregar:** zoom para o cartão (≤ 300 ms, nada com movimento reduzido), os visíveis
+    pré-carregados, migalhas, Voltar/Avançar com a vista de cada um, edição aberta gravada antes de sair. A barra de
+    ferramentas acompanha a permissão de editar de cada um.
+  - **Duplo clique numa nota:** edita com o cursor no ponto do clique.
+  - **Envio otimista:** o cartão aparece logo, com pré-visualização local e progresso, e «Tentar outra vez» em erro. Um
+    envio fica no Topperboard onde o ficheiro foi largado, mesmo que se mude de Topperboard a meio.
+  - **Visualizador em ecrã inteiro:** duplo clique ou Espaço; zoom, setas, Esc.
+  - **Anular/Refazer na barra, por pessoa:** cada pessoa só anula o que fez. O que outra pessoa mudou depois fica, com
+    o aviso «N alterações não anuladas…».
+- **Conta-gotas (§33.11):**
+  - «+ Escolher da imagem» (I) mostra uma lupa ×8 e o #HEX do original em resolução total (média 3×3, Alt = 1 px).
+    Clique adiciona; Shift, várias; Esc sai.
+  - Clicar numa cor copia o #HEX. O menu ⋯ tem RGB/HSL, renomear, remover (só as manuais) e criar Amostra de cor.
+    «Copiar paleta» copia todas.
+  - Funciona no fotograma em pausa dos vídeos.
+  - `cc_file.php …&px=1` serve os píxeis no próprio domínio, só para imagens raster e com `CSP: sandbox`.
+- **Selecionar várias coisas (§33.12):**
+  - Arrastar no fundo move a tela.
+  - Alt/Option + arrastar desenha o retângulo de seleção; Shift soma; Shift + clique um a um; Ctrl/Cmd A tudo.
+  - No iPad: tocar e manter 0,4 s e arrastar. Aparece um anel no ponto tocado quando o modo muda.
+  - Barra «N selecionados» com Copiar, Alinhar e Apagar.
+- **Som só em Apresentar (§33.13):**
+  - Em Apresentar, o vídeo/áudio toca com som ao chegar, pausa ao avançar ou recuar, e Espaço pausa/retoma.
+  - A barra tem volume e «Sem som», e «Tocar» aparece se o browser recusar.
+  - Fora de Apresentar, nunca há som sozinho.
+- **Acessibilidade (auditoria WCAG 2.2):** 0 violações axe nos componentes novos (claro e escuro). Foco visível em
+  todas as barras novas, alvos de 44 px no iPad (`pointer: coarse`), e o seletor da Drive fecha com Esc e prende o foco.
+- **Base de dados, passo 41:** `cc_assets.drive_gone` e `cc_assets.drive_trash_id` (`migrate_cc_41` em
+  `inc/migrate_creative.php`). Ao publicar, a migração vai antes de `inc/migrate.php`.
+- **Testes** (bancada):
+  - PHP: `toppernote_names`, `cc_list_content`, `cc_pref`, `cc_drawing_content`, `cc_comments_last`, `cc_palette`,
+    `cc_paste`, `cc_drive`, `cc_link_meta`, `cc_file_px`;
+  - JS: `cc_logic_test.js` (lógica pura do `cc_logic.js`);
+  - Playwright `tests/ui/`: `cc_board_smoke`, `cc_list`, `cc_color`, `cc_draw`, `cc_comments_balloon`, `cc_side`,
+    `cc_note_caret`, `cc_undo`, `cc_image`, `cc_upload_optimistic`, `cc_viewer`, `cc_eyedropper`, `cc_select`,
+    `cc_clipboard`, `cc_nav`, `cc_nav_race`, `cc_present_sound`, `cc_drive_pick`, `cc_link_card`.
+  - Os testes de interface partilham o Topperboard «Teste33 ·», por isso correm um de cada vez.
+- **Ficheiros:**
+  - novos: `toppernote.php`, `assets/cc_logic.js`;
+  - alterados: `criativo.php` (redireciona), `cc_api.php`, `cc_file.php`, `drive_api.php`, `inc/cc.php`,
+    `inc/drive_store.php`, `inc/migrate_creative.php`, `inc/migrate.php`, `assets/cc.js`, `assets/cc.css`,
+    `assets/cc_rt.js` e os textos de vários ficheiros (menu, Definições, portal, emails, ajuda).
+- **Correções da revisão final** (31 out):
+  - `px=1` deixou de servir SVG no domínio do admin (XSS guardado);
+  - uma resposta antiga não substitui o Topperboard acabado de abrir;
+  - um envio a meio de uma navegação já não aparece no Topperboard novo;
+  - colar já não traz um pacote antigo quando a área de transferência não tem texto;
+  - «Restaurar do Lixo» mostra a razão real de uma falha;
+  - Esc fecha o seletor da Drive mesmo com cartões selecionados.
+- **Fica para depois:**
+  - personalização de cores/formas;
+  - no iPad sem teclado, uma alternativa à seleção múltipla por toque longo (por exemplo «Escolher mais» na barra da
+    seleção).
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das
