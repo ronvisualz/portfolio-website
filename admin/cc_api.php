@@ -24,6 +24,7 @@
  *   a=rt_token          board — um token novo para o serviço de tempo real (ler)
  *   a=versions          board — as versões do Topperboard (ler) · a=version_view  board, id — os cartões de uma versão (ler)
  *   version_restore, version_mark (editar) · rt_usage (o que o browser enviou; só pede o token CSRF)
+ * Paleta (§33.11): palette_add  asset, hex, name · palette_edit  asset, hex, op (name|hide|show|remove), name
  * Preferências da pessoa (§33): pref  k=colors (JSON, últimas 8 cores) | side_w (largura do painel, 280–4000) — só pede o token CSRF
  */
 require_once __DIR__ . '/inc/bootstrap.php';
@@ -893,6 +894,19 @@ case 'react': {
     if (!$cm || !($b = cc_board_get($pdo, (int)$cm['board_id'])) || !cc_board_access($pdo, $b)) cfail('Comentário não encontrado.', 404);
     cc_comment_react($pdo, (int)$cm['id'], (string)rq('emoji'), $by);
     cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$cm['board_id'], $cm['card_id'] ? (int)$cm['card_id'] : null)]);
+}
+
+// ── paleta manual (§33.11): conta-gotas, renomear, esconder/remover ─────
+
+case 'palette_add':
+case 'palette_edit': {
+    $x = cc_asset_get($pdo, rint('asset'));
+    if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
+    try {
+        $out = $a === 'palette_add' ? cc_palette_add($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('name'), $by)
+                                    : cc_palette_edit($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('op'), (string)rq('name'));
+    } catch (InvalidArgumentException $e) { cfail($e->getMessage()); }
+    cout(200, ['ok' => true, 'palette' => $out]);
 }
 
 // ── preferências da pessoa (§33.2 últimas cores, §33.7 largura do painel) ─────

@@ -438,7 +438,7 @@ function cc_palette_distance(?string $json, array $lab): ?array {
     if (!is_array($p)) return null;
     $best = null;
     foreach ($p as $c) {
-        if (!is_array($c) || count($c) < 5 || (float)$c[1] < 0.04) continue;
+        if (!is_array($c) || count($c) < 5 || (float)$c[1] < 0.04 || !empty($c[5]['h'])) continue;
         $de = cc_de2000([(float)$c[2], (float)$c[3], (float)$c[4]], $lab);
         $score = $de - min(4.0, (float)$c[1] * 10);
         if ($best === null || $score < $best[0]) $best = [$score, $de];
@@ -451,8 +451,73 @@ function cc_palette_hex(?string $json, int $n = 6): array {
     $p = json_decode((string)$json, true);
     if (!is_array($p)) return [];
     $out = [];
-    foreach ($p as $c) if (is_array($c) && isset($c[0])) $out[] = ['hex' => (string)$c[0], 'w' => (float)($c[1] ?? 0)];
-    return array_slice($out, 0, $n);
+    foreach ($p as $c) {
+        if (!is_array($c) || !isset($c[0])) continue;
+        $meta = is_array($c[5] ?? null) ? $c[5] : [];
+        if (!empty($meta['h'])) continue;   // automática escondida (§33.11)
+        $o = ['hex' => (string)$c[0], 'w' => (float)($c[1] ?? 0)];
+        if (!empty($meta['m'])) { $o['m'] = 1; $o['by'] = (int)($meta['by'] ?? 0); }
+        if (($meta['name'] ?? '') !== '') $o['name'] = (string)$meta['name'];
+        $out[] = $o;
+    }
+    // as manuais vêm sempre (também além das n automáticas)
+    $auto = array_values(array_filter($out, fn($o) => empty($o['m'])));
+    $man = array_values(array_filter($out, fn($o) => !empty($o['m'])));
+    return array_merge(array_slice($auto, 0, $n), $man);
+}
+
+/**
+ * Paleta manual (§33.11). Cada cor guardada é [hex, peso, L, a, b, meta]; meta: {m:1, name, by} para as escolhidas à
+ * mão, {h:1} para as automáticas escondidas, {name} para as renomeadas. As manuais pesam 0,2 (entram na pesquisa por cor).
+ */
+function cc_palette_add(PDO $pdo, int $assetId, string $hex, string $name, int $by): array {
+    if (!preg_match('/^#?([0-9a-f]{6})$/i', trim($hex), $m)) throw new InvalidArgumentException('Isto não é uma cor.');
+    $hex = '#' . strtoupper($m[1]);
+    $p = json_decode((string)$pdo->query('SELECT palette FROM cc_assets WHERE id = ' . $assetId)->fetchColumn(), true);
+    $p = is_array($p) ? $p : [];
+    $name = mb_substr(trim($name), 0, 60);
+    foreach ($p as &$c) {
+        if (is_array($c) && strtoupper((string)($c[0] ?? '')) === $hex) {
+            $meta = is_array($c[5] ?? null) ? $c[5] : [];
+            unset($meta['h']);
+            if ($name !== '') $meta['name'] = $name;
+            $c[5] = $meta ?: new stdClass();
+            unset($c);
+            return cc_palette_save($pdo, $assetId, $p);
+        }
+    }
+    unset($c);
+    if (count(array_filter($p, fn($c) => !empty($c[5]['m']))) >= 24) throw new InvalidArgumentException('Esta referência já tem 24 cores escolhidas à mão.');
+    [$L, $A, $Bb] = cc_rgb_lab(hexdec(substr($hex, 1, 2)), hexdec(substr($hex, 3, 2)), hexdec(substr($hex, 5, 2)));
+    $p[] = [$hex, 0.2, round($L, 2), round($A, 2), round($Bb, 2), array_filter(['m' => 1, 'name' => $name, 'by' => $by], fn($v) => $v !== '')];
+    return cc_palette_save($pdo, $assetId, $p);
+}
+function cc_palette_edit(PDO $pdo, int $assetId, string $hex, string $op, string $name = ''): array {
+    $hex = strtoupper('#' . ltrim(trim($hex), '#'));
+    $p = json_decode((string)$pdo->query('SELECT palette FROM cc_assets WHERE id = ' . $assetId)->fetchColumn(), true);
+    $p = is_array($p) ? $p : [];
+    foreach ($p as $i => $c) {
+        if (!is_array($c) || strtoupper((string)($c[0] ?? '')) !== $hex) continue;
+        $meta = is_array($c[5] ?? null) ? $c[5] : [];
+        $manual = !empty($meta['m']);
+        if ($op === 'remove') {
+            if (!$manual) throw new InvalidArgumentException('As cores automáticas não se apagam: escondem-se.');
+            array_splice($p, $i, 1);
+        } elseif ($op === 'hide') {
+            if ($manual) array_splice($p, $i, 1); else { $meta['h'] = 1; $p[$i][5] = $meta; }
+        } elseif ($op === 'show') {
+            unset($meta['h']); $p[$i][5] = $meta ?: new stdClass();
+        } elseif ($op === 'name') {
+            $meta['name'] = mb_substr(trim($name), 0, 60); $p[$i][5] = $meta;
+        } else throw new InvalidArgumentException('Operação inválida.');
+        return cc_palette_save($pdo, $assetId, array_values($p));
+    }
+    throw new InvalidArgumentException('Essa cor não está na paleta.');
+}
+function cc_palette_save(PDO $pdo, int $assetId, array $p): array {
+    $j = json_encode(array_values($p), JSON_UNESCAPED_UNICODE);
+    $pdo->prepare('UPDATE cc_assets SET palette = ? WHERE id = ?')->execute([$j, $assetId]);
+    return cc_palette_hex($j, 8);
 }
 
 // ── biblioteca ──────────────────────────────────────────────

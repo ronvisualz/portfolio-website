@@ -19,6 +19,10 @@ imagefilledrectangle($im, 1200, 0, 2399, 1599, imagecolorallocate($im, 47, 119, 
 ob_start(); imagepng($im); $png = (string)ob_get_clean();
 [$asset] = cc_asset_create($pdo, $png, ['name' => 'teste33.png', 'mime' => 'image/png']);
 $aid = (int)(is_array($asset) ? $asset['id'] : $asset);
+// a referência é reaproveitada entre corridas (mesma impressão digital): repõe as miniaturas se um teste as tirou
+if (is_array($asset) && trim((string)$asset['thumbs']) === '') {
+    $pdo->prepare('UPDATE cc_assets SET thumbs = ? WHERE id = ?')->execute([json_encode(cc_thumbs_make($im, 't/' . substr((string)$asset['sha1'], 0, 2) . '/' . $asset['sha1'])), $aid]);
+}
 
 $add = fn(array $d) => cc_card_add($pdo, $b, $d, 1);
 $ids = [

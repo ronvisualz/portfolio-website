@@ -90,6 +90,31 @@
 .ccd-frames button { flex: none; width: 92px; padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; position: relative; }
 .ccd-frames img { width: 100%; display: block; aspect-ratio: 16/9; object-fit: cover; }
 .ccd-frames span { position: absolute; left: 3px; bottom: 3px; font: 600 9.5px var(--mono); background: rgba(0,0,0,.6); color: #fff; padding: 0 4px; border-radius: 3px; }
+/* §33.11: paleta com nomes, menu ⋯ e conta-gotas */
+.ccd-palh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.ccd-palh h4 { margin: 0; flex: 1; }
+.ccd-pc { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: 100px; background: var(--panel); }
+.ccd-pc.m { border-style: dashed; }
+.ccd-pal .ccd-pc button { border: 0; background: none; border-radius: 100px; }
+.ccd-pal .ccd-pcb small { color: var(--mute); font-size: 10.5px; }
+.ccd-pal .ccd-pm { padding: 0 8px 0 2px; color: var(--mute); font: 600 13px var(--body); min-width: 28px; }
+.ccd-pal .ccd-pm:hover, .ccd-pal .ccd-pcb:hover { color: var(--fg); background: var(--chip); }
+.ccd-pal button:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+.ccd-palmsg { margin-top: 6px; color: var(--mute); }
+.ccd-palmsg:empty { display: none; }
+.ccd-copybox { width: 12em; font: 500 12px var(--mono); }
+.cc-pmenu { position: fixed; z-index: 97; min-width: 220px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 5px; display: flex; flex-direction: column; }
+.cc-pmenu button { display: flex; justify-content: space-between; gap: 10px; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px; font: 500 13px var(--body); color: var(--fg); cursor: pointer; min-height: 36px; }
+.cc-pmenu button:hover, .cc-pmenu button:focus-visible { background: var(--chip); outline: none; }
+.cc-pmenu code { font: 500 11.5px var(--mono); color: var(--mute); }
+.ccd-media { position: relative; }
+.ccd-pickov { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
+.ccd-media.picking { outline: 2px solid var(--hi); outline-offset: 2px; }
+.ccd-pickhint { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; pointer-events: none; padding: 5px 8px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: 11.5px; text-align: center; }
+.cc-loupe { position: fixed; z-index: 130; pointer-events: none; width: 120px; background: #111; border-radius: 12px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+.cc-loupe canvas { display: block; width: 120px; height: 120px; border-radius: 8px; image-rendering: pixelated; }
+.cc-loupe b { display: flex; align-items: center; gap: 6px; justify-content: center; font: 600 12px var(--mono); color: #fff; padding: 5px 0 2px; }
+.cc-loupe b::before { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
 .ccd-pal { display: flex; flex-wrap: wrap; gap: 6px; }
 .ccd-pal button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 100px; padding: 3px 9px 3px 3px; font: 500 11.5px var(--mono); color: var(--fg); cursor: pointer; }
 .ccd-pal i { width: 18px; height: 18px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.1); }

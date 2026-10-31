@@ -173,5 +173,31 @@
     return need > max * 1.25 && (!origW || origW > max) ? 0 : max;
   }
 
-  return { version: 1, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── conta-gotas (§33.11) ──
+  /** A cor em (x, y) de uma imagem RGBA (largura w): média 3×3, ou o píxel exato com Alt. */
+  function avg3(data, w, x, y, alt) {
+    var h = Math.floor(data.length / 4 / w), r = 0, g = 0, b = 0, n = 0, R = alt ? 0 : 1;
+    for (var dy = -R; dy <= R; dy++) for (var dx = -R; dx <= R; dx++) {
+      var xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      var i = (yy * w + xx) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    var hx = function (v) { return ('0' + Math.round(v / (n || 1)).toString(16)).slice(-2); };
+    return ('#' + hx(r) + hx(g) + hx(b)).toUpperCase();
+  }
+  /** '#RRGGBB' → 'rgb(r, g, b)' ou 'hsl(h, s%, l%)'. */
+  function hexTo(hex, mode) {
+    var v = hexParse(hex); if (!v) return '';
+    var r = parseInt(v.substr(1, 2), 16), g = parseInt(v.substr(3, 2), 16), b = parseInt(v.substr(5, 2), 16);
+    if (mode !== 'hsl') return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+    var R = r / 255, G = g / 255, Bv = b / 255, mx = Math.max(R, G, Bv), mn = Math.min(R, G, Bv), l = (mx + mn) / 2, d = mx - mn, hh = 0, ss = 0;
+    if (d) {
+      ss = d / (1 - Math.abs(2 * l - 1));
+      hh = mx === R ? ((G - Bv) / d) % 6 : mx === G ? (Bv - R) / d + 2 : (R - G) / d + 4;
+      hh = Math.round(hh * 60); if (hh < 0) hh += 360;
+    }
+    return 'hsl(' + hh + ', ' + Math.round(ss * 100) + '%, ' + Math.round(l * 100) + '%)';
+  }
+
+  return { version: 1, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

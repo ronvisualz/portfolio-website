@@ -120,5 +120,15 @@ eq(CCL.thumbPick([1600, 256, 768], 100, 1, 1), 256, 'thumbPick: lista fora de or
 eq(CCL.thumbPick([256, 768, 1600], 280, 5, 2, 6481), 0, 'thumbPick: muito zoom numa imagem grande → original');
 eq(CCL.thumbPick([256, 768, 1600], 280, 5, 2, 1600), 1600, 'thumbPick: a imagem não é maior do que a miniatura → fica a miniatura');
 
+// ── conta-gotas (§33.11) ──
+const img = (w, h, f) => { const d = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const c = f(x, y), i = (y * w + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255; } return d; };
+const D = img(5, 5, (x, y) => x === 2 && y === 2 ? [220, 40, 40] : [200, 40, 40]);
+eq(CCL.avg3(D, 5, 2, 2, false), '#CA2828', 'avg3: média 3×3 (8 × 200 + 220) / 9 = 202');
+eq(CCL.avg3(D, 5, 2, 2, true), '#DC2828', 'avg3 com Alt: o píxel exato');
+eq(CCL.avg3(D, 5, 0, 0, false), '#C82828', 'avg3 no canto: só os vizinhos que existem');
+eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
+eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
+eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

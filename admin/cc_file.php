@@ -4,6 +4,7 @@
  *
  *   GET cc_file.php?a=<referência>&s=256|768|1600   a miniatura mais próxima (por cima) da largura
  *   GET cc_file.php?a=<referência>&s=0              o original (vídeo com pedidos parciais)
+ *   GET cc_file.php?a=<referência>&s=…&px=1         a imagem servida daqui (não redireciona): o conta-gotas lê os píxeis
  *   GET cc_file.php?f=<frame>&s=…                   um frame-chave de um vídeo
  *   GET cc_file.php?pt=<token da proposta>&a=…      as imagens do pré-criativo na página do cliente
  *                                                   (só as referências das páginas dessa proposta)
@@ -71,6 +72,17 @@ if ($mime === '' || $size > 0) {
     $mime = ['webp' => 'image/webp', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png'][$ext] ?? ($mime ?: 'application/octet-stream');
 }
 
+if (strncmp($key, 'r2:', 3) === 0 && !$public && !empty($_GET['px']) && str_starts_with($mime, 'image/')) {
+    // conta-gotas (§33.11): os píxeis têm de vir do mesmo domínio (um canvas com imagem de outro domínio não se lê)
+    $head = r2_head(substr($key, 3));
+    if (!$head || (int)($head['size'] ?? 0) > 62914560) ccf_404();
+    header('Content-Type: ' . $mime);
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: private, max-age=3600');
+    header('Content-Length: ' . (int)$head['size']);
+    r2_stream(substr($key, 3), function (string $c) { echo $c; });
+    exit;
+}
 if (strncmp($key, 'r2:', 3) === 0) {
     // endereço assinado com a hora arredondada: o mesmo URL durante uma hora (cache do browser)
     $now = intdiv(time(), 3600) * 3600;
