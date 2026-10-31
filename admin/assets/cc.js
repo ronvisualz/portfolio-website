@@ -368,7 +368,7 @@
   /** Envia um ficheiro. ctx: board, x, y, lane, column, inbox, cw. Devolve { asset, card }. */
   async function uploadFile(file, ctx) {
     ctx = ctx || {};
-    var row = Up.add(file.name);
+    var row0 = Up.add(file.name), row = { set: function (p) { row0.set(p); if (ctx.onp) ctx.onp(p); }, done: row0.done, fail: row0.fail };
     try {
       var kind = kindOf(file);
       var fp = await fingerprint(file);
@@ -1046,7 +1046,15 @@
     function bbox(c) { return { x: c.x, y: c.y, w: c.w, h: cardH(c) }; }
 
     // ── desenhar os cartões ──
+    function localHtml(c) {
+      var L = c.local, media = L.url ? (L.kind === 'video' ? '<video src="' + esc(L.url) + '" muted playsinline preload="metadata"></video>' : '<img src="' + esc(L.url) + '" alt="" draggable="false">') : '<span class="nf">' + ico('file') + '</span>';
+      return '<div class="ccc-media" style="aspect-ratio:4/3">' + media + '</div><div class="ccc-cap"><b>' + esc(L.name) + '</b></div>'
+        + (L.state === 'fail'
+          ? '<div class="ccc-upfail" role="alert"><span>' + esc(L.err) + '</span><button type="button" class="btn sm" data-cact="retry">Tentar outra vez</button><button type="button" class="btn sm ghost" data-cact="drop-local">Tirar</button></div>'
+          : '<i class="ccc-prog" role="progressbar" aria-label="A enviar ' + esc(L.name) + '"><b style="width:' + Math.round(L.p * 100) + '%"></b></i>');
+    }
     function cardHtml(c) {
+      if (c.local) return localHtml(c);
       var a = c.asset, x = c.c || {}, h = '';
       var badges = (c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '')
         + (x.state === 'keep' ? '<span class="ccc-state">Manter</span>' : x.state === 'swap' ? '<span class="ccc-state swap">Trocar</span>' : '')
@@ -1121,7 +1129,7 @@
     }
     function makeEl(c) {
       var el = document.createElement('div');
-      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '');
+      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '');
       el.setAttribute('data-id', c.id);
       if (c.type === 'note' && c.c && c.c.color) { el.style.setProperty('--note', c.c.color); el.classList.add('dark-ink'); }
       el.innerHTML = cardHtml(c);
@@ -1131,7 +1139,7 @@
         childrenOf(c.id).forEach(function (k) { var ke = makeEl(k); cb.appendChild(ke); setThumb(k, ke); });
       }
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
-      if (c.type === 'video' && c.asset && c.asset.orig) bindVideoHover(el, c);
+      if (c.type === 'video' && c.asset && c.asset.orig && !c.local) bindVideoHover(el, c);
       if (c.type === 'audio') auNeedPeaks(c.asset, auUpdated);
       return el;
     }
@@ -1298,6 +1306,7 @@
     function snapshot(c) { return { id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, col: c.col, ord: c.ord, lane: c.lane }; }
     function push(entry) { B.undo.push(entry); if (B.undo.length > 80) B.undo.shift(); B.redo.length = 0; undoSync(); }
     function save(items) {
+      items = items.filter(function (x) { return x.id > 0; });   // cartões ainda a enviar (§33.10) não existem no servidor
       if (!items.length) return Promise.resolve();
       if (RT) RT.publish(items);
       return api('cards_update', { board: B.id, items: JSON.stringify(items) }).then(function (j) { B.rev = j.rev; }).catch(function (e) {
@@ -1407,16 +1416,45 @@
         toast(j.msg, j.cards.length ? {} : { err: true });
       }).catch(function (e) { row.fail(e.message); });
     }
+    // §33.10: envio otimista — o cartão aparece logo (pré-visualização local e progresso) e troca pelo do servidor no fim
+    var localSeq = 0, localFiles = new Map();
+    var SHOWABLE = /^image\/(jpeg|png|gif|webp|avif|bmp|svg\+xml)$/;
+    function localCard(file, q) {
+      var kind = kindOf(file), type = kind === 'image' || kind === 'video' || kind === 'audio' ? kind : 'file';
+      var url = (kind === 'image' && SHOWABLE.test(file.type)) || (kind === 'video' && file.type) ? URL.createObjectURL(file) : '';
+      var c = { id: -(++localSeq), type: type, x: q.x, y: q.y, w: 280, h: 0, z: 9999, col: null, ord: 0, lane: laneAt(q.y), c: {}, asset: null, nc: 0,
+                local: { url: url, name: file.name, kind: kind, p: 0, state: 'up', err: '' } };
+      localFiles.set(c.id, { file: file, q: q });
+      B.cards.set(c.id, c);
+      return c;
+    }
+    function localProgress(c, p) { c.local.p = p; var b = B.els.get(c.id); b = b && $('.ccc-prog b', b); if (b) b.style.width = Math.round(clamp(p, 0, 1) * 100) + '%'; }
+    function sendLocal(c) {
+      var lf = localFiles.get(c.id);
+      c.local.state = 'up'; c.local.err = ''; c.local.p = 0; rerender(c);
+      return uploadFile(lf.file, { board: B.id, x: c.x, y: c.y, lane: c.lane, cw: 280, onp: function (p) { localProgress(c, p); } }).then(function (j) {
+        var sel = B.sel.has(c.id);
+        dropLocal(c);
+        if (j && j.card) {
+          B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); if (RT) RT.added([j.card]);
+          if (sel) select([j.card.id], true);
+        }
+        B.rev = j && j.rev ? j.rev : B.rev;
+      }).catch(function (e) {
+        c.local.state = 'fail'; c.local.err = (e && e.message) || 'O envio falhou.';
+        rerender(c);
+      });
+    }
+    function dropLocal(c) {
+      if (c.local && c.local.url) URL.revokeObjectURL(c.local.url);
+      localFiles.delete(c.id); B.cards.delete(c.id); B.sel.delete(c.id);
+      var el = B.els.get(c.id); if (el) el.remove(); B.els.delete(c.id);
+    }
     function addFiles(files, at) {
       var p = at || spot(280), i = 0;
-      return Array.from(files).reduce(function (prom, file) {
-        var q = { x: p.x + (i % 4) * 300, y: p.y + Math.floor(i / 4) * 320 }; i++;
-        return prom.then(function () {
-          return uploadFile(file, { board: B.id, x: q.x, y: q.y, lane: laneAt(q.y), cw: 280 }).then(function (j) {
-            if (j && j.card) { B.cards.set(j.card.id, j.card); cull(); push({ t: 'add', ids: [j.card.id] }); if (RT) RT.added([j.card]); }
-          }).catch(function () {});
-        });
-      }, Promise.resolve()).then(function () { reload(); });
+      var cards = Array.from(files).map(function (file) { var q = { x: p.x + (i % 4) * 300, y: p.y + Math.floor(i / 4) * 320 }; i++; return localCard(file, q); });
+      cull();
+      return cards.reduce(function (prom, c) { return prom.then(function () { return sendLocal(c); }); }, Promise.resolve());
     }
     function pasteText(t, at) {
       t = t.trim();
@@ -1680,7 +1718,9 @@
     }
     function delSel() {
       if (!EDIT || !B.sel.size) return;
-      var ids = Array.from(B.sel);
+      Array.from(B.sel).forEach(function (id) { var lc = B.cards.get(id); if (lc && lc.local && lc.local.state === 'fail') dropLocal(lc); });
+      var ids = Array.from(B.sel).filter(function (id) { return id > 0; });
+      if (!ids.length) return;
       api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); });
@@ -1846,6 +1886,7 @@
           return;
         }
         if (act === 'nc') { if (nball && nball.id === +b.closest('.ccc').getAttribute('data-id') && !nball.hover) closeBalloon(); else openBalloon(b); return; }
+        if (act === 'retry' || act === 'drop-local') { var lc = B.cards.get(+b.closest('.ccc').getAttribute('data-id')); if (lc && lc.local) { if (act === 'retry') sendLocal(lc); else dropLocal(lc); } return; }
         if (act === 'li-add') {
           c.c.items.push({ t: '', d: false });
           rerender(c);
