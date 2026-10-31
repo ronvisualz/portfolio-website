@@ -1596,6 +1596,7 @@
     const body = forever ? { do: 'share_create', key, forever: true } : { do: 'share_create', key, hours };
     if (opt.password) body.password = String(opt.password);   // só a interface; as propostas do assistente nunca a levam
     if (opt.includePrivate) body.include_private = true;   // só a interface, depois de a pessoa o marcar
+    if (opt.perm === 'edit') body.perm = 'edit';   // §32.2: só a interface (o servidor confirma que pode)
     const j = await TD.api(body);
     if (!j.ok || !j.share) return fail((j && j.error) || 'Não foi possível criar o link.', opt);
     const sh = Object.assign({ downloads: 0 }, j.share);
@@ -2194,6 +2195,9 @@
       box.setAttribute('aria-label', 'Partilhar «' + it.name + '»');
       box.innerHTML = '<h2 class="td-dialog-title">Partilhar «<span></span>»</h2>' +
         '<p class="td-dialog-text">Cria um link' + (it.folder ? '' : ' temporário') + '. Quem o tiver pode descarregar ' + (it.folder ? 'os ficheiros desta pasta' : 'este ficheiro') + ' sem entrar no admin nem usar password.</p>' +
+        (TD.cfg.canEdit ? '<div class="dr-share-l" id="dr-sh-pl">Quem tem o link</div><div class="dr-share-perm" role="radiogroup" aria-labelledby="dr-sh-pl">' +
+          '<label class="dr-share-pr"><input type="radio" name="dr-sh-perm" value="view" checked><span><b>Só ver</b><span class="muted">Ver e descarregar</span></span></label>' +
+          '<label class="dr-share-pr"><input type="radio" name="dr-sh-perm" value="edit"><span><b>Pode editar</b><span class="muted">' + (it.folder ? 'Carregar, criar pastas, renomear e substituir versões — nunca apagar' : 'Substituir por uma nova versão (a anterior fica no histórico)') + '</span></span></label></div>' : '') +
         '<div class="dr-share-l" id="dr-sh-l">Validade do link</div>' +
         '<div class="dr-share-h" role="radiogroup" aria-labelledby="dr-sh-l"></div>' +
         (it.folder ? '<div class="dr-share-note" role="note" hidden><b>Sem prazo:</b> o link fica ativo até o revogares. Quem o tiver vê esta pasta e tudo o que lá puseres no futuro. Revoga-o em «Partilhados» ou nos detalhes da pasta.</div>' : '') +
@@ -2247,7 +2251,8 @@
         create.disabled = true; create.textContent = 'A criar…';
         if (hours !== 0) TD.store.set('drive.shareHours', hours);
         const pw = pwOn.checked ? pwIn.value : '';
-        const made = run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw });
+        const permEl = box.querySelector('input[name=dr-sh-perm]:checked');
+        const made = run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw, perm: permEl ? permEl.value : 'view' });
         // a cópia começa já, no clique (no Safari, copiar depois de esperar pelo servidor falha)
         const copied = TD.copyLink(made.then(x => { if (!x.ok) throw new Error(x.message); return x.url; }), { box: false, quiet: true });
         const r = await made;
@@ -2273,8 +2278,20 @@
     const u = String(s.url || '');
     row.innerHTML = '<span class="dr-sh-i">' + ic('link') + '</span><span class="dr-sh-t"><span class="dr-sh-u" title="' + esc(u) + '">…' + esc(u.slice(-12)) + '</span>' +
       '<span class="dr-sh-m">' + esc(shareUntil(s)) + ' · ' + esc(n(s.downloads || 0, 'descarga', 'descargas')) + '</span></span>' +
+      (TD.cfg.canEdit ? '<select data-perm aria-label="Permissão de quem tem o link"><option value="view">Só ver</option><option value="edit">Pode editar</option></select>' : '<span class="dr-sh-p">' + (s.perm === 'edit' ? 'Pode editar' : 'Só ver') + '</span>') +
       '<button type="button" class="btn ghost sm" data-c>Copiar</button><button type="button" class="dr-iconbtn danger" data-r aria-label="Revogar este link" title="Revogar">' + ic('close') + '</button>';
     row.querySelector('[data-c]').onclick = () => copyLink(u, s);
+    const ps = row.querySelector('select[data-perm]');
+    if (ps) {
+      ps.value = s.perm === 'edit' ? 'edit' : 'view';
+      ps.onchange = async () => {   // §32.2: muda a permissão; o link fica o mesmo
+        const j = await TD.api({ do: 'share_update', id: s.id, perm: ps.value });
+        if (!j.ok) { ps.value = s.perm === 'edit' ? 'edit' : 'view'; TD.toast(j.error || 'Não foi possível mudar a permissão.', 'err'); return; }
+        s.perm = j.share.perm;
+        S.shares = S.shares.map(x => x.id === s.id ? Object.assign({}, x, { perm: j.share.perm }) : x);
+        TD.toast(j.share.perm === 'edit' ? 'Quem tem o link passa a poder editar (nunca apagar).' : 'O link passa a ser só para ver.', 'ok');
+      };
+    }
     row.querySelector('[data-r]').onclick = async () => { await revoke([s.id]); if (after) after(); };
     return row;
   }

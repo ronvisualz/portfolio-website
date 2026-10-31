@@ -990,7 +990,22 @@ try {
         if ($pw !== '' && (mb_strlen($pw) < DRIVE_SHARE_PW_MIN || mb_strlen($pw) > DRIVE_SHARE_PW_MAX)) {
             api_err('A password do link tem de ter entre ' . DRIVE_SHARE_PW_MIN . ' e ' . DRIVE_SHARE_PW_MAX . ' caracteres.');
         }
-        $s = drive_share_create($pdo, $key, $folder, $hours, $forever, $pw);
+        // §32.2: «Só ver» ou «Pode editar» (este só para quem pode editar a Drive)
+        $perm = (string)($in['perm'] ?? 'view');
+        if (!in_array($perm, ['view', 'edit'], true)) api_err('Permissão inválida.');
+        if ($perm === 'edit' && !can('drive', PERM_EDIT)) api_err('Só quem pode editar a Drive cria links «Pode editar».', 403);
+        $s = drive_share_create($pdo, $key, $folder, $hours, $forever, $pw, $perm, (int)(current_user()['id'] ?? 0), !empty($in['include_private']));
+        api_out(200, ['ok' => true, 'share' => drive_share_out($s)]);
+    }
+    case 'share_update': {   // §32.2: mudar a permissão, a validade ou a password sem mudar o link
+        require_once __DIR__ . '/inc/drive_share.php';
+        $id = (int)($in['id'] ?? 0);
+        $cur = $id > 0 ? drive_share_get($pdo, $id) : null;
+        if (!$cur) api_err('Este link já não existe.', 404);
+        want_any((string)$cur['k']);   // a mesma regra de acesso da chave (faturação)
+        if (($in['perm'] ?? '') === 'edit' && !can('drive', PERM_EDIT)) api_err('Só quem pode editar a Drive dá permissão para editar.', 403);
+        try { $s = drive_share_update($pdo, $id, array_intersect_key($in, array_flip(['perm', 'hours', 'forever', 'password', 'clear_password']))); }
+        catch (RuntimeException $e) { api_err($e->getMessage(), $e->getCode() ?: 400); }
         api_out(200, ['ok' => true, 'share' => drive_share_out($s)]);
     }
     case 'share_quick': {   // «Copiar link de partilha» (§32.6): reaproveita ou cria um link «Só ver» com a validade por defeito

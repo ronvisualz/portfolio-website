@@ -302,13 +302,16 @@ function drive_share_out(array $s): array {
 }
 
 /** $forever só vale para pastas (um ficheiro partilhado tem sempre prazo). */
-function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours, bool $forever = false, string $password = ''): array {
+function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours, bool $forever = false, string $password = '', string $perm = 'view', int $by = 0, bool $incPrivate = false): array {
     $hours = max(1, min(DRIVE_SHARE_MAX_HOURS, $hours));
     $until = $forever && $folder ? DRIVE_SHARE_FOREVER : drive_now($hours * 3600);
     $tok = drive_share_token();
     $pdo->prepare('INSERT INTO drive_shares (token, obj_key, is_folder, expires_at, created_at, downloads, revoked, pw_hash) VALUES (?,?,?,?,?,0,0,?)')
         ->execute([$tok, $key, $folder ? 1 : 0, $until, drive_now(), $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null]);
-    return drive_share_get($pdo, (int)$pdo->lastInsertId());
+    $id = (int)$pdo->lastInsertId();
+    if (db_has_column($pdo, 'drive_shares', 'perm'))   // §32.2: permissão, quem criou e se inclui documentos privados
+        $pdo->prepare('UPDATE drive_shares SET perm = ?, created_by = ?, inc_private = ? WHERE id = ?')->execute([$perm === 'edit' ? 'edit' : 'view', $by ?: null, $incPrivate ? 1 : 0, $id]);
+    return drive_share_get($pdo, $id);
 }
 
 /**
@@ -322,9 +325,7 @@ function drive_share_quick(PDO $pdo, string $key, bool $folder, int $by): array 
         return [$s, true];
     }
     $hours = max(1, min(DRIVE_SHARE_MAX_HOURS, (int)setting($pdo, 'drive_share_hours', 24)));
-    $s = drive_share_create($pdo, $key, $folder, $hours);
-    if ($by && db_has_column($pdo, 'drive_shares', 'created_by')) $pdo->prepare('UPDATE drive_shares SET created_by = ? WHERE id = ?')->execute([$by, $s['id']]);
-    return [$s, false];
+    return [drive_share_create($pdo, $key, $folder, $hours, false, '', 'view', $by), false];
 }
 
 function drive_share_get(PDO $pdo, int $id): ?array {

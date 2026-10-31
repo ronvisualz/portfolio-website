@@ -13,6 +13,7 @@
     api: (root && root.getAttribute('data-api')) || '/admin/drive_api.php',
     aiApi: (root && root.getAttribute('data-ai-api')) || '/admin/ai_api.php',
     csrf: (root && root.getAttribute('data-csrf')) || '',
+    canEdit: !!(root && root.getAttribute('data-can-edit') === '1'),   // §32.2: só quem edita a Drive cria links «Pode editar»
   };
 
   // ── pedidos ─────────────────────────────────────────────

@@ -64,7 +64,7 @@ echo $css;
 ?>
 <h1 class="sr">Drive</h1>
 <div id="drive" class="drive" data-api="/admin/drive_api.php" data-ai-api="/admin/ai_api.php"
-     data-csrf="<?= e(csrf_token()) ?>" data-prefix="<?= e($p) ?>">
+     data-csrf="<?= e(csrf_token()) ?>" data-prefix="<?= e($p) ?>" data-can-edit="<?= can('drive', PERM_EDIT) ? '1' : '0' ?>">
   <div id="drive-app" class="dr" aria-busy="true">
     <div class="dr-boot" aria-hidden="true"><span></span><span></span><span></span></div>
   </div>
