@@ -89,5 +89,37 @@
     return out.slice(0, max || 8);
   }
 
-  return { version: 1, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── desenho (§33.3) ──
+  /** O ponto (x, y) está a ≤ r de algum segmento do traço [x0,y0,x1,y1,…]? (borracha) */
+  function strokeHit(pts, x, y, r) {
+    for (var i = 0; i + 1 < pts.length; i += 2) {
+      var ax = pts[i], ay = pts[i + 1], bx = i + 3 < pts.length ? pts[i + 2] : ax, by = i + 3 < pts.length ? pts[i + 3] : ay;
+      var dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L)) : 0;
+      if (Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) <= r) return true;
+    }
+    return false;
+  }
+  /** Traço em coordenadas do mundo → relativo ao canto da sua caixa (margem 6, mínimo 20 × 20). */
+  function fitStroke(pts, pad) {
+    pad = pad == null ? 6 : pad;
+    var xs = [], ys = [];
+    for (var i = 0; i + 1 < pts.length; i += 2) { xs.push(pts[i]); ys.push(pts[i + 1]); }
+    var x = Math.min.apply(null, xs) - pad, y = Math.min.apply(null, ys) - pad;
+    var vw = Math.max(20, Math.max.apply(null, xs) + pad - x), vh = Math.max(20, Math.max.apply(null, ys) + pad - y);
+    var r = function (v) { return Math.round(v * 10) / 10; };
+    return { pts: pts.map(function (v, k) { return r(v - (k % 2 ? y : x)); }), vw: r(vw), vh: r(vh), x: r(x), y: r(y) };
+  }
+  /** Desenhos antigos (sem vw/vh): a caixa dos traços, com a mesma margem. */
+  function drawBox(paths) {
+    var mx = 0, my = 0;
+    (paths || []).forEach(function (p) { for (var i = 0; i + 1 < (p.pts || []).length; i += 2) { mx = Math.max(mx, p.pts[i]); my = Math.max(my, p.pts[i + 1]); } });
+    return { vw: Math.max(20, mx + 6), vh: Math.max(20, my + 6) };
+  }
+  /** Um ponto do cartão (px, py, relativo ao canto) → coordenadas do desenho (viewBox com xMidYMid meet). */
+  function toLocal(box, vb, px, py) {
+    var s = Math.min(box.w / vb.vw, box.h / vb.vh) || 1, ox = (box.w - vb.vw * s) / 2, oy = (box.h - vb.vh * s) / 2;
+    return [(px - ox) / s, (py - oy) / s];
+  }
+
+  return { version: 1, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

@@ -71,5 +71,18 @@ eq(CCL.recentColors(['#000001', '#000002', '#000003', '#000004', '#000005', '#00
 eq(CCL.recentColors(['#111111'], 'azul'), ['#111111'], 'recentColors ignora o que não é cor');
 eq(CCL.BRAND, ['#111111', '#FFC718', '#E8846D', '#81CFE3', '#2F77B1'], 'cores da marca (1–5)');
 
+// ── desenho (§33.3) ──
+eq(CCL.strokeHit([0, 0, 100, 0], 50, 3, 4), true, 'strokeHit: perto do segmento → toca');
+eq(CCL.strokeHit([0, 0, 100, 0], 50, 5, 4), false, 'strokeHit: a r+1 → não toca');
+eq(CCL.strokeHit([0, 0, 100, 0], 104, 0, 4), true, 'strokeHit: perto da ponta → toca');
+eq(CCL.strokeHit([0, 0, 0, 0], 2, 2, 4), true, 'strokeHit: traço de um ponto');
+r = CCL.fitStroke([100, 50, 200, 150]);
+eq(r, { pts: [6, 6, 106, 106], vw: 112, vh: 112, x: 94, y: 44 }, 'fitStroke: relativo ao canto, com 6 px de margem');
+r = CCL.fitStroke([10, 10, 12, 10]);
+eq([r.vw, r.vh], [20, 20], 'fitStroke: caixa mínima 20 × 20');
+eq(CCL.drawBox([{ pts: [6, 6, 306, 186] }, { pts: [10, 20, 40, 60] }]), { vw: 312, vh: 192 }, 'drawBox: desenhos antigos sem caixa usam a dos traços');
+eq(CCL.toLocal({ w: 640, h: 400 }, { vw: 320, vh: 200 }, 320, 200), [160, 100], 'toLocal: o meio do cartão a 200% é o meio do desenho');
+eq(CCL.toLocal({ w: 400, h: 400 }, { vw: 200, vh: 100 }, 200, 200), [100, 50], 'toLocal: com proporção diferente fica centrado (meet)');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

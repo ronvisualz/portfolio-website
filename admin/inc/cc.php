@@ -1036,7 +1036,9 @@ function cc_card_content(string $type, $raw): array {
                 $pts = array_map(fn($v) => round((float)$v, 1), array_slice($p['pts'], 0, 4000));
                 $paths[] = ['c' => preg_match('/^#[0-9a-f]{6}$/i', (string)($p['c'] ?? '')) ? $p['c'] : '#111111', 'w' => max(1, min(40, (float)($p['w'] ?? 3))), 'pts' => $pts];
             }
-            return ['paths' => $paths];
+            // vw/vh: a caixa em que os traços foram desenhados (o cartão escala-a); fx: espessura fixa ao redimensionar (§33.3)
+            $box = static fn($v) => is_numeric($v) && (float)$v > 0 ? min(6000.0, round((float)$v, 1)) : 0.0;
+            return ['paths' => $paths, 'vw' => $box($c['vw'] ?? 0), 'vh' => $box($c['vh'] ?? 0), 'fx' => !empty($c['fx'])];
         case 'arrow':
             return ['from' => (int)($c['from'] ?? 0), 'to' => (int)($c['to'] ?? 0), 'label' => $s($c['label'] ?? '', 120),
                     'x2' => (float)($c['x2'] ?? 0), 'y2' => (float)($c['y2'] ?? 0)];

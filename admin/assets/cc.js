@@ -25,6 +25,7 @@
 
   // ── ícones (traço, 24×24) ──────────────────────────────────
   var IC = {
+    eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
     drive: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     cursor: '<path d="m4 4 7 17 2.5-7.5L21 11Z"/>',
     note: '<path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"/><path d="M15 3v6h6"/>',
@@ -897,7 +898,7 @@
   function viewBoard() {
     var B = {
       id: +root.getAttribute('data-board'), data: null, cards: new Map(), els: new Map(), sel: new Set(), view: { x: 60, y: 60, s: 1 },
-      tool: 'select', color: '#111111', rev: 0, lanes: false, undo: [], redo: [], editing: null, side: 'ia', arrowFrom: null, loadedAt: 0
+      tool: 'select', color: '#111111', pen: { w: 4, fx: false }, rev: 0, lanes: false, undo: [], redo: [], editing: null, side: 'ia', arrowFrom: null, loadedAt: 0
     };
     var vp, world, layer, svg, lanesEl, zoomOut, sideEl, sideBody, emptyEl, ptr = { x: 0, y: 0 }, spaceDown = false;
     var RT = null;   // tempo real (cc_rt.js): presença, cursores, alterações dos outros logo
@@ -942,6 +943,7 @@
         + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
         + '<div class="ccb-world"><div data-lanes></div><svg class="ccb-arrows" width="1" height="1"><defs><marker id="cc-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g data-ar></g></svg><div data-layer></div></div>'
         + '<div class="ccb-empty" hidden><div><b>Topperboard vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
+        + (EDIT ? penBarHtml() : '')
         + '<div class="ccb-hint" aria-hidden="true"><span class="kbd">Espaço</span> mover · <span class="kbd">Ctrl</span>+roda zoom · <span class="kbd">/</span> IA</div>'
         + '<div class="ccb-zoom"><button type="button" data-z="-1" aria-label="Afastar ( - )">' + ico('minus') + '</button><output data-zo>100%</output><button type="button" data-z="1" aria-label="Aproximar ( + )">' + ico('plus') + '</button><button type="button" data-z="0" aria-label="Ver tudo ( 0 )">' + ico('fit') + '</button></div>'
         + '</div>'
@@ -1092,8 +1094,9 @@
           break;
         }
         case 'drawing': {
-          var vw = x.vw || c.w, vh = x.vh || c.h || 100;
-          h = '<svg viewBox="0 0 ' + vw + ' ' + vh + '" preserveAspectRatio="none">' + (x.paths || []).map(function (p) { return '<path d="' + pathD(p.pts) + '" stroke="' + esc(p.c) + '" stroke-width="' + p.w + '"/>'; }).join('') + '</svg>';
+          // §33.3: a caixa em que se desenhou fica fixa (viewBox) e o cartão escala-a sem deformar (meet); antigos: a caixa dos traços
+          var vb = x.vw && x.vh ? { vw: x.vw, vh: x.vh } : window.CCL ? CCL.drawBox(x.paths) : { vw: c.w, vh: c.h || 100 };
+          h = '<svg viewBox="0 0 ' + vb.vw + ' ' + vb.vh + '" preserveAspectRatio="xMidYMid meet"' + (x.fx ? ' class="fx"' : '') + '>' + (x.paths || []).map(function (p) { return '<path d="' + pathD(p.pts) + '" stroke="' + esc(p.c) + '" stroke-width="' + p.w + '"/>'; }).join('') + '</svg>';
           break;
         }
         default:
@@ -1307,6 +1310,10 @@
       var e = st.pop();
       if (!e) { toast(redo ? 'Nada para refazer.' : 'Nada para anular.'); return; }
       other.push(e);
+      applyEntry(e, redo);
+    }
+    function applyEntry(e, redo) {
+      if (e.t === 'multi') { (redo ? e.list : e.list.slice().reverse()).forEach(function (x) { applyEntry(x, redo); }); return; }
       if (e.t === 'move') applyStates(e.items.map(function (i) { return redo ? i.after : i.before; }));
       else if (e.t === 'add' || e.t === 'del') {
         var restore = (e.t === 'add') === !!redo;
@@ -1597,7 +1604,42 @@
       B.arrowFrom = null;
       $$('[data-tool]', root).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tool') === t); b.setAttribute('aria-pressed', b.getAttribute('data-tool') === t ? 'true' : 'false'); });
       vp.classList.toggle('tool-draw', t === 'draw');
+      vp.classList.toggle('tool-erase', t === 'erase');
       vp.classList.toggle('tool-arrow', t === 'arrow');
+      var pb = $('.ccb-pen', root);
+      if (pb) { pb.hidden = t !== 'draw' && t !== 'erase'; penSync(); }
+      if (t === 'erase') { var db = $('[data-tool="draw"]', root); if (db) { db.classList.add('on'); db.setAttribute('aria-pressed', 'true'); } }
+    }
+    // ── caneta (§33.3): cores da marca (1–5) + livre, espessura, borracha (E), espessura acompanha ──
+    function penBarHtml() {
+      var brand = (window.CCL && CCL.BRAND) || ['#111111'];
+      return '<div class="ccb-pen" role="toolbar" aria-label="Caneta" hidden>'
+        + brand.map(function (h, i) { return '<button type="button" class="pen-c" data-hex="' + h + '" style="--c:' + h + '" aria-pressed="false" aria-label="Cor ' + h + ' (tecla ' + (i + 1) + ')" data-tip></button>'; }).join('')
+        + '<button type="button" class="pen-c pen-free" data-free style="--c:#ffffff" aria-pressed="false" aria-label="Outra cor (#HEX)" data-tip>+</button><i class="pen-sep"></i>'
+        + [[2, 'Fina'], [4, 'Média'], [8, 'Grossa']].map(function (x) { return '<button type="button" class="pen-w" data-pw="' + x[0] + '" aria-pressed="false" aria-label="Espessura ' + x[1].toLowerCase() + '" data-tip><i style="width:' + (x[0] + 2) + 'px;height:' + (x[0] + 2) + 'px"></i></button>'; }).join('')
+        + '<i class="pen-sep"></i><button type="button" class="pen-t" data-pt="erase" aria-pressed="false" aria-label="Borracha ( E )" data-tip>' + ico('eraser') + '</button>'
+        + '<label class="pen-fx" title="Desligado: ao redimensionar o desenho, a linha mantém a espessura"><input type="checkbox" data-pfx checked> Espessura acompanha</label></div>';
+    }
+    function penSync() {
+      var pb = $('.ccb-pen', root);
+      if (!pb) return;
+      var brand = (window.CCL && CCL.BRAND) || [], isBrand = brand.indexOf(B.color) >= 0;
+      $$('.pen-c[data-hex]', pb).forEach(function (b) { b.setAttribute('aria-pressed', B.tool === 'draw' && b.getAttribute('data-hex') === B.color ? 'true' : 'false'); });
+      var fr = $('[data-free]', pb); fr.style.setProperty('--c', isBrand ? '#ffffff' : B.color); fr.setAttribute('aria-pressed', B.tool === 'draw' && !isBrand ? 'true' : 'false'); fr.classList.toggle('set', !isBrand);
+      $$('.pen-w', pb).forEach(function (b) { b.setAttribute('aria-pressed', +b.getAttribute('data-pw') === B.pen.w ? 'true' : 'false'); });
+      $('[data-pt="erase"]', pb).setAttribute('aria-pressed', B.tool === 'erase' ? 'true' : 'false');
+      $('[data-pfx]', pb).checked = !B.pen.fx;
+      var sw = $('[data-tool="draw"] .sw', root); if (sw) sw.style.background = B.color;
+    }
+    function penColor(h) { B.color = h; if (B.tool !== 'draw') setTool('draw'); else penSync(); }
+    function penClick(e) {
+      var b = e.target.closest('button, input');
+      if (!b) return;
+      if (b.hasAttribute('data-hex')) penColor(b.getAttribute('data-hex'));
+      else if (b.hasAttribute('data-free')) colorPop(b, B.color, function (h) { penColor(h); recordColor(h); });
+      else if (b.hasAttribute('data-pw')) { B.pen.w = +b.getAttribute('data-pw'); if (B.tool !== 'draw') setTool('draw'); else penSync(); }
+      else if (b.getAttribute('data-pt') === 'erase') setTool(B.tool === 'erase' ? 'draw' : 'erase');
+      else if (b.hasAttribute('data-pfx')) { B.pen.fx = !b.checked; }
     }
     function runTool(t) {
       if (t === 'note') return addNote();
@@ -1607,14 +1649,7 @@
       if (t === 'board') return addBoard();
       if (t === 'link') return ask('Adicionar um link', 'Endereço', { placeholder: 'https://…', type: 'url', ok: 'Adicionar' }).then(function (v) { if (v) addLink(v); });
       if (t === 'ai') return openSlash();
-      if (t === 'draw') {
-        if (B.tool === 'draw') { // segundo clique: escolher a cor
-          var cs = ['#111111', '#FFC718', '#E8846D', '#81CFE3', '#2F77B1', '#FFFFFF'];
-          B.color = cs[(cs.indexOf(B.color) + 1) % cs.length];
-          var sw = $('[data-tool="draw"] .sw', root); if (sw) sw.style.background = B.color;
-          return;
-        }
-      }
+      if (t === 'draw' && (B.tool === 'draw' || B.tool === 'erase')) return setTool('select');   // segundo clique: sai da caneta
       setTool(t);
       if (t === 'arrow') toast('Toque num cartão e depois noutro para ligar com uma seta.');
       if (t === 'draw') toast('Desenhe na tela. Clique outra vez no lápis para mudar a cor; Esc para sair.');
@@ -1776,6 +1811,8 @@
       window.addEventListener('keyup', function (e) { if (e.key === ' ' && spaceDown) { spaceDown = false; vp.classList.remove('space'); } }, true);
       window.addEventListener('resize', function () { applyView(); });
       sideEl.addEventListener('click', sideClick);
+      var pbar = $('.ccb-pen', root);
+      if (pbar) { pbar.addEventListener('click', penClick); pbar.addEventListener('change', penClick); pbar.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); }
     }
     function down(e) {
       if (e.button === 2) return;
@@ -1797,6 +1834,7 @@
       var arrowHit = t.closest('[data-arrow]');
       if (spaceDown || e.button === 1) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; vp.classList.add('panning'); return; }
       if (B.tool === 'draw' && EDIT) { drag = { kind: 'draw', pts: [w.x, w.y], path: null }; startStroke(); return; }
+      if (B.tool === 'erase' && EDIT) { drag = { kind: 'erase', changed: new Map() }; eraseAt(w); return; }
       if (B.tool === 'arrow' && EDIT) {
         if (!c) return;
         if (!B.arrowFrom) { B.arrowFrom = c.id; select([c.id]); }
@@ -1858,6 +1896,8 @@
         if (!drag.el) { drag.el = document.createElement('div'); drag.el.className = 'ccb-marq'; vp.appendChild(drag.el); }
         var x = Math.min(p.x, drag.p0.x), y = Math.min(p.y, drag.p0.y);
         Object.assign(drag.el.style, { left: x + 'px', top: y + 'px', width: Math.abs(p.x - drag.p0.x) + 'px', height: Math.abs(p.y - drag.p0.y) + 'px' });
+      } else if (drag.kind === 'erase') {
+        eraseAt(w);
       } else if (drag.kind === 'draw') {
         var last = drag.pts.length - 2;
         if (Math.hypot(w.x - drag.pts[last], w.y - drag.pts[last + 1]) * B.view.s < 2) return;
@@ -1981,6 +2021,8 @@
           d.el.remove();
           select(ids, true);
         }
+      } else if (d.kind === 'erase') {
+        finishErase(d);
       } else if (d.kind === 'draw') {
         endStroke(d.pts);
       }
@@ -2004,7 +2046,7 @@
     // desenhar
     function startStroke() {
       var ns = 'http://www.w3.org/2000/svg', g = $('[data-ar]', svg), p = document.createElementNS(ns, 'path');
-      p.setAttribute('stroke', B.color); p.setAttribute('stroke-width', '3'); p.setAttribute('stroke-linecap', 'round'); p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', B.color); p.setAttribute('stroke-width', String(B.pen.w)); p.setAttribute('stroke-linecap', 'round'); p.setAttribute('fill', 'none');
       p.style.stroke = B.color;
       g.appendChild(p);
       drag.path = p;
@@ -2012,12 +2054,46 @@
     function endStroke(pts) {
       if (drag && drag.path) drag.path.remove();
       if (pts.length < 6) return;
-      var xs = pts.filter(function (v, i) { return i % 2 === 0; }), ys = pts.filter(function (v, i) { return i % 2 === 1; });
-      var x1 = Math.min.apply(null, xs) - 6, y1 = Math.min.apply(null, ys) - 6, x2 = Math.max.apply(null, xs) + 6, y2 = Math.max.apply(null, ys) + 6;
-      var w = Math.max(20, x2 - x1), h = Math.max(20, y2 - y1);
-      var rel = pts.map(function (v, i) { return Math.round((v - (i % 2 ? y1 : x1)) * 10) / 10; });
-      addCard('drawing', { paths: [{ c: B.color, w: 3, pts: rel }], vw: Math.round(w), vh: Math.round(h) }, { x: Math.round(x1), y: Math.round(y1) }, { w: Math.round(w), h: Math.round(h) })
+      var f = CCL.fitStroke(pts, Math.max(6, B.pen.w / 2 + 2));
+      addCard('drawing', { paths: [{ c: B.color, w: B.pen.w, pts: f.pts }], vw: f.vw, vh: f.vh, fx: B.pen.fx }, { x: f.x, y: f.y }, { w: f.vw, h: f.vh })
         .then(function () { select([]); });
+    }
+    // borracha: apaga os traços tocados (os desenhos que ficam sem traços saem); uma só anulação no fim
+    function eraseAt(wp) {
+      var R = 8 / B.view.s;
+      B.cards.forEach(function (c) {
+        if (c.type !== 'drawing' || c.col) return;
+        var bw = c.w, bh = c.h || cardH(c);
+        if (wp.x < c.x - R || wp.y < c.y - R || wp.x > c.x + bw + R || wp.y > c.y + bh + R) return;
+        var vb = c.c.vw && c.c.vh ? { vw: c.c.vw, vh: c.c.vh } : CCL.drawBox(c.c.paths), sc = Math.min(bw / vb.vw, bh / vb.vh) || 1;
+        var loc = CCL.toLocal({ w: bw, h: bh }, vb, wp.x - c.x, wp.y - c.y);
+        var keep = (c.c.paths || []).filter(function (p) { return !CCL.strokeHit(p.pts, loc[0], loc[1], R / sc + p.w / 2); });
+        if (keep.length === (c.c.paths || []).length) return;
+        if (!drag.changed.has(c.id)) drag.changed.set(c.id, JSON.parse(JSON.stringify(c.c)));
+        c.c = Object.assign({}, c.c, { paths: keep, vw: vb.vw, vh: vb.vh });
+        rerender(c);
+      });
+    }
+    function finishErase(d) {
+      if (!d.changed.size) return;
+      var list = [], dels = [], saves = [];
+      d.changed.forEach(function (before, id) {
+        var c = B.cards.get(id);
+        if (!c) return;
+        if (!c.c.paths.length) { dels.push(id); c.c = before; }
+        else { list.push({ t: 'content', id: id, before: before, after: c.c }); saves.push({ id: id, content: c.c }); }
+      });
+      if (saves.length) save(saves);
+      var done = function () { if (list.length) push(list.length === 1 ? list[0] : { t: 'multi', list: list }); };
+      if (!dels.length) { done(); return; }
+      api('cards_delete', { board: B.id, ids: dels }).then(function (j) {
+        B.rev = j.rev;
+        j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); B.sel.delete(id); });
+        if (RT) RT.removed(j.ids);
+        list.push({ t: 'del', ids: j.ids });
+        done();
+        drawArrows();
+      }).catch(fail);
     }
 
     // ── teclado ──
@@ -2037,6 +2113,9 @@
       else if (!mod && !e.altKey && (k === 'l' || k === 'L')) addList();
       else if (!mod && (k === 'v' || k === 'V')) setTool('select');
       else if (!mod && (k === 'd' || k === 'D') && EDIT) runTool('draw');
+      else if (!mod && !e.altKey && (k === 'p' || k === 'P') && EDIT) setTool('draw');
+      else if (!mod && !e.altKey && (k === 'e' || k === 'E') && EDIT) setTool(B.tool === 'erase' ? 'draw' : 'erase');
+      else if (!mod && /^[1-5]$/.test(k) && (B.tool === 'draw' || B.tool === 'erase') && window.CCL) penColor(CCL.BRAND[+k - 1]);
       else if (!mod && (k === 'a' || k === 'A') && EDIT) runTool('arrow');
       else if (k === '/' && !mod) openSlash();
       else if ((k === 'Delete' || k === 'Backspace') && B.sel.size) delSel();

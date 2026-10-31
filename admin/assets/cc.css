@@ -236,6 +236,24 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc.t-drawing.sel { border-color: var(--cc-sel); }
 .ccc.t-drawing svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .ccc.t-drawing path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ccc.t-drawing svg.fx path { vector-effect: non-scaling-stroke; }   /* §33.3: «Espessura acompanha» desligado */
+/* §33.3: barra da caneta */
+.ccb-pen { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 4px; padding: 5px 8px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-card); }
+.ccb-pen[hidden] { display: none; }
+.ccb-pen button { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; padding: 0; }
+.ccb-pen button:hover { background: var(--chip); color: var(--fg); }
+.ccb-pen button[aria-pressed="true"] { background: var(--chip); color: var(--fg); box-shadow: inset 0 0 0 2px var(--fg); }
+.ccb-pen button:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+.ccb-pen .pen-c::before { content: ''; width: 18px; height: 18px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 22%, transparent); grid-area: 1 / 1; }
+.ccb-pen .pen-free { font: 600 14px var(--body); }
+.ccb-pen .pen-free:not(.set)::before { background: conic-gradient(#E8846D, #FFC718, #81CFE3, #2F77B1, #E8846D); opacity: .35; }
+.ccb-pen .pen-free.set { color: transparent; }
+.ccb-pen .pen-w i { display: block; border-radius: 50%; background: currentColor; }
+.ccb-pen .pen-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
+.ccb-pen .pen-fx { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--mute); margin-left: 6px; white-space: nowrap; cursor: pointer; }
+.ccb-pen .pen-fx input { width: auto; margin: 0; accent-color: var(--hi); }
+@media (pointer: coarse) { .ccb-pen button { width: 44px; height: 44px; } }
+.ccb-vp.tool-erase { cursor: cell; }
 .ccc.t-column { background: color-mix(in srgb, var(--panel) 72%, transparent); backdrop-filter: blur(2px); padding: 0 8px 8px; border-radius: 14px; }
 .ccc.t-column.over { border-color: var(--hi); box-shadow: 0 0 0 2px var(--hi), var(--sh-lift); }
 .ccc-ch { display: flex; align-items: center; gap: 8px; padding: 10px 4px 8px; cursor: grab; }
