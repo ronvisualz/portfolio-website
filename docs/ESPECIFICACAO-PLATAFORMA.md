@@ -4160,6 +4160,9 @@ Ao passar o cursor numa pasta da árvore lateral (ex.: «Leads»), a linha fica 
 ### 33.0 Nome
 A aba **Centro Criativo** passa a chamar-se **Toppernote** em toda a interface (menu lateral, títulos, migalhas, Definições, notificações, emails, portal do cliente, ajuda e IA). O endereço antigo (`criativo.php`) redireciona; o código interno (`cc_*`) pode manter-se. Atualizar a especificação nas referências visíveis.
 
+### 33.0.1 Topperboards (31 out 2026)
+Os **quadros** passam a chamar-se **Topperboards** em toda a interface: «Projetos» (no Toppernote) → **«Topperboards»**; «Quadros livres» → **«Topperboards livres»**; «quadro» / «sub-quadro» / «novo quadro» → «Topperboard» / «sub-Topperboard» / «novo Topperboard»; o mesmo em notificações, emails, portal do cliente, partilhas, IA e ajuda. Plural «Topperboards».
+
 ### 33.1 Listas
 - Enter no fim de um item cria logo o seguinte (vazio, com o cursor lá); vários itens seguidos sem nome; itens vazios no fim não se gravam.
 - O **primeiro item é editável** como os outros (bug atual: não deixa escrever).
@@ -4190,4 +4193,4 @@ A aba **Centro Criativo** passa a chamar-se **Toppernote** em toda a interface (
 - YouTube, Vimeo, Instagram, TikTok, Behance, Dribbble, ArtStation, X, Spotify, SoundCloud e sites genéricos: **título, miniatura e autor** no cartão (oEmbed onde existir; senão metadados Open Graph do servidor), como já acontece com o Pinterest. Vídeos com botão ▶ e duração; reprodução dentro do detalhe quando o site o permitir.
 
 ### 33.9 Enviar ficheiros: dispositivo ou Drive
-- O botão de enviar abre a escolha **«Do dispositivo»** ou **«Da Drive»**. «Da Drive» abre um seletor da Drive (pesquisa, pastas, recentes, seleção múltipla) e coloca os ficheiros no quadro **sem os copiar** (o cartão aponta para o ficheiro da Drive).
+- O botão de enviar abre a escolha **«Do dispositivo»** ou **«Da Drive»**. «Da Drive» abre um seletor da Drive (pesquisa, pastas, recentes, seleção múltipla) e coloca os ficheiros no Topperboard **sem os copiar** (o cartão aponta para o ficheiro da Drive). Confirmado: se o ficheiro for **movido ou renomeado** na Drive, o cartão acompanha; se for **apagado** (ou ir para o Lixo), o cartão fica marcado «Ficheiro apagado da Drive» e aparece um **aviso no respetivo Topperboard** (e notificação a quem o criou), com «Restaurar do Lixo» enquanto lá estiver e «Retirar do Topperboard».
