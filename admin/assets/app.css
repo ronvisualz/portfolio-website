@@ -25,6 +25,7 @@
   --line-2:  #CFCFCB;
   --chip:    #F0F0EE;
   --hover:   #FAFAF7;
+  --row-hover: #ECECE7;        /* hover de linhas e árvores (§32.7): cinzento suave; no escuro, branco a 7% */
 
   /* menu lateral: escuro nos dois modos */
   --side:     #0B0B0C;
@@ -97,7 +98,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #0C0D0F; --panel: #131518; --raise: #1A1C20; --fg: #ECECE8; --mute: #9A9A96; --mute-2: #82878F;
-  --line: #24272C; --line-2: #33373D; --chip: #1C1F23; --hover: #181A1E;
+  --line: #24272C; --line-2: #33373D; --chip: #1C1F23; --hover: #181A1E; --row-hover: rgba(255,255,255,.07);
   --side: #08090A; --side-hi: #1A1B1E;
   --hi-soft: #2E2608; --coral: #FBAE9C; --danger: #F2555A;
   --ok-bg: #15301A; --ok-fg: #8FD18F; --warn-bg: #352A08; --warn-fg: #F2CF5B;
@@ -117,7 +118,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #0C0D0F; --panel: #131518; --raise: #1A1C20; --fg: #ECECE8; --mute: #9A9A96; --mute-2: #82878F;
-    --line: #24272C; --line-2: #33373D; --chip: #1C1F23; --hover: #181A1E;
+    --line: #24272C; --line-2: #33373D; --chip: #1C1F23; --hover: #181A1E; --row-hover: rgba(255,255,255,.07);
     --side: #08090A; --side-hi: #1A1B1E;
     --hi-soft: #2E2608; --coral: #FBAE9C; --danger: #F2555A;
     --ok-bg: #15301A; --ok-fg: #8FD18F; --warn-bg: #352A08; --warn-fg: #F2CF5B;

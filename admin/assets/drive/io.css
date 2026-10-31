@@ -127,7 +127,7 @@ html.tdp-lock, html.tdp-lock body { overflow: hidden; }
 .tdp-csv td:last-child, .tdp-csv th:last-child { width: 100%; }
 .tdp-csv .tdp-rn { position: sticky; left: 0; z-index: 1; width: 1%; min-width: 36px; background: #FAFAF8; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
 .tdp-csv thead .tdp-rn { z-index: 3; background: #F2F2EE; }
-.tdp-csv tbody tr:hover td { background: #FFFBEA; }
+.tdp-csv tbody tr:hover td { background: var(--hi-soft); }
 /* sem pré-visualização */
 .tdp-card { display: grid; justify-items: center; gap: 6px; max-width: min(440px, calc(100% - 32px)); padding: 30px 26px; border-radius: 10px; background: #1A1A1A; text-align: center; }
 .tdp-card-ico { display: grid; }
