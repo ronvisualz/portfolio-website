@@ -62,6 +62,11 @@ try {
                 $out .= 'Drive: ' . $fm . ' pastas mudadas · ' . files_moves_pending($pdo) . " na fila\n";
             }
         }
+        // Drive (§32.1): o que foi movido de forma instantânea e ainda está a ser copiado
+        try {
+            require_once __DIR__ . '/drive_moves.php';
+            if (r2_config() && ($dm = drive_moves_run($pdo, (float)min(60, $sec / 4))) !== '') $out .= $dm . "\n";
+        } catch (Throwable $e) { $out .= 'Drive (mover): ' . $e->getMessage() . "\n"; }
         // Financeiro (§28): as caixas de email (IMAP, só leitura) e os custos fixos / calendário fiscal
         require_once __DIR__ . '/fin.php';
         if (fin_ready($pdo)) {

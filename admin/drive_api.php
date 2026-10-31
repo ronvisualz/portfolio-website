@@ -36,6 +36,7 @@
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/drive.php';
 require __DIR__ . '/inc/drive_store.php';
+require __DIR__ . '/inc/drive_moves.php';
 if (is_file(__DIR__ . '/inc/drive_index.php')) {
     // O índice de conteúdo é opcional: sem ele a pesquisa por conteúdo fica vazia.
     // (Traz também o inc/ai.php: ai_private() diz que ficheiros são privados, para as partilhas de pastas.)
@@ -194,6 +195,37 @@ function api_lazy_purge(PDO $pdo): void {
     } catch (Throwable $e) {
         error_log('drive purge: ' . $e->getMessage());   // a página abre na mesma
     }
+}
+
+/**
+ * Mover instantâneo (§32.1): as mesmas verificações do mover de sempre, mas a existência e os conflitos contam com o
+ * que está na fila (o utilizador já vê os itens no destino). Grava a linha e responde; a cópia vem a seguir.
+ */
+function api_move_instant(PDO $pdo, array $in, string $from, string $to, bool $folder, string $oc): void {
+    $phys = drive_resolve($pdo, $from);
+    if (!drive_moves_exists($pdo, $from)) api_err($folder ? 'A pasta já não existe.' : 'O ficheiro já não existe.', 404);
+    $newName = drive_base($to);
+    if ($newName !== drive_base($from) && r2_clean_name($newName) !== $newName) api_err('Nome inválido.');
+    $policy = 'error';
+    if (drive_moves_exists($pdo, $to)) {
+        if ($oc === 'skip') api_out(200, ['ok' => true, 'done' => true, 'skipped' => true, 'from' => $from, 'to' => $to, 'moved' => 0]);
+        if ($oc === 'error') api_conflict($to);
+        if ($oc === 'rename') $to = drive_unique_key($to, static fn(string $k): bool => drive_moves_exists($pdo, $k));
+        else $policy = 'overwrite';
+    }
+    if ($folder && $from !== $to && strncmp($from, $to, strlen($to)) === 0) {
+        api_err('Não é possível juntar «' . drive_base($from) . '» à pasta «' . drive_base($to) . '», que a contém.');
+    }
+    $st = $folder ? drive_prefix_stats($phys) : null;
+    if ($folder ? $st['longest'] - strlen($phys) + strlen($to) > R2_KEY_MAX : strlen($to) > R2_KEY_MAX) {
+        api_err('Há caminhos dentro de «' . drive_base($from) . '» que ficariam compridos demais no destino. Encurte primeiro o nome de uma das pastas.');
+    }
+    $batch = is_string($in['batch'] ?? null) && preg_match('/^[a-f0-9]{16}$/', $in['batch']) ? $in['batch'] : bin2hex(random_bytes(8));
+    $total = $folder ? (int)$st['files'] : 1;
+    $id = drive_move_enqueue($pdo, $from, $to, $folder, $policy, (int)(current_user()['id'] ?? 0), $batch, $total);
+    register_shutdown_function(static fn() => drive_moves_after_response($pdo));
+    api_out(200, ['ok' => true, 'done' => true, 'queued' => true, 'id' => $id, 'batch' => $batch, 'from' => $from, 'to' => $to, 'moved' => $total,
+                  'progress' => api_progress($total, $total)]);
 }
 
 const TRASH_LONG = 'O caminho é comprido demais para ir para o Lixo. Encurte primeiro o nome de uma das pastas.';
@@ -495,11 +527,27 @@ function api_purge_rows(PDO $pdo, array $rows, callable $more, int $batch, int &
     return ['done' => true, 'removed' => $removed];
 }
 
+// §32.1: um item movido de forma instantânea já aparece no destino, mas ainda está a ser copiado. Mover/renomear
+// outra vez e abrir funcionam (fila e resolvedor); o resto espera que fique arrumado, com uma mensagem clara.
+if (in_array($do, ['copy', 'trash', 'share_create', 'share_quick', 'versions', 'index_one', 'zip_list'], true) && ($pendingMoves = drive_moves_pending($pdo))) {
+    $keysAsked = [];
+    foreach (['key', 'from'] as $f) if (is_string($in[$f] ?? null)) $keysAsked[] = $in[$f];
+    foreach ((array)($in['keys'] ?? []) as $k) if (is_string($k)) $keysAsked[] = $k;
+    foreach ($keysAsked as $k) {
+        $moving = drive_resolve_with($pendingMoves, $k) !== $k || drive_forward_with($pendingMoves, $k) !== $k;
+        if (!$moving) {   // uma pasta que contém (ou está dentro de) algo a caminho também espera
+            foreach ($pendingMoves as $m) if (strncmp((string)$m['dst'], $k, strlen($k)) === 0 && substr($k, -1) === '/') { $moving = true; break; }
+        }
+        if ($moving) api_err('«' . drive_base(rtrim($k, '/')) . '» ainda está a ser arrumado no armazenamento. Tente daqui a um minuto.', 409);
+    }
+}
+
 try {
     switch ($do) {
     case 'catalog': {
         api_lazy_purge($pdo);
         $cat = drive_catalog(!empty($in['fresh']));
+        $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));   // mover instantâneo (§32.1)
         $objs = []; $have = [];
         foreach ($cat['objects'] as $o) {
             if (!$FIN && drive_billing($o['key'])) continue;
@@ -614,7 +662,10 @@ try {
         $key = want_key($str('key'));
         $inline = !empty($in['inline']);
         if (!empty($in['recent'])) drive_recent_touch($pdo, $key);
-        api_out(200, ['ok' => true, 'url' => r2_get_url($key, $inline, $inline ? r2_mime($key) : '', $inline ? 4 * 3600 : 3600)]);
+        $phys = drive_resolve($pdo, $key);   // ainda a caminho do destino: lê de onde está (§32.1)
+        $u = $phys === $key ? r2_get_url($key, $inline, $inline ? r2_mime($key) : '', $inline ? 4 * 3600 : 3600)
+                            : r2_presign('GET', $phys, $inline ? 4 * 3600 : 3600, ['response-content-disposition' => r2_disposition(drive_base($key), $inline)] + ($inline ? ['response-content-type' => r2_mime($key)] : []));
+        api_out(200, ['ok' => true, 'url' => $u]);
     }
     case 'urls': {
         $keys = want_list($in['keys'] ?? null, 200, 'Demasiados ficheiros de uma vez (máximo 200).');
@@ -622,7 +673,9 @@ try {
         $urls = []; $skipped = [];
         foreach ($keys as $k) {
             if (!r2_key_ok($k) || drive_hidden($k)) { $skipped[] = $k; continue; }
-            $urls[$k] = r2_get_url($k, $inline, $inline ? r2_mime($k) : '', 3600);
+            $phys = drive_resolve($pdo, $k);
+            $urls[$k] = $phys === $k ? r2_get_url($k, $inline, $inline ? r2_mime($k) : '', 3600)
+                                     : r2_presign('GET', $phys, 3600, ['response-content-disposition' => r2_disposition(drive_base($k), $inline)] + ($inline ? ['response-content-type' => r2_mime($k)] : []));
         }
         api_out(200, ['ok' => true, 'urls' => (object)$urls, 'skipped' => $skipped]);
     }
@@ -630,6 +683,7 @@ try {
         $key = want_any($str('key'));
         $folder = substr($key, -1) === '/';
         $cat = drive_catalog();
+        $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));
         $obj = null; $fst = null; $index = null;
         if ($folder) {
             $st = drive_folder_stats($cat, $key);
@@ -725,6 +779,8 @@ try {
         if ($from === $to && ($move || $cont || $oc === 'overwrite')) {
             api_out(200, ['ok' => true, 'done' => true, 'from' => $from, 'to' => $to, 'moved' => 0]);
         }
+        // §32.1 mover instantâneo: decide os conflitos como sempre, põe na fila e responde já
+        if ($move && !$cont && !empty($in['instant']) && drive_moves_ready($pdo)) api_move_instant($pdo, $in, $from, $to, $folder, $oc);
         if (!$cont) {
             $newName = drive_base($to);
             if ($newName !== drive_base($from) && r2_clean_name($newName) !== $newName) api_err('Nome inválido.');
@@ -770,6 +826,23 @@ try {
         }
         if ($move) api_books(static fn() => drive_store_moved($pdo, $from, $to));
         api_out(200, ['ok' => true, 'done' => true, 'from' => $from, 'to' => $to, 'moved' => $n, 'progress' => api_progress($n, $total)]);
+    }
+
+    // ── mover instantâneo (§32.1): anular e estado da fila ──
+    case 'move_undo': {
+        $batch = $str('batch');
+        if (!preg_match('/^[a-f0-9]{16}$/', $batch)) api_err('Pedido inválido.');
+        try { $r = drive_move_undo($pdo, $batch, (int)(current_user()['id'] ?? 0), is_admin()); }
+        catch (RuntimeException $e) { api_err($e->getMessage(), $e->getCode() === 404 ? 404 : 400); }
+        drive_catalog_invalidate();
+        register_shutdown_function(static fn() => drive_moves_after_response($pdo));
+        api_out(200, ['ok' => true] + $r);
+    }
+    case 'moves_status': {
+        $st = drive_moves_status($pdo, (int)(current_user()['id'] ?? 0));
+        if ($st['moves'] > 0) register_shutdown_function(static fn() => drive_moves_after_response($pdo));   // e adianta a fila
+        api_out(200, ['ok' => true, 'moves' => $st['moves'], 'files' => $st['files'],
+                      'failed' => array_map(static fn($f) => ['from' => $f['src'], 'to' => $f['dst'], 'error' => $f['error']], $st['failed'])]);
     }
 
     // ── Lixo ────────────────────────────────────────────────

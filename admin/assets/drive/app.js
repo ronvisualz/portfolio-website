@@ -1303,6 +1303,8 @@
     const pg = progress(items.length === 1 ? verb[0] + ' «' + P.base(items[0].from) + '»…' : verb[0] + ' ' + items.length + ' itens…');
     const done = [], failed = [];
     let skipped = 0, cancelled = false, policy = opt.onConflict || null;
+    // §32.1: mover é instantâneo — o servidor põe na fila e responde logo; a cópia no armazenamento vem depois
+    const batch = op === 'move' ? Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('') : null;
     try {
       for (let i = 0; i < items.length; i++) {
         const { from, to } = items[i];
@@ -1312,14 +1314,16 @@
         if (inside && mode === 'overwrite') mode = 'error';
         for (;;) {
           try {
-            const r = await TD.until({ do: op, from, to, on_conflict: mode }, j => {
+            const body = { do: op, from, to, on_conflict: mode };
+            if (batch) { body.instant = true; body.batch = batch; }
+            const r = await TD.until(body, j => {
               if (j.progress && j.progress.total) {
                 const p = j.progress.done + ' de ' + j.progress.total + ' ficheiros';
                 pg.set((items.length > 1 ? verb[0] + ' ' + (i + 1) + ' de ' + items.length + ' · ' : verb[0] + ' «' + P.base(from) + '» · ') + p);
               } else if (items.length > 1) pg.set(verb[0] + ' ' + (i + 1) + ' de ' + items.length + '…');
             });
             if (r.skipped) skipped++;
-            else done.push({ from: r.from || from, to: r.to || to, moved: r.moved, overwrite: mode === 'overwrite' });
+            else done.push({ from: r.from || from, to: r.to || to, moved: r.moved, overwrite: mode === 'overwrite', queued: !!r.queued });
             break;
           } catch (e) {
             if (e.resp && e.resp.conflict && mode === 'error') {
@@ -1364,11 +1368,49 @@
       if (failed.length || cancelled) TD.toast(msg, failed.length ? 'err' : 'info');
       else if (done.length) {
         const undoable = op !== 'copy' && opt.undo !== false && !done.some(d => d.overwrite);
-        const undo = undoable ? () => run({ kind: 'move', payload: { items: done.map(d => ({ from: d.to, to: d.from })) } }, { undo: false, undoMsg: true }) : null;
+        const queued = done.some(d => d.queued);
+        const undo = !undoable ? null : queued ? () => undoMoves(batch, done)
+          : () => run({ kind: 'move', payload: { items: done.map(d => ({ from: d.to, to: d.from })) } }, { undo: false, undoMsg: true });
         toastUndo(opt.undoMsg ? 'Anulado.' : msg, undo);
       } else TD.toast(msg, 'info');
     }
+    if (done.some(d => d.queued)) watchMoves();
     return { ok, message: msg, result: { done, skipped, failed, cancelled } };
+  }
+  /** «Anular» um mover instantâneo: o servidor cancela o que ainda está na fila ou enfileira o inverso. */
+  async function undoMoves(batch, done) {
+    let map = k => k;
+    done.slice().reverse().forEach(d => { locTransfer(d.to, d.from, false); const m = mapper(d.to, d.from), prev = map; map = k => m(prev(k)); });
+    afterLocal(map);
+    const j = await TD.api({ do: 'move_undo', batch });
+    if (!j.ok) { TD.toast(j.error || 'Não foi possível anular.', 'err'); scheduleRefresh(0); return; }
+    TD.toast('Anulado.', 'ok');
+    scheduleRefresh(300);
+    if (j.reversed) watchMoves();
+  }
+  /** «A arrumar N ficheiros…»: enquanto a cópia corre no servidor (abrir já funciona, lê da origem). */
+  let movesT = null, movesToast = null;
+  function watchMoves() {
+    clearTimeout(movesT);
+    TD.api({ do: 'moves_status' }).then(j => {
+      if (!j.ok) return;
+      (j.failed || []).forEach(f => {
+        const id = f.from + '>' + f.to;
+        if (S.movesFailed && S.movesFailed.has(id)) return;
+        (S.movesFailed = S.movesFailed || new Set()).add(id);
+        TD.toast('Não foi possível arrumar «' + P.base(f.from) + '»: ' + (f.error || 'erro') + ' Fica na origem.', 'err', { ms: 0 });
+        scheduleRefresh(0);
+      });
+      if (j.files > 0) {
+        const txt = 'A arrumar ' + n(j.files, 'ficheiro', 'ficheiros') + '… Já pode abrir e usar.';
+        if (!movesToast) movesToast = TD.toast(txt, 'info', { ms: 0 });
+        else movesToast.set(txt);
+        movesT = setTimeout(() => watchMoves(), 3000);
+      } else if (movesToast) {
+        movesToast.close(); movesToast = null;
+        scheduleRefresh(0);
+      }
+    });
   }
   function toastUndo(msg, undo) {
     S.undo = undo;
@@ -3271,6 +3313,7 @@
   }
   renderAll();
   load(false).then(() => {
+    watchMoves();   // movimentos de antes ainda a arrumar
     if (S.view === 'search') contentSearch();
     else if (f0 && S.view === 'folder') go({ view: 'folder', prefix: S.prefix }, { push: false, replace: true, focusKey: f0, select: true });
   });
