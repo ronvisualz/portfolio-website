@@ -247,6 +247,7 @@ function migrate_creative(PDO $pdo): void {
 
 /** 41 · Toppernote (§33.9): ficheiros da Drive usados num Topperboard que foram para o Lixo (ou apagados de vez). */
 function migrate_cc_41(PDO $pdo): void {
+    require_once __DIR__ . '/migrate_platform.php';   // db_add_column
     db_add_column($pdo, 'cc_assets', 'drive_gone', 'DATETIME NULL', 'TEXT NULL');
     db_add_column($pdo, 'cc_assets', 'drive_trash_id', 'INT UNSIGNED NULL', 'INTEGER NULL');
 }
