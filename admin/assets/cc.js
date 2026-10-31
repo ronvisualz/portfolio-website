@@ -1063,7 +1063,7 @@
     }
 
     // ── moldura ──
-    function frame() {
+    function topHtml() {
       var j = B.data, b = j.board;
       var crumbs = '<span class="ey">Toppernote</span><span>/</span>' + j.path.slice(0, -1).map(function (p) { return '<a href="/admin/toppernote.php?b=' + p.id + '">' + esc(p.title) + '</a><span>/</span>'; }).join('')
         + '<b data-title title="' + (EDIT ? 'Duplo clique para mudar o nome' : '') + '">' + esc(b.title) + '</b>'
@@ -1077,7 +1077,10 @@
       acts += '<button type="button" class="btn ghost sm" data-a="present" title="Modo apresentação (setas para navegar, Esc para sair)">' + ico('present') + '<span class="lbl"> Apresentar</span></button>'
             + '<button type="button" class="ibtn" data-a="side" aria-label="Painel (IA, detalhe, comentários)" data-tip>' + ico('side') + '</button>'
             + (MANAGE ? '<button type="button" class="ibtn" data-a="more" aria-label="Mais" data-tip>⋯</button>' : '');
-      root.innerHTML = '<header class="ccb-top"><nav class="ccb-crumb" aria-label="Caminho">' + crumbs + '</nav>' + stages + '<div class="ccb-acts">' + acts + '</div></header>'
+      return '<nav class="ccb-crumb" aria-label="Caminho">' + crumbs + '</nav>' + stages + '<div class="ccb-acts">' + acts + '</div>';
+    }
+    function frame() {
+      root.innerHTML = '<header class="ccb-top">' + topHtml() + '</header>'
         + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
         + '<div class="ccb-main">'
         + '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
@@ -2485,7 +2488,7 @@
       var c = B.cards.get(+el.getAttribute('data-id'));
       if (!c || B.editing === c.id) return;
       var at = { at: { x: e.clientX, y: e.clientY } };
-      if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/toppernote.php?b=' + c.ref; return; }
+      if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else openBoard(c.ref, true, c); return; }
       if (c.type === 'list') { var li = tg.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null, at); return; }
       if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c, null, at); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
@@ -3167,6 +3170,86 @@
       refreshAssets(wait, function (a) { B.cards.forEach(function (c) { if (c.asset && c.asset.id === a.id) { c.asset = a; if (B.els.has(c.id) || c.col) rerender(c); } }); });
     });
 
+    // ── abrir outro Topperboard sem recarregar (§33.10): zoom para o cartão, migalhas, Voltar/Avançar, vista de cada um ──
+    var preloaded = {};
+    function viewKey(id) { return 'cc.view.' + id; }
+    function saveView() { try { sessionStorage.setItem(viewKey(B.id), JSON.stringify(B.view)); } catch (e) {} }
+    function restoreView(id) { try { var v = JSON.parse(sessionStorage.getItem(viewKey(id)) || 'null'); if (v && v.s) { B.view = v; return true; } } catch (e) {} return false; }
+    function fetchBoard(id) {
+      var p = preloaded[id];
+      if (p && Date.now() - p.t < 60000) { delete preloaded[id]; return p.pr; }
+      return api('board', { id: id }, 'GET');
+    }
+    function preloadVisible() {
+      var go = function () {
+        var n = 0;
+        B.els.forEach(function (el, id) {
+          var c = B.cards.get(id);
+          if (!c || c.type !== 'board' || !c.ref || preloaded[c.ref] || n >= 4) return;
+          n++;
+          var pr = api('board', { id: c.ref }, 'GET');
+          pr.catch(function () { delete preloaded[c.ref]; });
+          preloaded[c.ref] = { t: Date.now(), pr: pr };
+        });
+      };
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 2000 }); else setTimeout(go, 600);
+    }
+    var navBusy = false;
+    function openBoard(id, push, fromCard) {
+      id = +id;
+      if (!id || id === B.id || navBusy) return Promise.resolve();
+      navBusy = true;
+      // uma edição aberta grava-se antes de sair
+      var ae = document.activeElement;
+      if (B.editing && ae && ae.isContentEditable) ae.blur();
+      saveView();
+      var pr = fetchBoard(id);
+      // transição: zoom para o cartão do sub-Topperboard (curta; nenhuma com movimento reduzido)
+      var anim = fromCard && !reduced.matches ? new Promise(function (r) { animateView(function () { fitTo(bbox(fromCard), 0, 4); }); setTimeout(r, 300); }) : Promise.resolve();
+      return Promise.all([pr, anim]).then(function (res) {
+        var j = res[0];
+        if (RT && RT.close) RT.close();
+        RT = null;
+        closeViewer(true); closeColorPop(); closeBalloon(); closePalMenu(); stopPick(); closeSlash && closeSlash();
+        B.id = id; root.setAttribute('data-board', id); root.removeAttribute('data-card');
+        B.data = j; B.rev = j.board.rev; B.loadedAt = j.now || Date.now(); EDIT = !!j.edit;
+        B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
+        B.cards.clear(); j.cards.forEach(function (c) { B.cards.set(c.id, c); });
+        B.sel.clear(); B.undo = []; B.redo = []; B.editing = null; B.arrowFrom = null;
+        B.els.forEach(function (el) { el.remove(); }); B.els.clear();
+        $('.ccb-top', root).innerHTML = topHtml();
+        var lb = $('[data-lanebar]', root);
+        if (B.lanes && !lb) { lb = document.createElement('div'); lb.className = 'ccb-lanebar'; lb.setAttribute('data-lanebar', ''); root.insertBefore(lb, $('.ccb-main', root)); }
+        else if (!B.lanes && lb) lb.remove();
+        if (push) history.pushState({ b: id }, '', '/admin/toppernote.php?b=' + id);
+        document.title = document.title.replace(/^[^·|—-]*/, j.board.title + ' ');
+        startRT();
+        renderAll();
+        if (!restoreView(id)) { fitAll(false); if (B.view.s > 1) B.view.s = 1; }
+        applyView(); undoSync(); sideSync(); selBar();
+        preloadVisible();
+        vp.focus({ preventScroll: true });
+      }).catch(function (e) {
+        if (fromCard) fitAll(true);
+        toast((e && e.message) || 'Não foi possível abrir este Topperboard.', { err: true });
+      }).then(function () { navBusy = false; });
+    }
+    window.ccOpenBoard = openBoard;   // para testes e para ligações de fora
+    history.replaceState({ b: B.id }, '', location.href);
+    window.addEventListener('popstate', function (e) {
+      var id = (e.state && e.state.b) || +new URLSearchParams(location.search).get('b');
+      if (id && id !== B.id) openBoard(id, false);
+    });
+    // migalhas, etapas e «Nos Topperboards»: ligações para outro Topperboard abrem sem recarregar
+    root.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a[href*="toppernote.php?b="]');
+      if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+      var m = /[?&]b=(\d+)/.exec(a.getAttribute('href'));
+      if (!m || /[?&]card=/.test(a.getAttribute('href'))) return;
+      e.preventDefault();
+      openBoard(+m[1], true);
+    }, true);
+
     // ── arranque ──
     load().then(function () {
       frame();
@@ -3188,6 +3271,7 @@
       B.cards.forEach(function (c) { if (c.asset && (c.asset.ai === 'queued' || c.asset.ai === 'running')) waiting = true; });
       if (waiting) kickWorker();
       vp.focus({ preventScroll: true });
+      preloadVisible();
     }).catch(function (e) {
       root.innerHTML = '<div class="panel" style="margin:16px">' + esc(e.message) + ' <a href="/admin/toppernote.php">Voltar ao Toppernote</a></div>';
     });

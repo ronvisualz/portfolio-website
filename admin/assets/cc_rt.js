@@ -65,6 +65,15 @@
       queue: noop, mount: noop, reconcile: noop, flush: function () { return Promise.resolve(); }
     };
     var chip = null, people = null, state = 'off', outbox;
+    // §33.10: abrir outro Topperboard na mesma página fecha este (ligação, intervalos, avatares, cursores)
+    var stopped = false, ivs = [], closeHook = null;
+    RT.close = function () {
+      if (stopped) return;
+      stopped = true;
+      ivs.forEach(clearInterval);
+      if (closeHook) try { closeHook(); } catch (e) {}
+      if (people && people.parentNode) people.parentNode.remove();
+    };
 
     // ── estado (o ponto ao lado dos avatares) ──
     function setState(s) { state = s; paint(); }
@@ -92,8 +101,8 @@
     }
     RT.queue = function (items) { outbox.add(items); if (state === 'on') setState('offline'); };
     RT.flush = flush;
-    window.addEventListener('online', function () { flush(); });
-    setInterval(function () { if (outbox.size() && navigator.onLine) flush(); }, 15000);
+    window.addEventListener('online', function () { if (!stopped) flush(); });
+    ivs.push(setInterval(function () { if (outbox.size() && navigator.onLine) flush(); }, 15000));
 
     RT.mount = function (acts) {
       var wrap = document.createElement('div');
@@ -168,9 +177,16 @@
         navigator.sendBeacon(h.apiUrl + '?a=rt_usage', fd);
       } else h.api('rt_usage', data).catch(noop);
     }
-    setInterval(function () { report(false); }, 60000);
-    window.addEventListener('pagehide', function () { report(true); });
-    document.addEventListener('visibilitychange', function () { if (document.hidden) report(true); });
+    ivs.push(setInterval(function () { report(false); }, 60000));
+    window.addEventListener('pagehide', function () { if (!stopped) report(true); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden && !stopped) report(true); });
+    closeHook = function () {
+      report(true);
+      try { aw.setLocalState(null); } catch (e) {}
+      try { provider.destroy(); } catch (e) {}
+      if (curEl) curEl.remove();
+      if (following) unfollow();
+    };
 
     // ── cartões: o que chega dos outros ──
     function entry(id) { var m = cards.get(String(id)); return m && m.toJSON ? m.toJSON() : null; }
