@@ -37,11 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect('/admin/partilhar.php');
 }
 
-render_header('Partilhar para a topper.', 'criativo', '', ['Centro Criativo', 'Partilhar']);
+render_header('Partilhar para a topper.', 'criativo', '', ['Toppernote', 'Partilhar']);
 render_flashes();
 ?>
 <div class="page-head"><div><h1>Guardar na topper.</h1>
-  <p class="sub">O que partilhar entra na Caixa de entrada do Centro Criativo e a IA analisa. Pode pô-lo também num quadro.</p></div></div>
+  <p class="sub">O que partilhar entra na Caixa de entrada do Toppernote e a IA analisa. Pode pô-lo também num quadro.</p></div></div>
 
 <div class="panel share-pg" id="share" data-csrf="<?= e(csrf_token()) ?>">
   <div class="share-items" data-items><p class="muted" data-empty>A ver se chegou alguma coisa…</p></div>
@@ -50,7 +50,7 @@ render_flashes();
     <div class="field"><label for="sh-dest">Destino</label>
       <select id="sh-dest"><option value="0">Caixa de entrada</option></select></div>
     <div class="field"><label for="sh-note">Nota (opcional)</label><textarea id="sh-note" rows="2" placeholder="Porque guardo isto…"></textarea></div>
-    <div class="actions"><button type="submit" class="btn" data-go>Guardar</button><a class="btn ghost" href="/admin/criativo.php?t=entrada">Abrir a Caixa de entrada</a></div>
+    <div class="actions"><button type="submit" class="btn" data-go>Guardar</button><a class="btn ghost" href="/admin/toppernote.php?t=entrada">Abrir a Caixa de entrada</a></div>
     <p class="small muted" data-st role="status"></p>
   </form>
 </div>

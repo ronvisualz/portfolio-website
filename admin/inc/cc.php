@@ -1,15 +1,15 @@
 <?php
 /**
- * topper. admin — Centro Criativo (§23): o modelo
+ * topper. admin — Toppernote (§23): o modelo
  *
  *  · ficheiros: no Cloudflare R2 (em «.topper/cc/», invisível no Drive) ou, sem R2, numa pasta
  *    privada (inc/cc_files). As chaves guardam-se com o prefixo «r2:» ou «local:».
  *  · miniaturas por nível de zoom (256 · 768 · 1600 px, WebP) feitas a partir da pré-visualização
  *    que o browser envia (descodifica HEIC/AVIF e poupa memória ao servidor); sem ela, o GD faz.
  *  · paleta: extração determinística por k-means em Lab (nunca por IA); pesquisa por cor em ΔE2000.
- *  · biblioteca: cada referência existe uma vez (impressão digital do ficheiro); os quadros
+ *  · biblioteca: cada referência existe uma vez (impressão digital do ficheiro); os Topperboards
  *    apontam para ela (cartões), sem cópia.
- *  · quadros e cartões, com «rev» por quadro para os outros separadores abertos se atualizarem.
+ *  · Topperboards e cartões, com «rev» por Topperboard para os outros separadores abertos se atualizarem.
  *
  * Permissões: tudo passa por cc_api.php / cc_file.php, que verificam a aba «criativo» no servidor.
  */
@@ -18,7 +18,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/drive.php';   // r2.php e as ajudas do Drive (pastas, «Mostrar no Drive»)
 
-/** Os sub-quadros do projeto, pela ordem (o modelo por defeito de cada funil). */
+/** Os sub-Topperboards do projeto, pela ordem (o modelo por defeito de cada funil). */
 const CC_STAGES = [
     'brief'       => 'Brief',
     'refs'        => 'Referências',
@@ -36,7 +36,7 @@ const CC_KINDS = [
     'precreative' => 'Pré-criativo',
     'front'       => 'Frente',
     'route'       => 'Rota não escolhida',
-    'free'        => 'Quadro livre',
+    'free'        => 'Topperboard livre',
 ];
 
 const CC_CARD_TYPES = ['image', 'video', 'audio', 'link', 'note', 'list', 'column', 'swatch', 'drawing', 'file', 'arrow', 'board'];
@@ -50,7 +50,7 @@ const CC_THUMBS = [256, 768, 1600];
 
 const CC_LANES = ['A' => 'Opção A · Pedido', 'B' => 'Opção B · Proposta de valor'];
 
-/** Vocabulário controlado da topper. (editável em Definições › Centro Criativo). */
+/** Vocabulário controlado da topper. (editável em Definições › Toppernote). */
 const CC_VOCAB = [
     'style' => ['Estilo', ['Minimalista', 'Cinematográfico', 'Editorial', 'Documental', 'Gráfico', 'Retro', 'Futurista', 'Surreal',
                             'Lúdico', 'Luxo', 'Natural', 'Industrial', 'Brutalista', 'Pop', 'Clean corporate']],
@@ -66,7 +66,7 @@ const CC_VOCAB = [
 
 // ── estado ──────────────────────────────────────────────────
 
-/** O Centro Criativo existe depois do passo 24 da base. */
+/** O Toppernote existe depois do passo 24 da base. */
 function cc_ready(PDO $pdo): bool {
     static $ok = null;
     if ($ok !== null) return $ok;
@@ -88,7 +88,7 @@ function cc_vocab(PDO $pdo, string $facet): array {
     return setting_lines($pdo, 'cc_vocab_' . $facet, CC_VOCAB[$facet][1]);
 }
 
-/** Os sub-quadros do projeto num funil (Definições; por defeito, todos). */
+/** Os sub-Topperboards do projeto num funil (Definições; por defeito, todos). */
 function cc_funnel_stages(PDO $pdo, ?int $funnelId): array {
     $raw = '';
     if ($funnelId) {
@@ -159,17 +159,17 @@ function cc_store_delete(string $key): void {
 }
 
 /**
- * Onde fica no Drive o original de uma referência, pelo quadro onde entrou (§10.15):
- *   quadro de um negócio → «<pasta do negócio>/Criativo/Referências/» (raiz) ou «…/Criativo/<sub-quadro>/»
- *   quadro livre         → «Biblioteca criativa/<quadro>/<sub-quadro>/»
- *   sem quadro           → «Biblioteca criativa/Caixa de entrada/» ou «Biblioteca criativa/Sem quadro/»
+ * Onde fica no Drive o original de uma referência, pelo Topperboard onde entrou (§10.15):
+ *   Topperboard de um negócio → «<pasta do negócio>/Criativo/Referências/» (raiz) ou «…/Criativo/<sub-Topperboard>/»
+ *   Topperboard livre         → «Biblioteca criativa/<Topperboard>/<sub-Topperboard>/»
+ *   sem Topperboard           → «Biblioteca criativa/Caixa de entrada/» ou «Biblioteca criativa/Sem Topperboard/»
  * Devolve as opções para files_adopt (deal_id + prefix).
  */
 function cc_drive_place(PDO $pdo, ?array $board, bool $inbox, bool $create = true): array {
     require_once __DIR__ . '/files.php';
-    if (!$board) return ['prefix' => FILES_LIBRARY . ($inbox ? 'Caixa de entrada/' : 'Sem quadro/')];
+    if (!$board) return ['prefix' => FILES_LIBRARY . ($inbox ? 'Caixa de entrada/' : 'Sem Topperboard/')];
     $path = cc_board_path($pdo, $board);
-    $names = array_map(fn($b) => r2_clean_name(trim(preg_replace('/^Pré-criativo · /u', '', (string)$b['title']))) ?: 'Quadro', $path);
+    $names = array_map(fn($b) => r2_clean_name(trim(preg_replace('/^Pré-criativo · /u', '', (string)$b['title']))) ?: 'Topperboard', $path);
     $dealId = (int)($path[0]['deal_id'] ?? 0);
     // sem $create (a pré-visualização): a pasta que vai ter, sem a criar
     if ($dealId && ($d = files_deal_row($pdo, $dealId)) && ($f = files_folder($pdo, $d, $create) ?? ($create ? null : files_place($d) . files_leaf($d) . '/'))) {
@@ -779,7 +779,7 @@ function cc_asset_from_link(PDO $pdo, string $url, array $o): array {
     return [$a, $new];
 }
 
-/** Os leitores de música que entram no quadro (frame-src da CSP das páginas do Centro Criativo). */
+/** Os leitores de música que entram no Topperboard (frame-src da CSP das páginas do Toppernote). */
 const CC_EMBED_FRAMES = 'https://w.soundcloud.com https://open.spotify.com https://player-widget.mixcloud.com https://www.mixcloud.com https://embed.music.apple.com https://bandcamp.com';
 const CC_AUDIO_LINK_MAX = 52428800;   // um ficheiro de áudio por link: até 50 MB
 
@@ -927,7 +927,7 @@ function cc_job_exec(PDO $pdo, array $job): void {
     }
 }
 
-// ── quadros ─────────────────────────────────────────────────
+// ── Topperboards ─────────────────────────────────────────────────
 
 function cc_board_get(PDO $pdo, int $id): ?array {
     $st = $pdo->prepare('SELECT * FROM cc_boards WHERE id = ?');
@@ -940,12 +940,12 @@ function cc_board_create(PDO $pdo, array $d, ?int $by): int {
     $pdo->prepare('INSERT INTO cc_boards (deal_id, line_id, parent_id, kind, stage_key, title, brief, status, position, exec_owner_id, created_by, created_at, updated_at)
                    VALUES (?,?,?,?,?,?,?,\'active\',?,?,?,?,?)')
         ->execute([$d['deal_id'] ?? null, $d['line_id'] ?? null, $d['parent_id'] ?? null, $d['kind'] ?? 'free', $d['stage_key'] ?? '',
-                   mb_substr(trim((string)($d['title'] ?? 'Quadro')), 0, 200) ?: 'Quadro', $d['brief'] ?? null, (int)($d['position'] ?? 0),
+                   mb_substr(trim((string)($d['title'] ?? 'Topperboard')), 0, 200) ?: 'Topperboard', $d['brief'] ?? null, (int)($d['position'] ?? 0),
                    $d['exec_owner_id'] ?? null, $by, $now, $now]);
     return (int)$pdo->lastInsertId();
 }
 
-/** Marca o quadro como mudado (os outros separadores abertos recarregam). */
+/** Marca o Topperboard como mudado (os outros separadores abertos recarregam). */
 function cc_board_touch(PDO $pdo, int $id): int {
     $pdo->prepare('UPDATE cc_boards SET rev = rev + 1, updated_at = ? WHERE id = ?')->execute([cc_now(), $id]);
     return (int)$pdo->query('SELECT rev FROM cc_boards WHERE id = ' . $id)->fetchColumn();
@@ -968,7 +968,7 @@ function cc_board_path(PDO $pdo, array $b): array {
     return $path;
 }
 
-/** O quadro de topo de um negócio (projeto) ou o pré-criativo. */
+/** O Topperboard de topo de um negócio (projeto) ou o pré-criativo. */
 function cc_deal_board(PDO $pdo, int $dealId, string $kind): ?array {
     $st = $pdo->prepare('SELECT * FROM cc_boards WHERE deal_id = ? AND kind = ? AND parent_id IS NULL ORDER BY id DESC LIMIT 1');
     $st->execute([$dealId, $kind]);
@@ -1061,7 +1061,7 @@ function cc_card_type_for(array $a): string {
     return in_array($a['kind'], ['image', 'video'], true) ? (string)$a['kind'] : 'file';
 }
 
-/** Os cartões de um quadro, com as referências e o número de comentários, de uma só vez. */
+/** Os cartões de um Topperboard, com as referências e o número de comentários, de uma só vez. */
 function cc_board_cards_public(PDO $pdo, int $boardId): array {
     $cards = cc_cards($pdo, $boardId);
     $ids = array_values(array_unique(array_filter(array_map(fn($c) => (int)$c['asset_id'], $cards))));
@@ -1154,7 +1154,7 @@ function cc_comment_add(PDO $pdo, array $board, ?array $card, string $body, arra
 
 /**
  * Pesquisa: $f = q (texto), color (#hex), facets (style/technique/camera/environment/light),
- * origin (external|topper), inbox (1), board (só as de um quadro), limit, offset.
+ * origin (external|topper), inbox (1), board (só as de um Topperboard), limit, offset.
  * Devolve [lista de referências (públicas, com «match» quando é um frame), total].
  */
 function cc_library_search(PDO $pdo, array $f, int $limit = 60, int $offset = 0): array {

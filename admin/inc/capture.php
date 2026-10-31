@@ -1,10 +1,10 @@
 <?php
 /**
- * topper. admin — captura (Centro Criativo, fase 3, §26.2–26.3)
+ * topper. admin — captura (Toppernote, fase 3, §26.2–26.3)
  *
  * O que se guarda de fora — extensão «Guardar na topper.» (Chrome/Edge), o menu Partilhar do
  * Android (PWA) e o Atalho do iOS — entra sempre na Caixa de entrada e passa pela análise da IA
- * (como o que se carrega no Centro Criativo). Com um quadro escolhido, fica também lá como cartão.
+ * (como o que se carrega no Toppernote). Com um quadro escolhido, fica também lá como cartão.
  * Guarda a página de origem, o autor/créditos quando a página os diz, o tempo do vídeo e a nota.
  *
  * A extensão e o Atalho entram com um token pessoal (Perfil › Ligações, revogável); o Android usa

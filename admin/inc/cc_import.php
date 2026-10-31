@@ -1,13 +1,13 @@
 <?php
 /**
- * topper. admin — importação para o Centro Criativo (§23.7). Mecanismo pronto; nada importado.
+ * topper. admin — importação para o Toppernote (§23.7). Mecanismo pronto; nada importado.
  *
  * Aceita os formatos de exportação do Milanote e afins:
  *   · ZIP   imagens, vídeos, PDFs, Markdown/texto (as imagens referidas no Markdown ficam junto da nota);
  *   · PDF   as imagens JPEG embebidas e o texto de cada página (melhor esforço, sem bibliotecas);
  *   · Markdown / texto   cada secção (título ou parágrafo) vira uma nota; imagens remotas são descarregadas;
- *   · imagem solta (a «pasta de imagens» envia-se pelo browser, uma a uma, para o mesmo quadro).
- * Cria um quadro novo com os cartões em grelha (notas como notas) e as imagens entram na biblioteca
+ *   · imagem solta (a «pasta de imagens» envia-se pelo browser, uma a uma, para o mesmo Topperboard).
+ * Cria um Topperboard novo com os cartões em grelha (notas como notas) e as imagens entram na biblioteca
  * (com a análise da IA, se estiver ligada). Corre pela fila, em pedaços de ~15 s.
  */
 
@@ -30,7 +30,7 @@ function cc_import_kind(string $path, string $name): string {
     return '';
 }
 
-/** Recebe o ficheiro, cria o quadro e põe a importação na fila (e começa já). */
+/** Recebe o ficheiro, cria o Topperboard e põe a importação na fila (e começa já). */
 function cc_import_upload(PDO $pdo, array $file, string $title, int $by): array {
     if (($file['error'] ?? 1) !== UPLOAD_ERR_OK) throw new RuntimeException('O envio falhou. Tente outra vez.');
     if ((int)$file['size'] > CC_IMPORT_MAX) throw new RuntimeException('O ficheiro tem mais de 500 MB.');
@@ -57,7 +57,7 @@ function cc_import_cell(int $i): array {
 function cc_import_asset(PDO $pdo, int $board, string $bytes, string $name, int &$cell, int $by): void {
     $mime = r2_mime($name);
     [$a, $new] = cc_asset_create($pdo, $bytes, ['name' => $name, 'mime' => $mime, 'by' => $by, 'inbox' => false]);
-    if ($new) $a = cc_place_original($pdo, $a, cc_board_get($pdo, $board), false, $by);   // «Biblioteca criativa/<quadro>/»
+    if ($new) $a = cc_place_original($pdo, $a, cc_board_get($pdo, $board), false, $by);   // «Biblioteca criativa/<Topperboard>/»
     [$x, $y] = cc_import_cell($cell++);
     $ratio = $a['width'] && $a['height'] ? (float)$a['height'] / (float)$a['width'] : 0.62;
     cc_card_add($pdo, $board, ['type' => in_array($a['kind'], ['image', 'video'], true) ? $a['kind'] : 'file', 'asset_id' => (int)$a['id'],
@@ -164,7 +164,7 @@ function cc_import_run(PDO $pdo, array $job): void {
                 else cc_import_asset($pdo, $board, $items[$i][1], 'pdf_' . ($i + 1) . '.jpg', $cell, (int)$by);
             }
             $pos = $i;
-            if (!$more && $pos >= count($items)) {   // o próprio PDF fica no quadro, como ficheiro
+            if (!$more && $pos >= count($items)) {   // o próprio PDF fica no Topperboard, como ficheiro
                 cc_import_asset($pdo, $board, $bytes, (string)$p['name'], $cell, (int)$by);
             }
             break;
@@ -221,7 +221,7 @@ function cc_import_run(PDO $pdo, array $job): void {
             try {
                 require_once __DIR__ . '/files.php';
                 $to = files_adopt($pdo, substr((string)$p['key'], 3), ['prefix' => FILES_IMPORTS . date('Y-m') . '/', 'name' => date('Y-m-d') . '_Centro-Criativo_' . (string)$p['name'],
-                                                                        'origin' => 'import', 'label' => 'Importação para o quadro «' . (string)(cc_board_get($pdo, $board)['title'] ?? '') . '»', 'by' => $by]);
+                                                                        'origin' => 'import', 'label' => 'Importação para o Topperboard «' . (string)(cc_board_get($pdo, $board)['title'] ?? '') . '»', 'by' => $by]);
                 $kept = $to !== substr((string)$p['key'], 3);
             } catch (Throwable $e) {
                 error_log('cc_import keep: ' . $e->getMessage());

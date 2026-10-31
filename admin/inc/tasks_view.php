@@ -104,7 +104,7 @@ function task_row_html(array $t, array $members, string $editUrl): string {
          . '<span class="tacts">'
          . (!$done ? '<button type="button" class="tact" data-snooze="' . (int)$t['id'] . '" data-due="' . e((string)$t['due_date']) . '" data-time="' . e(substr((string)($t['due_time'] ?? ''), 0, 5)) . '" aria-label="Adiar" data-tip aria-haspopup="menu">' . icon('clock') . '</button>' : '')
          . '<a class="tact" href="' . e($editUrl) . '" aria-label="Editar" data-tip>' . icon('pencil') . '</a>'
-         // «Abrir na origem»: onde a tarefa nasceu (lead, negócio, contacto, Marketing, Financeiro, Centro Criativo)
+         // «Abrir na origem»: onde a tarefa nasceu (lead, negócio, contacto, Marketing, Financeiro, Toppernote)
          . ($lu !== '' ? '<a class="tact orig" href="' . e($lu) . '" aria-label="Abrir na origem: ' . e($lt) . '" data-tip="Abrir na origem · ' . e(shorten($lt, 40)) . '">' . icon('external') . '</a>' : '')
          . '</span>'
          . task_who_html($members, $t['member_id'] !== null ? (int)$t['member_id'] : null)

@@ -1,4 +1,4 @@
-/* topper. admin — Centro Criativo (§23): Projetos, Biblioteca, Caixa de entrada e o quadro (tela infinita).
+/* topper. admin — Toppernote (§23): Projetos, Biblioteca, Caixa de entrada e o Topperboard (tela infinita).
  * Tudo o que grava passa por cc_api.php (permissões no servidor). As miniaturas pedem-se pela largura
  * no ecrã (256 · 768 · 1600), só para o que está à vista; mover e fazer zoom mexe só num transform. */
 (function () {
@@ -446,7 +446,7 @@
     return '';
   }
 
-  // ── detalhe de uma referência (gaveta na Biblioteca, painel no quadro) ──
+  // ── detalhe de uma referência (gaveta na Biblioteca, painel no Topperboard) ──
   function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
   function assetDetailHtml(a) {
     var media;
@@ -510,7 +510,7 @@
         + (cp.page ? '<p class="small"><a href="' + esc(cp.page) + '" target="_blank" rel="noopener">' + esc(hostOfUrl(cp.page)) + (cp.t ? ' · ' + fmtDur(cp.t) : '') + '</a>' + (cp.author ? ' · ' + esc(cp.author) : '') + '</p>' : (cp.author ? '<p class="small">' + esc(cp.author) + '</p>' : ''))
         + (cp.quote ? '<blockquote class="small">' + esc(cp.quote) + '</blockquote>' : '') + (cp.note ? '<p class="small"><b>Nota:</b> ' + esc(cp.note) + '</p>' : '') + '</div>';
     }
-    if (a.boards && a.boards.length) h += '<div><h4>Nos quadros</h4><div class="ccd-boards">' + a.boards.map(function (b) { return '<a class="chip" href="/admin/criativo.php?b=' + b.id + '">' + esc(b.title) + '</a>'; }).join('') + '</div></div>';
+    if (a.boards && a.boards.length) h += '<div><h4>Nos Topperboards</h4><div class="ccd-boards">' + a.boards.map(function (b) { return '<a class="chip" href="/admin/toppernote.php?b=' + b.id + '">' + esc(b.title) + '</a>'; }).join('') + '</div></div>';
     h += '<div class="actions">' + (EDIT ? '<button type="button" class="btn sm" data-d="save">Guardar</button><button type="button" class="btn ghost sm" data-d="analyze">' + ico('spark') + ' Analisar outra vez</button>' : '')
       + '<button type="button" class="btn ghost sm" data-d="similar">Mais como este</button>'
       + (EDIT ? '<button type="button" class="lnk del" data-d="delete">' + ico('trash') + ' Apagar da biblioteca</button>' : '') + '</div><div data-d-sim></div>';
@@ -576,11 +576,11 @@
   // ══ Projetos ═══════════════════════════════════════════════
   function viewProjects() {
     var show = 'active', q = '', timer;
-    root.innerHTML = '<div class="ccp-bar"><input type="search" placeholder="Procurar quadro, ID ou negócio" aria-label="Procurar quadros" data-q>'
+    root.innerHTML = '<div class="ccp-bar"><input type="search" placeholder="Procurar Topperboard, ID ou negócio" aria-label="Procurar Topperboards" data-q>'
       + '<div class="views" role="group" aria-label="Estado"><button type="button" class="on" data-show="active">Ativos</button><button type="button" data-show="archived">Arquivados</button></div></div><div data-list><div class="ccb-loading"><span class="spin"></span> A carregar…</div></div>';
     var list = $('[data-list]', root);
     function tile(b) {
-      var kind = { precreative: 'Pré-criativo', project: 'Projeto', free: 'Quadro livre', front: 'Frente', stage: 'Etapa', route: 'Rota' }[b.kind] || 'Quadro';
+      var kind = { precreative: 'Pré-criativo', project: 'Projeto', free: 'Topperboard livre', front: 'Frente', stage: 'Etapa', route: 'Rota' }[b.kind] || 'Topperboard';
       var cov = b.covers.length ? '<div class="ccp-cover' + (b.covers.length === 1 ? ' n1' : '') + '">' + b.covers.slice(0, 3).map(function (u) { return '<img src="' + esc(u) + '" alt="" loading="lazy">'; }).join('') + '</div>'
               : '<div class="ccp-cover"><span class="ph">' + ico(b.kind === 'precreative' ? 'spark' : 'board') + '</span></div>';
       var chips = [];
@@ -589,7 +589,7 @@
         if (!chips.length && b.ai === 'prepared') chips.push('<span class="chip wait">Preparado com IA</span>');
       }
       if (b.why) chips.push('<span class="chip">' + ({ lost: 'Negócio perdido', kickoff: 'Passou ao projeto', manual: 'Arquivado' }[b.why] || 'Arquivado') + '</span>');
-      return '<a class="ccp-tile" href="/admin/criativo.php?b=' + b.id + '">' + cov + '<div class="ccp-body"><span class="ccp-kind">' + kind + '</span><b>' + esc(b.title) + '</b>'
+      return '<a class="ccp-tile" href="/admin/toppernote.php?b=' + b.id + '">' + cov + '<div class="ccp-body"><span class="ccp-kind">' + kind + '</span><b>' + esc(b.title) + '</b>'
         + '<small>' + (b.code ? '<span class="mono">' + esc(b.code) + '</span>' : '') + (b.exec ? '<span>' + esc(b.exec) + '</span>' : '') + '<span>' + b.n + ' cartões</span><span>' + esc(b.updated) + '</span></small>'
         + (chips.length ? '<div class="ccp-chips">' + chips.join('') + '</div>' : '') + '</div></a>';
     }
@@ -602,14 +602,14 @@
         var by = function (k) { return j.boards.filter(function (b) { return k.indexOf(b.kind) >= 0; }); };
         var h = '';
         if (j.missing.length && EDIT) {
-          h += '<section class="ccp-sec"><h2>Negócios sem quadro <small>' + j.missing.length + '</small></h2><ul class="ccp-missing">' + j.missing.map(function (d) {
+          h += '<section class="ccp-sec"><h2>Negócios sem Topperboard <small>' + j.missing.length + '</small></h2><ul class="ccp-missing">' + j.missing.map(function (d) {
             return '<li><span><span class="mono">' + esc(d.code) + '</span> · ' + esc(d.name) + '</span><button type="button" class="btn sm ghost" data-mk="' + d.id + '" data-kind="' + d.kind + '">'
-              + (d.kind === 'project' ? 'Criar quadro do projeto' : 'Criar pré-criativo') + '</button></li>';
+              + (d.kind === 'project' ? 'Criar Topperboard do projeto' : 'Criar pré-criativo') + '</button></li>';
           }).join('') + '</ul></section>';
         }
         h += sec('Pré-criativo', by(['precreative']), show === 'active' ? 'O pré-criativo nasce sozinho quando um X-Ray é validado.' : 'Nada arquivado.');
-        h += sec('Projetos', by(['project']), show === 'active' ? 'O quadro do projeto nasce no Kickoff.' : 'Nada arquivado.');
-        h += sec('Quadros livres', by(['free', 'front', 'stage', 'route']), 'Moodboards e ideias soltas: «+ Quadro».');
+        h += sec('Projetos', by(['project']), show === 'active' ? 'O Topperboard do projeto nasce no Kickoff.' : 'Nada arquivado.');
+        h += sec('Topperboards livres', by(['free', 'front', 'stage', 'route']), 'Moodboards e ideias soltas: «+ Topperboard».');
         list.innerHTML = h;
       }).catch(function (e) { list.innerHTML = '<p class="muted">' + esc(e.message) + '</p>'; });
     }
@@ -620,13 +620,13 @@
       var mk = e.target.closest('[data-mk]');
       if (mk) {
         mk.disabled = true;
-        api('project_create', { deal: mk.getAttribute('data-mk'), kind: mk.getAttribute('data-kind') }).then(function (j) { location.href = '/admin/criativo.php?b=' + j.id; }).catch(function (er) { mk.disabled = false; fail(er); });
+        api('project_create', { deal: mk.getAttribute('data-mk'), kind: mk.getAttribute('data-kind') }).then(function (j) { location.href = '/admin/toppernote.php?b=' + j.id; }).catch(function (er) { mk.disabled = false; fail(er); });
       }
     });
     load();
   }
 
-  // novo quadro (com ligação opcional a um negócio)
+  // novo Topperboard (com ligação opcional a um negócio)
   function bindNewBoard() {
     var btn = $('[data-cc-new-board]'), m = $('#mdl-cc-board');
     if (!btn || !m) return;
@@ -652,7 +652,7 @@
     });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      api('board_new', { title: form.title.value, deal: form.deal.value }).then(function (j) { location.href = '/admin/criativo.php?b=' + j.id; }).catch(fail);
+      api('board_new', { title: form.title.value, deal: form.deal.value }).then(function (j) { location.href = '/admin/toppernote.php?b=' + j.id; }).catch(fail);
     });
   }
 
@@ -669,7 +669,7 @@
       api('import', fd).then(function (j) {
         toast(j.msg);
         kickWorker();
-        setTimeout(function () { location.href = '/admin/criativo.php?b=' + j.board; }, 600);
+        setTimeout(function () { location.href = '/admin/toppernote.php?b=' + j.board; }, 600);
       }).catch(function (er) { fail(er); sb.disabled = false; sb.textContent = 'Importar'; });
     });
   }
@@ -687,7 +687,7 @@
       + '<div data-acats></div>'
       + (MANAGE ? '<div><button type="button" class="lnk" data-analyze-all>' + ico('spark') + ' Analisar o que falta</button></div>' : '')
       + '</aside><section><div class="ccl-head"><span data-count>—</span>'
-      + (inbox ? '<span>Tudo o que se captura entra aqui, já analisado pela IA. Arraste para um quadro ou selecione.</span>' : '<span>Cole (Ctrl V) ou arraste imagens, vídeos, áudio e links para aqui.</span>')
+      + (inbox ? '<span>Tudo o que se captura entra aqui, já analisado pela IA. Arraste para um Topperboard ou selecione.</span>' : '<span>Cole (Ctrl V) ou arraste imagens, vídeos, áudio e links para aqui.</span>')
       + (EDIT ? '<label class="btn sm ccl-capture">' + ico('upload') + ' Capturar<input type="file" multiple accept="image/*,video/*,audio/*" data-cc-upload hidden></label>' : '')
       + '</div><div class="ccl-grid" data-grid></div><div class="ccl-more" data-more></div><div data-act></div></section></div>';
     var grid = $('[data-grid]', root), more = $('[data-more]', root), count = $('[data-count]', root), act = $('[data-act]', root);
@@ -764,7 +764,7 @@
       if (!inbox || !sel.size) { act.innerHTML = ''; return; }
       var opts = (boards || []).map(function (b) { return '<option value="' + b.id + '">' + esc(b.title) + '</option>'; }).join('');
       act.innerHTML = '<div class="ccl-act"><b>' + sel.size + ' selecionada' + (sel.size > 1 ? 's' : '') + '</b>'
-        + '<select class="mini" data-board-pick aria-label="Quadro"><option value="">Enviar para o quadro…</option>' + opts + '</select>'
+        + '<select class="mini" data-board-pick aria-label="Topperboard"><option value="">Enviar para o Topperboard…</option>' + opts + '</select>'
         + '<button type="button" class="btn sm" data-send>Enviar</button><button type="button" class="btn ghost sm" data-arch>Arrumar na biblioteca</button><button type="button" class="lnk" data-clear>Limpar</button></div>';
     }
     function ensureBoards() {
@@ -810,7 +810,7 @@
       }
       if (e.target.closest('[data-analyze-all]')) { api('analyze_all', {}).then(function (j) { toast(j.msg); kickWorker(); load(true); }).catch(fail); return; }
       if (e.target.closest('[data-clear]')) { sel.clear(); $$('.ccl-tile.sel', grid).forEach(function (el) { el.outerHTML = tile(items.get(+el.getAttribute('data-id'))); }); renderAct(); return; }
-      if (e.target.closest('[data-send]')) { var bid = $('[data-board-pick]', root).value; if (!bid) { toast('Escolha o quadro.', { err: true }); return; } triage(Array.from(sel), bid); return; }
+      if (e.target.closest('[data-send]')) { var bid = $('[data-board-pick]', root).value; if (!bid) { toast('Escolha o Topperboard.', { err: true }); return; } triage(Array.from(sel), bid); return; }
       if (e.target.closest('[data-arch]')) { triage(Array.from(sel), ''); return; }
       var t = e.target.closest('.ccl-tile');
       if (!t) return;
@@ -892,7 +892,7 @@
     load(true);
   }
 
-  // ══ O quadro ═══════════════════════════════════════════════
+  // ══ O Topperboard ═══════════════════════════════════════════════
   var GRID = 20, LANE_SPLIT = 1165, LANE_TOP = 100;
   function viewBoard() {
     var B = {
@@ -918,12 +918,12 @@
     // ── moldura ──
     function frame() {
       var j = B.data, b = j.board;
-      var crumbs = '<span class="ey">Centro Criativo</span><span>/</span>' + j.path.slice(0, -1).map(function (p) { return '<a href="/admin/criativo.php?b=' + p.id + '">' + esc(p.title) + '</a><span>/</span>'; }).join('')
+      var crumbs = '<span class="ey">Toppernote</span><span>/</span>' + j.path.slice(0, -1).map(function (p) { return '<a href="/admin/toppernote.php?b=' + p.id + '">' + esc(p.title) + '</a><span>/</span>'; }).join('')
         + '<b data-title title="' + (EDIT ? 'Duplo clique para mudar o nome' : '') + '">' + esc(b.title) + '</b>'
         + (b.deal ? ' <a class="chip" href="/admin/negocio.php?id=' + b.deal.id + '" title="Abrir o negócio">' + esc(b.deal.code) + (b.deal.client ? ' · ' + esc(b.deal.client) : '') + '</a>' : '')
         + (b.status === 'archived' ? ' <span class="chip">Arquivado</span>' : '');
-      var stages = j.stages.length ? '<nav class="ccb-stages" aria-label="Etapas">' + (j.stage_host ? '<a href="/admin/criativo.php?b=' + j.stage_host + '"' + (j.stage_host === b.id ? ' class="on"' : '') + '>Visão geral</a>' : '')
-        + j.stages.map(function (s) { return '<a href="/admin/criativo.php?b=' + s.id + '"' + (s.id === b.id ? ' class="on" aria-current="page"' : '') + '>' + esc(s.title) + '</a>'; }).join('') + '</nav>' : '';
+      var stages = j.stages.length ? '<nav class="ccb-stages" aria-label="Etapas">' + (j.stage_host ? '<a href="/admin/toppernote.php?b=' + j.stage_host + '"' + (j.stage_host === b.id ? ' class="on"' : '') + '>Visão geral</a>' : '')
+        + j.stages.map(function (s) { return '<a href="/admin/toppernote.php?b=' + s.id + '"' + (s.id === b.id ? ' class="on" aria-current="page"' : '') + '>' + esc(s.title) + '</a>'; }).join('') + '</nav>' : '';
       var acts = '';
       if (B.lanes && EDIT) acts += '<button type="button" class="btn sm" data-a="prepare" title="3 ângulos por opção e 6–9 referências por faixa">' + ico('spark') + '<span class="lbl"> Preparar com IA</span></button>'
                                 + '<button type="button" class="btn sm dark" data-a="send" title="As páginas entram no PDF e na página do cliente, ao lado de cada opção" aria-label="Enviar para a Orçamentação">' + ico('send') + '<span class="lbl"> Enviar para a Orçamentação</span></button>';
@@ -937,11 +937,11 @@
         + tb('select', 'cursor', 'Selecionar e mover ( V )') + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
           + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
           + '<hr>' + '<label data-tip aria-label="Carregar imagens, vídeos ou ficheiros">' + ico('upload') + '<input type="file" multiple hidden data-up></label>'
-          + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-quadro') : '')
+          + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
         + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>'
-        + '<div class="ccb-vp" tabindex="0" aria-label="Tela do quadro. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
+        + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
         + '<div class="ccb-world"><div data-lanes></div><svg class="ccb-arrows" width="1" height="1"><defs><marker id="cc-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g data-ar></g></svg><div data-layer></div></div>'
-        + '<div class="ccb-empty" hidden><div><b>Quadro vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
+        + '<div class="ccb-empty" hidden><div><b>Topperboard vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
         + '<div class="ccb-hint" aria-hidden="true"><span class="kbd">Espaço</span> mover · <span class="kbd">Ctrl</span>+roda zoom · <span class="kbd">/</span> IA</div>'
         + '<div class="ccb-zoom"><button type="button" data-z="-1" aria-label="Afastar ( - )">' + ico('minus') + '</button><output data-zo>100%</output><button type="button" data-z="1" aria-label="Aproximar ( + )">' + ico('plus') + '</button><button type="button" data-z="0" aria-label="Ver tudo ( 0 )">' + ico('fit') + '</button></div>'
         + '</div>'
@@ -1085,7 +1085,7 @@
         }
         case 'board': {
           var kid = (B.data.children || []).filter(function (k) { return k.id === c.ref; })[0];
-          h = '<div class="ccc-bd">' + ico('board') + '</div><div class="ccc-bt"><b>' + esc(x.title || (kid && kid.title) || 'Sub-quadro') + '</b><small>' + (kid ? kid.n + ' cartões' : '') + '</small></div>';
+          h = '<div class="ccc-bd">' + ico('board') + '</div><div class="ccc-bt"><b>' + esc(x.title || (kid && kid.title) || 'Sub-Topperboard') + '</b><small>' + (kid ? kid.n + ' cartões' : '') + '</small></div>';
           break;
         }
         case 'drawing': {
@@ -1344,7 +1344,7 @@
     function addColumn() { return addCard('column', { title: 'Coluna' }).then(function (c) { if (c) startEdit(c); }); }
     function addList() { return addCard('list', { title: 'Lista', items: [{ t: '', d: false }] }).then(function (c) { if (c) startEdit(c, 0); }); }
     function addSwatch(hex) { return addCard('swatch', { hex: hex || B.color }); }
-    function addBoard() { return ask('Novo sub-quadro', 'Nome', { ok: 'Criar' }).then(function (v) { if (v) return addCard('board', { title: v }); }); }
+    function addBoard() { return ask('Novo sub-Topperboard', 'Nome', { ok: 'Criar' }).then(function (v) { if (v) return addCard('board', { title: v }); }); }
     function addAsset(aid, at) {
       return api('asset', { id: aid }, 'GET').then(function (j) {
         var a = j.asset, w = 280, ratio = a.w && a.h ? a.h / a.w : 0.62, p = at || spot(w);
@@ -1422,7 +1422,7 @@
         var txt = target.innerText.replace(/ /g, ' ').replace(/\n$/, '');
         var nc = JSON.parse(JSON.stringify(c.c || {}));
         if (c.type === 'note') nc.text = txt;
-        else if (c.type === 'column' || c.type === 'board') nc.title = txt.trim() || (c.type === 'column' ? 'Coluna' : 'Sub-quadro');
+        else if (c.type === 'column' || c.type === 'board') nc.title = txt.trim() || (c.type === 'column' ? 'Coluna' : 'Sub-Topperboard');
         else if (c.type === 'list') {
           if (itemIndex != null) { if (!txt.trim() && nc.items.length > 1) nc.items.splice(itemIndex, 1); else nc.items[itemIndex].t = txt; }
           else nc.title = txt.trim() || 'Lista';
@@ -1854,7 +1854,7 @@
       if (!el) { if (EDIT && B.tool === 'select' && !tg.closest('.ccb-zoom')) { var p = vpPoint(e), w = toWorld(p.x, p.y); addNote('', { x: Math.round((w.x - 120) / GRID) * GRID, y: Math.round((w.y - 30) / GRID) * GRID }); } return; }
       var c = B.cards.get(+el.getAttribute('data-id'));
       if (!c) return;
-      if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/criativo.php?b=' + c.ref; return; }
+      if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/toppernote.php?b=' + c.ref; return; }
       if (c.type === 'list') { var li = tg.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null); return; }
       if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
@@ -1930,8 +1930,8 @@
       l.push({ k: 'analyze', i: '◎', t: 'Analisar referência', off: !asset, edit: true },
              { k: 'similar', i: '⌕', t: 'Mais como este', off: !asset },
              { k: 'refs', i: '☰', t: 'Referências para o brief' },
-             { k: 'tidy', i: '▦', t: 'Arrumar o quadro', edit: true },
-             { k: 'treatment', i: '▤', t: 'Quadro → tratamento' },
+             { k: 'tidy', i: '▦', t: 'Arrumar o Topperboard', edit: true },
+             { k: 'treatment', i: '▤', t: 'Topperboard → tratamento' },
              { k: 'shots', i: '☷', t: 'Storyboard → lista de planos', edit: true });
       return l.filter(function (x) { return !x.edit || EDIT; });
     }
@@ -1942,7 +1942,7 @@
       slash.className = 'cc-slash';
       slash.setAttribute('role', 'dialog');
       slash.setAttribute('aria-label', 'Ações da IA');
-      slash.innerHTML = '<input type="text" placeholder="Pedir à IA…" aria-label="Filtrar ações"><div class="h">IA · Centro Criativo</div><ul role="listbox"></ul>';
+      slash.innerHTML = '<input type="text" placeholder="Pedir à IA…" aria-label="Filtrar ações"><div class="h">IA · Toppernote</div><ul role="listbox"></ul>';
       document.body.appendChild(slash);
       slash.style.left = clamp(r.left + p.x, 8, innerWidth - 310) + 'px';
       slash.style.top = clamp(r.top + p.y, 8, innerHeight - 340) + 'px';
@@ -1984,15 +1984,15 @@
       if (k === 'similar') {
         if (!c) return;
         aiBusy('A procurar referências parecidas…');
-        return api('similar', { id: c.asset.id }, 'GET').then(function (j) { aiDone('<h4>Mais como este <small class="muted">(' + esc(j.by) + ')</small></h4>' + (j.items.length ? refsHtml(j.items) + '<p class="muted small">Clique para pôr no quadro ou arraste.</p>' : '<p class="muted">Nada parecido na biblioteca.</p>')); }).catch(function (e) { aiDone(); fail(e); });
+        return api('similar', { id: c.asset.id }, 'GET').then(function (j) { aiDone('<h4>Mais como este <small class="muted">(' + esc(j.by) + ')</small></h4>' + (j.items.length ? refsHtml(j.items) + '<p class="muted small">Clique para pôr no Topperboard ou arraste.</p>' : '<p class="muted">Nada parecido na biblioteca.</p>')); }).catch(function (e) { aiDone(); fail(e); });
       }
       if (k === 'refs') {
         aiBusy('A procurar referências para o brief…');
-        return api('ai', { board: B.id, act: 'refs' }).then(function (j) { aiDone('<h4>Referências para o brief <small class="muted">(' + esc(j.by) + ')</small></h4>' + (j.items.length ? refsHtml(j.items) + '<p class="muted small">Clique para pôr no quadro ou arraste.</p>' : '<p class="muted">A biblioteca ainda não tem referências que sirvam.</p>')); }).catch(function (e) { aiDone(); fail(e); });
+        return api('ai', { board: B.id, act: 'refs' }).then(function (j) { aiDone('<h4>Referências para o brief <small class="muted">(' + esc(j.by) + ')</small></h4>' + (j.items.length ? refsHtml(j.items) + '<p class="muted small">Clique para pôr no Topperboard ou arraste.</p>' : '<p class="muted">A biblioteca ainda não tem referências que sirvam.</p>')); }).catch(function (e) { aiDone(); fail(e); });
       }
       if (k === 'angles') return angles(false);
       if (k === 'tidy') {
-        aiBusy('A arrumar o quadro em colunas…');
+        aiBusy('A arrumar o Topperboard em colunas…');
         return api('ai', { board: B.id, act: 'tidy' }).then(function (j) { aiDone(); toast(j.msg); if (RT) RT.signal(); reload().then(function () { fitAll(true); }); }).catch(function (e) { aiDone(); fail(e); });
       }
       if (k === 'treatment') {
@@ -2007,7 +2007,7 @@
         return api('ai', { board: B.id, act: 'shots' }).then(function (j) {
           B.cards.set(j.card.id, j.card); cull(); select([j.card.id]);
           if (RT) RT.added([j.card]);
-          aiDone('<h4>Lista de planos</h4><p>' + j.shots.length + ' planos numa lista no quadro.</p>' + (B.data.board.deal ? '<button type="button" class="btn sm" data-shots-tasks="' + j.card.id + '">Criar as tarefas no negócio</button>' : ''));
+          aiDone('<h4>Lista de planos</h4><p>' + j.shots.length + ' planos numa lista no Topperboard.</p>' + (B.data.board.deal ? '<button type="button" class="btn sm" data-shots-tasks="' + j.card.id + '">Criar as tarefas no negócio</button>' : ''));
         }).catch(function (e) { aiDone(); fail(e); });
       }
     }
@@ -2044,7 +2044,7 @@
       var sel = Array.from(B.sel).map(function (id) { return B.cards.get(id); }).filter(Boolean);
       if (B.side === 'ia') {
         var acts = aiActs();
-        sideBody.innerHTML = (B.data.ai ? '' : '<p class="small muted">A IA do Centro Criativo ainda não está ligada (Definições › Integrações). As ações sem IA continuam a funcionar.</p>')
+        sideBody.innerHTML = (B.data.ai ? '' : '<p class="small muted">A IA do Toppernote ainda não está ligada (Definições › Integrações). As ações sem IA continuam a funcionar.</p>')
           + '<div class="cc-aiacts">' + acts.map(function (a) { return '<button type="button" data-ai="' + a.k + '"' + (a.off ? ' disabled' : '') + '><i>' + a.i + '</i>' + esc(a.t) + '</button>'; }).join('') + '</div>'
           + (aiState.busy ? '<p class="muted"><span class="spin"></span> ' + esc(aiState.busy) + '</p>' : aiState.html)
           + '<div><h4>Brief</h4>' + (EDIT ? '<textarea rows="6" data-brief placeholder="O que é, para quem, o objetivo, o tom…">' + esc(B.data.board.brief) + '</textarea><div class="actions" style="margin-top:6px"><button type="button" class="btn sm ghost" data-brief-save>Guardar o brief</button></div>' : '<p>' + esc(B.data.board.brief || '—') + '</p>')
@@ -2069,9 +2069,9 @@
         return;
       }
       if (B.side === 'hist') { historyPanel(); return; }
-      // comentários: do cartão selecionado ou do quadro
+      // comentários: do cartão selecionado ou do Topperboard
       var card = sel.length === 1 ? sel[0] : null;
-      sideBody.innerHTML = '<h4>' + (card ? 'Comentários do cartão' : 'Comentários do quadro') + '</h4><div class="cc-cmts" data-cmts><span class="spin"></span></div>'
+      sideBody.innerHTML = '<h4>' + (card ? 'Comentários do cartão' : 'Comentários do Topperboard') + '</h4><div class="cc-cmts" data-cmts><span class="spin"></span></div>'
         + '<form class="cc-cmt-f" data-cmt-f><textarea placeholder="Escreva… @ para mencionar alguém" aria-label="Comentário"></textarea><div class="cc-ment" hidden></div><button type="submit" class="btn sm">Comentar</button></form>';
       loadComments(card);
     }
@@ -2179,9 +2179,9 @@
       };
     });
 
-    // ── histórico do quadro: versões com «Ver» e «Restaurar» ──
+    // ── histórico do Topperboard: versões com «Ver» e «Restaurar» ──
     function historyPanel() {
-      sideBody.innerHTML = '<h4>Histórico do quadro</h4><p class="small muted">Uma versão por sessão de trabalho e antes das ações grandes (Arrumar o quadro, Preparar com IA, apagar muitos cartões). Restaurar guarda primeiro o estado de agora.</p>'
+      sideBody.innerHTML = '<h4>Histórico do Topperboard</h4><p class="small muted">Uma versão por sessão de trabalho e antes das ações grandes (Arrumar o Topperboard, Preparar com IA, apagar muitos cartões). Restaurar guarda primeiro o estado de agora.</p>'
         + (EDIT ? '<div class="actions" style="margin:6px 0 10px"><button type="button" class="btn sm ghost" data-ver="mark" data-id="0">Guardar esta versão</button></div>' : '')
         + '<div class="cc-vers" data-vers><span class="spin"></span></div>';
       api('versions', { board: B.id }, 'GET').then(function (j) {
@@ -2228,7 +2228,7 @@
     /** Uma miniatura estática da versão (posições, imagens e textos). */
     function versionPreview(list) {
       var top = list.filter(function (c) { return !c.col && c.type !== 'arrow'; });
-      if (!top.length) return '<p class="muted">Quadro vazio nesta versão.</p>';
+      if (!top.length) return '<p class="muted">Topperboard vazio nesta versão.</p>';
       var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
       top.forEach(function (c) { var h = c.asset && c.asset.w && c.asset.h ? c.w * c.asset.h / c.asset.w : (c.h || 160); x1 = Math.min(x1, c.x); y1 = Math.min(y1, c.y); x2 = Math.max(x2, c.x + c.w); y2 = Math.max(y2, c.y + h); c.__h = h; });
       var W = Math.min(860, window.innerWidth - 80), s = Math.min(W / Math.max(1, x2 - x1), 520 / Math.max(1, y2 - y1), 1), H = Math.round((y2 - y1) * s);
@@ -2261,15 +2261,15 @@
       if (k === 'more') {
         var b = B.data.board, arch = b.status === 'archived';
         var m = modal('<h3>' + esc(b.title) + '</h3><div class="actions" style="flex-direction:column;align-items:stretch">'
-          + '<button type="button" class="btn ghost" data-m="arch">' + (arch ? 'Reabrir o quadro' : 'Arquivar o quadro') + '</button>'
-          + '<button type="button" class="btn danger" data-m="del">Apagar o quadro</button><button type="button" class="btn ghost" data-mdl-close>Fechar</button></div>', '');
+          + '<button type="button" class="btn ghost" data-m="arch">' + (arch ? 'Reabrir o Topperboard' : 'Arquivar o Topperboard') + '</button>'
+          + '<button type="button" class="btn danger" data-m="del">Apagar o Topperboard</button><button type="button" class="btn ghost" data-mdl-close>Fechar</button></div>', '');
         m.addEventListener('click', function (e) {
           var x = e.target.closest('[data-m]');
           if (!x) return;
           if (x.getAttribute('data-m') === 'arch') api('board_archive', { id: B.id, on: arch ? '' : 1 }).then(function (j) { toast(j.msg); location.reload(); }).catch(fail);
           else api('board_delete', { id: B.id }).then(function (j) {
             toast(j.msg, { undo: function () { api('board_delete', { id: B.id, restore: 1 }).then(function () { location.reload(); }).catch(fail); } });
-            setTimeout(function () { location.href = '/admin/criativo.php'; }, 8200);
+            setTimeout(function () { location.href = '/admin/toppernote.php'; }, 8200);
           }).catch(fail);
         });
       }
@@ -2303,7 +2303,7 @@
     function present() {
       var items = [];
       B.cards.forEach(function (c) { if (!c.col && c.type !== 'arrow' && c.type !== 'drawing') items.push(c); });
-      if (!items.length) { toast('O quadro está vazio.'); return; }
+      if (!items.length) { toast('O Topperboard está vazio.'); return; }
       items.sort(function (a, b) { return Math.round(a.y / 300) - Math.round(b.y / 300) || a.x - b.x; });
       var i = 0, bar = document.createElement('div');
       root.classList.add('present');
@@ -2419,7 +2419,7 @@
       if (waiting) kickWorker();
       vp.focus({ preventScroll: true });
     }).catch(function (e) {
-      root.innerHTML = '<div class="panel" style="margin:16px">' + esc(e.message) + ' <a href="/admin/criativo.php">Voltar ao Centro Criativo</a></div>';
+      root.innerHTML = '<div class="panel" style="margin:16px">' + esc(e.message) + ' <a href="/admin/toppernote.php">Voltar ao Toppernote</a></div>';
     });
   }
 

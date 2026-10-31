@@ -1,11 +1,11 @@
 <?php
 /**
- * topper. admin — guardar de fora para o Centro Criativo (§26.2–26.3). Respostas em JSON.
+ * topper. admin — guardar de fora para o Toppernote (§26.2–26.3). Respostas em JSON.
  *
  * Quem entra: a extensão «Guardar na topper.» e o Atalho do iOS com o token pessoal
  * (Authorization: Bearer tpk_… ou X-Topper-Token; Perfil › Ligações, revogável); a página
  * Partilhar do Android (PWA) com a sessão normal e o token CSRF. Nunca a palavra-passe.
- * Precisa da aba Centro Criativo com edição; os quadros respeitam o acesso ao negócio.
+ * Precisa da aba Toppernote com edição; os quadros respeitam o acesso ao negócio.
  *
  *   GET  a=me                 quem sou, os quadros recentes e o destino por defeito
  *   GET  a=boards  q          procurar um quadro
@@ -63,7 +63,7 @@ if ($capToken !== '') {
         if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) capout(400, ['ok' => false, 'error' => 'Pedido inválido. Recarregue a página e tente outra vez.']);
     }
 }
-if (!can('criativo', PERM_EDIT)) capout(403, ['ok' => false, 'error' => 'A sua conta não guarda no Centro Criativo (precisa de edição na aba Centro Criativo).']);
+if (!can('criativo', PERM_EDIT)) capout(403, ['ok' => false, 'error' => 'A sua conta não guarda no Toppernote (precisa de edição na aba Toppernote).']);
 
 $a = (string)($_REQUEST['a'] ?? '');
 try {
@@ -72,7 +72,7 @@ try {
         $def = cap_default_board($pdo, (int)$user['id']);
         capout(200, ['ok' => true, 'user' => ['name' => (string)$user['name']], 'boards' => cap_boards($pdo, '', 12),
                      'default' => $def ? ['id' => (int)$def['id'], 'title' => (string)$def['title']] : null,
-                     'inbox' => '/admin/criativo.php?t=entrada']);
+                     'inbox' => '/admin/toppernote.php?t=entrada']);
     }
     case 'boards':
         capout(200, ['ok' => true, 'boards' => cap_boards($pdo, mb_substr(trim((string)($_GET['q'] ?? '')), 0, 80), 20)]);
@@ -105,8 +105,8 @@ try {
         capout(200, ['ok' => true, 'new' => $r['new'],
                      'msg' => ($r['board'] ? 'Guardado em «' . $r['board']['title'] . '» e na Caixa de entrada.' : 'Guardado na Caixa de entrada.') . ' A IA analisa a seguir.',
                      'asset' => ['id' => (int)$x['id'], 'title' => (string)$x['title'], 'kind' => (string)$x['kind'], 'thumb' => $x['thumbs'] ? cc_file_url($x, 256) : ''],
-                     'board' => $r['board'] ? ['id' => (int)$r['board']['id'], 'title' => (string)$r['board']['title'], 'url' => '/admin/criativo.php?b=' . (int)$r['board']['id'] . ($r['card'] ? '&card=' . $r['card'] : '')] : null,
-                     'inbox' => '/admin/criativo.php?t=entrada']);
+                     'board' => $r['board'] ? ['id' => (int)$r['board']['id'], 'title' => (string)$r['board']['title'], 'url' => '/admin/toppernote.php?b=' . (int)$r['board']['id'] . ($r['card'] ? '&card=' . $r['card'] : '')] : null,
+                     'inbox' => '/admin/toppernote.php?t=entrada']);
     }
     }
     capout(400, ['ok' => false, 'error' => 'Pedido inválido.']);

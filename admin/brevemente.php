@@ -7,14 +7,14 @@ $user = require_login();
 // já existem no menu e nas permissões, mas ainda sem lógica.
 const SOON = [
     'orcamentacao' => ['Orçamentação', 'Criação e gestão de orçamentos, ligados a cada negócio pelo ID.'],
-    'criativo'     => ['Centro Criativo', 'Produção criativa: briefings, referências, versões, feedback e aprovações do cliente.'],
+    'criativo'     => ['Toppernote', 'Produção criativa: briefings, referências, versões, feedback e aprovações do cliente.'],
     'marketing'    => ['Marketing', 'Atração de leads e campanhas.'],
 ];
 
 $tab = (string)($_GET['t'] ?? '');
 if ($tab === 'relatorios') redirect('/admin/relatorios.php');   // já têm página própria
 if ($tab === 'conhecimento') redirect('/admin/conhecimento.php');
-if ($tab === 'criativo') redirect('/admin/criativo.php');
+if ($tab === 'criativo') redirect('/admin/toppernote.php');
 if (!isset(SOON[$tab])) redirect(home_url());
 require_page($tab);
 [$title, $what] = SOON[$tab];

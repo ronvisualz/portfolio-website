@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/budget_view.php';
-require_once __DIR__ . '/ui.php';   // wordmark_svg (o logótipo das folhas), também fora das páginas (cron, Centro Criativo)
+require_once __DIR__ . '/ui.php';   // wordmark_svg (o logótipo das folhas), também fora das páginas (cron, Toppernote)
 
 /** Larguras da Helvetica e da Helvetica-Bold (AFM, por 1000) para os caracteres 32–255 do Windows-1252. */
 const BUDGET_PDF_W = [

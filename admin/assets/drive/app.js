@@ -3301,7 +3301,7 @@
 
   // ── arranque ────────────────────────────────────────────
   const st0 = readUrl();
-  // ?f=<chave>: vem de «Mostrar no Drive» (fichas, Centro Criativo…): abre a pasta com o ficheiro selecionado
+  // ?f=<chave>: vem de «Mostrar no Drive» (fichas, Toppernote…): abre a pasta com o ficheiro selecionado
   const f0 = new URLSearchParams(location.search).get('f') || '';
   const hs = history.state;
   S.hist = hs && typeof hs.td === 'number' ? hs.td : 0;

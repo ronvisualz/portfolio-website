@@ -1,4 +1,4 @@
-/* topper. admin — Centro Criativo (§23). Usa os tokens de app.css (claro/escuro, degradês, sombras). */
+/* topper. admin — Toppernote (§23). Usa os tokens de app.css (claro/escuro, degradês, sombras). */
 
 .cc { --cc-grid: rgba(17,17,17,.13); --cc-board: #F3F2EE; --cc-sel: var(--blue); --cc-a: var(--sky); --cc-b: var(--hi); }
 :root[data-theme="dark"] .cc { --cc-grid: rgba(255,255,255,.09); --cc-board: #0F1012; --cc-sel: #81CFE3; }

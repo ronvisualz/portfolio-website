@@ -4,7 +4,7 @@
  *
  * A ficha não cria dados: cada cartão lê de outra aba pelo ID do negócio —
  * Contactos, Orçamentação, Financeiro (custos e contas), Tarefas, Drive e,
- * quando existir, Centro Criativo. «Ver detalhe» abre o painel lateral dessa
+ * quando existir, Toppernote. «Ver detalhe» abre o painel lateral dessa
  * aba já filtrado para o negócio (ui_api.php?a=panel&type=d…). O que é dinheiro
  * (valor, custos, margens, lucro) só chega a quem vê o Financeiro.
  *

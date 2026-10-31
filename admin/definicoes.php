@@ -377,7 +377,7 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
             if (!db_has_column($pdo, 'funnels', 'cc_pre_mode')) return '<span class="set-info">Disponível depois do passo 24 da base de dados.</span>';
             require_once __DIR__ . '/inc/cc.php';
             $modes = ['recommended' => 'Recomendado', 'required' => 'Obrigatório', 'off' => 'Desligado'];
-            $h = '<div class="tablewrap"><table class="set-t" data-table="funnels"><thead><tr><th>Funil</th><th>Pré-criativo</th><th>Sub-quadros do projeto (Kickoff)</th></tr></thead><tbody>';
+            $h = '<div class="tablewrap"><table class="set-t" data-table="funnels"><thead><tr><th>Funil</th><th>Pré-criativo</th><th>Sub-Topperboards do projeto (Kickoff)</th></tr></thead><tbody>';
             foreach (funnels_active($pdo) as $f) {
                 $o = '';
                 foreach ($modes as $k => $l) $o .= '<option value="' . $k . '"' . (($f['cc_pre_mode'] ?? 'recommended') === $k ? ' selected' : '') . '>' . $l . '</option>';
@@ -427,8 +427,8 @@ function set_special_html(PDO $pdo, string $key, array $d): string {
                . '<div class="rt-meter ' . $lvl . '" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' . min(100, $u['pct']) . '" aria-label="Uso do dia">'
                . '<i style="width:' . min(100, $u['pct']) . '%"></i></div>'
                . '<p class="small"><b>' . $u['pct'] . '%</b> do plano gratuito hoje <span class="muted">· ' . number_format($u['requests'], 0, ',', ' ') . ' de 100 000 pedidos · '
-               . number_format($u['gbs'], 0, ',', ' ') . ' de 13 000 GB-s · ' . $u['boards'] . ($u['boards'] === 1 ? ' quadro' : ' quadros') . ' · repõe às 00:00 UTC (estimativa contada pelos browsers)</span></p>'
-               . ($u['pct'] >= 80 ? '<p class="small"><b>' . ($u['pct'] >= 100 ? 'Limite atingido: o tempo real está em pausa até às 00:00 UTC; os quadros continuam e sincronizam depois.' : 'Acima de 80% do limite diário.') . '</b> <span class="muted">Passar ao plano pago (5 US$/mês) é uma decisão manual, na conta Cloudflare da topper.</span></p>' : '');
+               . number_format($u['gbs'], 0, ',', ' ') . ' de 13 000 GB-s · ' . $u['boards'] . ($u['boards'] === 1 ? ' Topperboard' : ' Topperboards') . ' · repõe às 00:00 UTC (estimativa contada pelos browsers)</span></p>'
+               . ($u['pct'] >= 80 ? '<p class="small"><b>' . ($u['pct'] >= 100 ? 'Limite atingido: o tempo real está em pausa até às 00:00 UTC; os Topperboards continuam e sincronizam depois.' : 'Acima de 80% do limite diário.') . '</b> <span class="muted">Passar ao plano pago (5 US$/mês) é uma decisão manual, na conta Cloudflare da topper.</span></p>' : '');
             if ($keys) {
                 $cmd = 'cd rt && npm ci && npx wrangler deploy';
                 $h .= '<details class="rt-deploy"><summary>Publicar ou atualizar o serviço</summary>'
@@ -519,7 +519,7 @@ render_flashes();
       $groups = [];
       foreach (settings_defs() as $k => $d) if ($d['tab'] === $tab) $groups[$d['group']][$k] = $d;
       $configure = ['pipeline' => '/admin/pipeline.php', 'leads' => '/admin/leads.php', 'contactos' => '/admin/contactos.php', 'orcamentacao' => '/admin/orcamentacao.php',
-                    'negocios' => '/admin/negocios.php', 'criativo' => '/admin/criativo.php', 'tarefas' => '/admin/calendar.php', 'marketing' => '/admin/marketing.php', 'financeiro' => '/admin/financeiro.php', 'drive' => '/admin/drive.php'][$tab] ?? '';
+                    'negocios' => '/admin/negocios.php', 'criativo' => '/admin/toppernote.php', 'tarefas' => '/admin/calendar.php', 'marketing' => '/admin/marketing.php', 'financeiro' => '/admin/financeiro.php', 'drive' => '/admin/drive.php'][$tab] ?? '';
       foreach ($groups as $g => $items): ?>
     <div class="set-blk">
       <h2 class="set-h"><?= e($g) ?></h2>

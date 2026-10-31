@@ -10,7 +10,7 @@
  *   Projetos/<ID>_<NOME>/                     negócios em curso e concluídos
  *     Propostas/ Faturação/ Criativo/ Marketing/ Produção/ Entregas/ Review/ Lead/
  *   Marketing/<AAAA-MM>/<peça>/               peças sem negócio
- *   Biblioteca criativa/<quadro>/             referências do Centro Criativo sem negócio
+ *   Biblioteca criativa/<quadro>/             referências do Toppernote sem negócio
  *   Empresa/Importações/<AAAA-MM>/            os ficheiros importados (CSV, ZIP…)
  *   Arquivo/Negócios/<ID>_<NOME>/             negócios perdidos (a pasta inteira)
  *   Arquivo/Leads/<NOME>_<AAAA-MM>/           leads arquivadas
@@ -20,7 +20,7 @@
  * passa logo para o destino (o que chega a seguir já vai para lá) e a cópia corre na fila
  * file_moves — um pouco no próprio pedido, o resto no cron. No fim, drive_store_moved()
  * (favoritos, recentes, partilhas, índice) chama files_moved(), que atualiza tudo o que
- * guarda caminhos: este registo, o Centro Criativo, a faturação, as peças e os negócios.
+ * guarda caminhos: este registo, o Toppernote, a faturação, as peças e os negócios.
  * O mesmo acontece quando alguém move uma pasta à mão no Drive.
  *
  * Um ficheiro que já não está onde o registo diz volta a encontrar-se (files_locate): pela
@@ -57,7 +57,7 @@ const FILES_ORIGINS = [
     'proposal'  => 'Proposta gerada',
     'invoice'   => 'Fatura emitida',
     'receipt'   => 'Comprovativo',
-    'cc'        => 'Centro Criativo',
+    'cc'        => 'Toppernote',
     'cc_page'   => 'Pré-criativo',
     'treatment' => 'Tratamento',
     'attach'    => 'Anexado',
@@ -270,7 +270,7 @@ function files_put(PDO $pdo, array $o, string $bytes): ?array {
 }
 
 /**
- * Passa um objeto que já está no armazenamento (um original do Centro Criativo em .topper/cc/,
+ * Passa um objeto que já está no armazenamento (um original do Toppernote em .topper/cc/,
  * uma importação) para o seu sítio no Drive e regista-o. Devolve a chave nova (ou a antiga,
  * se não houver destino).
  */
@@ -418,7 +418,7 @@ function files_moves_run(PDO $pdo, float $seconds = 20.0): int {
 
 /**
  * Uma chave (ou pasta inteira) mudou de $from para $to — pela fila ou à mão no Drive.
- * Atualiza tudo o que guarda caminhos: o registo, o Centro Criativo, a faturação, as peças,
+ * Atualiza tudo o que guarda caminhos: o registo, o Toppernote, a faturação, as peças,
  * as pastas dos negócios e as mudanças ainda na fila.
  */
 function files_moved(PDO $pdo, string $from, string $to): void {

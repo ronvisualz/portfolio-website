@@ -10,11 +10,11 @@
  *   faturas   as pastas antigas «Faturas/» de cada negócio → «Faturação/»
  *   piece     peças de marketing de um negócio: «Marketing/AAAA-MM/<peça>/» → pasta do negócio
  *   folder    negócios perdidos e leads arquivadas → «Arquivo/» (a pasta inteira)
- *   cc        originais do Centro Criativo guardados no sistema → o seu sítio no Drive
+ *   cc        originais do Toppernote guardados no sistema → o seu sítio no Drive
  *
  * Cada item escolhido é uma linha em file_jobs (um «run» por vez que se carrega em Reorganizar).
  * As pastas vão pela fila file_moves (a mesma da fase 1, com o gancho que atualiza os caminhos);
- * os originais do Centro Criativo copiam-se aqui, um a um, até ao fim do tempo de cada volta.
+ * os originais do Toppernote copiam-se aqui, um a um, até ao fim do tempo de cada volta.
  * Corre pela página (enquanto está aberta) e pelo cron de 5 em 5 minutos.
  */
 
@@ -28,7 +28,7 @@ const FILES_REORG_KINDS = [
     'faturas'  => [1, 'Pastas «Faturas» antigas → «Faturação»', 'Dentro da pasta de cada negócio. Os links das faturas na plataforma acompanham.'],
     'piece'    => [2, 'Peças de marketing para a pasta do negócio', 'Peças ligadas a um negócio que estavam em Marketing/AAAA-MM/.'],
     'folder'   => [3, 'Negócios perdidos e leads arquivadas → Arquivo', 'A pasta inteira, com tudo o que tem dentro. Se o registo for reaberto, volta.'],
-    'cc'       => [4, 'Originais do Centro Criativo', 'Estavam guardados no sistema (invisíveis no Drive). Passam para a pasta do negócio do quadro, ou para a Biblioteca criativa.'],
+    'cc'       => [4, 'Originais do Toppernote', 'Estavam guardados no sistema (invisíveis no Drive). Passam para a pasta do negócio do quadro, ou para a Biblioteca criativa.'],
 ];
 
 function files_reorg_ready(PDO $pdo): bool {
@@ -140,7 +140,7 @@ function files_reorg_plan(PDO $pdo): array {
                         'from' => (string)$p['drive_folder'], 'to' => $dest, 'files' => $n, 'size' => $b, 'note' => trim(($d['code'] ?? '') . ' · ' . ($d['name'] ?? ''), ' ·')];
         }
     }
-    // originais do Centro Criativo ainda no sistema, agrupados pelo destino
+    // originais do Toppernote ainda no sistema, agrupados pelo destino
     if (db_has_table($pdo, 'cc_assets')) {
         require_once __DIR__ . '/cc.php';
         $group = [];
@@ -203,7 +203,7 @@ function files_reorg_move(PDO $pdo, ?int $dealId, string $from, string $to): voi
         ->execute([$dealId ?: null, $from, $to, files_now()]);
 }
 
-/** Um item. Devolve [feito?, resultado]. Os originais do Centro Criativo podem ficar a meio (continuam na volta seguinte). */
+/** Um item. Devolve [feito?, resultado]. Os originais do Toppernote podem ficar a meio (continuam na volta seguinte). */
 function files_reorg_job(PDO $pdo, array $job, float $end): array {
     $it = json_decode((string)$job['payload'], true) ?: [];
     $by = $job['created_by'] ? (int)$job['created_by'] : null;

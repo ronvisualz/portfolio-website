@@ -14,7 +14,7 @@ require_page('negocios');
 
 // Ficha central do negócio (§15): um «cockpit» que lê, pelo ID, o que as outras
 // abas sabem dele — Contactos, Orçamentação, Financeiro, Tarefas, Drive e (quando
-// existir) Centro Criativo. A ficha não cria dados: «Ver detalhe» abre o painel
+// existir) Toppernote. A ficha não cria dados: «Ver detalhe» abre o painel
 // lateral da aba de origem já filtrado para este negócio; o que se regista por
 // negócio (contas e custos do Financeiro, pessoas ligadas, «Trazido por») fica nas
 // vistas «Contas e custos» e «Dados e contactos». O que é dinheiro pede o
@@ -520,7 +520,7 @@ if (!$drive) {
         ]), ['panel' => 'ddocs:' . $id, 'href' => $drive['folder'] ? drive_page($drive['folder']) : '/admin/drive.php', 'more' => 'Ver documentos']);
 }
 
-// ── Criativos (Centro Criativo, §23): o pré-criativo e o quadro do projeto deste negócio ──
+// ── Criativos (Toppernote, §23): o pré-criativo e o quadro do projeto deste negócio ──
 require_once __DIR__ . '/inc/cc_flow.php';
 if (cc_ready($pdo) && can('criativo')) {
     $ccPre = cc_deal_board($pdo, $id, 'precreative');
@@ -530,13 +530,13 @@ if (cc_ready($pdo) && can('criativo')) {
     $ccPages = $ccPre ? $pdo->query("SELECT lane, sent_at FROM cc_pages WHERE board_id = " . (int)$ccPre['id'] . " AND lane IN ('A','B')")->fetchAll() : [];
     $ccPageTxt = $ccPages ? implode(' · ', array_map(fn($p) => 'Opção ' . $p['lane'] . ($p['sent_at'] ? ' na proposta' : ' gerada'), $ccPages)) : '<span class="muted">—</span>';
     echo deal_card('creative', 'criativo', 'yel', 'Criativos', deal_kv([
-            ['Pré-criativo', $ccPre ? '<a href="/admin/criativo.php?b=' . (int)$ccPre['id'] . '">' . ($ccPre['status'] === 'archived' ? 'arquivado' : 'aberto') . '</a>' : '<span class="muted">' . (cc_pre_mode($pdo, $deal['funnel_id'] ? (int)$deal['funnel_id'] : null) === 'off' ? 'desligado neste funil' : 'nasce ao validar o X-Ray') . '</span>'],
+            ['Pré-criativo', $ccPre ? '<a href="/admin/toppernote.php?b=' . (int)$ccPre['id'] . '">' . ($ccPre['status'] === 'archived' ? 'arquivado' : 'aberto') . '</a>' : '<span class="muted">' . (cc_pre_mode($pdo, $deal['funnel_id'] ? (int)$deal['funnel_id'] : null) === 'off' ? 'desligado neste funil' : 'nasce ao validar o X-Ray') . '</span>'],
             ['Páginas', $ccPageTxt],
-            ['Quadro do projeto', $ccProj ? '<a href="/admin/criativo.php?b=' . (int)$ccProj['id'] . '">' . $ccCount . ' cartões</a>' : '<span class="muted">nasce no Kickoff</span>'],
-        ]), $ccMain ? ['href' => '/admin/criativo.php?b=' . (int)$ccMain['id'], 'more' => 'Abrir no Centro Criativo'] : ['empty' => true]);
+            ['Topperboard do projeto', $ccProj ? '<a href="/admin/toppernote.php?b=' . (int)$ccProj['id'] . '">' . $ccCount . ' cartões</a>' : '<span class="muted">nasce no Kickoff</span>'],
+        ]), $ccMain ? ['href' => '/admin/toppernote.php?b=' . (int)$ccMain['id'], 'more' => 'Abrir no Toppernote'] : ['empty' => true]);
 }
 
-// ── Review e Portal do cliente (Centro Criativo, fase 2) ──
+// ── Review e Portal do cliente (Toppernote, fase 2) ──
 require_once __DIR__ . '/inc/cc_review.php';
 if (cc_rv_ready($pdo) && can('criativo')) {
     $rvItems = cc_rv_items_for_deal($pdo, $id);
@@ -544,13 +544,13 @@ if (cc_rv_ready($pdo) && can('criativo')) {
     $rvList = '';
     foreach (array_slice($rvItems, 0, 5) as $i) {
         $st = CC_RV_STATUS[$i['status']] ?? CC_RV_STATUS['prep'];
-        $rvList .= '<li><a href="/admin/criativo.php?rv=' . (int)$i['id'] . '">' . e($i['title']) . '</a> <span class="rv-st c-' . e($st[2]) . '">' . e($st[0]) . '</span>'
+        $rvList .= '<li><a href="/admin/toppernote.php?rv=' . (int)$i['id'] . '">' . e($i['title']) . '</a> <span class="rv-st c-' . e($st[2]) . '">' . e($st[0]) . '</span>'
                  . ($i['cur_num'] ? ' <span class="mono small muted">' . e(cc_rv_vlabel((int)$i['cur_num'])) . '</span>' : '') . '</li>';
     }
     echo deal_card('review', 'video', 'sky', 'Review', $rvItems
         ? '<ul class="rv-mini">' . $rvList . '</ul>' . (count($rvItems) > 5 ? '<p class="dc-note">+ ' . (count($rvItems) - 5) . ' peças</p>' : '')
-        : '<p class="dc-empty">Ainda sem peças em review.</p>' . (can('criativo', PERM_EDIT) ? '<p class="dc-note"><a href="/admin/criativo.php?t=review&amp;deal=' . $id . '">Criar a primeira peça</a></p>' : ''),
-        ['count' => $rvItems ? ($rvOpen ? $rvOpen . ' por aprovar' : 'todas aprovadas') : '', 'href' => '/admin/criativo.php?t=review&deal=' . $id . '&f=all', 'more' => 'Abrir no Review', 'empty' => !$rvItems]);
+        : '<p class="dc-empty">Ainda sem peças em review.</p>' . (can('criativo', PERM_EDIT) ? '<p class="dc-note"><a href="/admin/toppernote.php?t=review&amp;deal=' . $id . '">Criar a primeira peça</a></p>' : ''),
+        ['count' => $rvItems ? ($rvOpen ? $rvOpen . ' por aprovar' : 'todas aprovadas') : '', 'href' => '/admin/toppernote.php?t=review&deal=' . $id . '&f=all', 'more' => 'Abrir no Review', 'empty' => !$rvItems]);
 }
 if (cc_rv_ready($pdo) && (can('criativo') || can('negocios'))) {
     echo deal_card('portal', 'link', 'sky', 'Portal do cliente', '<div class="rv-share" data-rv-share="' . $id . '"><p class="dc-empty"><span class="spin sm" aria-hidden="true"></span> A carregar…</p></div>', ['wide' => true]);

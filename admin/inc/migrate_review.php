@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — passo 27 da base de dados: Centro Criativo, fase 2 — Review e Portal do cliente (§24)
+ * topper. admin — passo 27 da base de dados: Toppernote, fase 2 — Review e Portal do cliente (§24)
  *
  *  · cc_rv_items: as peças de review de um negócio (e de uma frente, §22), cada uma numa etapa de
  *    aprovação (styleframes, animatic, offline, picture lock, finais, lote…), com o estado, as opções

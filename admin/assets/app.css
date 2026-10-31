@@ -2795,7 +2795,7 @@ div.xs-ind:empty { display: none; }
 .xs-oa form.inl, .xs-bl form.inl { margin-left: 0; }
 .xs-oa form.inl:last-child { margin-left: auto; }
 
-/* Definições › Centro Criativo: sub-quadros por funil */
+/* Definições › Toppernote: sub-quadros por funil */
 .set-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .set-checks .check { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
 

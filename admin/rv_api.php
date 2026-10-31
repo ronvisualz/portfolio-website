@@ -1,8 +1,8 @@
 <?php
 /**
- * topper. admin — pedidos do Review e do link do portal (Centro Criativo, fase 2). Respostas em JSON.
+ * topper. admin — pedidos do Review e do link do portal (Toppernote, fase 2). Respostas em JSON.
  *
- * Ler (aba Centro Criativo, ver):
+ * Ler (aba Toppernote, ver):
  *   a=items        deal, q, status, open — as peças (separador Review, cartão da ficha)
  *   a=room         item — a sala: peça, versões, comentários, rondas, histórico
  *   a=poll         item, rev — mudou entretanto?
@@ -11,7 +11,7 @@
  *   a=export       v, fmt (pdf|csv|edl|xml|avid), client — os comentários para a edição
  *   a=deals        q · a=lines deal — para criar uma peça
  *   a=share        deal — o link do portal e os acessos
- * Mudar (editar o Centro Criativo; o link do portal também com «editar» em Negócios), com o token CSRF:
+ * Mudar (editar o Toppernote; o link do portal também com «editar» em Negócios), com o token CSRF:
  *   item_new, item_save, upload_init, upload_done, version_retry, att_init
  *   comment_add, comment_resolve, comment_del, comment_restore, comment_vis
  *   send, changes, approve
@@ -37,7 +37,7 @@ $a = (string)($_REQUEST['a'] ?? '');
 $by = (int)$user['id'];
 $shareActs = ['share', 'share_create', 'share_save', 'share_revoke', 'share_link'];
 $canShare = can('criativo', PERM_EDIT) || can('negocios', PERM_EDIT);
-if (in_array($a, $shareActs, true) ? !(can('criativo') || can('negocios')) : !can('criativo')) rfail('A sua conta não tem acesso ao Centro Criativo.', 403);
+if (in_array($a, $shareActs, true) ? !(can('criativo') || can('negocios')) : !can('criativo')) rfail('A sua conta não tem acesso ao Toppernote.', 403);
 if (!cc_rv_ready($pdo)) rfail('O Review ainda não está pronto (a base de dados vai atualizar no próximo acesso).', 503);
 
 $reads = ['items', 'room', 'poll', 'media', 'att', 'export', 'deals', 'lines', 'share'];
@@ -218,7 +218,7 @@ case 'item_new': {
         if (!$st->fetchColumn()) $line = null;
     }
     $id = cc_rv_item_create($pdo, $d, (string)q('title'), (string)q('stage'), 'video', $line, $by);
-    rout(200, ['ok' => true, 'id' => $id, 'url' => '/admin/criativo.php?rv=' . $id]);
+    rout(200, ['ok' => true, 'id' => $id, 'url' => '/admin/toppernote.php?rv=' . $id]);
 }
 
 case 'item_save': {

@@ -1,6 +1,6 @@
 <?php
 /**
- * Centro Criativo — IA de qualidade máxima (serviço premium).
+ * Toppernote — IA de qualidade máxima (serviço premium).
  * Copie para cc_config.php NO SERVIDOR e preencha. cc_config.php não vai para o Git.
  * As chaves ficam só no servidor: nunca vão para o browser.
  *
@@ -13,7 +13,7 @@
  *                   etiquetas, facetas e paleta.
  * embed_model       o modelo de embeddings multimodais.
  * embed_usd_mtok    preço do modelo de embeddings (USD por milhão de tokens), para o gasto.
- * monthly_cap_eur   limite mensal da IA do Centro Criativo (conta à parte do assistente do Drive).
+ * monthly_cap_eur   limite mensal da IA do Toppernote (conta à parte do assistente do Drive).
  * auto_analyze      analisar sozinho cada referência nova (true) ou só quando se pede (false).
  * transcribe_*      transcrição com marcas de tempo (áudio e vídeo): o Claude não ouve áudio, por isso a
  *                   fala passa por um serviço de reconhecimento. Recomendado: OpenAI Whisper

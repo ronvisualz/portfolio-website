@@ -3,7 +3,7 @@
   "name": "Guardar na topper.",
   "short_name": "topper.",
   "version": "1.0.0",
-  "description": "Guarda imagens, vídeos, links, texto, áreas do ecrã e frames de vídeo no Centro Criativo da topper. (Caixa de entrada ou um quadro).",
+  "description": "Guarda imagens, vídeos, links, texto, áreas do ecrã e frames de vídeo no Toppernote da topper. (Caixa de entrada ou um Topperboard).",
   "icons": {
     "16": "icons/16.png",
     "32": "icons/32.png",

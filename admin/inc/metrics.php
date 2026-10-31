@@ -1155,7 +1155,7 @@ function mx_attention(PDO $pdo, bool $money, ?array $deals = null): array {
             if ($days <= $rvDays) continue;
             $out[] = ['key' => 'rv:' . $r['id'], 'kind' => 'review', 'sev' => 2, 'title' => 'Review à espera do cliente · ' . $r['title'],
                       'sub' => $r['code'] . ' · ' . $r['name'] . ' · enviada há ' . mx_age($days * 24), 'owner' => (int)($r['exec_owner_id'] ?: $r['owner_id']),
-                      'since' => strtotime($since), 'age' => mx_age($days * 24), 'url' => '/admin/criativo.php?rv=' . (int)$r['id'], 'deal' => (int)$r['deal_id']];
+                      'since' => strtotime($since), 'age' => mx_age($days * 24), 'url' => '/admin/toppernote.php?rv=' . (int)$r['id'], 'deal' => (int)$r['deal_id']];
         }
     }
     // 7. faturas em atraso e pedidas ao contabilista sem resposta (só Financeiro)

@@ -1,18 +1,18 @@
 <?php
 /**
- * topper. admin — pedidos do Centro Criativo (§23). Respostas em JSON.
+ * topper. admin — pedidos do Toppernote (§23). Respostas em JSON.
  *
- * Ler (aba Centro Criativo, ver):
- *   a=boards            q, show (active|archived) — os quadros (Projetos)
- *   a=board             id — o quadro: cartões, caminho, sub-quadros, páginas, pessoas
+ * Ler (aba Toppernote, ver):
+ *   a=boards            q, show (active|archived) — os Topperboards (Projetos)
+ *   a=board             id — o Topperboard: cartões, caminho, sub-Topperboards, páginas, pessoas
  *   a=poll              id, rev — mudou entretanto? (outros separadores abertos)
  *   a=library           q, color, style…, origin, kind, inbox, offset — a Biblioteca / Caixa de entrada
- *   a=asset             id — a referência, com frames, quadros onde está e análise
+ *   a=asset             id — a referência, com frames, Topperboards onde está e análise
  *   a=similar           id — «Mais como este»
  *   a=comments          board, card
  *   a=jobs              ids — estado da IA de várias referências
- *   a=deals             q — negócios para ligar um quadro
- * Mudar (editar; apagar quadros pede gerir). Todos pedem o token CSRF:
+ *   a=deals             q — negócios para ligar um Topperboard
+ * Mudar (editar; apagar Topperboards pede gerir). Todos pedem o token CSRF:
  *   board_new, board_save, board_archive, board_delete, project_create, pre_create
  *   card_add, cards_update, cards_delete, cards_restore, cards_dup, card_swap
  *   upload_init, upload_done, link_add, asset_save, asset_delete, asset_restore, inbox_done
@@ -22,7 +22,7 @@
  * Áudio (§27): audio_meta (forma de onda, medidas e espectrograma vindos do browser), drive_add (ficheiros arrastados da Drive)
  * Tempo real e histórico (§26):
  *   a=rt_token          board — um token novo para o serviço de tempo real (ler)
- *   a=versions          board — as versões do quadro (ler) · a=version_view  board, id — os cartões de uma versão (ler)
+ *   a=versions          board — as versões do Topperboard (ler) · a=version_view  board, id — os cartões de uma versão (ler)
  *   version_restore, version_mark (editar) · rt_usage (o que o browser enviou; só pede o token CSRF)
  */
 require_once __DIR__ . '/inc/bootstrap.php';
@@ -42,8 +42,8 @@ function cfail(string $msg, int $code = 400): void {
 
 if (current_user() === null) cout(401, ['ok' => false, 'error' => 'A sessão terminou. Entre outra vez.']);
 $user = require_login();
-if (!can('criativo')) cfail('A sua conta não tem acesso ao Centro Criativo.', 403);
-if (!cc_ready($pdo)) cfail('O Centro Criativo ainda não está pronto (a base de dados vai atualizar no próximo acesso).', 503);
+if (!can('criativo')) cfail('A sua conta não tem acesso ao Toppernote.', 403);
+if (!cc_ready($pdo)) cfail('O Toppernote ainda não está pronto (a base de dados vai atualizar no próximo acesso).', 503);
 
 $a = (string)($_REQUEST['a'] ?? '');
 $by = (int)$user['id'];
@@ -53,28 +53,28 @@ if (!in_array($a, $reads, true)) {
     if (!$post) cfail('Pedido inválido.', 405);
     $sent = $_POST['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
     if (!is_string($sent) || !hash_equals($_SESSION['csrf'] ?? '', $sent)) cfail('Pedido inválido. Recarregue a página e tente outra vez.');
-    if ($a !== 'rt_usage' && !can('criativo', PERM_EDIT)) cfail('A sua conta vê o Centro Criativo mas não o edita.', 403);
+    if ($a !== 'rt_usage' && !can('criativo', PERM_EDIT)) cfail('A sua conta vê o Toppernote mas não o edita.', 403);
 }
 
 function rq(string $k, $d = '') { return $_REQUEST[$k] ?? $d; }
 function rint(string $k): int { return (int)($_REQUEST[$k] ?? 0); }
 
-/** O quadro do pedido (e que não está apagado). */
+/** O Topperboard do pedido (e que não está apagado). */
 function board_req(PDO $pdo, string $k = 'board'): array {
     $b = cc_board_get($pdo, (int)($_REQUEST[$k] ?? $_REQUEST['id'] ?? 0));
-    if (!$b || $b['status'] === 'deleted') cfail('Quadro não encontrado.', 404);
-    if (!cc_board_access($pdo, $b)) cfail('Este quadro é de um negócio a que a sua conta não tem acesso.', 403);
+    if (!$b || $b['status'] === 'deleted') cfail('Topperboard não encontrado.', 404);
+    if (!cc_board_access($pdo, $b)) cfail('Este Topperboard é de um negócio a que a sua conta não tem acesso.', 403);
     return $b;
 }
 
-/** Pode mudar-se? Na primeira mudança de uma sessão de trabalho, o quadro fica guardado no histórico. */
+/** Pode mudar-se? Na primeira mudança de uma sessão de trabalho, o Topperboard fica guardado no histórico. */
 function board_editable(array $b): void {
     global $pdo, $by;
-    if ($b['status'] === 'archived') cfail('Este quadro está arquivado. Reabra-o para mudar.');
+    if ($b['status'] === 'archived') cfail('Este Topperboard está arquivado. Reabra-o para mudar.');
     cc_board_version_session($pdo, $b, $by);
 }
 
-/** Os cartões de um pedido em lote, só deste quadro. */
+/** Os cartões de um pedido em lote, só deste Topperboard. */
 function card_ids(PDO $pdo, int $boardId, $raw): array {
     $ids = array_values(array_unique(array_filter(array_map('intval', (array)$raw))));
     if (!$ids) return [];
@@ -136,7 +136,7 @@ case 'boards': {
     $covers = [];
     if ($rows) {
         $ids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
-        // capa: as primeiras 4 imagens do quadro (ou dos sub-quadros)
+        // capa: as primeiras 4 imagens do Topperboard (ou dos sub-Topperboards)
         $cs = $pdo->query("SELECT COALESCE(p.parent_id, p.id) AS root, a.id, a.sha1 FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id JOIN cc_boards p ON p.id = c.board_id
                             WHERE (p.id IN ($ids) OR p.parent_id IN ($ids)) AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL ORDER BY c.id LIMIT 2000");
         foreach ($cs->fetchAll() as $c) {
@@ -158,7 +158,7 @@ case 'boards': {
                   'ai' => (string)$r['ai_state'], 'why' => (string)$r['archived_why'],
                   'updated' => ago_days(substr((string)$r['updated_at'], 0, 10)), 'at' => (string)$r['updated_at']];
     }
-    // negócios em produção (ou com X-Ray validado) ainda sem quadro
+    // negócios em produção (ou com X-Ray validado) ainda sem Topperboard
     $missing = [];
     if ($show === 'active' && $q === '') {
         $mq = $pdo->query("SELECT d.id, d.code, d.name, d.phase, d.xray_validated_at FROM deals d
@@ -180,7 +180,7 @@ case 'board': {
         $kids[] = ['id' => (int)$c['id'], 'title' => (string)$c['title'], 'kind' => $c['kind'], 'stage' => (string)$c['stage_key'],
                    'n' => (int)$pdo->query('SELECT COUNT(*) FROM cc_cards WHERE deleted_at IS NULL AND board_id = ' . (int)$c['id'])->fetchColumn()];
     }
-    // as etapas do projeto (barra de cima): os sub-quadros de etapa do pai (ou deste, se for o projeto/frente)
+    // as etapas do projeto (barra de cima): os sub-Topperboards de etapa do pai (ou deste, se for o projeto/frente)
     $stageHost = in_array($b['kind'], ['project', 'front'], true) ? $b : ($b['parent_id'] ? cc_board_get($pdo, (int)$b['parent_id']) : null);
     $stages = [];
     if ($stageHost) {
@@ -321,21 +321,21 @@ case 'deals': {
     cout(200, ['ok' => true, 'deals' => array_map(fn($d) => ['id' => (int)$d['id'], 'label' => trim($d['code'] . ' · ' . $d['name'], ' ·'), 'phase' => $d['phase']], $st->fetchAll())]);
 }
 
-// ── quadros ─────────────────────────────────────────────────
+// ── Topperboards ─────────────────────────────────────────────────
 
 case 'board_new': {
     $title = mb_substr(trim((string)rq('title')), 0, 200);
-    if ($title === '') cfail('Dê um nome ao quadro.');
+    if ($title === '') cfail('Dê um nome ao Topperboard.');
     $parent = rint('parent') ? cc_board_get($pdo, rint('parent')) : null;
     $deal = rint('deal') ? (int)$pdo->query('SELECT id FROM deals WHERE id = ' . rint('deal'))->fetchColumn() : 0;
     $id = cc_board_create($pdo, ['title' => $title, 'kind' => $parent ? 'stage' : 'free', 'parent_id' => $parent ? (int)$parent['id'] : null,
                                  'deal_id' => $parent ? $parent['deal_id'] : ($deal ?: null), 'line_id' => $parent ? $parent['line_id'] : null], $by);
-    if ($parent) {   // o sub-quadro aparece como cartão no quadro de cima
+    if ($parent) {   // o sub-Topperboard aparece como cartão no Topperboard de cima
         [$x, $y] = cc_board_free_spot($pdo, (int)$parent['id']);
         cc_card_add($pdo, (int)$parent['id'], ['type' => 'board', 'ref_board_id' => $id, 'x' => (float)rq('x', $x), 'y' => (float)rq('y', $y), 'w' => 240, 'content' => ['title' => $title]], $by);
         cc_board_touch($pdo, (int)$parent['id']);
     }
-    cout(200, ['ok' => true, 'id' => $id, 'msg' => 'Quadro criado.']);
+    cout(200, ['ok' => true, 'id' => $id, 'msg' => 'Topperboard criado.']);
 }
 
 case 'board_save': {
@@ -359,17 +359,17 @@ case 'board_archive': {
     $on = rq('on') === '1';
     $pdo->prepare('UPDATE cc_boards SET status = ?, archived_why = ?, updated_at = ? WHERE id = ?')
         ->execute([$on ? 'archived' : 'active', $on ? 'manual' : '', cc_now(), (int)$b['id']]);
-    cout(200, ['ok' => true, 'msg' => $on ? 'Quadro arquivado.' : 'Quadro reaberto.']);
+    cout(200, ['ok' => true, 'msg' => $on ? 'Topperboard arquivado.' : 'Topperboard reaberto.']);
 }
 
 case 'board_delete': {
-    if (!can('criativo', PERM_MANAGE)) cfail('Só quem gere o Centro Criativo apaga quadros.', 403);
+    if (!can('criativo', PERM_MANAGE)) cfail('Só quem gere o Toppernote apaga Topperboards.', 403);
     $b = board_req($pdo, 'id');
     $restore = rq('restore') === '1';
     $pdo->prepare('UPDATE cc_boards SET status = ?, updated_at = ? WHERE id = ?')->execute([$restore ? 'active' : 'deleted', cc_now(), (int)$b['id']]);
     $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($restore ? 'NULL' : '?') . " WHERE ref_board_id = ? AND type = 'board'")
         ->execute($restore ? [(int)$b['id']] : [cc_now(), (int)$b['id']]);
-    cout(200, ['ok' => true, 'msg' => $restore ? 'Quadro reposto.' : 'Quadro apagado.']);
+    cout(200, ['ok' => true, 'msg' => $restore ? 'Topperboard reposto.' : 'Topperboard apagado.']);
 }
 
 case 'project_create': {
@@ -379,11 +379,11 @@ case 'project_create': {
     if (rq('kind') === 'precreative') {
         if (empty($deal['xray_validated_at'])) cfail('O pré-criativo nasce com o X-Ray validado.');
         $id = cc_on_xray_validated($pdo, $deal, $by);
-        if (!$id) cfail('O pré-criativo está desligado no funil deste negócio (Definições › Centro Criativo).');
+        if (!$id) cfail('O pré-criativo está desligado no funil deste negócio (Definições › Toppernote).');
     } else {
         $id = cc_on_kickoff($pdo, $deal, $by);
     }
-    cout(200, ['ok' => true, 'id' => $id, 'msg' => 'Quadro criado.']);
+    cout(200, ['ok' => true, 'id' => $id, 'msg' => 'Topperboard criado.']);
 }
 
 // ── cartões ─────────────────────────────────────────────────
@@ -403,8 +403,8 @@ case 'card_add': {
     }
     if (rint('column')) $d['column_id'] = card_ids($pdo, (int)$b['id'], [rint('column')])[0] ?? null;
     if ($type === 'board') {
-        // um sub-quadro novo, debaixo deste
-        $title = mb_substr(trim((string)($d['content']['title'] ?? '')), 0, 200) ?: 'Sub-quadro';
+        // um sub-Topperboard novo, debaixo deste
+        $title = mb_substr(trim((string)($d['content']['title'] ?? '')), 0, 200) ?: 'Sub-Topperboard';
         $d['ref_board_id'] = cc_board_create($pdo, ['title' => $title, 'kind' => 'stage', 'parent_id' => (int)$b['id'], 'deal_id' => $b['deal_id'], 'line_id' => $b['line_id']], $by);
     }
     $id = cc_card_add($pdo, (int)$b['id'], $d, $by);
@@ -443,7 +443,7 @@ case 'cards_update': {
         $set['updated_at'] = $now;
         $sql = implode(', ', array_map(fn($k) => $k . ' = ?', array_keys($set)));
         $pdo->prepare("UPDATE cc_cards SET $sql WHERE id = ?")->execute([...array_values($set), $id]);
-        // o título de um sub-quadro segue o do cartão
+        // o título de um sub-Topperboard segue o do cartão
         if (($types[$id] ?? '') === 'board' && isset($it['content']['title'])) {
             $ref = (int)$pdo->query('SELECT ref_board_id FROM cc_cards WHERE id = ' . $id)->fetchColumn();
             $t = mb_substr(trim((string)$it['content']['title']), 0, 200);
@@ -496,7 +496,7 @@ case 'cards_dup': {
     cout(200, ['ok' => true, 'cards' => $new, 'rev' => cc_board_touch($pdo, (int)$b['id'])]);
 }
 
-case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida, que ainda não esteja no quadro
+case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida, que ainda não esteja no Topperboard
     require_once __DIR__ . '/inc/cc_ai.php';
     $b = board_req($pdo);
     board_editable($b);
@@ -573,7 +573,7 @@ case 'upload_done': {
         $o['feats'] = audio_feats_in((string)rq('feats'));
     }
     [$x, $new] = cc_asset_create($pdo, $bytes, $o);
-    // o original vai para o Drive: a pasta do negócio do quadro, ou a Biblioteca criativa
+    // o original vai para o Drive: a pasta do negócio do Topperboard, ou a Biblioteca criativa
     if ($new) $x = cc_place_original($pdo, $x, $b, (bool)$o['inbox'], $by);
     // frames-chave de um vídeo (extraídos no browser por deteção de corte)
     if ($new && $x['kind'] === 'video' && !empty($_FILES['frames']['tmp_name']) && is_array($_FILES['frames']['tmp_name'])) {
@@ -634,7 +634,7 @@ case 'audio_meta': {   // um áudio já guardado (antigo, ou vindo da Drive): o 
     cout(200, ['ok' => true, 'asset' => cc_asset_public(cc_asset_get($pdo, (int)$x['id']))]);
 }
 
-case 'drive_add': {   // ficheiros arrastados da Drive para o quadro (o original fica onde está; o tipo mantém-se)
+case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o original fica onde está; o tipo mantém-se)
     if (!can('drive')) cfail('A sua conta não vê o Drive.', 403);
     $b = board_req($pdo);
     board_editable($b);
@@ -661,7 +661,7 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o quadro (o original
         $i++;
     }
     $rev = $cards ? cc_board_touch($pdo, (int)$b['id']) : (int)$b['rev'];
-    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'msg' => count($cards) . (count($cards) === 1 ? ' ficheiro da Drive no quadro.' : ' ficheiros da Drive no quadro.') . ($skipped ? ' ' . $skipped . ' sem acesso ou já não existem.' : '')]);
+    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'msg' => count($cards) . (count($cards) === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.') . ($skipped ? ' ' . $skipped . ' sem acesso ou já não existem.' : '')]);
 }
 
 case 'link_add': {
@@ -688,7 +688,7 @@ case 'asset_save': {
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
     $in = [];
     foreach (['title', 'caption', 'why', 'composition', 'color', 'movement', 'tags', 'origin', 'acat', 'au_mood', 'au_genre', 'au_use', 'au_instruments', 'au_bpm', 'au_energy', ...array_keys(CC_VOCAB)] as $k) if (isset($_POST[$k])) $in[$k] = (string)$_POST[$k];
-    foreach (array_keys(CC_VOCAB) as $k) if (isset($in[$k]) && $in[$k] !== '' && !in_array($in[$k], cc_vocab($pdo, $k), true)) cfail('«' . $in[$k] . '» não está no vocabulário (Definições › Centro Criativo).');
+    foreach (array_keys(CC_VOCAB) as $k) if (isset($in[$k]) && $in[$k] !== '' && !in_array($in[$k], cc_vocab($pdo, $k), true)) cfail('«' . $in[$k] . '» não está no vocabulário (Definições › Toppernote).');
     cc_asset_edit($pdo, $x, $in, $by);
     cout(200, ['ok' => true, 'asset' => cc_asset_public(cc_asset_get($pdo, (int)$x['id']), true), 'msg' => 'Guardado.']);
 }
@@ -699,9 +699,9 @@ case 'asset_restore': {
     if (!$x) cfail('Referência não encontrada.', 404);
     $del = $a === 'asset_delete';
     $pdo->prepare('UPDATE cc_assets SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE id = ?')->execute($del ? [cc_now(), (int)$x['id']] : [(int)$x['id']]);
-    // os quadros onde estava atualizam-se (o cartão deixa de aparecer; repor volta a mostrá-lo)
+    // os Topperboards onde estava atualizam-se (o cartão deixa de aparecer; repor volta a mostrá-lo)
     foreach ($pdo->query('SELECT DISTINCT board_id FROM cc_cards WHERE asset_id = ' . (int)$x['id'])->fetchAll(PDO::FETCH_COLUMN) as $bid) cc_board_touch($pdo, (int)$bid);
-    cout(200, ['ok' => true, 'msg' => $del ? 'Referência apagada da biblioteca e dos quadros.' : 'Referência reposta.']);
+    cout(200, ['ok' => true, 'msg' => $del ? 'Referência apagada da biblioteca e dos Topperboards.' : 'Referência reposta.']);
 }
 
 case 'inbox_done': {
@@ -722,7 +722,7 @@ case 'inbox_done': {
         }
         cc_board_touch($pdo, (int)$b['id']);
     }
-    cout(200, ['ok' => true, 'msg' => $b ? ($n === 1 ? '1 referência no quadro «' . $b['title'] . '».' : $n . ' referências no quadro «' . $b['title'] . '».') : 'Arrumado na biblioteca.']);
+    cout(200, ['ok' => true, 'msg' => $b ? ($n === 1 ? '1 referência no Topperboard «' . $b['title'] . '».' : $n . ' referências no Topperboard «' . $b['title'] . '».') : 'Arrumado na biblioteca.']);
 }
 
 // ── IA ──────────────────────────────────────────────────────
@@ -731,7 +731,7 @@ case 'analyze': {
     require_once __DIR__ . '/inc/cc_stt.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
-    if (!cc_ai_config()) cfail('A IA do Centro Criativo ainda não está ligada (Definições › Integrações).');
+    if (!cc_ai_config()) cfail('A IA do Toppernote ainda não está ligada (Definições › Integrações).');
     // áudio e vídeo sem transcrição: primeiro a fala (se o serviço estiver ligado), depois a análise
     if (cc_ai_queue_asset($pdo, $x, $by, true) === '') {
         $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued', ai_error = '' WHERE id = ?")->execute([(int)$x['id']]);
@@ -742,8 +742,8 @@ case 'analyze': {
 
 case 'analyze_all': {
     require_once __DIR__ . '/inc/cc_ai.php';
-    if (!can('criativo', PERM_MANAGE)) cfail('Só quem gere o Centro Criativo.', 403);
-    if (!cc_ai_config()) cfail('A IA do Centro Criativo ainda não está ligada (Definições › Integrações).');
+    if (!can('criativo', PERM_MANAGE)) cfail('Só quem gere o Toppernote.', 403);
+    if (!cc_ai_config()) cfail('A IA do Toppernote ainda não está ligada (Definições › Integrações).');
     $ids = $pdo->query("SELECT id FROM cc_assets WHERE deleted_at IS NULL AND (thumbs IS NOT NULL OR kind = 'audio') AND ai_status IN ('', 'error', 'off') LIMIT 500")->fetchAll(PDO::FETCH_COLUMN);
     foreach ($ids as $id) {
         $pdo->prepare("UPDATE cc_assets SET ai_status = 'queued' WHERE id = ?")->execute([(int)$id]);
@@ -772,28 +772,28 @@ case 'ai': {
         case 'refs':
             $have = array_map('intval', $pdo->query('SELECT asset_id FROM cc_cards WHERE board_id = ' . (int)$b['id'] . ' AND deleted_at IS NULL AND asset_id IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN));
             $text = trim((string)rq('text')) ?: cc_brief_text($pdo, $b);
-            if ($text === '') cfail('Escreva primeiro o brief do quadro.');
+            if ($text === '') cfail('Escreva primeiro o brief do Topperboard.');
             $rows = cc_refs_for_text($pdo, $text, 18, $have);
             cout(200, ['ok' => true, 'items' => array_map(fn($r) => cc_asset_public($r), $rows), 'by' => cc_embed_config() ? 'vetores' : 'texto']);
         case 'tidy':
-            cc_board_version_save($pdo, $b, 'before', 'Antes de «Arrumar o quadro»', $by);
+            cc_board_version_save($pdo, $b, 'before', 'Antes de «Arrumar o Topperboard»', $by);
             $n = cc_ai_tidy($pdo, $b, $by);
             cout(200, ['ok' => true, 'msg' => $n . ' cartões arrumados em colunas.']);
         case 'treatment':
             $doc = cc_ai_treatment($pdo, $b);
-            cout(200, ['ok' => true, 'doc' => $doc, 'url' => '/admin/criativo.php?print=treatment&b=' . (int)$b['id']]);
+            cout(200, ['ok' => true, 'doc' => $doc, 'url' => '/admin/toppernote.php?print=treatment&b=' . (int)$b['id']]);
         case 'shots':
             $shots = cc_ai_shotlist($pdo, $b);
-            // a lista fica no quadro como cartão de lista
+            // a lista fica no Topperboard como cartão de lista
             [$x, $y] = cc_board_free_spot($pdo, (int)$b['id']);
             $items = array_map(fn($s, $i) => ['t' => ($i + 1) . '. ' . trim((string)$s['title']) . ' — ' . trim((string)$s['description']) . ' · ' . trim((string)$s['camera']) . ' · ' . rtrim(rtrim(number_format((float)$s['seconds'], 1, ',', ''), '0'), ',') . ' s', 'd' => false], $shots, array_keys($shots));
             $cid = cc_card_add($pdo, (int)$b['id'], ['type' => 'list', 'x' => $x, 'y' => $y, 'w' => 420, 'content' => ['title' => 'Lista de planos', 'items' => $items]], $by);
             cc_board_touch($pdo, (int)$b['id']);
             cout(200, ['ok' => true, 'shots' => $shots, 'card' => cc_card_public(cc_card_get($pdo, $cid))]);
         case 'shots_tasks':
-            // «→ tarefas»: uma tarefa por plano, no negócio do quadro, para o responsável de execução
+            // «→ tarefas»: uma tarefa por plano, no negócio do Topperboard, para o responsável de execução
             require_once __DIR__ . '/inc/cc_flow.php';
-            if (!$b['deal_id'] || !($deal = deal_get($pdo, (int)$b['deal_id']))) cfail('Este quadro não está ligado a um negócio.');
+            if (!$b['deal_id'] || !($deal = deal_get($pdo, (int)$b['deal_id']))) cfail('Este Topperboard não está ligado a um negócio.');
             if (!can('tarefas', PERM_EDIT)) cfail('A sua conta não cria tarefas.', 403);
             $c = cc_card_get($pdo, rint('card'));
             if (!$c || (int)$c['board_id'] !== (int)$b['id'] || $c['type'] !== 'list') cfail('Escolha a lista de planos.');
@@ -801,11 +801,11 @@ case 'ai': {
             $n = 0;
             foreach (cc_card_content('list', $c['content'])['items'] as $it) {
                 if (trim($it['t']) === '') continue;
-                cc_task_create($pdo, $deal, 'Plano ' . mb_strimwidth($it['t'], 0, 120, '…'), $it['t'] . "\n\nDo quadro «" . $b['title'] . '»: /admin/criativo.php?b=' . (int)$b['id'],
+                cc_task_create($pdo, $deal, 'Plano ' . mb_strimwidth($it['t'], 0, 120, '…'), $it['t'] . "\n\nDo Topperboard «" . $b['title'] . '»: /admin/toppernote.php?b=' . (int)$b['id'],
                                $b['exec_owner_id'] ? (int)$b['exec_owner_id'] : $exec, today_lisbon(), $by);
                 $n++;
             }
-            if ($n) deal_log($pdo, (int)$deal['id'], 'auto', ['note' => $n . ' tarefas criadas da lista de planos (Centro Criativo)']);
+            if ($n) deal_log($pdo, (int)$deal['id'], 'auto', ['note' => $n . ' tarefas criadas da lista de planos (Toppernote)']);
             cout(200, ['ok' => true, 'msg' => $n === 1 ? '1 tarefa criada.' : $n . ' tarefas criadas no negócio.']);
     }
     cfail('Ação desconhecida.');

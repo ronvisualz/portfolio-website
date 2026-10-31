@@ -1,18 +1,18 @@
-/* topper. admin — Centro Criativo: tempo real dos quadros (§26)
+/* topper. admin — Toppernote: tempo real dos Topperboards (§26)
  *
- * O quadro continua a gravar cada alteração na base de dados (cc_api). Esta camada leva-as aos
- * outros logo (Yjs, num Durable Object da Cloudflare por quadro) e mostra quem está no quadro:
+ * O Topperboard continua a gravar cada alteração na base de dados (cc_api). Esta camada leva-as aos
+ * outros logo (Yjs, num Durable Object da Cloudflare por Topperboard) e mostra quem está no Topperboard:
  * avatares, cursores com nome e cor, seleções, «está a escrever…», seguir uma pessoa.
  *
- * Documento Yjs do quadro:
+ * Documento Yjs do Topperboard:
  *   cards: Map<id, Map{x,y,w,h,col,ord,lane,c(JSON do conteúdo),del,pub(JSON do cartão novo),t,by}>
- *          só os cartões mexidos desde que o quadro abriu em tempo real; t = hora (do servidor) da mudança
+ *          só os cartões mexidos desde que o Topperboard abriu em tempo real; t = hora (do servidor) da mudança
  *   meta:  Map{reload: {n, by}} — «recarreguem da base» (depois de ações feitas no servidor)
  * Ao entrar, o que é mais recente ganha: a base (updated_at do cartão) ou o documento (t).
  *
  * Sem ligação: as alterações ficam numa fila (localStorage) e gravam-se ao voltar; o documento
  * Yjs junta-se sozinho quando a ligação volta. Se o limite diário do plano gratuito for atingido,
- * o quadro funciona como antes (grava e atualiza a cada 8 s) e o tempo real volta às 00:00 UTC.
+ * o Topperboard funciona como antes (grava e atualiza a cada 8 s) e o tempo real volta às 00:00 UTC.
  *
  * Usado pelo cc.js: window.ccRealtime(ganchos) devolve o objeto RT (ou um que não faz nada).
  */
@@ -74,7 +74,7 @@
       if (state === 'on') t = n ? 'Ligado · a gravar ' + n + (n === 1 ? ' alteração' : ' alterações') : 'Ligado · tudo sincronizado';
       else if (state === 'connecting') t = 'A ligar…';
       else if (state === 'offline') t = 'Sem ligação' + (n ? ' · ' + n + (n === 1 ? ' alteração guardada' : ' alterações guardadas') : '') + ' · sincroniza ao voltar';
-      else if (state === 'paused') t = 'Tempo real em pausa (limite do dia) · o quadro continua e sincroniza';
+      else if (state === 'paused') t = 'Tempo real em pausa (limite do dia) · o Topperboard continua e sincroniza';
       else { cls = n ? 'offline' : 'off'; t = n ? n + (n === 1 ? ' alteração por gravar' : ' alterações por gravar') : ''; }
       chip.className = 'rt-st ' + cls;
       chip.hidden = !t;
@@ -292,7 +292,7 @@
       try { m = JSON.parse(msg); } catch (e) { return; }
       if (!m || m.k !== 'cmt' || m.by === me.id) return;
       h.onComments(m.card || 0);
-      if ((m.ment || []).indexOf(me.id) >= 0) h.toast((m.name || 'Alguém') + ' mencionou-o num comentário deste quadro.', { action: { label: 'Ver', fn: function () { h.openComments(m.card || 0); } } });
+      if ((m.ment || []).indexOf(me.id) >= 0) h.toast((m.name || 'Alguém') + ' mencionou-o num comentário deste Topperboard.', { action: { label: 'Ver', fn: function () { h.openComments(m.card || 0); } } });
     });
 
     // ── presença ──
@@ -405,7 +405,7 @@
       var vp = h.vp();
       if (vp) vp.classList.remove('following');
       renderPeople();
-      if (gone) h.toast('A pessoa que seguia saiu do quadro.');
+      if (gone) h.toast('A pessoa que seguia saiu do Topperboard.');
       else if (s && s.u) h.toast('Deixou de seguir ' + s.u.first + '.');
     }
     RT.userMoved = function () { if (following) unfollow(); };

@@ -1,10 +1,10 @@
 <?php
 /**
- * topper. admin — passo 29 da base de dados: Centro Criativo — áudio (§27)
+ * topper. admin — passo 29 da base de dados: Toppernote — áudio (§27)
  *
  *  · cc_assets.audio_cat: a categoria de um áudio (musica, voz, sfx, ambiente, outro), sugerida pela IA e editável.
  *  · cc_assets.peaks e cc_rv_versions.peaks: a forma de onda (picos calculados no browser, guardados para não recalcular).
- *  · Os áudios que entraram como «Ficheiro» (o Centro Criativo ainda não conhecia áudio) passam a «Áudio»,
+ *  · Os áudios que entraram como «Ficheiro» (o Toppernote ainda não conhecia áudio) passam a «Áudio»,
  *    e os cartões deles também. Só uma vez: os novos já entram como áudio.
  *
  * Idempotente: corre de novo sem duplicar.

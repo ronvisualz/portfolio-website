@@ -1,4 +1,4 @@
-/* topper. — Review (Centro Criativo, fase 2): a sala de uma peça, para a equipa e para o portal do cliente.
+/* topper. — Review (Toppernote, fase 2): a sala de uma peça, para a equipa e para o portal do cliente.
  *
  * Leitor ao frame (← → um frame, Shift ±1 s, J/K/L, I/O intervalo e repetir, timecode SMPTE com drop
  * frame), tira de miniaturas com os marcadores dos comentários, desenho vetorial por cima do frame
@@ -1050,7 +1050,7 @@
     function approveTeam() {
       var v = V(), tasks = S.data.tasks || [];
       modal('<h3>Aprovar ' + esc(v.label) + '</h3><p class="muted">A peça fica <b>Aprovada</b>' + (tasks.length ? ', fica feita a tarefa <b>' + tasks.map(esc).join('</b>, <b>') + '</b> no Pipeline' : '') + ' e a versão entra na Biblioteca como referência da casa.</p>'
-        + (tasks.length ? '' : '<p class="muted small">Não há uma tarefa de aprovação aberta para esta etapa (o mapa está em Definições › Centro Criativo).</p>')
+        + (tasks.length ? '' : '<p class="muted small">Não há uma tarefa de aprovação aberta para esta etapa (o mapa está em Definições › Toppernote).</p>')
         + '<div class="actions"><button class="btn" type="submit">' + ico('check') + ' Aprovar</button><button class="btn ghost" type="button" data-x>Cancelar</button></div>', function () {
         return cfg.call('approve', { item: S.data.item.id }).then(function (j) { toast(j.msg); return load(true); });
       });

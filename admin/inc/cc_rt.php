@@ -1,15 +1,15 @@
 <?php
 /**
- * topper. admin — Centro Criativo, fase 3: tempo real e captura (§26)
+ * topper. admin — Toppernote, fase 3: tempo real e captura (§26)
  *
- * Tempo real: os quadros sincronizam por Yjs num Durable Object da Cloudflare (PartyServer,
+ * Tempo real: os Topperboards sincronizam por Yjs num Durable Object da Cloudflare (PartyServer,
  * rt/ no repositório). O PHP decide quem entra: emite um token curto (10 min) assinado com
  * ECDSA P-256 (ES256, pelo OpenSSL do PHP) — a chave privada fica no servidor (settings), a pública vai para o Worker
- * (RT_PUBLIC_KEY, não é segredo). Só recebe token quem tem acesso ao negócio do quadro.
+ * (RT_PUBLIC_KEY, não é segredo). Só recebe token quem tem acesso ao negócio do Topperboard.
  * A base de dados continua a ser o registo dos cartões: cada pessoa grava o que muda (cc_api)
  * e o tempo real leva as mudanças aos outros logo (< 200 ms).
  *
- * Histórico: versões automáticas do quadro (uma por sessão de trabalho, e antes das ações
+ * Histórico: versões automáticas do Topperboard (uma por sessão de trabalho, e antes das ações
  * grandes) com «Ver» e «Restaurar».
  *
  * Uso: o plano gratuito da Cloudflare dá 100 000 pedidos e 13 000 GB-s por dia. Os browsers
@@ -26,7 +26,7 @@ require_once __DIR__ . '/leads.php';   // lisbon_fmt
 const CC_RT_DAY_REQUESTS = 100000;   // pedidos por dia (20 mensagens WebSocket contam 1)
 const CC_RT_DAY_GBS = 13000;         // GB-s de Durable Objects por dia
 const CC_RT_DO_GB = 0.128;           // memória de um Durable Object (128 MB)
-const CC_RT_TOKEN_TTL = 600;         // o token do quadro vale 10 min (o browser pede outro ao religar)
+const CC_RT_TOKEN_TTL = 600;         // o token do Topperboard vale 10 min (o browser pede outro ao religar)
 const CC_REACTIONS = ['👍', '❤️', '🔥', '✅', '👀', '😂'];
 
 function cc_rt_ready(PDO $pdo): bool {
@@ -103,7 +103,7 @@ function cc_rt_der2raw(string $der): ?string {
     return $out;
 }
 
-/** O token curto de um quadro: «<conteúdo>.<assinatura>» (base64url). */
+/** O token curto de um Topperboard: «<conteúdo>.<assinatura>» (base64url). */
 function cc_rt_token(PDO $pdo, int $boardId, int $userId, string $role): ?string {
     $k = cc_rt_keys($pdo);
     if (!$k) return null;
@@ -112,7 +112,7 @@ function cc_rt_token(PDO $pdo, int $boardId, int $userId, string $role): ?string
     return $payload . '.' . cc_rt_b64u($raw);
 }
 
-/** O negócio de um quadro (o do próprio, ou o do quadro de topo). */
+/** O negócio de um Topperboard (o do próprio, ou o do Topperboard de topo). */
 function cc_board_deal_id(PDO $pdo, array $b): ?int {
     if ($b['deal_id']) return (int)$b['deal_id'];
     $root = cc_board_path($pdo, $b)[0] ?? $b;
@@ -120,9 +120,9 @@ function cc_board_deal_id(PDO $pdo, array $b): ?int {
 }
 
 /**
- * Pode esta pessoa entrar no quadro? Precisa da aba Centro Criativo; num quadro de um negócio,
+ * Pode esta pessoa entrar no Topperboard? Precisa da aba Toppernote; num Topperboard de um negócio,
  * também acesso ao negócio (§9.3): dentro do seu âmbito em Negócios, ou responsável de execução
- * (do negócio ou de uma frente), ou com tarefas no negócio, ou quem criou o quadro.
+ * (do negócio ou de uma frente), ou com tarefas no negócio, ou quem criou o Topperboard.
  */
 function cc_board_access(PDO $pdo, array $b, ?array $user = null): bool {
     $user ??= current_user();
@@ -146,7 +146,7 @@ function cc_board_access(PDO $pdo, array $b, ?array $user = null): bool {
     return false;
 }
 
-/** O que o browser precisa para ligar ao quadro (ou null, se o tempo real não está ligado). */
+/** O que o browser precisa para ligar ao Topperboard (ou null, se o tempo real não está ligado). */
 function cc_rt_connect_info(PDO $pdo, array $b, array $user, bool $edit): ?array {
     $url = cc_rt_url($pdo);
     if ($url === '' || !cc_rt_ready($pdo) || setting($pdo, 'rt_enabled', '1') === '0') return null;
@@ -157,7 +157,7 @@ function cc_rt_connect_info(PDO $pdo, array $b, array $user, bool $edit): ?array
             'ttl' => CC_RT_TOKEN_TTL, 'me' => cc_rt_me($pdo, $user), 'pct' => $pct, 'paused' => $pct >= 100];
 }
 
-/** Quem sou no quadro: nome, iniciais e a cor da aba Equipa. */
+/** Quem sou no Topperboard: nome, iniciais e a cor da aba Equipa. */
 function cc_rt_me(PDO $pdo, array $user): array {
     $st = $pdo->prepare('SELECT name, color FROM users WHERE id = ?');
     $st->execute([(int)$user['id']]);
@@ -186,7 +186,7 @@ function cc_rt_usage_add(PDO $pdo, int $boardId, int $conns, int $msgs, array $w
     }
 }
 
-/** O uso de hoje (estimado): pedidos, GB-s, percentagem do plano gratuito, quadros. */
+/** O uso de hoje (estimado): pedidos, GB-s, percentagem do plano gratuito, Topperboards. */
 function cc_rt_usage_today(PDO $pdo): array {
     $day = gmdate('Y-m-d');
     $r = ['requests' => 0, 'gbs' => 0.0, 'pct' => 0, 'boards' => 0, 'day' => $day];
@@ -214,9 +214,9 @@ function cc_rt_usage_prune(PDO $pdo): void {
     $pdo->prepare('DELETE FROM rt_usage_win WHERE day < ?')->execute([$old]);
 }
 
-// ── histórico do quadro ─────────────────────────────────────
+// ── histórico do Topperboard ─────────────────────────────────────
 
-/** O estado dos cartões de um quadro (os que não estão apagados). */
+/** O estado dos cartões de um Topperboard (os que não estão apagados). */
 function cc_board_snapshot(PDO $pdo, int $boardId): array {
     $st = $pdo->prepare('SELECT id, type, asset_id, ref_board_id, column_id, lane, x, y, w, h, z, ord, content FROM cc_cards WHERE board_id = ? AND deleted_at IS NULL ORDER BY id');
     $st->execute([$boardId]);
@@ -227,7 +227,7 @@ function cc_board_snapshot(PDO $pdo, int $boardId): array {
 }
 
 /**
- * Guarda uma versão do quadro. $kind: session (automática, uma por sessão de trabalho) · before (antes
+ * Guarda uma versão do Topperboard. $kind: session (automática, uma por sessão de trabalho) · before (antes
  * de uma ação grande) · restore (antes de restaurar) · manual. Não repete uma versão igual à última.
  * Mantém só as últimas N (Definições). Devolve o id, ou null se não guardou.
  */
@@ -251,7 +251,7 @@ function cc_board_version_save(PDO $pdo, array $b, string $kind, string $label, 
 }
 
 /**
- * A versão automática de uma sessão de trabalho: guarda o quadro como estava antes da primeira
+ * A versão automática de uma sessão de trabalho: guarda o Topperboard como estava antes da primeira
  * alteração, se a última versão tem mais de N minutos (Definições). Devolve o id ou null.
  */
 function cc_board_version_session(PDO $pdo, array $b, ?int $by): ?int {
@@ -266,7 +266,7 @@ function cc_board_version_session(PDO $pdo, array $b, ?int $by): ?int {
 
 const CC_VERSION_KINDS = ['session' => 'Sessão de trabalho', 'before' => 'Antes de uma ação', 'restore' => 'Antes de restaurar', 'manual' => 'Guardada à mão'];
 
-/** As versões de um quadro (as mais recentes primeiro), sem o conteúdo. */
+/** As versões de um Topperboard (as mais recentes primeiro), sem o conteúdo. */
 function cc_board_versions(PDO $pdo, int $boardId): array {
     $st = $pdo->prepare('SELECT v.id, v.kind, v.label, v.cards_n, v.created_at, u.name FROM cc_board_versions v LEFT JOIN users u ON u.id = v.created_by WHERE v.board_id = ? ORDER BY v.id DESC LIMIT 200');
     $st->execute([$boardId]);
@@ -283,7 +283,7 @@ function cc_board_version_get(PDO $pdo, int $boardId, int $id): ?array {
     return $v;
 }
 
-/** Os cartões de uma versão, no formato do quadro (para «Ver»). */
+/** Os cartões de uma versão, no formato do Topperboard (para «Ver»). */
 function cc_board_version_cards_public(PDO $pdo, array $v): array {
     $ids = array_values(array_unique(array_filter(array_map(fn($c) => (int)($c['asset'] ?? 0), $v['cards']))));
     $assets = [];

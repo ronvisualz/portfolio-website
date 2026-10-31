@@ -62,7 +62,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate, private');
 header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
 // O Drive envia/lê ficheiros diretamente do Cloudflare R2 (origem tirada do r2_config.php).
 require_once __DIR__ . '/r2.php';
-/** A política de conteúdo; $connect junta origens a connect-src (ex.: o serviço de tempo real dos quadros), $frame a frame-src (os leitores de música do Centro Criativo). */
+/** A política de conteúdo; $connect junta origens a connect-src (ex.: o serviço de tempo real dos quadros), $frame a frame-src (os leitores de música do Toppernote). */
 function csp_send(string $connect = '', string $frame = ''): void {
     $r2 = r2_origin();
     $r2 = $r2 !== '' ? ' ' . $r2 : '';

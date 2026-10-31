@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — passo 28 da base de dados: Centro Criativo, fase 3 — tempo real e captura (§26)
+ * topper. admin — passo 28 da base de dados: Toppernote, fase 3 — tempo real e captura (§26)
  *
  *  · cc_board_versions: o histórico do quadro — versões automáticas (uma por sessão de trabalho e
  *    antes das ações grandes, como «Arrumar o quadro») com o estado dos cartões, para «Ver» e «Restaurar».

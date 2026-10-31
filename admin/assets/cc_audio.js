@@ -1,4 +1,4 @@
-/* topper. admin — áudio no Centro Criativo e no Review (§27).
+/* topper. admin — áudio no Toppernote e no Review (§27).
  *
  *   TopperAudio.prep(fileOrBlob)   → Promise<{dur, peaks, feats, prev}|null>
  *       lê o áudio no browser (Web Audio): a forma de onda (600 picos 0–255, em base64, guardada para não

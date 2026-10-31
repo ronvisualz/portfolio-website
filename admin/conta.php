@@ -419,8 +419,8 @@ render_flashes();
     $myTokens = ut_list($pdo, (int)$user['id']);
     $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . preg_replace('/[^a-z0-9.:-]/i', '', (string)($_SERVER['HTTP_HOST'] ?? 'topperhub.xyz'));
     $iosUrl = (string)setting($pdo, 'ios_shortcut_url', ''); ?>
-<h3 style="margin-top:22px">Guardar no Centro Criativo</h3>
-<p class="sub" style="max-width:760px">Guardar referências de fora no Centro Criativo: tudo entra na Caixa de entrada (ou num quadro) e a IA analisa. A extensão e o Atalho entram com um token pessoal, nunca com a sua palavra-passe.</p>
+<h3 style="margin-top:22px">Guardar no Toppernote</h3>
+<p class="sub" style="max-width:760px">Guardar referências de fora no Toppernote: tudo entra na Caixa de entrada (ou num Topperboard) e a IA analisa. A extensão e o Atalho entram com um token pessoal, nunca com a sua palavra-passe.</p>
 <?php if ($newTok !== ''): ?>
 <div class="lg-new" role="status"><b>O seu token novo — copie-o agora, não volta a aparecer:</b><code id="ut-new"><?= e($newTok) ?></code>
   <div><button type="button" class="btn sm" data-copy="#ut-new">Copiar</button></div></div>

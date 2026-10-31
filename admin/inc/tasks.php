@@ -676,8 +676,8 @@ function tasks_open(PDO $pdo, ?array $visible, ?int $myMember, bool $done = fals
 
 /** A ligação de uma tarefa (a origem, fora da aba Tarefas): [texto, endereço]. */
 function task_link(array $t): array {
-    // um plano tirado de um quadro do Centro Criativo leva ao quadro (o negócio fica na ficha do quadro)
-    if (preg_match('~/admin/criativo\.php\?b=(\d+)~', (string)($t['description'] ?? ''), $m)) return ['Centro Criativo · quadro', '/admin/criativo.php?b=' . (int)$m[1]];
+    // um plano tirado de um Topperboard do Toppernote leva ao Topperboard (o negócio fica na ficha do Topperboard)
+    if (preg_match('~/admin/(?:criativo|toppernote)\.php\?b=(\d+)~', (string)($t['description'] ?? ''), $m)) return ['Toppernote · Topperboard', '/admin/toppernote.php?b=' . (int)$m[1]];
     if (!empty($t['deal_id'])) {
         if (in_array($t['deal_phase'] ?? '', ['lead', 'archived'], true)) {
             $n = trim((string)($t['deal_person'] ?: $t['deal_company'] ?: $t['deal_name']));

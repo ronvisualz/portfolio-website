@@ -1424,7 +1424,7 @@ Ficheiros novos: `inc/migrate_xsell.php`, `inc/xsell.php`, `inc/xsell_view.php`,
 `relatorios.php`, `assets/app.js`, `assets/leads.js`, `assets/tasks.js`, `assets/budget.js`,
 `assets/app.css`.
 
-### 10.14 Centro Criativo — fase 1 — §23 (23 out 2026)
+### 10.14 Toppernote (ex-Centro Criativo) — fase 1 — §23 (23 out 2026)
 
 Base de dados **v24** (`inc/migrate_creative.php`, idempotente): `cc_boards` (quadros e sub-quadros),
 `cc_assets` (biblioteca: uma referência existe uma vez, os quadros apontam para ela), `cc_frames`
@@ -1583,7 +1583,7 @@ Alterados: `inc/migrate.php`, `inc/deal_drive.php`, `inc/drive.php`, `inc/drive_
 `inc/deal_file.php`, `inc/lead_view.php`, `inc/interactions.php`, `inc/cron_run.php`,
 `assets/app.js`, `assets/app.css`, `assets/cc.js`.
 
-### 10.16 Centro Criativo — fase 2: Review e Portal do cliente — §24 (23 out 2026)
+### 10.16 Toppernote (ex-Centro Criativo) — fase 2: Review e Portal do cliente — §24 (23 out 2026)
 
 Base de dados **v27** (`inc/migrate_review.php`, idempotente): `cc_rv_items` (peças de review por
 negócio e frente, etapa de aprovação, estado, marca de água, download, aprovação com nome, e-mail, IP e
@@ -1650,7 +1650,7 @@ Ficheiros novos: `inc/migrate_review.php`, `inc/cc_review.php`, `rv_api.php`, `p
 para o vídeo), `inc/cron_run.php`, `inc/files.php`, `inc/interactions.php`, `inc/alerts.php`,
 `inc/settings_def.php`, `criativo.php`, `negocio.php`.
 
-### 10.17 Centro Criativo — fase 3: Tempo real e captura — §26 (23 out 2026)
+### 10.17 Toppernote (ex-Centro Criativo) — fase 3: Tempo real e captura — §26 (23 out 2026)
 
 Base de dados **v28** (`inc/migrate_rt.php`, idempotente): `cc_board_versions` (histórico do quadro:
 estado dos cartões por versão, tipo e autor), `user_tokens` (tokens pessoais: só o hash, os últimos 4
@@ -1733,7 +1733,7 @@ connect-src), `inc/cc.php`, `inc/alerts.php`, `inc/cron_run.php`, `inc/settings_
 (manifest e service worker), `inc/ui.php`, `cc_api.php`, `criativo.php`, `portal.php`, `conta.php`,
 `definicoes.php`, `assets/cc.js`, `assets/app.js` (avisos com botão), CSS.
 
-### 10.18 Centro Criativo — Áudio — §27 (23 out 2026)
+### 10.18 Toppernote (ex-Centro Criativo) — Áudio — §27 (23 out 2026)
 
 Base de dados **v29** (`inc/migrate_audio.php`, idempotente): `cc_assets.audio_cat` (categoria),
 `cc_assets.peaks` e `cc_rv_versions.peaks` (a forma de onda: 600 picos 0–255 em base64). A migração
@@ -3590,7 +3590,7 @@ opção «Combinar funis» sai das Definições › Funis.
 
 ---
 
-## 23. Centro Criativo (decidido 23 out 2026)
+## 23. Toppernote (ex-Centro Criativo) (decidido 23 out 2026)
 
 Espaço de trabalho criativo da equipa de execução — «Milanote com esteroides» ligado ao
 negócio, à produção e à IA. Não confundir com Marketing (§16). Aplica a §11.
@@ -3686,7 +3686,7 @@ grelha, notas como cartões de nota, e envia as imagens para a biblioteca (com a
 
 ---
 
-## 24. Centro Criativo — Fase 2: Review e Portal do cliente (23 out 2026)
+## 24. Toppernote (ex-Centro Criativo) — Fase 2: Review e Portal do cliente (23 out 2026)
 
 Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Aplica a §11.
 
@@ -3735,7 +3735,7 @@ Desenvolve a §23.1 (Review) e a §23.4 (Portal). Fase 1 já está no main. Apli
 - Sem indexação (noindex), limite de pedidos por IP, registo de acessos (quem/quando).
 - Na ficha do negócio: botão «Portal do cliente» — copiar link, revogar, ver acessos.
 
-### 24.5 Definições › Centro Criativo
+### 24.5 Definições › Toppernote (ex-Centro Criativo)
 Validade do link do portal · marca de água por defeito · downloads por defeito · rondas por
 etapa (herda §19.6 D) · mapa etapa de review ↔ tarefa de aprovação · idioma do portal por defeito.
 
@@ -3764,7 +3764,7 @@ que **qualquer ficheiro, seja qual for o formato e a origem, se encontre depress
 
 ---
 
-## 26. Centro Criativo — Fase 3: Tempo real e captura (23 out 2026)
+## 26. Toppernote (ex-Centro Criativo) — Fase 3: Tempo real e captura (23 out 2026)
 
 Completa a §23.8 (fase 3). Aplica a §11. Depende das fases 1 (§23) e 2 (§24).
 
@@ -3824,7 +3824,7 @@ Centro Criativo: frequência das versões automáticas do quadro, número de ver
 destino por defeito das capturas. Integrações: serviço de tempo real (estado e custo) e
 gestão dos tokens pessoais (admins podem revogar os de qualquer pessoa).
 
-## 27. Centro Criativo — Áudio (decidido 23 out 2026)
+## 27. Toppernote (ex-Centro Criativo) — Áudio (decidido 23 out 2026)
 
 **Estado atual (verificado no main):** o Centro Criativo não reconhece áudio. `cc_kind_for` só distingue imagem e vídeo; um MP3/WAV vira cartão «Ficheiro» sem leitor, sem análise e sem Review. A Drive já trata áudio (tipos, ícone, filtro, leitor em `assets/drive/preview.js`, partilha) — reaproveitar.
 

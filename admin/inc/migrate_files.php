@@ -4,7 +4,7 @@
  *
  *  · files: cada ficheiro que entra na plataforma ou é gerado por ela, guardado uma só vez
  *    no Drive — a chave atual, o ETag e o tamanho (para o voltar a encontrar se alguém o
- *    mover à mão), a origem (proposta, fatura, Centro Criativo, anexo…), a secção da
+ *    mover à mão), a origem (proposta, fatura, Toppernote, anexo…), a secção da
  *    pasta do negócio e a ligação ao negócio/lead, à peça de marketing ou à referência.
  *  · file_moves: a fila das pastas a mudar de sítio (lead convertida, arquivada, negócio
  *    perdido, reaberto). Corre em segundo plano (cron) e no próprio pedido, por pouco tempo.

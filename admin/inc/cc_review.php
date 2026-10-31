@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — Centro Criativo, fase 2: Review e Portal do cliente (§24)
+ * topper. admin — Toppernote, fase 2: Review e Portal do cliente (§24)
  *
  * Peças de review (por negócio e frente, numa etapa de aprovação) com versões v001, v002… que
  * nunca se apagam. O original fica no Drive, em «<pasta do negócio>/Review/<peça>/»; o que o
@@ -1076,7 +1076,7 @@ function cc_share_tabs(array $s): array {
     return array_values(array_intersect(['proposal', 'boards', 'review'], explode(',', (string)$s['tabs'])));
 }
 
-/** Os quadros partilhados (ids). */
+/** Os Topperboards partilhados (ids). */
 function cc_share_boards(array $s): array {
     return array_values(array_filter(array_map('intval', explode(',', (string)$s['boards']))));
 }

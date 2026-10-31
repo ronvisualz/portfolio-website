@@ -107,7 +107,7 @@ try {
             $u = cc_rt_usage_today($pdo);
             $out .= 'Tempo real: ' . (cc_rt_url($pdo) ?: 'por publicar') . ' · ' . $u['pct'] . '% do plano gratuito hoje · chave pública ' . $k[1] . "\n";
         }
-        $out .= cc_ready($pdo) ? 'Centro Criativo: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Centro Criativo: a base ainda não está no passo 24.\n";
+        $out .= cc_ready($pdo) ? 'Toppernote: ' . cc_jobs_run($pdo, $left) . ' trabalhos feitos · ' . cc_jobs_pending($pdo) . " na fila\n" : "Toppernote: a base ainda não está no passo 24.\n";
     } elseif ($job === 'metrics') {
         // só as métricas: fotografia diária em falta e o resumo semanal; «metrics semana» gera já o resumo desta semana
         require_once __DIR__ . '/metrics.php';

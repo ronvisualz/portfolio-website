@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — ficheiros do Centro Criativo (§23): miniaturas por zoom e originais.
+ * topper. admin — ficheiros do Toppernote (§23): miniaturas por zoom e originais.
  *
  *   GET cc_file.php?a=<referência>&s=256|768|1600   a miniatura mais próxima (por cima) da largura
  *   GET cc_file.php?a=<referência>&s=0              o original (vídeo com pedidos parciais)
@@ -8,7 +8,7 @@
  *   GET cc_file.php?pt=<token da proposta>&a=…      as imagens do pré-criativo na página do cliente
  *                                                   (só as referências das páginas dessa proposta)
  *
- * Com sessão: pede a aba Centro Criativo (ver). No R2 responde com um redirecionamento para um
+ * Com sessão: pede a aba Toppernote (ver). No R2 responde com um redirecionamento para um
  * endereço assinado estável durante uma hora (o browser guarda-o em cache); sem R2, envia o
  * ficheiro da pasta privada, com cache longa (as chaves mudam quando o ficheiro muda).
  */

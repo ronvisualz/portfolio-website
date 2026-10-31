@@ -199,7 +199,7 @@ render_flashes();
     <?php if ($p['drive_folder']): ?><span>Pasta</span><div class="mono small"><?= e((string)$p['drive_folder']) ?></div><?php endif; ?>
   </div>
   <?php if ($p['idea']): ?><p class="mid"><?= nl2br(e((string)$p['idea'])) ?></p><?php endif; ?>
-  <?php if ($p['template'] === 'breakdown' && $p['deal_id']): ?><p class="muted small"><?= icon('bulb') ?> Breakdown: o material está na pasta do negócio no Drive (Criativo, Produção, Entregas) e no quadro do projeto no Centro Criativo.</p><?php endif; ?>
+  <?php if ($p['template'] === 'breakdown' && $p['deal_id']): ?><p class="muted small"><?= icon('bulb') ?> Breakdown: o material está na pasta do negócio no Drive (Criativo, Produção, Entregas) e no quadro do projeto no Toppernote.</p><?php endif; ?>
   <?php endif; ?>
 </section>
 

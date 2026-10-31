@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — passo 24 da base de dados: Centro Criativo (§23)
+ * topper. admin — passo 24 da base de dados: Toppernote (§23)
  *
  *  · cc_boards: quadros (do projeto, por etapa, pré-criativo, por frente, rota não escolhida,
  *    livres). Um quadro pode ter sub-quadros (parent_id).
@@ -14,7 +14,7 @@
  *    cliente: timecode, desenho, autor «Cliente»).
  *  · cc_pages: as páginas do pré-criativo (uma por opção) e a ligação à proposta.
  *  · cc_jobs: a fila da IA (análise, embeddings) e das importações.
- *  · cc_ai_usage: o gasto da IA do Centro Criativo (separado do assistente do Drive).
+ *  · cc_ai_usage: o gasto da IA do Toppernote (separado do assistente do Drive).
  *  · cc_versions, cc_share e cc_capture: Review, portal do cliente e extensão do browser
  *    (fases 2 e 3: as tabelas ficam prontas).
  *  · funnels.cc_pre_mode (pré-criativo recomendado · obrigatório · desligado) e cc_stages

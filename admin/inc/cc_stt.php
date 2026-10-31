@@ -1,13 +1,13 @@
 <?php
 /**
- * topper. admin — Centro Criativo: transcrição da fala com marcas de tempo (§27.4)
+ * topper. admin — Toppernote: transcrição da fala com marcas de tempo (§27.4)
  *
  * O Claude não recebe áudio: a fala passa por um serviço de reconhecimento com a API de transcrição
  * da OpenAI (Whisper, ou um compatível como o Groq), configurado em cc_config.php (transcribe_*),
  * só no servidor. Serve o áudio e o vídeo (o campo transcript que o vídeo já tinha).
  *
  * O texto fica em cc_assets.transcript, uma linha por frase com o tempo: «[1:23] …» — pesquisável,
- * copiável e com o tempo clicável no detalhe. Conta no gasto e no limite mensal da IA do Centro Criativo.
+ * copiável e com o tempo clicável no detalhe. Conta no gasto e no limite mensal da IA do Toppernote.
  *
  * Ficheiros até 25 MB num formato aceite vão diretos (também a partir das páginas); os outros
  * (aif, vídeos, ficheiros grandes) passam primeiro pelo ffmpeg, só pela linha de comandos (cron).
@@ -140,7 +140,7 @@ function cc_stt_run(PDO $pdo, array $job): void {
     if (!$cfg) throw new CcAiException('A transcrição ainda não está ligada (Definições › Integrações).', 'not_configured');
     $ai = cc_ai_config();
     $cap = $ai ? $ai['cap'] : cc_ai_cap();
-    if (cc_ai_month_spend($pdo) >= $cap - 0.05) throw new CcAiException('A IA do Centro Criativo chegou ao limite mensal. Volta no dia 1 (ou suba o limite).', 'budget');
+    if (cc_ai_month_spend($pdo) >= $cap - 0.05) throw new CcAiException('A IA do Toppernote chegou ao limite mensal. Volta no dia 1 (ou suba o limite).', 'budget');
     $pdo->prepare("UPDATE cc_assets SET ai_status = 'running', ai_error = '' WHERE id = ?")->execute([(int)$a['id']]);
 
     $tmpIn = tempnam(sys_get_temp_dir(), 'ccstt');

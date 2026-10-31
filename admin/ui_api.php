@@ -188,6 +188,7 @@ try {
         foreach (NAV_ITEMS as $key => [$label, $href, $ico]) {
             if (can(NAV_TABS[$key] ?? $key)) $nav[] = [$label, $href, $ico];
         }
+        if (can('criativo')) $nav[] = ['Topperboards (Toppernote)', '/admin/toppernote.php', 'criativo'];
         $nav[] = ['Perfil (preferências, notificações, palavra-passe)', '/admin/conta.php', 'user'];
         if (is_admin()) $nav[] = ['Definições', '/admin/definicoes.php', 'cog'];
         if (can('pipeline', PERM_MANAGE)) $nav[] = ['Funis e automações (Definições)', '/admin/funis.php', 'pipeline'];
@@ -1237,7 +1238,7 @@ try {
             out(200, ['ok' => true, 'msg' => '«' . $cat . '» passa a ' . EXEC_TYPES[$val] . '. O resultado do Dashboard já foi recalculado.', 'undo' => undo_push('setting', ['key' => 'fin_cat_types', 'from' => $old, 'to' => $new])]);
         }
         if ($tbl === 'funnels') {
-            // Centro Criativo (§23): pré-criativo por funil e os sub-quadros do projeto
+            // Toppernote (§23): pré-criativo por funil e os sub-quadros do projeto
             require_once __DIR__ . '/inc/cc.php';
             $f = funnel_get($pdo, (int)($_POST['id'] ?? 0));
             $field = (string)($_POST['field'] ?? '');
@@ -1246,14 +1247,14 @@ try {
             if ($field === 'cc_pre_mode') {
                 if (!in_array($raw, ['recommended', 'required', 'off'], true)) throw new RuntimeException('Escolha uma opção.');
                 $col = 'cc_pre_mode'; $from = (string)$f['cc_pre_mode']; $val = $raw;
-                $what = 'Centro Criativo · ' . $f['name'] . ' · pré-criativo';
+                $what = 'Toppernote · ' . $f['name'] . ' · pré-criativo';
             } elseif (preg_match('/^cc_stage_([a-z]+)$/', $field, $m) && isset(CC_STAGES[$m[1]])) {
                 $col = 'cc_stages'; $from = (string)$f['cc_stages'];
                 $on = cc_funnel_stages($pdo, (int)$f['id']);
                 $on = $raw === '1' ? array_values(array_unique([...$on, $m[1]])) : array_values(array_diff($on, [$m[1]]));
                 if (!$on) throw new RuntimeException('O projeto precisa de pelo menos um sub-quadro.');
                 $val = implode(',', array_values(array_filter(array_keys(CC_STAGES), fn($k) => in_array($k, $on, true))));
-                $what = 'Centro Criativo · ' . $f['name'] . ' · sub-quadros';
+                $what = 'Toppernote · ' . $f['name'] . ' · sub-quadros';
             } else {
                 throw new RuntimeException('Campo desconhecido.');
             }

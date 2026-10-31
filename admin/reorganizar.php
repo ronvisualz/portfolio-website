@@ -45,7 +45,7 @@ render_flashes();
 <div class="page-head">
   <div><h1>Reorganizar o Drive</h1>
     <p class="sub">Passa o que já existia para a estrutura nova: negócios perdidos e leads arquivadas para o Arquivo, faturas antigas
-      para «Faturação», peças de marketing para a pasta do negócio e os originais do Centro Criativo para o Drive. Nada é apagado:
+      para «Faturação», peças de marketing para a pasta do negócio e os originais do Toppernote para o Drive. Nada é apagado:
       só muda de sítio, e os links, favoritos e partilhas acompanham.</p></div>
   <div class="actions" style="margin:0"><a class="btn ghost" href="/admin/definicoes.php?t=drive"><?= icon('chev-left') ?> Definições</a></div>
 </div>

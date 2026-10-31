@@ -1,17 +1,17 @@
 <?php
 /**
- * topper. — Portal do cliente (Centro Criativo, fase 2). Página pública, sem conta e sem sessão.
+ * topper. — Portal do cliente (Toppernote, fase 2). Página pública, sem conta e sem sessão.
  *
  * Um link por negócio (token longo e aleatório; na base só o hash e uma cópia cifrada para «Copiar
  * link»), revogável e com validade. Separadores só os partilhados: Proposta (com o pré-criativo) ·
- * Quadros (só leitura: tratamento e rotas) · Review (as peças enviadas).
+ * Topperboards (só leitura: tratamento e rotas) · Review (as peças enviadas).
  *
  *   GET  portal.php?t=<token>[&tab=proposal|boards|review][&p=<peça>][&lang=pt|en]   a página
  *   GET  portal.php?t=…&j=room&p=<peça>&ck=<browser>                                os dados da sala (JSON)
  *   GET  portal.php?t=…&j=poll&p=<peça>&rev=<n>                                     mudou?
- *   GET  portal.php?t=…&j=rt&b=<quadro>                                             token do tempo real (só leitura, sem presença)
+ *   GET  portal.php?t=…&j=rt&b=<Topperboard>                                             token do tempo real (só leitura, sem presença)
  *   GET  portal.php?t=…&m=<versão>&k=proxy|poster|strip|page[&n=<página>]           um ficheiro (URL curto)
- *   GET  portal.php?t=…&ref=<referência>                                            uma imagem do pré-criativo/quadros
+ *   GET  portal.php?t=…&ref=<referência>                                            uma imagem do pré-criativo/Topperboards
  *   POST portal.php?t=…  a=seen|ident|comment_add|comment_del|comment_restore|submit|approve|download
  *        (formulário assinado pelo servidor, mesma origem; nome e e-mail na primeira ação)
  *
@@ -28,18 +28,18 @@ require_once __DIR__ . '/inc/pipeline_flow.php';
 
 const PORTAL_FORM_TTL = 43200;   // o formulário assinado vale 12 h (a página volta a pedir um novo)
 const PT_STR = [
-    'pt' => ['proposal' => 'Proposta', 'boards' => 'Quadros', 'review' => 'Review', 'gone' => 'Este link expirou ou não existe.',
+    'pt' => ['proposal' => 'Proposta', 'boards' => 'Topperboards', 'review' => 'Review', 'gone' => 'Este link expirou ou não existe.',
              'goneSub' => 'Peça um link novo à equipa da topper.', 'private' => 'Esta página é privada: não a partilhe.', 'until' => 'Disponível até',
-             'noProposal' => 'Ainda não há uma proposta para mostrar aqui.', 'noBoards' => 'Ainda não há quadros partilhados.', 'live' => 'A equipa atualizou este quadro.', 'refresh' => 'Atualizar', 'noReview' => 'Ainda não há peças para rever.',
+             'noProposal' => 'Ainda não há uma proposta para mostrar aqui.', 'noBoards' => 'Ainda não há Topperboards partilhados.', 'live' => 'A equipa atualizou este Topperboard.', 'refresh' => 'Atualizar', 'noReview' => 'Ainda não há peças para rever.',
              'sentOn' => 'Enviada a', 'accepted' => 'Aceite', 'refused' => 'Recusada', 'validated' => 'Confirmada pela topper.', 'waiting' => 'A aguardar a sua resposta',
              'answerHint' => 'Para responder à proposta use o link do e-mail em que a recebeu.', 'vat' => 'IVA', 'total' => 'total', 'noVat' => 's/ IVA',
              'term' => 'Prazo', 'payment' => 'Pagamento', 'revisions' => 'Revisões incluídas', 'rights' => 'Direitos de utilização', 'conditions' => 'Outras condições',
              'precreative' => 'Pré-criativo', 'treatment' => 'Tratamento', 'route' => 'Rota', 'back' => 'Todas as peças', 'version' => 'Versão',
              'comments' => 'comentários', 'limit' => 'Demasiados pedidos. Espere um minuto e tente outra vez.', 'expired' => 'A página esteve aberta muito tempo. Recarregue-a e tente outra vez.',
              'theme' => 'Mudar entre claro e escuro', 'download' => 'Descarregar', 'complexity' => 'Complexidade'],
-    'en' => ['proposal' => 'Proposal', 'boards' => 'Boards', 'review' => 'Review', 'gone' => 'This link has expired or does not exist.',
+    'en' => ['proposal' => 'Proposal', 'boards' => 'Topperboards', 'review' => 'Review', 'gone' => 'This link has expired or does not exist.',
              'goneSub' => 'Ask the topper. team for a new link.', 'private' => 'This page is private: please do not share it.', 'until' => 'Available until',
-             'noProposal' => 'There is no proposal to show here yet.', 'noBoards' => 'No boards shared yet.', 'live' => 'The team has updated this board.', 'refresh' => 'Refresh', 'noReview' => 'Nothing to review yet.',
+             'noProposal' => 'There is no proposal to show here yet.', 'noBoards' => 'No Topperboards shared yet.', 'live' => 'The team has updated this Topperboard.', 'refresh' => 'Refresh', 'noReview' => 'Nothing to review yet.',
              'sentOn' => 'Sent on', 'accepted' => 'Accepted', 'refused' => 'Declined', 'validated' => 'Confirmed by topper.', 'waiting' => 'Waiting for your answer',
              'answerHint' => 'To answer the proposal, use the link in the email you received it with.', 'vat' => 'VAT', 'total' => 'total', 'noVat' => 'excl. VAT',
              'term' => 'Timeline', 'payment' => 'Payment', 'revisions' => 'Included revisions', 'rights' => 'Usage rights', 'conditions' => 'Other terms',
@@ -148,7 +148,7 @@ function portal_proposal(PDO $pdo, array $deal): ?array {
     return ['p' => $p, 'c' => proposal_public_content($pdo, deal_get($pdo, (int)$deal['id']) ?: $deal, $v)];
 }
 
-/** Os quadros partilhados: [quadro, tratamento|null, [rotas]]. */
+/** Os Topperboards partilhados: [Topperboard, tratamento|null, [rotas]]. */
 function portal_boards(PDO $pdo, array $share): array {
     $ids = cc_share_boards($share);
     if (!$ids) return [];
@@ -247,7 +247,7 @@ function portal_room(PDO $pdo, array $share, array $item, string $ck, string $la
 }
 $j = (string)($_GET['j'] ?? '');
 if ($j === 'rt') {
-    // os quadros partilhados em tempo real: só leitura e sem a presença da equipa (§26)
+    // os Topperboards partilhados em tempo real: só leitura e sem a presença da equipa (§26)
     require_once __DIR__ . '/inc/cc_rt.php';
     $bid = (int)($_GET['b'] ?? 0);
     $tok = in_array('boards', $tabs, true) && in_array($bid, cc_share_boards($share), true) && cc_rt_url($pdo) !== '' ? cc_rt_token($pdo, $bid, 0, 'portal') : null;

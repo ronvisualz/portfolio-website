@@ -316,7 +316,7 @@ function flow_on_enter(PDO $pdo, int $dealId, int $stageId): int {
     }
     // Depois da entrega o cliente entra nas Relações com o comercial como dono (§19.10).
     if ($stage['kind'] === 'done') flow_relation_after_delivery($pdo, $deal);
-    // Kickoff: o quadro do projeto no Centro Criativo (a partir do pré-criativo, se houver).
+    // Kickoff: o quadro do projeto no Toppernote (a partir do pré-criativo, se houver).
     if ($stage['kind'] === 'kickoff') {
         require_once __DIR__ . '/cc_flow.php';
         try { cc_on_kickoff($pdo, $deal, current_user()['id'] ?? null); } catch (Throwable $e) { error_log('cc_on_kickoff: ' . $e->getMessage()); }
@@ -547,7 +547,7 @@ function xray_validate(PDO $pdo, array $deal, int $by): string {
         error_log('cc_on_xray_validated: ' . $e->getMessage());
         $pre = null;
     }
-    return 'X-Ray validado.' . ($pre ? ' O pré-criativo está no Centro Criativo.' : '');
+    return 'X-Ray validado.' . ($pre ? ' O pré-criativo está no Toppernote.' : '');
 }
 
 /** Conclui as tarefas abertas de um negócio que esperam por um documento/evento. Devolve quantas. */

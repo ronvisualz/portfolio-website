@@ -1,18 +1,18 @@
 <?php
 /**
- * topper. admin — o Centro Criativo ligado ao negócio (§23.2, §23.3)
+ * topper. admin — o Toppernote ligado ao negócio (§23.2, §23.3)
  *
- *  · Pré-criativo: nasce sozinho ao validar o X-Ray — o quadro «Pré-criativo · <negócio>» com o
+ *  · Pré-criativo: nasce sozinho ao validar o X-Ray — o Topperboard «Pré-criativo · <negócio>» com o
  *    brief do X-Ray e duas faixas (Opção A · Pedido, Opção B · Proposta de valor) e a tarefa
  *    «Pré-criativo · <cliente>» para o responsável de execução (prazo: Definições, +2 d.u.).
- *    Crosselling (§22): um sub-quadro por frente, cada um com as suas faixas.
+ *    Crosselling (§22): um sub-Topperboard por frente, cada um com as suas faixas.
  *  · «Enviar para a Orçamentação»: a página da faixa A liga-se à Opção A e a da B à Opção B da
  *    versão atual do orçamento («Serve as duas» liga às duas). Entram no PDF da proposta e na
  *    página de resposta do cliente. Conclui a tarefa do pré-criativo.
  *  · Negócio perdido → pré-criativo arquivado; reaberto → volta.
- *  · Kickoff → o quadro do projeto, com os sub-quadros do modelo do funil; a opção escolhida
+ *  · Kickoff → o Topperboard do projeto, com os sub-Topperboards do modelo do funil; a opção escolhida
  *    pelo cliente passa a «Conceito», a outra fica como «Rota não escolhida». Crosselling: um
- *    sub-quadro por frente, com o seu responsável de execução.
+ *    sub-Topperboard por frente, com o seu responsável de execução.
  */
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
@@ -20,7 +20,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 require_once __DIR__ . '/cc.php';
 require_once __DIR__ . '/pipeline_flow.php';
 
-/** O pré-criativo é obrigatório, recomendado ou desligado neste funil (Definições › Centro Criativo). */
+/** O pré-criativo é obrigatório, recomendado ou desligado neste funil (Definições › Toppernote). */
 function cc_pre_mode(PDO $pdo, ?int $funnelId): string {
     if (!$funnelId || !cc_ready($pdo)) return 'off';
     $st = $pdo->prepare('SELECT cc_pre_mode FROM funnels WHERE id = ?');
@@ -74,7 +74,7 @@ function cc_task_create(PDO $pdo, array $deal, string $title, string $desc, ?int
     return (int)$pdo->lastInsertId();
 }
 
-/** A nota do brief no topo de um quadro. */
+/** A nota do brief no topo de um Topperboard. */
 function cc_brief_card(PDO $pdo, int $boardId, string $brief, ?int $by, float $x = 80, float $y = -260): void {
     if (trim($brief) === '') return;
     cc_card_add($pdo, $boardId, ['type' => 'note', 'x' => $x, 'y' => $y, 'w' => 560,
@@ -108,13 +108,13 @@ function cc_on_xray_validated(PDO $pdo, array $deal, int $by): ?int {
     $task = cc_task_create($pdo, $deal, 'Pré-criativo · ' . $client,
         "Preparar o pré-criativo de «" . $deal['name'] . "» (" . $deal['code'] . "): duas faixas, Opção A (pedido) e Opção B (proposta de valor).\n"
         . "1. «Preparar com IA» · 2. manter / tirar / trocar cartões · 3. «Gerar página» · 4. «Enviar para a Orçamentação».\n\n"
-        . 'Abrir o quadro: /admin/criativo.php?b=' . $id, $exec ?: null, flow_add_workdays(today_lisbon(), $days), $by);
+        . 'Abrir o Topperboard: /admin/toppernote.php?b=' . $id, $exec ?: null, flow_add_workdays(today_lisbon(), $days), $by);
     $pdo->prepare('UPDATE cc_boards SET task_id = ? WHERE id = ?')->execute([$task, $id]);
-    deal_log($pdo, (int)$deal['id'], 'auto', ['note' => 'Pré-criativo criado no Centro Criativo (tarefa para a execução)']);
+    deal_log($pdo, (int)$deal['id'], 'auto', ['note' => 'Pré-criativo criado no Toppernote (tarefa para a execução)']);
     return $id;
 }
 
-/** Negócio perdido: os quadros do pré-criativo ficam arquivados com ele. */
+/** Negócio perdido: os Topperboards do pré-criativo ficam arquivados com ele. */
 function cc_on_lost(PDO $pdo, int $dealId): void {
     if (!cc_ready($pdo)) return;
     $pdo->prepare("UPDATE cc_boards SET status = 'archived', archived_why = 'lost', updated_at = ? WHERE deal_id = ? AND kind IN ('precreative','front') AND status = 'active'")
@@ -128,7 +128,7 @@ function cc_on_reopen(PDO $pdo, int $dealId): void {
         ->execute([cc_now(), $dealId]);
 }
 
-/** Copia os cartões de uma faixa para outro quadro (as referências não se copiam: apontam para a mesma). */
+/** Copia os cartões de uma faixa para outro Topperboard (as referências não se copiam: apontam para a mesma). */
 function cc_copy_lane(PDO $pdo, int $fromBoard, string $lane, int $toBoard, ?int $by): int {
     $cards = array_values(array_filter(cc_cards($pdo, $fromBoard), fn($c) => $lane === '' || $c['lane'] === $lane));
     if (!$cards) return 0;
@@ -150,7 +150,7 @@ function cc_copy_lane(PDO $pdo, int $fromBoard, string $lane, int $toBoard, ?int
     return count($map);
 }
 
-/** Cria a árvore de sub-quadros de etapa debaixo de $parent. Devolve [stage_key => id]. */
+/** Cria a árvore de sub-Topperboards de etapa debaixo de $parent. Devolve [stage_key => id]. */
 function cc_stage_boards(PDO $pdo, int $parent, array $deal, ?int $funnelId, ?int $lineId, ?int $exec, ?int $by): array {
     $out = [];
     foreach (cc_funnel_stages($pdo, $funnelId) as $i => $k) {
@@ -163,9 +163,9 @@ function cc_stage_boards(PDO $pdo, int $parent, array $deal, ?int $funnelId, ?in
 }
 
 /**
- * Kickoff: o quadro do projeto. Se houver pré-criativo, a opção escolhida pelo cliente passa a
+ * Kickoff: o Topperboard do projeto. Se houver pré-criativo, a opção escolhida pelo cliente passa a
  * ser o «Conceito» e a outra fica guardada como «Rota não escolhida»; o pré-criativo fica
- * arquivado (consulta). Crosselling: um sub-quadro por frente, cada um com as suas etapas.
+ * arquivado (consulta). Crosselling: um sub-Topperboard por frente, cada um com as suas etapas.
  */
 function cc_on_kickoff(PDO $pdo, array $deal, ?int $by = null): ?int {
     if (!cc_ready($pdo)) return null;
@@ -205,7 +205,7 @@ function cc_on_kickoff(PDO $pdo, array $deal, ?int $by = null): ?int {
             $stages = cc_stage_boards($pdo, $fid, $deal, $f['funnel_id'], $f['id'], $f['exec'] ?: ($exec ?: null), $by);
             $seed($stages, $preFronts[$f['id']] ?? null, $fid);
         }
-        // o conceito geral (o pré-criativo principal) entra no quadro do projeto
+        // o conceito geral (o pré-criativo principal) entra no Topperboard do projeto
         if ($pre) $seed(['conceito' => cc_board_create($pdo, ['deal_id' => (int)$deal['id'], 'parent_id' => $pid, 'kind' => 'stage', 'stage_key' => 'conceito', 'title' => 'Conceito geral', 'position' => 50], $by)], $pre, $pid);
     } else {
         $stages = cc_stage_boards($pdo, $pid, $deal, $deal['funnel_id'] ? (int)$deal['funnel_id'] : null, null, $exec ?: null, $by);
@@ -216,13 +216,13 @@ function cc_on_kickoff(PDO $pdo, array $deal, ?int $by = null): ?int {
             ->execute([cc_now(), (int)$deal['id'], (int)$pre['id'], (int)$pre['id']]);
         cc_card_add($pdo, $pid, ['type' => 'board', 'ref_board_id' => (int)$pre['id'], 'x' => 1400, 'y' => -320, 'w' => 240, 'content' => ['title' => 'Pré-criativo (arquivo)']], $by);
     }
-    deal_log($pdo, (int)$deal['id'], 'auto', ['note' => 'Quadro do projeto criado no Centro Criativo' . ($pre ? ' (a partir do pré-criativo: ' . CC_LANES[$chosen] . ')' : '')]);
+    deal_log($pdo, (int)$deal['id'], 'auto', ['note' => 'Topperboard do projeto criado no Toppernote' . ($pre ? ' (a partir do pré-criativo: ' . CC_LANES[$chosen] . ')' : '')]);
     return $pid;
 }
 
 // ── páginas → Orçamentação ───────────────────────────────────
 
-/** O quadro do pré-criativo e os sub-quadros das frentes, pela ordem. */
+/** O Topperboard do pré-criativo e os sub-Topperboards das frentes, pela ordem. */
 function cc_pre_boards(PDO $pdo, array $board): array {
     $root = $board;
     if ($board['kind'] === 'front' && $board['parent_id'] && ($p = cc_board_get($pdo, (int)$board['parent_id'])) && $p['kind'] === 'precreative') $root = $p;
@@ -243,7 +243,7 @@ function cc_send_to_budget(PDO $pdo, array $board, int $by): string {
     require_once __DIR__ . '/pipeline_flow.php';
     require_once __DIR__ . '/budget.php';
     $deal = $board['deal_id'] ? deal_get($pdo, (int)$board['deal_id']) : null;
-    if (!$deal) throw new RuntimeException('Este quadro não está ligado a um negócio.');
+    if (!$deal) throw new RuntimeException('Este Topperboard não está ligado a um negócio.');
     [$sheet, $v] = proposal_version($pdo, $deal);
     if (!$sheet || !$v) throw new RuntimeException('Ainda não há folha de orçamento para este negócio: crie-a na Orçamentação e volte a enviar.');
     if (budget_version_sent($v)) throw new RuntimeException('A versão v' . (int)$v['num'] . ' do orçamento já foi enviada ao cliente. Crie uma versão nova na folha de orçamento para juntar o pré-criativo.');
@@ -302,7 +302,7 @@ function cc_pages_to_drive(PDO $pdo, array $deal, array $v, ?int $by): int {
     return $n;
 }
 
-/** O tratamento em PDF no Drive: «<pasta do negócio>/Criativo/» ou «Biblioteca criativa/<quadro>/». */
+/** O tratamento em PDF no Drive: «<pasta do negócio>/Criativo/» ou «Biblioteca criativa/<Topperboard>/». */
 function cc_treatment_to_drive(PDO $pdo, array $board, array $doc, ?int $by): ?string {
     if (!r2_config()) return null;
     require_once __DIR__ . '/files.php';
@@ -311,7 +311,7 @@ function cc_treatment_to_drive(PDO $pdo, array $board, array $doc, ?int $by): ?s
         $root = cc_board_path($pdo, $board)[0];
         $deal = $root['deal_id'] ? files_deal_row($pdo, (int)$root['deal_id']) : null;
         $folder = $deal ? files_folder($pdo, $deal) : null;
-        $prefix = $folder !== null ? $folder . 'Criativo/' : FILES_LIBRARY . (r2_clean_name((string)$root['title']) ?: 'Quadro') . '/';
+        $prefix = $folder !== null ? $folder . 'Criativo/' : FILES_LIBRARY . (r2_clean_name((string)$root['title']) ?: 'Topperboard') . '/';
         $code = $deal ? (string)$deal['code'] : '';
         $r = files_put($pdo, ['deal_id' => $deal ? (int)$deal['id'] : null, 'section' => 'criativo', 'prefix' => $prefix,
                               'name' => files_name($code, 'Tratamento', (string)($doc['title'] ?? ''), 'pdf'), 'mime' => 'application/pdf', 'overwrite' => true,
@@ -366,7 +366,7 @@ function cc_requirements(PDO $pdo, array $deal): array {
             $sent = (int)$st->fetchColumn() > 0;
         }
     }
-    $hint = !$b ? 'O pré-criativo nasce ao validar o X-Ray.' : 'No Centro Criativo: «Gerar página» e «Enviar para a Orçamentação».';
+    $hint = !$b ? 'O pré-criativo nasce ao validar o X-Ray.' : 'No Toppernote: «Gerar página» e «Enviar para a Orçamentação».';
     if ($mode === 'required') return [['label' => 'Pré-criativo enviado para a Orçamentação', 'ok' => $sent, 'hint' => $hint]];
     return [['label' => 'Pré-criativo enviado para a Orçamentação (recomendado)', 'ok' => true, 'soft' => true, 'done' => $sent, 'hint' => $hint]];
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * topper. admin — a IA do Centro Criativo (§23.5): Claude + embeddings multimodais, sem SDK.
+ * topper. admin — a IA do Toppernote (§23.5): Claude + embeddings multimodais, sem SDK.
  *
  * O SDK oficial precisa de Composer, que o alojamento não tem: um POST JSON com cURL, como o
  * assistente do Drive (inc/ai.php), mas com as regras do serviço premium:
@@ -39,7 +39,7 @@ const CC_AI_PRICES = [
 
 const CC_AI_PURPOSES = [
     'cc-analyze' => 'Análise de referências', 'cc-embed' => 'Embeddings (semelhança)', 'cc-angles' => 'Ângulos',
-    'cc-prepare' => 'Preparar com IA (pré-criativo)', 'cc-page' => 'Páginas do pré-criativo', 'cc-tidy' => 'Arrumar o quadro',
+    'cc-prepare' => 'Preparar com IA (pré-criativo)', 'cc-page' => 'Páginas do pré-criativo', 'cc-tidy' => 'Arrumar o Topperboard',
     'cc-treat' => 'Tratamentos', 'cc-shots' => 'Listas de planos', 'cc-stt' => 'Transcrição (fala)',
 ];
 
@@ -158,9 +158,9 @@ function cc_ai_usage_summary(PDO $pdo): array {
 
 function cc_ai_guard(PDO $pdo): array {
     $cfg = cc_ai_config();
-    if (!$cfg) throw new CcAiException('A IA do Centro Criativo ainda não está ligada: falta a chave da Anthropic (Definições › Integrações).', 'not_configured');
+    if (!$cfg) throw new CcAiException('A IA do Toppernote ainda não está ligada: falta a chave da Anthropic (Definições › Integrações).', 'not_configured');
     if (cc_ai_month_spend($pdo) >= $cfg['cap'] - 0.05) {
-        throw new CcAiException('A IA do Centro Criativo chegou ao limite mensal de ' . number_format($cfg['cap'], 0, ',', ' ') . ' €. Volta no dia 1 (ou suba o limite).', 'budget');
+        throw new CcAiException('A IA do Toppernote chegou ao limite mensal de ' . number_format($cfg['cap'], 0, ',', ' ') . ' €. Volta no dia 1 (ou suba o limite).', 'budget');
     }
     return $cfg;
 }
@@ -214,7 +214,7 @@ function cc_ai_system(PDO $pdo): string {
     $vocab = [];
     foreach (CC_VOCAB as $k => [$label]) $vocab[] = $label . ': ' . implode(', ', cc_vocab($pdo, $k));
     return "És o diretor criativo sénior da topper., um estúdio de produção (vídeo, motion design, 3D/CG, fotografia e conteúdos) em Portugal. "
-         . "Trabalhas no Centro Criativo da plataforma interna: analisas referências, propões ângulos criativos, escreves páginas de pré-criativo, "
+         . "Trabalhas no Toppernote da plataforma interna: analisas referências, propões ângulos criativos, escreves páginas de pré-criativo, "
          . "tratamentos e listas de planos. Escreve sempre em português de Portugal (pt-PT), com frases curtas, concretas e visuais, "
          . "sem jargão vazio nem superlativos. Nunca inventes dados do cliente que não estejam no brief. "
          . "Quando classificas, usa o vocabulário controlado da casa (escolhe o termo que melhor serve, ou deixa vazio se nenhum serve):\n"
@@ -501,7 +501,7 @@ function cc_embed_image(string $key): ?string {
 function cc_embed(PDO $pdo, array $inputs, string $type, array $ctx = []): array {
     $cfg = cc_embed_config();
     if (!$cfg) throw new CcAiException('Os embeddings ainda não estão ligados (falta a chave da Voyage em Definições › Integrações).', 'not_configured');
-    if (cc_ai_month_spend($pdo) >= cc_ai_cap() - 0.05) throw new CcAiException('A IA do Centro Criativo chegou ao limite mensal.', 'budget');
+    if (cc_ai_month_spend($pdo) >= cc_ai_cap() - 0.05) throw new CcAiException('A IA do Toppernote chegou ao limite mensal.', 'budget');
     $body = json_encode(['inputs' => array_map(fn($c) => ['content' => $c], $inputs), 'model' => $cfg['model'], 'input_type' => $type === 'query' ? 'query' : 'document'],
                         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     for ($attempt = 0; ; $attempt++) {
@@ -583,7 +583,7 @@ function cc_refs_for_text(PDO $pdo, string $text, int $n = 9, array $exclude = [
 
 // ── ângulos, pré-criativo, páginas, arrumar, tratamento, planos ──
 
-/** O brief de um quadro (texto do quadro + X-Ray do negócio, sem preços nem custos). */
+/** O brief de um Topperboard (texto do Topperboard + X-Ray do negócio, sem preços nem custos). */
 function cc_brief_text(PDO $pdo, array $board): string {
     $t = trim((string)($board['brief'] ?? ''));
     if ($board['deal_id']) {
@@ -620,7 +620,7 @@ function cc_angle_schema(bool $lanes): array {
             'properties' => ['angles' => ['type' => 'array', 'items' => $item]]];
 }
 
-/** As referências do quadro (ou de uma faixa) como texto, para dar contexto. */
+/** As referências do Topperboard (ou de uma faixa) como texto, para dar contexto. */
 function cc_board_refs_text(PDO $pdo, int $boardId, string $lane = '', int $max = 40): string {
     $st = $pdo->prepare("SELECT a.* FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id
                           WHERE c.board_id = ? AND c.deleted_at IS NULL AND a.deleted_at IS NULL" . ($lane !== '' ? ' AND c.lane = ?' : '') . ' ORDER BY c.y, c.x LIMIT ' . $max);
@@ -645,10 +645,10 @@ function cc_board_notes_text(PDO $pdo, int $boardId, string $lane = ''): string 
 function cc_ai_angles(PDO $pdo, array $board, int $n = 3, string $avoid = ''): array {
     $lanes = $board['kind'] === 'precreative';
     $brief = cc_brief_text($pdo, $board);
-    if ($brief === '') throw new RuntimeException('Escreva primeiro o brief do quadro.');
+    if ($brief === '') throw new RuntimeException('Escreva primeiro o brief do Topperboard.');
     $prompt = "Brief:\n" . $brief
-            . "\n\nNotas no quadro:\n" . (cc_board_notes_text($pdo, (int)$board['id']) ?: '(nenhuma)')
-            . "\n\nReferências já no quadro:\n" . (cc_board_refs_text($pdo, (int)$board['id']) ?: '(nenhuma)')
+            . "\n\nNotas no Topperboard:\n" . (cc_board_notes_text($pdo, (int)$board['id']) ?: '(nenhuma)')
+            . "\n\nReferências já no Topperboard:\n" . (cc_board_refs_text($pdo, (int)$board['id']) ?: '(nenhuma)')
             . ($avoid !== '' ? "\n\nÂngulos já propostos (não repitas):\n" . $avoid : '')
             . "\n\n" . ($lanes
                 ? "Propõe $n ângulos para a Opção A (o pedido do cliente, tal como pedido) e $n para a Opção B (proposta de valor: mais ambiciosa, com mais valor para o cliente). lane = A ou B."
@@ -723,7 +723,7 @@ function cc_palette_merge(array $assets, int $n = 5): array {
     return array_slice(array_column($out, 0), 0, $n);
 }
 
-/** As referências que entram na página de uma faixa: as «manter» primeiro, depois pela ordem do quadro; até 6. */
+/** As referências que entram na página de uma faixa: as «manter» primeiro, depois pela ordem do Topperboard; até 6. */
 function cc_lane_assets(PDO $pdo, int $boardId, string $lane, int $n = 6): array {
     $st = $pdo->prepare("SELECT c.content, a.* FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id
                           WHERE c.board_id = ? AND c.lane = ? AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL ORDER BY c.y, c.x");
@@ -779,7 +779,7 @@ function cc_page_generate(PDO $pdo, array $board, string $lane, int $by): array 
     return $data;
 }
 
-/** «Arrumar o quadro»: agrupa os cartões soltos em colunas por tema. */
+/** «Arrumar o Topperboard»: agrupa os cartões soltos em colunas por tema. */
 function cc_ai_tidy(PDO $pdo, array $board, int $by): int {
     $cards = array_values(array_filter(cc_cards($pdo, (int)$board['id']), fn($c) => !$c['column_id'] && !in_array($c['type'], ['column', 'arrow', 'drawing'], true)));
     if (count($cards) < 3) throw new RuntimeException('Há poucos cartões soltos para arrumar.');
@@ -794,7 +794,7 @@ function cc_ai_tidy(PDO $pdo, array $board, int $by): int {
         $schema = ['type' => 'object', 'additionalProperties' => false, 'required' => ['groups'], 'properties' => ['groups' => ['type' => 'array', 'items' => [
             'type' => 'object', 'additionalProperties' => false, 'required' => ['title', 'cards'],
             'properties' => ['title' => ['type' => 'string'], 'cards' => ['type' => 'array', 'items' => ['type' => 'integer']]]]]]];
-        $res = cc_claude($pdo, 'cc-tidy', [['type' => 'text', 'text' => "Agrupa estes cartões de um quadro criativo em 3 a 7 colunas temáticas (por rota, técnica, ambiente ou ideia), com títulos curtos. Cada cartão entra numa só coluna.\n\n" . implode("\n", $lines)]],
+        $res = cc_claude($pdo, 'cc-tidy', [['type' => 'text', 'text' => "Agrupa estes cartões de um Topperboard criativo em 3 a 7 colunas temáticas (por rota, técnica, ambiente ou ideia), com títulos curtos. Cada cartão entra numa só coluna.\n\n" . implode("\n", $lines)]],
                           $schema, ['ctx' => ['board' => (int)$board['id']], 'max' => 8000, 'effort' => 'medium']);
         $groups = $res['data']['groups'] ?? null;
     }
@@ -827,19 +827,19 @@ function cc_ai_tidy(PDO $pdo, array $board, int $by): int {
     return $n;
 }
 
-/** «Quadro → tratamento»: o documento (título, logline, secções). Guarda-se como página do quadro. */
+/** «Topperboard → tratamento»: o documento (título, logline, secções). Guarda-se como página do Topperboard. */
 function cc_ai_treatment(PDO $pdo, array $board): array {
     $schema = ['type' => 'object', 'additionalProperties' => false, 'required' => ['title', 'logline', 'sections'],
         'properties' => ['title' => ['type' => 'string'], 'logline' => ['type' => 'string'],
             'sections' => ['type' => 'array', 'items' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['heading', 'body', 'refs'],
                 'properties' => ['heading' => ['type' => 'string'], 'body' => ['type' => 'string'], 'refs' => ['type' => 'array', 'items' => ['type' => 'integer']]]]]]];
-    $prompt = "Brief:\n" . cc_brief_text($pdo, $board) . "\n\nNotas do quadro:\n" . (cc_board_notes_text($pdo, (int)$board['id']) ?: '(nenhuma)')
-            . "\n\nReferências do quadro (use os #números em refs):\n" . (cc_board_refs_text($pdo, (int)$board['id'], '', 60) ?: '(nenhuma)')
+    $prompt = "Brief:\n" . cc_brief_text($pdo, $board) . "\n\nNotas do Topperboard:\n" . (cc_board_notes_text($pdo, (int)$board['id']) ?: '(nenhuma)')
+            . "\n\nReferências do Topperboard (use os #números em refs):\n" . (cc_board_refs_text($pdo, (int)$board['id'], '', 60) ?: '(nenhuma)')
             . "\n\nEscreve o tratamento do projeto, para apresentar ao cliente: título, logline e 4 a 7 secções (conceito, narrativa, look & feel, câmara e montagem, som, entrega), cada uma com as referências que a ilustram.";
     $res = cc_claude($pdo, 'cc-treat', [['type' => 'text', 'text' => $prompt]], $schema, ['ctx' => ['board' => (int)$board['id']], 'max' => 16000]);
     $doc = $res['data'];
     $doc['at'] = cc_now();
-    // guarda-se como a «página T» do quadro (as páginas A/B são do pré-criativo)
+    // guarda-se como a «página T» do Topperboard (as páginas A/B são do pré-criativo)
     $st = $pdo->prepare("SELECT id FROM cc_pages WHERE board_id = ? AND lane = 'T'");
     $st->execute([(int)$board['id']]);
     $json = json_encode($doc, JSON_UNESCAPED_UNICODE);
@@ -867,7 +867,7 @@ function cc_ai_shotlist(PDO $pdo, array $board): array {
         'properties' => ['title' => ['type' => 'string'], 'description' => ['type' => 'string'], 'camera' => ['type' => 'string'],
                          'seconds' => ['type' => 'number'], 'notes' => ['type' => 'string']]]]]];
     $res = cc_claude($pdo, 'cc-shots', [['type' => 'text', 'text' => "Brief:\n" . mb_substr(cc_brief_text($pdo, $board), 0, 3000) . "\n\nStoryboard, pela ordem:\n" . implode("\n", $lines)
-        . "\n\nTransforma o storyboard numa lista de planos para a rodagem/produção: um plano por quadro (junta só quando são claramente o mesmo plano), com título curto, descrição, câmara (lente/movimento), duração estimada em segundos e notas de produção."]],
+        . "\n\nTransforma o storyboard numa lista de planos para a rodagem/produção: um plano por Topperboard (junta só quando são claramente o mesmo plano), com título curto, descrição, câmara (lente/movimento), duração estimada em segundos e notas de produção."]],
         $schema, ['ctx' => ['board' => (int)$board['id']], 'max' => 12000]);
     return array_values(array_filter((array)($res['data']['shots'] ?? []), 'is_array'));
 }

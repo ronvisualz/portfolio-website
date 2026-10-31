@@ -285,7 +285,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     require_once __DIR__ . '/migrate_xsell.php';
     migrate_xsell($pdo);
 
-    // ── 24 · Centro Criativo (§23) ─────────────────────────
+    // ── 24 · Toppernote (§23) ─────────────────────────
     //
     // Quadros, biblioteca (referências sem cópia), frames de vídeo, cartões, comentários,
     // páginas do pré-criativo, fila e gasto da IA; Review, portal e captura preparados.
@@ -300,7 +300,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     require_once __DIR__ . '/migrate_files.php';
     migrate_files($pdo);
 
-    // ── 27 · Centro Criativo, fase 2: Review e Portal do cliente (§24) ──
+    // ── 27 · Toppernote, fase 2: Review e Portal do cliente (§24) ──
     //
     // Peças de review com versões (nunca se apagam), comentários no frame/intervalo/pino com
     // desenho, internos ou para o cliente, rondas por envio consolidado, portal por negócio.
@@ -308,7 +308,7 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     migrate_review($pdo);
     require_once __DIR__ . '/migrate_rt.php';
     migrate_rt($pdo);
-    // ── 29 · Centro Criativo: áudio (§27) — tipo próprio, categoria, forma de onda; os áudios antigos convertidos ──
+    // ── 29 · Toppernote: áudio (§27) — tipo próprio, categoria, forma de onda; os áudios antigos convertidos ──
     require_once __DIR__ . '/migrate_audio.php';
     migrate_audio($pdo);
     // ── 30 · Financeiro (§28): parâmetros com fonte legal, tabelas do IRS, documentos, pagamentos, custos fixos,

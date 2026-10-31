@@ -1,5 +1,5 @@
 /* topper. admin — cartão «Portal do cliente» na ficha do negócio: criar, copiar, renovar e revogar o link,
- * validade, separadores, idioma, quadros partilhados e os acessos do cliente (com ícones). */
+ * validade, separadores, idioma, Topperboards partilhados e os acessos do cliente (com ícones). */
 (function () {
   'use strict';
   var box = document.querySelector('[data-rv-share]'); if (!box) return;
@@ -20,14 +20,14 @@
     return fetch(API + '?a=' + a, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'X-CSRF-Token': CSRF }, body: b })
       .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || 'Não foi possível concluir.'); return j; });
   }
-  var TABS = [['proposal', 'Proposta'], ['boards', 'Quadros'], ['review', 'Review']];
+  var TABS = [['proposal', 'Proposta'], ['boards', 'Topperboards'], ['review', 'Review']];
   var D = null;
 
   function render() {
     var s = D.share, can = D.can, h = '';
     if (!s || !s.valid) {
       h += '<p class="dc-empty">' + (s ? 'O link do portal deixou de funcionar (revogado ou fora da validade).' : 'Ainda sem link.') + '</p>'
-        + '<p class="dc-note">Um link privado, sem conta, onde o cliente vê a proposta, os quadros partilhados e as peças enviadas, comenta e aprova. Nunca vê custos, notas, tarefas nem comentários internos.</p>'
+        + '<p class="dc-note">Um link privado, sem conta, onde o cliente vê a proposta, os Topperboards partilhados e as peças enviadas, comenta e aprova. Nunca vê custos, notas, tarefas nem comentários internos.</p>'
         + (can ? '<div class="dc-acts"><button type="button" class="btn sm" data-sh="create">' + ico('ext') + ' ' + (s ? 'Criar um link novo' : 'Criar link do portal') + '</button></div>' : '');
     } else {
       h += '<div class="rv-link"><code>…/portal.php?t=••••••••</code>'

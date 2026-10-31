@@ -241,7 +241,7 @@ function my_alerts(PDO $pdo): array {
         }
     }
 
-    // Portal do cliente (Centro Criativo, fase 2): comentários enviados e aprovações do cliente, para o
+    // Portal do cliente (Toppernote, fase 2): comentários enviados e aprovações do cliente, para o
     // responsável comercial e o de execução do negócio (dos últimos 7 dias).
     if (db_has_table($pdo, 'cc_share_log') && (can('criativo') || can('negocios'))) {
         $since = date('Y-m-d H:i:s', time() - 7 * 86400);
@@ -254,7 +254,7 @@ function my_alerts(PDO $pdo): array {
             $out['deal'][] = ['key' => 'rvc:' . $l['id'], 'kind' => 'deal', 'icon' => $ap ? 'check' : 'bubble', 'sev' => 'warn', 'date' => substr((string)$l['at'], 0, 10),
                               'title' => ($ap ? 'O cliente aprovou' : 'Comentários do cliente') . ' · ' . $l['code'] . ($l['title'] ? ' · ' . $l['title'] : ''),
                               'sub' => trim(($l['client_name'] ?: 'Cliente') . ($l['detail'] !== '' ? ' · ' . $l['detail'] : '') . ' · no portal'),
-                              'url' => $l['item_id'] && can('criativo') ? '/admin/criativo.php?rv=' . (int)$l['item_id'] : '/admin/negocio.php?id=' . (int)$l['deal_id'] . '#c-portal'];
+                              'url' => $l['item_id'] && can('criativo') ? '/admin/toppernote.php?rv=' . (int)$l['item_id'] : '/admin/negocio.php?id=' . (int)$l['deal_id'] . '#c-portal'];
         }
         // @menções nos comentários do Review
         if (can('criativo')) {
@@ -264,7 +264,7 @@ function my_alerts(PDO $pdo): array {
             foreach ($st->fetchAll() as $c) {
                 $out['team'][] = ['key' => 'rvm:' . $c['id'], 'kind' => 'mention', 'icon' => 'criativo', 'sev' => 'warn', 'date' => substr((string)$c['created_at'], 0, 10),
                                   'title' => ($c['name'] ?: 'Alguém') . ' mencionou-o no Review «' . $c['title'] . '»', 'sub' => mb_strimwidth((string)$c['body'], 0, 90, '…'),
-                                  'url' => '/admin/criativo.php?rv=' . (int)$c['item_id']];
+                                  'url' => '/admin/toppernote.php?rv=' . (int)$c['item_id']];
             }
         }
     }
@@ -315,7 +315,7 @@ function my_alerts(PDO $pdo): array {
                                       'url' => '/admin/calendar.php?t=quadro'];
                 }
             }
-            // @menções no Centro Criativo (§23), dos últimos 14 dias.
+            // @menções no Toppernote (§23), dos últimos 14 dias.
             if (db_has_table($pdo, 'cc_comments') && can('criativo')) {
                 $st = $pdo->prepare("SELECT c.id, c.board_id, c.card_id, c.body, c.created_at, b.title, u.name FROM cc_comments c
                                        JOIN cc_boards b ON b.id = c.board_id LEFT JOIN users u ON u.id = c.user_id
@@ -324,7 +324,7 @@ function my_alerts(PDO $pdo): array {
                 foreach ($st->fetchAll() as $c) {
                     $out['team'][] = ['key' => 'ccm:' . $c['id'], 'kind' => 'mention', 'icon' => 'criativo', 'sev' => 'warn', 'date' => substr((string)$c['created_at'], 0, 10),
                                       'title' => ($c['name'] ?: 'Alguém') . ' mencionou-o em «' . $c['title'] . '»', 'sub' => mb_strimwidth((string)$c['body'], 0, 90, '…'),
-                                      'url' => '/admin/criativo.php?b=' . (int)$c['board_id'] . ($c['card_id'] ? '&card=' . (int)$c['card_id'] : '')];
+                                      'url' => '/admin/toppernote.php?b=' . (int)$c['board_id'] . ($c['card_id'] ? '&card=' . (int)$c['card_id'] : '')];
                 }
             }
             if (role_is_admin((string)$meRow['role'])) {

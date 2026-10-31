@@ -162,7 +162,7 @@ function drive_store_moved(PDO $pdo, string $from, string $to): void {
         // O índice reaproveita o texto já extraído; se falhar, a próxima reconciliação trata disso.
         try { drive_index_moved($pdo, $from, $to); } catch (Throwable $e) { error_log('drive_index_moved: ' . $e->getMessage()); }
     }
-    // O registo de ficheiros da plataforma (propostas, faturação, Centro Criativo…) segue a mudança.
+    // O registo de ficheiros da plataforma (propostas, faturação, Toppernote…) segue a mudança.
     if (is_file(__DIR__ . '/files.php')) {
         try { require_once __DIR__ . '/files.php'; files_moved($pdo, $from, $to); } catch (Throwable $e) { error_log('files_moved: ' . $e->getMessage()); }
     }
