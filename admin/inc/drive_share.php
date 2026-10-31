@@ -202,7 +202,8 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
     $rel = is_string($in['rel'] ?? null) ? $in['rel'] : '';
     $isReplace = !empty($in['replace']) || !empty($in['replaced']);
     // o alvo: dentro da pasta partilhada; num link de ficheiro, só o próprio ficheiro
-    $key = $s['folder'] ? drive_share_rel($base, $rel, $a === 'mkdir') : ($rel === '' || $rel === drive_base($s['k']) ? $s['k'] : null);
+    $asFolder = $a === 'mkdir' || ($a === 'rename' && substr($rel, -1) === '/');   // renomear uma pasta: «Fotos/»
+    $key = $s['folder'] ? drive_share_rel($base, $rel, $asFolder) : ($rel === '' || $rel === drive_base($s['k']) ? $s['k'] : null);
     if ($key === null) return [400, ['ok' => false, 'error' => 'Caminho inválido.']];
     if ($s['folder'] && !drive_share_sees($s, $key)) return [404, ['ok' => false, 'error' => 'Esse item não existe neste link.']];
     $action =$a === 'sign' || $a === 'done' ? ($isReplace ? 'replace' : 'upload') : $a;

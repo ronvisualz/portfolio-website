@@ -65,6 +65,9 @@ t_true(r2_head($dir . 'b.txt') !== null && r2_head($dir . 'a.txt') === null, 'o 
 // criar subpasta
 t_eq(visit($P, ['a' => 'mkdir', 'rel' => 'Fotos'])['code'], 200, 'criar subpasta');
 t_true(drive_folder_exists($dir . 'Fotos/'), 'a subpasta existe');
+tests_put($dir . 'Fotos/um.jpg', 'jpg');
+t_eq(visit($P, ['a' => 'rename', 'rel' => 'Fotos/', 'to' => 'Imagens'])['code'], 200, 'renomear uma pasta');
+t_true(drive_folder_exists($dir . 'Imagens/') && r2_get($dir . 'Imagens/um.jpg') === 'jpg' && !drive_folder_exists($dir . 'Fotos/'), 'a pasta e o que tem dentro passam ao nome novo');
 
 // nunca apagar, nunca sair da pasta
 foreach (['delete', 'purge', 'trash', 'move', 'restore'] as $a) t_eq(visit($P, ['a' => $a, 'rel' => 'b.txt'])['code'], 400, "ação «{$a}» não existe → 400");
