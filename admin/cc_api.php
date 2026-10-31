@@ -9,7 +9,7 @@
  *   a=library           q, color, style…, origin, kind, inbox, offset — a Biblioteca / Caixa de entrada
  *   a=asset             id — a referência, com frames, Topperboards onde está e análise
  *   a=similar           id — «Mais como este»
- *   a=comments          board, card
+ *   a=comments          board, card, last (só os últimos N; vem sempre o total)
  *   a=jobs              ids — estado da IA de várias referências
  *   a=deals             q — negócios para ligar um Topperboard
  * Mudar (editar; apagar Topperboards pede gerir). Todos pedem o token CSRF:
@@ -303,7 +303,9 @@ case 'similar': {
 
 case 'comments': {
     $b = board_req($pdo);
-    cout(200, ['ok' => true, 'comments' => cc_comments($pdo, (int)$b['id'], rint('card') ?: null)]);
+    $all = cc_comments($pdo, (int)$b['id'], rint('card') ?: null);
+    $last = rint('last');   // §33.4: o balão só mostra os últimos (e o total, para «Ver todos»)
+    cout(200, ['ok' => true, 'comments' => $last > 0 ? array_slice($all, -min($last, 20)) : $all, 'total' => count($all)]);
 }
 
 case 'jobs': {

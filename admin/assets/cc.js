@@ -1040,7 +1040,7 @@
     // ── desenhar os cartões ──
     function cardHtml(c) {
       var a = c.asset, x = c.c || {}, h = '';
-      var badges = (c.nc ? '<span class="ccc-nc" title="Comentários">' + c.nc + '</span>' : '')
+      var badges = (c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '')
         + (x.state === 'keep' ? '<span class="ccc-state">Manter</span>' : x.state === 'swap' ? '<span class="ccc-state swap">Trocar</span>' : '')
         + (a ? '<span class="ccc-ai">' + aiBadge(a) + '</span>' : '');
       var hov = '';
@@ -1505,6 +1505,47 @@
       target.addEventListener('keydown', key);
       target.addEventListener('paste', paste);
     }
+    // ── balão de comentários (§33.4): os últimos 3, só de leitura, e «Ver todos» ──
+    var nball = null, lastTouch = 0;
+    function closeBalloon() { if (nball) { clearTimeout(nball.t); nball.el.remove(); nball = null; } }
+    function openBalloon(badge) {
+      var cardEl = badge.closest('.ccc'), c = cardEl && B.cards.get(+cardEl.getAttribute('data-id'));
+      if (!c) return;
+      if (nball && nball.id === c.id) { clearTimeout(nball.t); return; }
+      closeBalloon();
+      var el = document.createElement('div');
+      el.className = 'cc-nballoon';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', 'Últimos comentários');
+      el.innerHTML = '<p class="nb-load muted small">A carregar…</p>';
+      document.body.appendChild(el);
+      nball = { el: el, id: c.id, badge: badge, t: 0 };
+      function place() {
+        var r = badge.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, M = 8;
+        var top = r.bottom + 6 + h <= innerHeight - M ? r.bottom + 6 : Math.max(M, r.top - 6 - h);
+        el.style.left = Math.round(Math.min(Math.max(M, r.right - w), innerWidth - M - w)) + 'px';
+        el.style.top = Math.round(top) + 'px';
+      }
+      place();
+      var mine = nball;
+      api('comments', { board: B.id, card: c.id, last: 3 }, 'GET').then(function (j) {
+        if (nball !== mine) return;
+        var cut = function (t) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > 120 ? t.slice(0, 119).replace(/\s+\S*$/, '') + '…' : t; };
+        el.innerHTML = (j.comments || []).map(function (m) {
+          return '<div class="nb-i"><div class="nb-h"><b>' + esc(m.who || '') + '</b><time>' + esc(m.when || '') + '</time></div><p>' + esc(cut(m.body)) + '</p></div>';
+        }).join('') + '<button type="button" class="btn sm ghost nb-all" data-nb-all>Ver todos (' + (j.total || 0) + ')</button>';
+        place();
+      }).catch(function () { if (nball === mine) el.innerHTML = '<p class="small muted">Não foi possível carregar os comentários.</p>'; });
+      el.addEventListener('mouseenter', function () { clearTimeout(mine.t); });
+      el.addEventListener('mouseleave', function () { if (Date.now() - lastTouch > 800) balloonLeave(); });
+      el.addEventListener('click', function (e) {
+        if (!e.target.closest('[data-nb-all]')) return;
+        closeBalloon();
+        select([c.id]); B.side = 'com'; sideEl.hidden = false; sideSync();
+      });
+    }
+    function balloonLeave() { if (nball) { clearTimeout(nball.t); nball.t = setTimeout(closeBalloon, 220); } }
+
     // ── cor: seletor ancorado (§33.2) ──
     var cpop = null;
     function closeColorPop() { if (cpop) { var o = cpop; cpop = null; o.el.remove(); document.removeEventListener('pointerdown', o.out, true); if (o.back && o.back.isConnected) try { o.back.focus({ preventScroll: true }); } catch (x) {} } }
@@ -1737,6 +1778,7 @@
           api('card_swap', { board: B.id, card: c.id }).then(function (j) { B.rev = j.rev; B.cards.set(j.card.id, j.card); rerender(j.card); if (RT) RT.added([j.card]); toast('Trocada por outra parecida.'); }).catch(fail).then(function () { b.disabled = false; });
           return;
         }
+        if (act === 'nc') { if (nball && nball.id === +b.closest('.ccc').getAttribute('data-id') && !nball.hover) closeBalloon(); else openBalloon(b); return; }
         if (act === 'li-add') {
           c.c.items.push({ t: '', d: false });
           rerender(c);
@@ -1755,6 +1797,25 @@
         li.classList.add('dragging');
       });
       vp.addEventListener('dragend', function () { liDrag = null; $$('.ccc-li.dragging, .ccc-li.drop-a, .ccc-li.drop-b', vp).forEach(function (x) { x.classList.remove('dragging', 'drop-a', 'drop-b'); }); });
+      // §33.4: passar o cursor no número de comentários (250 ms) abre o balão; sair fecha
+      var ncT = 0;   // no toque o browser emula mouseover/mouseout: não contam como passar o cursor
+      document.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'touch') lastTouch = Date.now();
+        if (nball && !nball.el.contains(e.target) && !(e.target.closest && e.target.closest('.ccc-nc'))) closeBalloon();
+      }, true);
+      vp.addEventListener('mouseover', function (e) {
+        var b = e.target.closest && e.target.closest('.ccc-nc');
+        if (!b || drag || Date.now() - lastTouch < 800) return;
+        clearTimeout(ncT);
+        if (nball && nball.badge === b) { clearTimeout(nball.t); return; }
+        ncT = setTimeout(function () { openBalloon(b); if (nball) nball.hover = true; }, 250);
+      });
+      vp.addEventListener('mouseout', function (e) {
+        var b = e.target.closest && e.target.closest('.ccc-nc');
+        if (!b || (e.relatedTarget && b.contains(e.relatedTarget)) || Date.now() - lastTouch < 800) return;
+        clearTimeout(ncT);
+        balloonLeave();
+      });
       vp.addEventListener('dragover', function (e) {
         if (liDrag) {
           var li = e.target.closest && e.target.closest('.ccc-li'), el = li && li.closest('.ccc');
@@ -2101,6 +2162,7 @@
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
       if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
+      if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
       var ae = document.activeElement;
       if (cpop && ae && cpop.el.contains(ae)) return;
       if (typing(ae)) return;
