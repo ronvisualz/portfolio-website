@@ -22,6 +22,15 @@ execFileSync('php', [path.join(__dirname, 'seed_drive.php')]);
   const edit = p.locator('input[name=dr-sh-perm][value=edit]');
   check(await edit.count() === 1, 'o diálogo tem a opção «Pode editar»');
   check(await p.locator('input[name=dr-sh-perm][value=view]').isChecked().catch(() => false), '«Só ver» vem escolhido');
+  // o layout: o botão de opção ao lado do texto (não esticado) e, nos links ativos, o texto com espaço para ler
+  const lay = await p.evaluate(() => {
+    const r = document.querySelector('input[name=dr-sh-perm]'), lab = r && r.closest('label');
+    const t = document.querySelector('.dr-sh-row .dr-sh-t');
+    return { radio: r ? r.getBoundingClientRect().width : 0, labelText: lab ? lab.querySelector('b').getBoundingClientRect().left - lab.getBoundingClientRect().left : 999,
+             rowText: t ? t.getBoundingClientRect().width : 999 };
+  });
+  check(lay.radio < 30 && lay.labelText < 60, 'as opções têm o botão ao lado do texto (' + JSON.stringify(lay) + ')');
+  check(lay.rowText > 140, 'nos links ativos, o prazo e as descargas têm espaço (' + Math.round(lay.rowText) + ' px)');
   if (await edit.count()) await edit.check();
   await p.locator('[data-create]').click();
   await p.waitForSelector('#dr-sh-url');
