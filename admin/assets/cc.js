@@ -1473,7 +1473,7 @@
         + (EDIT ? '<span class="sb-wrap"><button type="button" class="btn sm ghost" data-sb="align" aria-haspopup="menu" aria-expanded="false">Alinhar ▾</button><div class="sb-menu" role="menu" hidden>'
           + '<button type="button" role="menuitem" data-align="left">À esquerda</button><button type="button" role="menuitem" data-align="top">Em cima</button>'
           + '<button type="button" role="menuitem" data-align="hdist">Distribuir na horizontal</button><button type="button" role="menuitem" data-align="vdist">Distribuir na vertical</button></div></span>'
-          + '<button type="button" class="btn sm ghost danger" data-sb="del" title="Apagar ( Delete )">Apagar</button>' : '');
+          + '<button type="button" class="btn sm ghost sb-del" data-sb="del" title="Apagar ( Delete )">Apagar</button>' : '');
     }
     function alignSel(how) {
       var cs = Array.from(B.sel).map(function (id) { return B.cards.get(id); }).filter(function (c) { return c && !c.col && c.type !== 'arrow'; });
@@ -1531,17 +1531,26 @@
     function drivePick() {
       var at = ptrWorld();
       var el = document.createElement('div');
-      el.className = 'mdl cc-dpick-back';
+      el.className = 'cc-dpick-back';
       el.innerHTML = '<div class="cc-dpick" role="dialog" aria-modal="true" aria-label="Juntar da Drive"><div class="dp-h"><h3>Juntar da Drive</h3>'
         + '<input type="search" placeholder="Procurar na Drive (nome ou pasta)" aria-label="Procurar na Drive"></div>'
-        + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="listbox" aria-multiselectable="true"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
+        + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="group" aria-label="Ficheiros da Drive"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
         + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários.</span>'
         + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
       document.body.appendChild(el);
       var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
       var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
       var back = document.activeElement;
-      function close() { el.remove(); if (back && back.focus) back.focus(); }
+      function close() { el.remove(); document.removeEventListener('keydown', escKey, true); if (back && back.focus) back.focus(); }
+      // Esc fecha sempre (antes dos atalhos da tela); Tab fica dentro do diálogo
+      function escKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
+        if (e.key === 'Tab') {
+          var f = $$('input, button:not([disabled]), .dp-f', dlg).filter(function (x) { return x.offsetParent; }), i = f.indexOf(document.activeElement);
+          if (i < 0 || (e.shiftKey && i === 0) || (!e.shiftKey && i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+        }
+      }
+      document.addEventListener('keydown', escKey, true);
       function base(k) { var p = k.replace(/\/$/, '').split('/'); return p[p.length - 1]; }
       function paint() {
         addB.disabled = !picked.size;
@@ -1562,8 +1571,8 @@
         }
         html += shown.map(function (o, i) {
           var on = picked.has(o.k);
-          return '<div class="dp-f' + (on ? ' on' : '') + '" role="option" aria-selected="' + on + '" tabindex="0" data-i="' + i + '"><input type="checkbox" tabindex="-1"' + (on ? ' checked' : '') + ' aria-hidden="true"><span><b>' + esc(base(o.k)) + '</b>'
-            + (term || !prefix ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '</span><small>' + fmtBytes(o.s || 0) + '</small></div>';
+          return '<button type="button" class="dp-f' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-i="' + i + '"><i class="dp-ck" aria-hidden="true"></i><span><b>' + esc(base(o.k)) + '</b>'
+            + (term || !prefix ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '</span><small>' + fmtBytes(o.s || 0) + '</small></button>';
         }).join('');
         list.innerHTML = html || '<p class="muted">' + (term ? 'Nada encontrado com «' + esc(q.value.trim()) + '».' : 'Pasta vazia.') + '</p>';
       }
@@ -1580,7 +1589,6 @@
         if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(JSON.stringify(keys), at); }
       });
       el.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
         var f = e.target.closest && e.target.closest('.dp-f');
         if (f && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(+f.getAttribute('data-i'), e.shiftKey); }
         else if (f && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); var n = f[e.key === 'ArrowDown' ? 'nextElementSibling' : 'previousElementSibling']; if (n && n.classList.contains('dp-f')) n.focus(); }
@@ -2780,6 +2788,7 @@
       if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
       var ae = document.activeElement;
       if (cpop && ae && cpop.el.contains(ae)) return;
+      if (ae && ae.closest && ae.closest('.cc-dpick, .cc-pmenu, .cc-upmenu, .ccb-selbar .sb-menu')) return;   // as teclas são do diálogo/menu
       if (typing(ae)) return;
       if (slash && e.key !== 'Escape') return;
       var mod = e.metaKey || e.ctrlKey, k = e.key;

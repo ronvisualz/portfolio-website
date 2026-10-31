@@ -193,7 +193,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-selbar .sb-menu[hidden] { display: none; }
 .ccb-selbar .sb-menu button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 7px; font: 500 13px var(--body); color: var(--fg); cursor: pointer; }
 .ccb-selbar .sb-menu button:hover, .ccb-selbar .sb-menu button:focus-visible { background: var(--chip); outline: none; }
-.ccb-selbar .danger { color: var(--bad-fg); }
+.ccb-selbar .sb-del { color: var(--bad-fg); }
 @media (pointer: coarse) { .ccb-selbar .btn, .ccb-selbar .sb-menu button { min-height: 44px; } }
 .ccb-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 2px; background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 3px; box-shadow: var(--sh-card); }
 .ccb-zoom button { width: 30px; height: 28px; border: 0; background: none; color: var(--fg); border-radius: 7px; cursor: pointer; display: grid; place-items: center; }
@@ -612,7 +612,9 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-d:hover, .cc-dpick .dp-f:hover { background: var(--chip); }
 .cc-dpick .dp-f.on { background: color-mix(in srgb, var(--hi) 18%, transparent); }
 .cc-dpick .dp-f:focus-visible, .cc-dpick .dp-d:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
-.cc-dpick .dp-f input { width: auto; margin: 0; accent-color: var(--hi); pointer-events: none; }
+.cc-dpick .dp-ck { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--mute); border-radius: 4px; display: grid; place-items: center; }
+.cc-dpick .dp-f.on .dp-ck { background: var(--hi); border-color: var(--hi); }
+.cc-dpick .dp-f.on .dp-ck::after { content: ''; width: 8px; height: 4px; border: 2px solid #111; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
 .cc-dpick .dp-f span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cc-dpick .dp-f span b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-dpick .dp-f small { color: var(--mute); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -627,3 +629,17 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 /* §33.8: cartões de link */
 .ccc-link .by { display: block; font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
 .ccd-media iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; background: #000; }
+
+/* §33 acessibilidade: alvos de toque de 44 px no iPad/telemóvel; foco visível nos controlos novos */
+@media (pointer: coarse) {
+  .ccb-tools button, .ccb-tools label { width: 44px; height: 44px; }
+  .ccb-gone .btn, .ccd-palh .btn, .ccd-palh .lnk, .cc-dpick .dp-f-bar .btn, .cc-pres button { min-height: 44px; min-width: 44px; }
+  .cc-cpop { width: 268px; }
+  .cc-cpop .cp-sw { width: 44px; height: 44px; }
+  .cc-cpop .cp-act .btn { min-height: 44px; }
+  .ccd-pal .ccd-pcb, .ccd-pal .ccd-pm { min-height: 44px; }
+  .ccd-pal .ccd-pm { min-width: 44px; }
+  .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
+}
+.ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.ccb-side-grip:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
