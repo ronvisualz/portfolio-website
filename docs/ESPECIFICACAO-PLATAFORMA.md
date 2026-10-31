@@ -4211,3 +4211,15 @@ No detalhe de uma imagem (e de um vídeo, no fotograma em pausa), a «Paleta» a
 - **Clique adiciona** a cor à paleta (fica marcada como «escolhida por» quem a adicionou, distinta das automáticas); Shift + clique adiciona várias seguidas sem sair do modo.
 - **Clique em qualquer cor** da paleta copia o **#HEX** (aviso «#7C7774 copiado»); menu ⋯ na cor: copiar como RGB/HSL, renomear (ex.: «Pele»), remover (só as adicionadas à mão; as automáticas podem esconder-se), criar **cartão Amostra de cor** no Topperboard. Botão **«Copiar paleta»** copia todos os #HEX.
 - A paleta (automática + manual) fica guardada na referência e entra na pesquisa por cor da Biblioteca. Leitura de píxeis no mesmo domínio (cc_file.php) para o canvas não ficar bloqueado.
+
+### 33.12 Selecionar várias coisas com Alt (31 out 2026)
+Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar várias coisas:
+- **Alt + arrastar** (Windows) / **Option + arrastar** (Mac) no fundo desenha um **retângulo de seleção** (contorno tracejado com fundo azul translúcido); ao largar ficam selecionados os cartões **tocados** pelo retângulo; com Shift também, soma à seleção atual. Mostrar «3 selecionados» e a barra de ações da seleção (mover, copiar, alinhar, apagar com Anular).
+- **Shift + clique** acrescenta/retira cartões um a um; **Ctrl/Cmd A** seleciona tudo.
+- **iPad / toque:** tocar e manter ~0,4 s no fundo e depois arrastar desenha o retângulo (dois dedos continuam a mover/zoom).
+- O cursor muda para mira enquanto Alt está premido sobre o fundo, para se perceber o modo. Alt enquanto se arrasta um cartão continua a desligar o encaixe (já existe).
+
+### 33.13 Som só em «Apresentar» (31 out 2026)
+Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
+- **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
+- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
