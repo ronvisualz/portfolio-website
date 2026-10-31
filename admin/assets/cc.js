@@ -1088,7 +1088,7 @@
         + (EDIT ? '<button type="button" data-undo="0" aria-label="Anular (' + MODK + ' Z)" data-tip disabled>' + ico('undo') + '</button><button type="button" data-undo="1" aria-label="Refazer (' + MODK + ' Shift Z)" data-tip disabled>' + ico('redo') + '</button><hr>' : '')
         + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
           + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
-          + '<hr>' + '<label data-tip aria-label="Carregar imagens, vídeos ou ficheiros">' + ico('upload') + '<input type="file" multiple hidden data-up></label>'
+          + '<hr>' + '<button type="button" data-upmenu aria-haspopup="menu" aria-label="Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)" data-tip>' + ico('upload') + '</button><input type="file" multiple hidden data-up>'
           + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
         + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>'
         + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
@@ -1264,6 +1264,7 @@
         default:
           h = ico('file') + '<div><b>' + esc(a ? (a.file || a.title) : 'Ficheiro') + '</b><small>' + esc(a && a.mime ? a.mime : '') + '</small></div>';
       }
+      if (c.gone) h = '<div class="ccc-gone" role="note">' + ico('trash') + ' Ficheiro apagado da Drive</div>' + h;   // §33.9
       return h + badges + hov;
     }
     function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
@@ -1275,7 +1276,7 @@
     }
     function makeEl(c) {
       var el = document.createElement('div');
-      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '');
+      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '') + (c.gone ? ' gone' : '');
       el.setAttribute('data-id', c.id);
       if (c.type === 'note' && c.c && c.c.color) { el.style.setProperty('--note', c.c.color); el.classList.add('dark-ink'); }
       el.innerHTML = cardHtml(c);
@@ -1394,6 +1395,7 @@
       drawArrows();
     }
     function renderAll() {
+      goneBar();
       layer.innerHTML = '';
       B.els.clear();
       if (B.lanes) {
@@ -1487,6 +1489,133 @@
       drawArrows();
       save(after.map(function (a) { return { id: a.id, x: a.x, y: a.y }; }));
     }
+    // ── enviar: do dispositivo ou da Drive (§33.9) ──
+    function driveApi(body) {
+      return fetch('/admin/drive_api.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Resposta inesperada do servidor.' }; }).then(function (j) { j.status = r.status; return j; }); });
+    }
+    function driveRun(body) { return driveApi(body).then(function (j) { return j.ok && j.done === false && j.next ? driveRun(j.next) : j; }); }
+    var upm = null;
+    function closeUpMenu() { if (upm) { upm.el.remove(); document.removeEventListener('pointerdown', upm.out, true); upm = null; } }
+    function upMenu(btn) {
+      var inp = $('[data-up]', root);
+      if (!B.data.drive) { inp.click(); return; }   // sem acesso à Drive: só do dispositivo
+      if (upm) { closeUpMenu(); return; }
+      var el = document.createElement('div');
+      el.className = 'cc-upmenu'; el.setAttribute('role', 'menu'); el.setAttribute('aria-label', 'Enviar');
+      el.innerHTML = '<button type="button" role="menuitem" data-um="dev">' + ico('upload') + ' Do dispositivo</button><button type="button" role="menuitem" data-um="drive">' + ico('drive') + ' Da Drive</button>';
+      document.body.appendChild(el);
+      var r = btn.getBoundingClientRect();
+      el.style.left = Math.round(r.right + 8) + 'px'; el.style.top = Math.round(Math.min(r.top, innerHeight - el.offsetHeight - 8)) + 'px';
+      var out = function (e) { if (!el.contains(e.target) && !btn.contains(e.target)) closeUpMenu(); };
+      document.addEventListener('pointerdown', out, true);
+      upm = { el: el, out: out };
+      $('button', el).focus();
+      el.addEventListener('keydown', function (e) {
+        var bs = $$('button', el), i = bs.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); bs[(i + 1) % 2].focus(); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeUpMenu(); btn.focus(); }
+      });
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-um]'); if (!b) return;
+        var k = b.getAttribute('data-um'); closeUpMenu();
+        if (k === 'dev') inp.click(); else drivePick();
+      });
+    }
+    function fold(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+    function drivePick() {
+      var at = ptrWorld();
+      var el = document.createElement('div');
+      el.className = 'mdl cc-dpick-back';
+      el.innerHTML = '<div class="cc-dpick" role="dialog" aria-modal="true" aria-label="Juntar da Drive"><div class="dp-h"><h3>Juntar da Drive</h3>'
+        + '<input type="search" placeholder="Procurar na Drive (nome ou pasta)" aria-label="Procurar na Drive"></div>'
+        + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="listbox" aria-multiselectable="true"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
+        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários.</span>'
+        + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
+      document.body.appendChild(el);
+      var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
+      var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
+      var back = document.activeElement;
+      function close() { el.remove(); if (back && back.focus) back.focus(); }
+      function base(k) { var p = k.replace(/\/$/, '').split('/'); return p[p.length - 1]; }
+      function paint() {
+        addB.disabled = !picked.size;
+        addB.textContent = picked.size ? 'Adicionar ' + picked.size : 'Adicionar';
+        var term = fold(q.value.trim()), html = '';
+        shown = [];
+        if (term) {
+          shown = objs.filter(function (o) { return fold(o.k).indexOf(term) >= 0; }).slice(0, 200);
+          crumb.textContent = shown.length ? shown.length + (shown.length === 1 ? ' resultado' : ' resultados') : '';
+        } else {
+          var dirs = {};
+          var pool = prefix ? objs.filter(function (o) { return o.k.indexOf(prefix) === 0; }) : [];
+          pool.forEach(function (o) { var rest = o.k.slice(prefix.length), i = rest.indexOf('/'); if (i >= 0) dirs[prefix + rest.slice(0, i + 1)] = 1; else shown.push(o); });
+          if (!prefix) roots.forEach(function (r) { dirs[r] = 1; });
+          crumb.innerHTML = '<button type="button" data-dp-go="">Drive</button>' + (prefix ? prefix.replace(/\/$/, '').split('/').map(function (part, i, arr) { var p = arr.slice(0, i + 1).join('/') + '/'; return ' / <button type="button" data-dp-go="' + esc(p) + '">' + esc(part) + '</button>'; }).join('') : '');
+          html += Object.keys(dirs).sort().map(function (d) { return '<button type="button" class="dp-d" data-dp-go="' + esc(d) + '">' + ico('drive') + ' ' + esc(base(d)) + '</button>'; }).join('');
+          if (!prefix && recents.length) { html += '<h4>Recentes</h4>'; shown = recents.slice(0, 12); }
+        }
+        html += shown.map(function (o, i) {
+          var on = picked.has(o.k);
+          return '<div class="dp-f' + (on ? ' on' : '') + '" role="option" aria-selected="' + on + '" tabindex="0" data-i="' + i + '"><input type="checkbox" tabindex="-1"' + (on ? ' checked' : '') + ' aria-hidden="true"><span><b>' + esc(base(o.k)) + '</b>'
+            + (term || !prefix ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '</span><small>' + fmtBytes(o.s || 0) + '</small></div>';
+        }).join('');
+        list.innerHTML = html || '<p class="muted">' + (term ? 'Nada encontrado com «' + esc(q.value.trim()) + '».' : 'Pasta vazia.') + '</p>';
+      }
+      function toggle(i, range) {
+        if (range && last >= 0) { var a = Math.min(last, i), b2 = Math.max(last, i); for (var j = a; j <= b2; j++) picked.add(shown[j].k); }
+        else { var k = shown[i].k; if (picked.has(k)) picked.delete(k); else picked.add(k); }
+        last = i; paint();
+        var f = $('.dp-f[data-i="' + i + '"]', list); if (f) f.focus();
+      }
+      el.addEventListener('click', function (e) {
+        if (e.target === el || e.target.closest('[data-dp-cancel]')) { close(); return; }
+        var g = e.target.closest('[data-dp-go]'); if (g) { prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint(); return; }
+        var f = e.target.closest('.dp-f'); if (f) { toggle(+f.getAttribute('data-i'), e.shiftKey); return; }
+        if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(JSON.stringify(keys), at); }
+      });
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+        var f = e.target.closest && e.target.closest('.dp-f');
+        if (f && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(+f.getAttribute('data-i'), e.shiftKey); }
+        else if (f && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); var n = f[e.key === 'ArrowDown' ? 'nextElementSibling' : 'previousElementSibling']; if (n && n.classList.contains('dp-f')) n.focus(); }
+      });
+      q.addEventListener('input', function () { last = -1; paint(); });
+      el.hidden = false; q.focus();
+      driveApi({ do: 'catalog' }).then(function (j) {
+        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível ler a Drive.') + '</p>'; return; }
+        objs = (j.objects || []).filter(function (o) { return o.k.slice(-1) !== '/'; });
+        roots = j.roots || [];
+        var have = {}; objs.forEach(function (o) { have[o.k] = o; });
+        recents = (j.recents || []).map(function (r) { return have[r.k]; }).filter(Boolean);
+        paint();
+      });
+    }
+    // ── ficheiros apagados da Drive: aviso no topo (§33.9) ──
+    function goneBar() {
+      var bar = $('.ccb-gone', root), g = (B.data && B.data.gone) || [];
+      if (!g.length) { if (bar) bar.remove(); return; }
+      if (!bar) { bar = document.createElement('div'); bar.className = 'ccb-gone'; bar.setAttribute('role', 'status'); root.insertBefore(bar, $('.ccb-main', root)); }
+      var canRestore = g.filter(function (x) { return x.trash_id; }), lost = g.length - canRestore.length;
+      bar.innerHTML = ico('trash') + '<span><b>' + (g.length === 1 ? 'Um ficheiro deste Topperboard foi apagado da Drive' : g.length + ' ficheiros deste Topperboard foram apagados da Drive') + '</b> · '
+        + esc(g.slice(0, 3).map(function (x) { return x.name; }).join(', ')) + (g.length > 3 ? '…' : '')
+        + (lost ? '. ' + (lost === g.length ? (g.length === 1 ? 'Já não está no Lixo (foi apagado de vez).' : 'Já não estão no Lixo (foram apagados de vez).') : lost + ' já não está no Lixo.') : '') + '</span>'
+        + (EDIT && canRestore.length ? '<button type="button" class="btn sm" data-gone="restore">Restaurar do Lixo</button>' : '')
+        + (EDIT ? '<button type="button" class="btn sm ghost" data-gone="remove">Retirar do Topperboard</button>' : '');
+      bar.onclick = function (e) {
+        var b = e.target.closest('[data-gone]'); if (!b) return;
+        if (b.getAttribute('data-gone') === 'remove') { select(g.map(function (x) { return x.card; }).filter(function (id) { return B.cards.has(id); })); delSel(); return; }
+        b.disabled = true;
+        var ids = Array.from(new Set(canRestore.map(function (x) { return x.trash_id; })));
+        ids.reduce(function (p, id) { return p.then(function (bad) { return driveRun({ do: 'restore', id: id }).then(function (j) { return bad + (j.ok ? 0 : 1); }); }); }, Promise.resolve(0)).then(function (bad) {
+          if (bad) toast('Não foi possível restaurar: já não está no Lixo (foi apagado de vez). Pode retirá-lo do Topperboard.', { err: true });
+          else toast(ids.length === 1 && canRestore.length === 1 ? 'Ficheiro restaurado do Lixo.' : 'Ficheiros restaurados do Lixo.');
+          if (RT) RT.signal();
+          reload();
+        });
+      };
+    }
+
     // ── copiar, cortar, colar, duplicar (§33.6) ──
     // o que se copia fica no localStorage (colar noutro separador do mesmo browser) e o texto legível na área de transferência
     var CLIP_KEY = 'cc.clip';
@@ -2048,6 +2177,8 @@
       root.addEventListener('click', function (e) {
         var tool = e.target.closest('[data-tool]');
         if (tool) { runTool(tool.getAttribute('data-tool')); return; }
+        var um = e.target.closest('[data-upmenu]');
+        if (um) { upMenu(um); return; }
         var ub = e.target.closest('[data-undo]');
         if (ub) { if (!ub.disabled) undo(ub.getAttribute('data-undo') === '1'); return; }
         var z = e.target.closest('[data-z]');
