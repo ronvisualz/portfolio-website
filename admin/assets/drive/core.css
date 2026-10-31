@@ -24,3 +24,9 @@
 .td-choice.danger b { color: var(--red); }
 .td-choice .muted { font-size: .78rem; }
 @media (prefers-reduced-motion: no-preference) { .td-toast { animation: td-in .18s ease-out; } @keyframes td-in { from { transform: translateY(6px); opacity: 0; } } }
+
+/* o link num campo selecionável quando não dá para copiar sozinho (§32.5) */
+.td-linkbox { position: fixed; left: 50%; bottom: 5.2rem; transform: translateX(-50%); z-index: 310; width: min(560px, calc(100vw - 2rem)); display: grid; gap: .5rem; padding: .8rem .9rem; border-radius: var(--r); background: var(--panel, #fff); color: var(--fg, #111); border: 1px solid var(--line-2, #CFCFCB); box-shadow: 0 14px 40px -14px rgba(0,0,0,.45); }
+.td-linkbox p { margin: 0; font-size: .85rem; }
+.td-linkbox input { width: 100%; min-width: 0; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; padding: .45rem .55rem; border: 1px solid var(--line-2, #CFCFCB); border-radius: 6px; background: var(--bg, #F6F6F4); color: inherit; }
+.td-linkbox-a { display: flex; gap: .4rem; justify-content: flex-end; }

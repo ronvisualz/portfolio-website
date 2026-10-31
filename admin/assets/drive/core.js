@@ -224,6 +224,57 @@
     }
   };
 
+  /**
+   * Copia um link de partilha (§32.5). `src`: o URL, ou uma promessa que o devolve (ex.: criar a partilha) — a cópia
+   * começa no próprio clique (ClipboardItem com promessa), por isso funciona no Safari mesmo à espera do servidor.
+   * Só diz «Link copiado» quando a área de transferência confirmou; se falhar, mostra o link num campo selecionável
+   * (nunca usa o execCommand, que no iPad diz que copiou sem copiar). opt.box=false: sem o campo (quem chama já o mostra).
+   * Devolve {ok, url}.
+   */
+  TD.copyLink = async function (src, opt) {
+    opt = opt || {};
+    const isP = !!(src && typeof src.then === 'function');
+    let url = isP ? '' : String(src || '');
+    const get = isP ? src.then(u => { url = String(u || ''); if (!url) throw new Error('Não foi possível obter o link.'); return url; }) : Promise.resolve(url);
+    get.catch(() => {});
+    let ok = false;
+    try {
+      const cb = navigator.clipboard;
+      if (cb && cb.write && typeof ClipboardItem !== 'undefined') {
+        await cb.write([new ClipboardItem({ 'text/plain': get.then(u => new Blob([u], { type: 'text/plain' })) })]);
+        ok = true;
+      } else if (cb && cb.writeText) { await cb.writeText(await get); ok = true; }
+    } catch (e) { ok = false; }
+    try { await get; } catch (e) { TD.toast(e.message || 'Não foi possível obter o link.', 'err'); return { ok: false, url: '' }; }
+    if (!url) return { ok: false, url: '' };
+    if (ok) { if (!opt.quiet) TD.toast('Link copiado.', 'ok'); return { ok: true, url }; }
+    if (opt.box !== false) TD.linkBox(url);
+    return { ok: false, url };
+  };
+
+  /** O link num campo selecionável, para copiar à mão quando a área de transferência não deixa (iPad/Safari). */
+  TD.linkBox = function (url) {
+    const old = document.querySelector('.td-linkbox'); if (old) old.remove();
+    const box = TD.el('div', { class: 'td-linkbox', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'td-linkbox-t' });
+    box.innerHTML = '<p id="td-linkbox-t">Não foi possível copiar sozinho. Copie o link:</p><input type="text" readonly aria-label="Link de partilha">' +
+      '<div class="td-linkbox-a"><button type="button" class="btn sm" data-c>Copiar</button><button type="button" class="btn ghost sm" data-x>Fechar</button></div>';
+    const inp = box.querySelector('input'); inp.value = url;
+    const sel = () => { inp.focus(); inp.setSelectionRange(0, inp.value.length); };
+    inp.addEventListener('focus', () => inp.setSelectionRange(0, inp.value.length));
+    box.querySelector('[data-c]').onclick = () => {
+      sel();
+      const done = () => { box.querySelector('p').textContent = 'Link copiado.'; setTimeout(() => box.remove(), 1200); };
+      (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(url) : Promise.reject()).then(done, () => { box.querySelector('p').textContent = 'Selecione o link e copie (manter premido › Copiar).'; sel(); });
+    };
+    const close = () => { box.remove(); document.removeEventListener('keydown', esc); };
+    const esc = e => { if (e.key === 'Escape') close(); };
+    box.querySelector('[data-x]').onclick = close;
+    document.addEventListener('keydown', esc);
+    document.body.appendChild(box);
+    sel();
+    return box;
+  };
+
   // ── avisos (canto inferior) ─────────────────────────────
   let toastBox = null;
   /** TD.toast('Movido.', 'ok'|'err'|'info', {action:{label:'Anular', fn}, ms}) → {close(), set(text)} */

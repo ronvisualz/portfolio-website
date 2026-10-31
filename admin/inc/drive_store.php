@@ -276,12 +276,13 @@ function drive_share_token(): string {
     return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
 }
 
-/** https://<host>/admin/partilha.php?t=… (http:// só na máquina local). */
+/**
+ * O URL público da partilha, sempre no domínio da plataforma (app_url; por defeito https://topperhub.xyz) — nunca o
+ * domínio do pedido (§32.5: um Host diferente ou forjado dava links noutro domínio).
+ */
 function drive_share_url(string $token): string {
-    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
-    if (!preg_match('/^[a-z0-9.-]+(:\d+)?$/', $host)) $host = 'topperdigital.xyz';
-    $scheme = defined('IS_LOCAL') && IS_LOCAL ? 'http' : 'https';
-    return $scheme . '://' . $host . '/admin/partilha.php?t=' . $token;
+    require_once __DIR__ . '/team.php';
+    return team_app_url() . '/admin/partilha.php?t=' . $token;
 }
 
 function drive_share_row(array $r): array {

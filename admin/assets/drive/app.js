@@ -664,7 +664,7 @@
       { label: 'Abrir', icon: 'open', fn: () => TD.app.openFile(k) },
       { label: 'Mostrar na pasta', icon: 'folder', fn: () => TD.app.reveal(k) },
       { label: 'Partilhar link…', icon: 'link', fn: () => shareDialog(k) },
-      { label: 'Copiar caminho', icon: 'copy', fn: () => copyPath(k) },
+      { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(k) },
     ], { x: e.clientX, y: e.clientY });
   });
   function skeletonHtml() {
@@ -1605,7 +1605,7 @@
     scheduleDetails(true);
     TD.bus.emit('drive:changed', { kind: 'share', key, share: sh });
     const msg = 'Link para «' + P.base(key) + '» criado (' + (forever ? 'sem prazo, até o revogar' : 'válido ' + hoursText(hours)) + ').';
-    if (!opt.quiet) TD.toast(msg, 'ok', { action: { label: 'Copiar link', fn: () => TD.copyText(sh.url).then(ok => TD.toast(ok ? 'Link copiado.' : 'Não foi possível copiar.', ok ? 'ok' : 'err')) }, ms: 9000 });
+    if (!opt.quiet) TD.toast(msg, 'ok', { action: { label: 'Copiar link', fn: () => TD.copyLink(sh.url) }, ms: 9000 });
     return { ok: true, message: msg, url: sh.url, result: sh };
   }
   /** TD.ops.run(action, opt) → {ok, message, url?, result?}. Nunca rejeita. */
@@ -1806,7 +1806,11 @@
     });
   }
   function copyPath(k) { TD.copyText(k).then(ok => TD.toast(ok ? 'Caminho copiado: ' + k : 'Não foi possível copiar.', ok ? 'ok' : 'err')); }
-  function copyLink(url) { TD.copyText(url).then(ok => TD.toast(ok ? 'Link copiado.' : 'Não foi possível copiar.', ok ? 'ok' : 'err')); }
+  /** Copia o link de uma partilha (§32.5): nunca uma que já expirou; se a cópia falhar, mostra o link para copiar à mão. */
+  function copyLink(url, sh) {
+    if (sh && !sh.forever && sh.exp && sh.exp * 1000 < Date.now()) { TD.toast('Este link já expirou: crie um novo.', 'err'); return; }
+    TD.copyLink(url);
+  }
   async function revoke(ids) {
     for (const id of ids) {
       const j = await TD.api({ do: 'share_revoke', id });
@@ -1991,7 +1995,7 @@
       openMenu([
         one && { label: 'Abrir', icon: 'open', kbd: 'Enter', fn: () => openItem(one) },
         one && { label: 'Mostrar na pasta', icon: 'folder', fn: () => TD.app.reveal(one.orig) },
-        one && { label: 'Copiar link', icon: 'link', fn: () => copyLink(one.share.url) },
+        one && { label: 'Copiar link', icon: 'link', fn: () => copyLink(one.share.url, one.share) },
         '-',
         { label: list.length === 1 ? 'Revogar o link' : 'Revogar ' + list.length + ' links', icon: 'close', danger: true, fn: () => revoke(list.map(x => x.share.id)) },
       ], pos);
@@ -2016,7 +2020,7 @@
       '-',
       { label: fav ? 'Remover dos favoritos' : 'Adicionar aos favoritos', icon: 'star', fn: () => setFav(list, !fav) },
       one && { label: 'Partilhar link…', icon: 'link', disabled: anyRoot, fn: () => shareDialog(one.k) },
-      one && { label: 'Copiar caminho', icon: 'copy', fn: () => copyPath(one.k) },
+      one && { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(one.k) },
       { label: 'Detalhes', icon: 'info', kbd: 'I', fn: () => openDetails(true) },
       '-',
       { label: 'Enviar para o Lixo', icon: 'trash', danger: true, kbd: 'Delete', disabled: anyRoot, fn: () => trashItems(list) },
@@ -2055,7 +2059,7 @@
       it && { label: S.favs.has(p) ? 'Remover dos favoritos' : 'Adicionar aos favoritos', icon: 'star', fn: () => setFav([it], !S.favs.has(p)) },
       it && !base && { label: 'Renomear…', icon: 'edit', fn: () => renameDialog(it) },
       it && !base && { label: 'Mover para…', icon: 'move', fn: () => moveTo([it], 'move') },
-      it && { label: 'Copiar caminho', icon: 'copy', fn: () => copyPath(p) },
+      it && { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(p) },
       { label: 'Detalhes', icon: 'info', fn: () => { clearSel(); openDetails(true); } },
       '-',
       { label: 'Atualizar', icon: 'refresh', fn: userRefresh },
@@ -2229,7 +2233,10 @@
         create.disabled = true; create.textContent = 'A criar…';
         if (hours !== 0) TD.store.set('drive.shareHours', hours);
         const pw = pwOn.checked ? pwIn.value : '';
-        const r = await run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw });
+        const made = run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw });
+        // a cópia começa já, no clique (no Safari, copiar depois de esperar pelo servidor falha)
+        const copied = TD.copyLink(made.then(x => { if (!x.ok) throw new Error(x.message); return x.url; }), { box: false, quiet: true });
+        const r = await made;
         syncCreate(); create.innerHTML = ic('link') + 'Criar outro link';
         if (!r.ok) { TD.toast(r.message, 'err'); return; }
         out.hidden = false;
@@ -2237,11 +2244,11 @@
         const inp = out.querySelector('input'); inp.value = r.url;
         if (pw) { const pe = TD.el('div', 'dr-share-ok'); pe.textContent = 'Password: ' + pw; out.appendChild(pe); }
         const st = out.querySelector('.dr-share-ok');
-        const cp = () => TD.copyText(r.url).then(ok => { st.textContent = ok ? 'Copiado para a área de transferência.' : 'Selecione e copie o link.'; });
-        out.querySelector('[data-copy]').onclick = cp;
-        inp.addEventListener('focus', () => inp.select());
-        inp.focus(); inp.select();
-        cp();
+        const said = c => { st.textContent = c.ok ? 'Copiado para a área de transferência.' : 'Selecione e copie o link.'; if (!c.ok) { inp.focus(); inp.setSelectionRange(0, inp.value.length); } };
+        out.querySelector('[data-copy]').onclick = () => TD.copyLink(r.url, { box: false, quiet: true }).then(said);
+        inp.addEventListener('focus', () => inp.setSelectionRange(0, inp.value.length));
+        inp.focus(); inp.setSelectionRange(0, inp.value.length);
+        copied.then(said);
         paintList();
       };
       box.querySelector('[data-x]').onclick = () => done(null);
@@ -2253,7 +2260,7 @@
     row.innerHTML = '<span class="dr-sh-i">' + ic('link') + '</span><span class="dr-sh-t"><span class="dr-sh-u" title="' + esc(u) + '">…' + esc(u.slice(-12)) + '</span>' +
       '<span class="dr-sh-m">' + esc(shareUntil(s)) + ' · ' + esc(n(s.downloads || 0, 'descarga', 'descargas')) + '</span></span>' +
       '<button type="button" class="btn ghost sm" data-c>Copiar</button><button type="button" class="dr-iconbtn danger" data-r aria-label="Revogar este link" title="Revogar">' + ic('close') + '</button>';
-    row.querySelector('[data-c]').onclick = () => copyLink(u);
+    row.querySelector('[data-c]').onclick = () => copyLink(u, s);
     row.querySelector('[data-r]').onclick = async () => { await revoke([s.id]); if (after) after(); };
     return row;
   }
@@ -2501,7 +2508,7 @@
     openMenu([
       { label: 'Abrir', icon: 'open', fn: () => TD.app.openFile(k) },
       { label: 'Mostrar na pasta', icon: 'folder', fn: () => TD.app.reveal(k) },
-      { label: 'Copiar caminho', icon: 'copy', fn: () => copyPath(k) },
+      { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(k) },
     ], { x: e.clientX, y: e.clientY });
   });
   qEl.addEventListener('input', onSearchInput);
@@ -2574,7 +2581,7 @@
     if (a === 'fav') setFav([it], !S.favs.has(it.k));
     else if (a === 'restore') restoreItems([it]);
     else if (a === 'purge') purgeItems([it]);
-    else if (a === 'copylink') copyLink(it.share.url);
+    else if (a === 'copylink') copyLink(it.share.url, it.share);
     else if (a === 'revoke') revoke([it.share.id]);
   }
   function emptyAction(a) {
@@ -2626,7 +2633,7 @@
     else if (a === 'trash') trashItems(list);
     else if (a === 'restore') restoreItems(list);
     else if (a === 'purge') purgeItems(list);
-    else if (a === 'copylink') copyLink(list[0].share.url);
+    else if (a === 'copylink') copyLink(list[0].share.url, list[0].share);
     else if (a === 'revoke') revoke(list.map(x => x.share.id));
     else if (a === 'more') itemMenu({ anchor: b, align: 'right' });
   });
@@ -2699,7 +2706,7 @@
       it && !base && { label: 'Partilhar link…', icon: 'link', fn: () => shareDialog(p) },
       it && !base && { label: 'Renomear…', icon: 'edit', fn: () => renameDialog(it) },
       it && !base && { label: 'Mover para…', icon: 'move', fn: () => moveTo([it], 'move') },
-      it && { label: 'Copiar caminho', icon: 'copy', fn: () => copyPath(p) },
+      it && { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(p) },
       it && !base && '-',
       it && !base && { label: 'Enviar para o Lixo', icon: 'trash', danger: true, fn: () => trashItems([it]) },
     ], { x: e.clientX, y: e.clientY }, { label: 'Pasta «' + pretty(p) + '»' });
