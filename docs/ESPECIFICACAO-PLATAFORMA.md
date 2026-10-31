@@ -4123,3 +4123,31 @@ Caso real: o Millennium envia para info@ o comprovativo de cada transferência (
 - **Validação humana sempre:** o cartão em «Por confirmar · emails» propõe o lançamento (ou outro da lista, ou «criar a despesa já paga» quando ainda não está lançado — a fatura/recibo junta-se depois). Validar regista o pagamento com o PDF como comprovativo; a comissão do banco é lançada à parte, já paga, com a fatura-recibo do banco. Tudo com «Anular».
 - **Extrato:** o movimento de um pagamento já registado (com ou sem a comissão do mesmo comprovativo) liga-se a ele — nunca dois pagamentos. Um comprovativo que chega depois de o extrato já ter pago a fatura junta-se a esse pagamento.
 - **Recibos:** os que respondem a «Pedir recibo» (código REC-…) continuam a juntar-se sozinhos; os outros ficam por validar, com a fatura sugerida (NIF, nº da fatura no recibo, valor). Ao validar, se ainda faltar pagar, o recibo serve de prova e regista também o pagamento.
+
+## 32. Drive — melhorias pedidas pela equipa (31 out 2026)
+
+Verificado no main: mover/copiar faz uma **cópia servidor a servidor no R2 ficheiro a ficheiro** (`drive_transfer`, CopyObject + apagar), em pedidos encadeados com barra de progresso — o R2 não tem «mudar de nome», por isso uma pasta grande demora e parece que está a ser enviada outra vez. A partilha de **ficheiro** já tem pré-visualização (imagem, vídeo, áudio, PDF); a de **pasta** é só uma lista com «Descarregar» por ficheiro, sem pré-visualização nem ZIP. Partilhas são só de leitura.
+
+### 32.1 Mover instantâneo
+- O que o utilizador vê muda **logo** (o item aparece no destino de imediato, com «Anular»); a cópia física no R2 corre **em segundo plano** no servidor (cron/fila), sem depender da página aberta, com indicador discreto «A arrumar 3 ficheiros…».
+- Enquanto a cópia não acaba, o ficheiro abre/descarrega a partir da origem (mapa origem→destino na base); links de partilha, cartões do Centro Criativo e anexos continuam a funcionar.
+- Mover dentro do mesmo sítio (renomear) e mover pastas grandes nunca bloqueia a interface. Conflitos de nome resolvidos antes (manter ambos/substituir/saltar).
+- Alternativa estrutural a avaliar pelo executor (preferível se viável): guardar os ficheiros no R2 por **ID imutável** e manter os caminhos só na base (`drive_index`) — mover e renomear passam a ser só uma alteração na base, verdadeiramente instantâneos. Inclui migração gradual.
+
+### 32.2 Partilha com permissões
+- Ao partilhar, escolher **«Só ver»** ou **«Pode editar»**, validade e (opcional) palavra-passe; mudar a permissão depois sem mudar o link.
+- **Pode editar** (pastas): quem tem o link pode **carregar ficheiros, criar subpastas e substituir versões**; não apaga (só os internos apagam). Tudo o que entra fica registado (nome indicado pelo visitante, data, IP parcial) e é notificado ao dono da pasta. Limite de tamanho por envio (parâmetro).
+- Ficheiro: «Pode editar» = substituir por nova versão (a anterior fica no histórico).
+
+### 32.3 Pré-visualização no link partilhado
+- Pasta partilhada mostra **grelha com miniaturas** (imagens, vídeos com poster, PDF 1.ª página) e lista; clicar abre **pré-visualização em ecrã inteiro** com setas (anterior/seguinte), como na Drive interna; vídeo/áudio com leitor; restantes com ícone e «Descarregar».
+- Navegação por subpastas dentro do link.
+
+### 32.4 Descarregar tudo
+- Botão **«Descarregar tudo (.zip)»** no topo da pasta partilhada e «Descarregar seleção» quando se marcam vários. ZIP gerado em streaming (sem esperar), com a estrutura de subpastas; para pastas muito grandes, aviso do tamanho e divisão em partes.
+
+### 32.5 Copiar link — bug
+- Reportado: o botão «Copiar link» não copia o link certo. Reproduzir e corrigir (suspeita: copia o URL de outra partilha/da linha errada, um URL relativo ou expirado). Copiar sempre o URL público absoluto `https://topperhub.xyz/admin/partilha.php?t=…` da partilha desse item, confirmar com aviso «Link copiado» e mostrar o link num campo selecionável se a cópia falhar (iPad/Safari).
+
+### 32.6 Partilha rápida (clique direito)
+- Clique direito (ou toque longo) num ficheiro → **«Copiar link de partilha»**: cria (ou reaproveita) uma partilha «Só ver» com a validade por defeito e copia logo o link, num só passo. Também na barra de ações quando há um ficheiro selecionado.
