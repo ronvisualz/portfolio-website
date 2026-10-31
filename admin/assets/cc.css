@@ -533,3 +533,16 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .ccd-trl button { border: 0; background: var(--chip); color: var(--fg); font: 600 11px var(--mono); padding: 1px 6px; border-radius: 5px; cursor: pointer; margin-right: 4px; }
 .ccd-trl button:hover { background: var(--hi); color: #111; }
 @media (max-width: 560px) { .ccd-vol { margin-left: 0; } .ccd-an .row.r3 { grid-template-columns: 1fr 1fr; } }
+
+/* §33.10: visualizador em ecrã inteiro (sempre escuro, nos dois modos) */
+.cc-viewer { position: fixed; inset: 0; z-index: 120; background: rgba(10,10,12,.96); color: #f4f4f5; display: flex; flex-direction: column; animation: pop-in .14s ease-out; }
+.cc-viewer .cv-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+.cc-viewer .cv-stage img, .cc-viewer .cv-stage video { max-width: 94vw; max-height: calc(100vh - 90px); object-fit: contain; transform-origin: center; user-select: none; -webkit-user-select: none; }
+.cc-viewer.zoomed .cv-stage { cursor: grab; }
+.cc-viewer .cv-bar { display: flex; align-items: center; gap: 6px; justify-content: center; padding: 10px 16px 16px; }
+.cc-viewer .cv-t { flex: 1; min-width: 0; font-size: 13px; color: #c9c9cf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-viewer .ibtn { color: #f4f4f5; background: rgba(255,255,255,.08); width: 40px; height: 40px; border-radius: 10px; font-size: 20px; }
+.cc-viewer .ibtn:hover { background: rgba(255,255,255,.18); }
+.cc-viewer .ibtn:focus-visible { outline: 2px solid #81CFE3; outline-offset: 2px; }
+.cc-viewer output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
+@media (pointer: coarse) { .cc-viewer .ibtn { width: 44px; height: 44px; } }
