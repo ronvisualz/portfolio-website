@@ -92,6 +92,7 @@ function migrate_files(PDO $pdo): void {
  * fazem numa partilha com edição.
  */
 function migrate_drive_40(PDO $pdo): void {
+    require_once __DIR__ . '/migrate_platform.php';   // db_create, db_add_column
     if (!db_has_table($pdo, 'drive_shares')) return;
     db_add_column($pdo, 'drive_shares', 'perm', "VARCHAR(5) NOT NULL DEFAULT 'view'", "TEXT NOT NULL DEFAULT 'view'");
     db_add_column($pdo, 'drive_shares', 'created_by', 'INT UNSIGNED NULL', 'INTEGER NULL');
