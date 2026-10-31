@@ -6,6 +6,11 @@
  *   partilha.php?t=<token>&dl=1       descarregar o ficheiro partilhado (302 para o R2)
  *   partilha.php?t=<token>&pv=1       a pré-visualização em linha (302 para um URL curto do R2)
  *   partilha.php?t=<token>&f=<rel>    descarregar um ficheiro de dentro da pasta partilhada
+ *   partilha.php?t=<token>&p=<rel/>   uma subpasta (nunca acima da pasta partilhada)
+ *   partilha.php?t=<token>&pv=1&f=…   pré-visualizar um ficheiro da pasta; &th=1&f=… a miniatura
+ *   POST JSON (X-Share-Form)          as ações de quem tem «Pode editar» (inc/drive_share.php)
+ *
+ * Numa pasta, os documentos privados e a faturação só aparecem se a partilha os incluir (drive_share_sees).
  *
  * Um token inválido, expirado ou revogado mostra sempre a mesma página
  * («Este link expirou ou não existe.»), sem dizer mais nada.
@@ -46,6 +51,7 @@ function share_icon(string $kind): string {
         'pdf'   => '<path d="M5 2.5h6.5L15.5 6.5v11H5z"/><path d="M11.5 2.5v4h4"/><path d="M7.5 12.5h5M7.5 15h3"/>',
         'folder' => '<path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.6 1.8h7.4a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z"/>',
         'download' => '<path d="M10 3.5v10M6 9.5l4 4 4-4M3.5 13v3.5h13V13"/>',
+        'upload' => '<path d="M10 13.5v-10M6 7.5l4-4 4 4M3.5 13v3.5h13V13"/>',
         'other' => '<path d="M5 2.5h6.5L15.5 6.5v11H5z"/><path d="M11.5 2.5v4h4"/>',
     ][$kind] ?? '';
     if ($p === '') $p = '<path d="M5 2.5h6.5L15.5 6.5v11H5z"/><path d="M11.5 2.5v4h4"/>';
@@ -60,6 +66,12 @@ function share_kind(string $name): array {
     $icon = strpos($mime, 'video/') === 0 ? 'video' : (strpos($mime, 'image/') === 0 ? 'image'
           : (strpos($mime, 'audio/') === 0 ? 'audio' : ($mime === 'application/pdf' ? 'pdf' : 'other')));
     return [$label, $icon, $pv];
+}
+
+/** Um ficheiro de assets/ com a versão (data de alteração), para o browser não guardar uma versão antiga. */
+function share_asset(string $file): string {
+    $p = __DIR__ . '/assets/' . $file;
+    return '/admin/assets/' . $file . '?v=' . (is_file($p) ? filemtime($p) : time());
 }
 
 function share_go(string $url): void {
@@ -147,6 +159,7 @@ function share_head(string $title): void {
     .empty, .more { padding: 16px; }
   }
 </style>
+<link rel="stylesheet" href="<?= share_h(share_asset('partilha.css')) ?>">
 </head>
 <body>
 <header class="top">
@@ -312,63 +325,146 @@ try {
         exit;
     }
 
-    // ── uma pasta ───────────────────────────────────────────
+    // ── uma pasta (§32.3): grelha com miniaturas, subpastas (&p=), pré-visualização (&pv=1&f=) e miniaturas (&th=1&f=) ──
     $prefix = $s['k'];
+    $tq = 'partilha.php?t=' . rawurlencode($t);
+    /** Um caminho pedido (relativo à pasta partilhada) → a chave, se existir neste link; senão a página «não existe». */
+    $inside = static function (string $rel, bool $folder) use ($prefix, $s): string {
+        $key = drive_share_rel($prefix, $rel, $folder);
+        if ($key === null || !drive_share_sees($s, $key)) share_gone(404);
+        return $key;
+    };
     if (isset($_GET['f'])) {
-        // Só ficheiros de dentro da pasta partilhada: nada de «..», «/» inicial nem .topper/.
-        $f = is_string($_GET['f']) ? $_GET['f'] : '';
-        $key = $prefix . $f;
-        if ($f === '' || !r2_key_ok($key) || drive_hidden($key) || strncmp($key, $prefix, strlen($prefix)) !== 0) share_gone(404);
-        if (r2_head($key) === null) share_gone(404);
+        $key = $inside(is_string($_GET['f']) ? $_GET['f'] : '', false);
+        $h = r2_head($key);
+        if ($h === null) share_gone(404);
+        $name = drive_base($key);
+        if (!empty($_GET['th'])) {   // a miniatura da Drive (por ETag) se existir; uma imagem serve-se a si própria
+            $tk = DRIVE_THUMBS . preg_replace('/[^A-Za-z0-9_-]/', '', trim((string)($h['etag'] ?? ''), '"')) . '.jpg';
+            [, $icon] = share_kind($name);
+            if (r2_head($tk) !== null) share_go(r2_get_url($tk, true, 'image/jpeg', max(60, min(3600, $left))));
+            if ($icon === 'image') share_go(r2_get_url($key, true, r2_mime($name), max(60, min(SHARE_PREVIEW_TTL['image'], $left))));
+            share_gone(404);
+        }
+        if (!empty($_GET['pv'])) {
+            [, , $pv] = share_kind($name);
+            if ($pv === '') share_gone(404);
+            share_go(r2_get_url($key, true, r2_mime($name), max(60, min(SHARE_PREVIEW_TTL[$pv] ?? 600, $left))));
+        }
         drive_share_hit($pdo, $s['id']);
         share_go(r2_get_url($key, false, '', SHARE_DL_TTL));
     }
-    $files = [];
-    $pl = strlen($prefix);
-    foreach (r2_list_all($prefix, 20) as $o) {      // só esta pasta, sempre atual
-        if (strncmp($o['key'], $prefix, $pl) !== 0 || substr($o['key'], -1) === '/') continue;
-        $files[] = ['rel' => substr($o['key'], $pl), 'size' => (int)$o['size']];
+    $sub = is_string($_GET['p'] ?? null) && $_GET['p'] !== '' ? $_GET['p'] : '';
+    $cur = $sub === '' ? $prefix : $inside($sub, true);
+    $sub = substr($cur, strlen($prefix));   // normalizado, com «/» no fim
+    $ls = r2_list($cur, 20);                 // só este nível, sempre atual
+    $folders = $files = [];
+    foreach ($ls['folders'] as $fk) {
+        if (!drive_share_sees($s, $fk) || strncmp($fk, $cur, strlen($cur)) !== 0) continue;
+        $folders[] = ['name' => rtrim(substr($fk, strlen($cur)), '/'), 'rel' => substr($fk, strlen($prefix))];
     }
-    if (!$files && !drive_folder_exists($prefix)) share_gone(404);
-    usort($files, static fn($a, $b) => strnatcasecmp($a['rel'], $b['rel']));
+    foreach ($ls['files'] as $o) {
+        if (!drive_share_sees($s, $o['key']) || strpos($o['name'], '/') !== false) continue;
+        [$label, $icon, $pv] = share_kind($o['name']);
+        $files[] = ['name' => $o['name'], 'rel' => substr($o['key'], strlen($prefix)), 'size' => (int)$o['size'], 'label' => $label, 'kind' => $icon, 'pv' => $pv];
+    }
+    if (!$folders && !$files && !drive_folder_exists($cur)) share_gone(404);
+    usort($folders, static fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+    usort($files, static fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+    $max = 2000;
+    $more = max(0, count($files) - $max);
+    $files = array_slice($files, 0, $max);
     $total = array_sum(array_column($files, 'size'));
     $name = drive_base($prefix);
-    $max = 2000;
-    share_head($name);
+    $edit = drive_share_allows($s, 'upload');
+    $count = [];
+    if ($folders) $count[] = count($folders) === 1 ? '1 pasta' : count($folders) . ' pastas';
+    $count[] = count($files) === 1 ? '1 ficheiro' : count($files) . ' ficheiros';
+    // o que o visualizador precisa (sem URLs do armazenamento: cada pedido volta a passar por aqui)
+    $data = ['base' => $tq, 'sub' => $sub, 'edit' => $edit, 'files' => array_map(static fn($f) => [
+        'n' => $f['name'], 'r' => $f['rel'], 's' => drive_size($f['size']), 'l' => $f['label'], 'k' => $f['kind'], 'pv' => $f['pv']], $files)];
+    share_head($sub === '' ? $name : drive_base(rtrim($cur, '/')));
     ?>
-  <section class="card" data-ft="<?= share_h($ft) ?>" data-perm="<?= share_h($s['perm']) ?>">
+  <section class="card sh-page" data-ft="<?= share_h($ft) ?>" data-perm="<?= share_h($s['perm']) ?>">
     <div class="head">
       <div class="badge"><?= share_icon('folder') ?></div>
-      <div>
-        <p class="kicker">Pasta partilhada</p>
+      <div class="head-txt">
+        <p class="kicker"><?= $edit ? 'Pasta partilhada · pode editar' : 'Pasta partilhada' ?></p>
         <h1><?= share_h($name) ?></h1>
-        <p class="meta"><b><?= count($files) === 1 ? '1 ficheiro' : count($files) . ' ficheiros' ?></b> · <?= share_h(drive_size($total)) ?> · <?= share_h(share_valid($s)) ?></p>
+        <p class="meta"><b><?= share_h(implode(' · ', $count)) ?></b> · <?= share_h(drive_size($total)) ?> · <?= share_h(share_valid($s)) ?></p>
       </div>
     </div>
-    <?php if (!$files): ?>
+    <?php if ($sub !== ''): ?>
+    <nav class="sh-crumbs" aria-label="Caminho">
+      <a href="<?= share_h($tq) ?>"><?= share_h($name) ?></a>
+      <?php $acc = ''; foreach (array_filter(explode('/', rtrim($sub, '/')), 'strlen') as $seg): $acc .= $seg . '/'; ?>
+        <span aria-hidden="true">›</span><a href="<?= share_h($tq . '&p=' . rawurlencode($acc)) ?>"<?= $acc === $sub ? ' aria-current="page"' : '' ?>><?= share_h($seg) ?></a>
+      <?php endforeach; ?>
+    </nav>
+    <?php endif; ?>
+    <?php if ($edit): ?>
+      <div class="sh-tools">
+        <label class="sh-who"><span>O seu nome</span><input id="sh-who" type="text" maxlength="80" autocomplete="name" placeholder="Para quem partilhou saber quem enviou"></label>
+        <button type="button" class="btn" data-up><?= share_icon('upload') ?> Carregar ficheiros</button>
+        <button type="button" class="btn ghost" data-mkdir><?= share_icon('folder') ?> Nova pasta</button>
+        <input type="file" multiple hidden data-up-input>
+        <p class="sh-note">Pode carregar, criar pastas, renomear e substituir. Nada se apaga por este link; as versões substituídas ficam guardadas.</p>
+        <p class="sh-status" role="status" aria-live="polite" data-status></p>
+      </div>
+    <?php endif; ?>
+    <?php if (!$folders && !$files): ?>
       <p class="empty">Esta pasta está vazia.</p>
     <?php else: ?>
-      <ul class="list">
-      <?php foreach (array_slice($files, 0, $max) as $fi):
-          $p = strrpos($fi['rel'], '/');
-          $dir = $p === false ? '' : substr($fi['rel'], 0, $p + 1);
-          $base = $p === false ? $fi['rel'] : substr($fi['rel'], $p + 1);
-          [, $icon] = share_kind($base);
-          $href = 'partilha.php?t=' . rawurlencode($t) . '&f=' . rawurlencode($fi['rel']);
-      ?>
-        <li class="row">
-          <?= share_icon($icon) ?>
-          <span class="name"><?php if ($dir !== ''): ?><span class="dir"><?= share_h($dir) ?></span><?php endif; ?><?= share_h($base) ?></span>
-          <span class="size"><?= share_h(drive_size($fi['size'])) ?></span>
-          <a class="dl" href="<?= share_h($href) ?>" rel="nofollow" aria-label="Descarregar <?= share_h($base) ?>"><?= share_icon('download') ?> Descarregar</a>
-        </li>
+      <div class="sh-grid">
+      <?php foreach ($folders as $fo): ?>
+        <div class="sh-cell">
+          <a class="sh-folder" href="<?= share_h($tq . '&p=' . rawurlencode($fo['rel'])) ?>">
+            <span class="sh-thumb"><?= share_icon('folder') ?></span>
+            <span class="sh-name"><?= share_h($fo['name']) ?></span>
+          </a>
+          <?php if ($edit): ?><button type="button" class="sh-more" data-rename="<?= share_h($fo['rel']) ?>" data-name="<?= share_h($fo['name']) ?>" aria-label="Renomear <?= share_h($fo['name']) ?>">Renomear</button><?php endif; ?>
+        </div>
       <?php endforeach; ?>
-      </ul>
-      <?php if (count($files) > $max): ?>
-        <p class="more">E mais <?= count($files) - $max ?> ficheiros. Peça a quem partilhou um link para uma subpasta.</p>
+      <?php foreach ($files as $i => $fi): $th = $tq . '&th=1&f=' . rawurlencode($fi['rel']); ?>
+        <div class="sh-cell">
+          <button type="button" class="sh-card" data-kind="<?= share_h($fi['kind']) ?>" data-i="<?= $i ?>" aria-label="Abrir <?= share_h($fi['name']) ?>">
+            <span class="sh-thumb">
+              <?php if ($fi['kind'] === 'image'): ?>
+                <img src="<?= share_h($th) ?>" alt="" loading="lazy" decoding="async">
+              <?php elseif ($fi['kind'] === 'video' || $fi['kind'] === 'pdf'): ?>
+                <img src="<?= share_h($th) ?>" alt="" loading="lazy" decoding="async" data-fallback="<?= share_h($fi['kind']) ?>"><span class="sh-ico"><?= share_icon($fi['kind']) ?></span>
+              <?php else: ?>
+                <span class="sh-ico"><?= share_icon($fi['kind']) ?></span>
+              <?php endif; ?>
+              <?php if ($fi['kind'] === 'video'): ?><span class="sh-play" aria-hidden="true"></span><?php endif; ?>
+            </span>
+            <span class="sh-name"><?= share_h($fi['name']) ?></span>
+            <span class="sh-size"><?= share_h(drive_size($fi['size'])) ?></span>
+          </button>
+          <?php if ($edit): ?>
+            <button type="button" class="sh-more" data-rename="<?= share_h($fi['rel']) ?>" data-name="<?= share_h($fi['name']) ?>" aria-label="Renomear <?= share_h($fi['name']) ?>">Renomear</button>
+            <button type="button" class="sh-more" data-replace="<?= share_h($fi['rel']) ?>" aria-label="Substituir <?= share_h($fi['name']) ?>">Substituir</button>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+      </div>
+      <?php if ($more): ?>
+        <p class="more">E mais <?= $more ?> ficheiros. Peça a quem partilhou um link para uma subpasta.</p>
       <?php endif; ?>
     <?php endif; ?>
   </section>
+  <div class="sh-viewer" hidden role="dialog" aria-modal="true" aria-label="Pré-visualização">
+    <div class="sh-v-bar">
+      <span class="sh-v-name"></span><span class="sh-v-pos"></span>
+      <a class="sh-v-btn" data-v-dl href="#" rel="nofollow"><?= share_icon('download') ?><span>Descarregar</span></a>
+      <button type="button" class="sh-v-btn" data-v-close aria-label="Fechar">✕</button>
+    </div>
+    <div class="sh-v-stage"></div>
+    <button type="button" class="sh-v-nav prev" data-v-prev aria-label="Anterior">‹</button>
+    <button type="button" class="sh-v-nav next" data-v-next aria-label="Seguinte">›</button>
+  </div>
+  <script type="application/json" id="sh-data"><?= json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+  <script src="<?= share_h(share_asset('partilha.js')) ?>" defer></script>
 <?php
     share_foot();
 } catch (R2Exception $e) {

@@ -75,6 +75,21 @@ function drive_share_rel(string $base, string $rel, bool $folder = false): ?stri
     return $key;
 }
 
+/**
+ * O que quem tem o link vê (e onde pode escrever): nunca o sistema (.topper); os documentos privados e a faturação só
+ * se a partilha os incluir de propósito, ou se a própria pasta partilhada já for privada / de faturação (aí a partilha
+ * foi confirmada para isso mesmo).
+ */
+function drive_share_sees(array $s, string $key): bool {
+    if (drive_hidden($key)) return false;
+    if (!empty($s['inc_private'])) return true;
+    require_once __DIR__ . '/ai.php';
+    $root = (string)$s['k'];
+    if (ai_private($key) && !ai_private($root)) return false;
+    if (drive_billing($key) && !drive_billing($root)) return false;
+    return true;
+}
+
 /** O IP sem os últimos bytes (IPv4 a.b.x.x; IPv6 os 3 primeiros grupos), para o registo. */
 function drive_ip_part(): string {
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
@@ -189,7 +204,8 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
     // o alvo: dentro da pasta partilhada; num link de ficheiro, só o próprio ficheiro
     $key = $s['folder'] ? drive_share_rel($base, $rel, $a === 'mkdir') : ($rel === '' || $rel === drive_base($s['k']) ? $s['k'] : null);
     if ($key === null) return [400, ['ok' => false, 'error' => 'Caminho inválido.']];
-    $action = $a === 'sign' || $a === 'done' ? ($isReplace ? 'replace' : 'upload') : $a;
+    if ($s['folder'] && !drive_share_sees($s, $key)) return [404, ['ok' => false, 'error' => 'Esse item não existe neste link.']];
+    $action =$a === 'sign' || $a === 'done' ? ($isReplace ? 'replace' : 'upload') : $a;
     if (!drive_share_allows($s, $action)) return [403, ['ok' => false, 'error' => 'Este link não deixa fazer isto.']];
     $relOf = fn(string $k) => $s['folder'] ? substr($k, strlen($base)) : drive_base($k);
     switch ($a) {
@@ -227,10 +243,11 @@ function drive_share_visitor(PDO $pdo, array $s, array $in): array {
             $isFolder = substr($rel, -1) === '/';
             if ($isFolder) $key = drive_share_rel($base, $rel, true) ?? '';
             if ($key === '' || $key === $base) return [400, ['ok' => false, 'error' => 'Caminho inválido.']];
+            if (!drive_share_sees($s, $key)) return [404, ['ok' => false, 'error' => 'Esse item não existe neste link.']];
             if ($to === '' || strpos($to, '/') !== false || $to === '.' || $to === '..' || rawurldecode($to) === '..') return [400, ['ok' => false, 'error' => 'Nome inválido.']];
             $parent = substr(rtrim($key, '/'), 0, (int)strrpos(rtrim($key, '/'), '/') + 1);
             $new = drive_share_rel($base, substr($parent, strlen($base)) . $to, $isFolder);
-            if ($new === null) return [400, ['ok' => false, 'error' => 'Nome inválido.']];
+            if ($new === null || !drive_share_sees($s, $new)) return [400, ['ok' => false, 'error' => 'Nome inválido.']];
             if ($new === $key) return [200, ['ok' => true, 'rel' => $relOf($new)]];
             if ($isFolder ? drive_folder_exists($new) : r2_head($new) !== null) return [409, ['ok' => false, 'error' => 'Já existe um item com esse nome: escolha outro.']];
             if (!$isFolder && r2_head($key) === null) return [404, ['ok' => false, 'error' => 'Esse ficheiro já não existe.']];

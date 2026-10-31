@@ -1,0 +1,96 @@
+/* topper. — página do link partilhado (§32.3): grelha com miniaturas, migalhas, ferramentas de «Pode editar»,
+ * visualizador em ecrã inteiro. Os tokens (cores, raio) vêm do <style> de partilha.php; aqui o modo escuro. */
+
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #F2F2EE; --ink-2: #B9B9B3; --ink-3: #9C9C96; --line: #2F2F2C; --surface: #1C1C1A; --page: #121211; }
+  .top { background: #000; }
+  .badge, .btn { color: #000; }
+  .btn { border-color: var(--yellow); }
+  .btn:hover { background: transparent; color: var(--yellow); }
+  .dl:hover { background: rgba(255, 199, 24, .12); }
+  .pw input { background: var(--surface); color: var(--ink); border-color: var(--ink-3); }
+  .gone .badge { background: var(--surface); color: var(--ink-2); }
+}
+
+/* migalhas */
+.sh-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 0 24px 16px; font-size: 14px; color: var(--ink-3); }
+.sh-crumbs a { color: var(--ink-2); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; border-radius: 4px; }
+.sh-crumbs a:hover { color: var(--ink); text-decoration: underline; }
+.sh-crumbs a[aria-current], .sh-crumbs a:only-child { color: var(--ink); font-weight: 600; }
+.sh-crumbs a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* «Pode editar» */
+.sh-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 0 24px 18px; }
+.sh-who { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.sh-who input { padding: 11px 12px; border: 1.5px solid var(--line); border-radius: var(--r); font: 400 15px/1.3 inherit; background: var(--surface); color: var(--ink); }
+.sh-who input:focus { outline: none; border-color: var(--ink); }
+.sh-who input[aria-invalid=true] { border-color: #B3261E; }
+.btn.ghost { background: var(--surface); color: var(--ink); border-color: var(--ink); }
+.btn.ghost:hover { background: var(--ink); color: var(--surface); }
+.btn[disabled] { opacity: .55; pointer-events: none; }
+.sh-note { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--ink-3); }
+.sh-status { flex-basis: 100%; margin: 0; font-size: 13.5px; font-weight: 600; }
+.sh-status:empty { display: none; }
+.sh-status.err { color: #B3261E; }
+@media (prefers-color-scheme: dark) { .sh-status.err { color: #FF8A80; } }
+
+/* grelha */
+.sh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px; padding: 20px 24px 24px; border-top: 1px solid var(--line); }
+.sh-cell { min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+.sh-card, .sh-folder { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; border-radius: var(--r); }
+.sh-card:focus-visible, .sh-folder:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.sh-thumb { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--page); color: var(--ink-3); transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease; }
+.sh-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--page); }
+.sh-thumb .ico { width: 34px; height: 34px; }
+.sh-thumb img + .sh-ico { display: none; }
+.sh-thumb.no-img .sh-ico { display: block; }
+.sh-card[data-kind=video] .sh-thumb .sh-ico { display: none; }   /* o «play» já diz que é vídeo */
+.sh-folder .sh-thumb { background: rgba(255, 199, 24, .16); color: var(--ink); }
+.sh-card:hover .sh-thumb, .sh-folder:hover .sh-thumb { border-color: var(--ink-3); box-shadow: 0 10px 24px -18px rgba(0, 0, 0, .6); transform: translateY(-1px); }
+.sh-play { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(0, 0, 0, .62); }
+.sh-play::after { content: ''; position: absolute; left: 15px; top: 11px; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; }
+.sh-name { font-size: 13.5px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-size { margin-top: -4px; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.sh-more { padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-2);
+  font: 500 12px/1.4 'Inter', system-ui, sans-serif; cursor: pointer; transition: border-color .12s ease, color .12s ease; }
+.sh-more:hover { border-color: var(--ink-3); color: var(--ink); }
+.sh-more:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* visualizador em ecrã inteiro */
+.sh-viewer { position: fixed; inset: 0; z-index: 50; background: #0B0B0B; color: #fff; touch-action: pan-y; }
+.sh-viewer[hidden] { display: none; }
+.sh-v-bar { position: absolute; inset: 0 0 auto; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 12px 0 20px;
+  background: linear-gradient(rgba(0, 0, 0, .7), rgba(0, 0, 0, 0)); }
+.sh-v-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sh-v-pos { flex: none; color: #B5B5B5; font-size: 13px; font-variant-numeric: tabular-nums; }
+.sh-v-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: var(--r); background: rgba(255, 255, 255, .06); color: #fff; font: 600 13.5px/1 'Inter', system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.sh-v-btn:hover { background: rgba(255, 255, 255, .14); }
+.sh-v-btn .ico { width: 16px; height: 16px; }
+.sh-v-btn:focus-visible, .sh-v-nav:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.sh-v-stage { position: absolute; inset: 56px 64px 16px; display: flex; align-items: center; justify-content: center; }
+.sh-v-stage img, .sh-v-stage video { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.sh-v-stage audio { width: min(560px, 100%); }
+.sh-v-stage iframe { width: 100%; height: 100%; border: 0; background: #fff; border-radius: 4px; }
+.sh-v-other { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; color: #CFCFCF; }
+.sh-v-other .ico { width: 56px; height: 56px; color: var(--yellow); }
+.sh-v-nav { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .1);
+  color: #fff; font: 400 30px/1 system-ui, sans-serif; cursor: pointer; }
+.sh-v-nav:hover { background: rgba(255, 255, 255, .2); }
+.sh-v-nav.prev { left: 8px; }
+.sh-v-nav.next { right: 8px; }
+.sh-v-nav[disabled] { visibility: hidden; }
+
+@media (max-width: 560px) {
+  .sh-crumbs, .sh-tools { padding-left: 16px; padding-right: 16px; }
+  .sh-tools .btn { flex: 1 1 auto; justify-content: center; }
+  .sh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; padding: 16px; }
+  .sh-v-bar { padding-left: 14px; gap: 8px; }
+  .sh-v-btn span { display: none; }
+  .sh-v-stage { inset: 56px 0 8px; }
+  .sh-v-nav { top: auto; bottom: 14px; margin-top: 0; width: 44px; height: 44px; background: rgba(0, 0, 0, .55); }
+}
+@media (prefers-reduced-motion: reduce) { .sh-thumb { transition: none; } }
+.sh-thumb .sh-pdf { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; pointer-events: none; }
