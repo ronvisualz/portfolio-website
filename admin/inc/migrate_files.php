@@ -85,3 +85,55 @@ function migrate_files(PDO $pdo): void {
         if ($len('deal_billing', 'file_key') < 600) $pdo->exec("ALTER TABLE deal_billing MODIFY file_key VARCHAR(600) NOT NULL DEFAULT ''");
     }
 }
+
+/**
+ * Passo 40 · Drive (§32): partilhas com permissão («Só ver» / «Pode editar»), quem a criou e se inclui pastas privadas;
+ * a fila do mover instantâneo, o histórico de versões (substituir guarda a anterior) e o registo do que os visitantes
+ * fazem numa partilha com edição.
+ */
+function migrate_drive_40(PDO $pdo): void {
+    if (!db_has_table($pdo, 'drive_shares')) return;
+    db_add_column($pdo, 'drive_shares', 'perm', "VARCHAR(5) NOT NULL DEFAULT 'view'", "TEXT NOT NULL DEFAULT 'view'");
+    db_add_column($pdo, 'drive_shares', 'created_by', 'INT UNSIGNED NULL', 'INTEGER NULL');
+    db_add_column($pdo, 'drive_shares', 'inc_private', 'TINYINT(1) NOT NULL DEFAULT 0', 'INTEGER NOT NULL DEFAULT 0');
+    db_create($pdo, 'drive_moves', "
+        id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        batch         CHAR(16)      NOT NULL DEFAULT '',
+        src           VARCHAR(1024) NOT NULL,
+        dst           VARCHAR(1024) NOT NULL,
+        is_folder     TINYINT(1)    NOT NULL DEFAULT 0,
+        policy        VARCHAR(10)   NOT NULL DEFAULT 'error',
+        status        VARCHAR(10)   NOT NULL DEFAULT 'queued',
+        cursor_after  VARCHAR(1024) NOT NULL DEFAULT '',
+        moved         INT           NOT NULL DEFAULT 0,
+        total         INT           NOT NULL DEFAULT 0,
+        error         VARCHAR(300)  NOT NULL DEFAULT '',
+        created_by    INT UNSIGNED  NULL,
+        created_at    DATETIME      NOT NULL,
+        done_at       DATETIME      NULL,
+        INDEX idx_dm (status, id),
+        INDEX idx_dm_batch (batch)");
+    db_create($pdo, 'drive_versions', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        obj_key      VARCHAR(1024) NOT NULL,
+        key_hash     CHAR(64)      NOT NULL,
+        ver_key      VARCHAR(1024) NOT NULL,
+        size         BIGINT        NOT NULL DEFAULT 0,
+        etag         VARCHAR(80)   NOT NULL DEFAULT '',
+        by_label     VARCHAR(120)  NOT NULL DEFAULT '',
+        share_id     INT UNSIGNED  NULL,
+        created_at   DATETIME      NOT NULL,
+        INDEX idx_dv (key_hash, id)");
+    db_create($pdo, 'drive_share_log', "
+        id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        share_id     INT UNSIGNED  NOT NULL,
+        action       VARCHAR(10)   NOT NULL,
+        obj_key      VARCHAR(1024) NOT NULL DEFAULT '',
+        detail       VARCHAR(300)  NOT NULL DEFAULT '',
+        visitor      VARCHAR(80)   NOT NULL DEFAULT '',
+        ip_part      VARCHAR(20)   NOT NULL DEFAULT '',
+        created_at   DATETIME      NOT NULL,
+        seen         TINYINT(1)    NOT NULL DEFAULT 0,
+        INDEX idx_dsl (share_id, id),
+        INDEX idx_dsl_seen (seen, id)");
+}
