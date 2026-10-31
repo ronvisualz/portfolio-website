@@ -985,6 +985,8 @@
         rafView = 0;
         var v = B.view;
         world.style.transform = 'translate3d(' + v.x + 'px,' + v.y + 'px,0) scale(' + v.s + ')';
+        // §33.5: will-change só enquanto a vista se mexe; ao parar, a camada volta a rasterizar na escala nova (nítida)
+        world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () { world.classList.remove('moving'); }, 200);
         var g = 24 * v.s;
         while (g < 12) g *= 2;
         vp.style.backgroundSize = g + 'px ' + g + 'px';
@@ -1055,7 +1057,7 @@
       switch (c.type) {
         case 'image': case 'video': {
           var ratio = a && a.w && a.h ? a.w + '/' + a.h : (c.h ? c.w + '/' + c.h : '4/3');
-          h = '<div class="ccc-media" style="aspect-ratio:' + ratio + '">' + (a && a.thumb ? '<img alt="' + esc(a.caption || a.title) + '" decoding="async" draggable="false">' : '<span class="nf">' + ico('file') + '</span>')
+          h = '<div class="ccc-media" style="aspect-ratio:' + ratio + '">' + (a && (a.thumb || (c.type === 'image' && a.orig)) ? '<img alt="' + esc(a.caption || a.title) + '" decoding="async" draggable="false">' : '<span class="nf">' + ico('file') + '</span>')
             + (c.type === 'video' ? '<span class="ccc-play">' + ico('play') + '</span>' + (a && a.dur ? '<span class="ccc-dur">' + fmtDur(a.dur) + '</span>' : '') : '')
             + (a && a.pal && a.pal.length ? '<span class="ccc-pal">' + palHtml(a.pal, 5) + '</span>' : '')
             + (a && a.tags && a.tags.length ? '<span class="ccc-tags">' + a.tags.slice(0, 3).map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>' : '') + '</div>'
@@ -1140,13 +1142,17 @@
       el.style.width = c.w + 'px';
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
     }
+    // §33.5: a miniatura pela largura real × zoom × densidade; o original quando o zoom passa a maior (ou não há miniaturas)
     function setThumb(c, el) {
       var a = c.asset;
-      if (!a || !a.thumb) return;
+      if (!a || (!a.thumb && !a.orig)) return;
       var img = $('img', el);
       if (!img) return;
-      var px = (c.col ? 280 : c.w) * B.view.s * (window.devicePixelRatio || 1);
-      var url = thumbUrl(a, px);
+      var box = img.parentNode, cssW = (box && box.offsetWidth) || (c.col ? 280 : c.w);
+      var w = window.CCL ? CCL.thumbPick(a.tw, cssW, B.view.s, window.devicePixelRatio || 1, a.w) : thumbW(a.tw, cssW * B.view.s);
+      if (w === 0 && (!a.orig || c.type !== 'image')) w = (a.tw || []).length ? Math.max.apply(null, a.tw) : 0;
+      var url = w === 0 ? a.orig : a.thumb + '&s=' + w;
+      if (!url) return;
       if (img.getAttribute('src') !== url) {
         // a miniatura maior entra quando já está carregada (sem piscar)
         if (img.getAttribute('src')) { var pre = new Image(); pre.onload = function () { img.src = url; }; pre.src = url; } else img.src = url;

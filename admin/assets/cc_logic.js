@@ -162,5 +162,16 @@
     return n === 1 ? '1 alteração não anulada: outra pessoa mudou este cartão.' : n + ' alterações não anuladas: outras pessoas mudaram estes cartões.';
   }
 
-  return { version: 1, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── miniaturas (§33.5) ──
+  /** A largura de miniatura a pedir: a menor da lista ≥ cssW × zoom × densidade; 0 = o original (sem miniaturas, ou o pedido
+   *  passa 1,25× a maior e a imagem é maior do que ela). origW: largura do original (opcional). */
+  function thumbPick(tw, cssW, zoom, dpr, origW) {
+    var l = (tw || []).map(Number).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+    if (!l.length) return 0;
+    var need = cssW * (zoom || 1) * (dpr || 1), max = l[l.length - 1];
+    for (var i = 0; i < l.length; i++) if (l[i] >= need) return l[i];
+    return need > max * 1.25 && (!origW || origW > max) ? 0 : max;
+  }
+
+  return { version: 1, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

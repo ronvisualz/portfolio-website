@@ -112,5 +112,13 @@ eq([r.apply.length, r.skipped], [2, 1], 'multi: soma os saltados de cada parte')
 eq(CCL.skippedMsg(1), '1 alteração não anulada: outra pessoa mudou este cartão.', 'aviso no singular');
 eq(CCL.skippedMsg(3), '3 alterações não anuladas: outras pessoas mudaram estes cartões.', 'aviso no plural');
 
+// ── miniaturas (§33.5) ──
+eq(CCL.thumbPick([256, 768, 1600], 280, 1, 2), 768, 'thumbPick: 280 × 1 × 2 → 768');
+eq(CCL.thumbPick([256, 768, 1600], 280, 3, 2), 1600, 'thumbPick: 280 × 3 × 2 → 1600');
+eq(CCL.thumbPick([], 280, 1, 1), 0, 'thumbPick: sem miniaturas → original');
+eq(CCL.thumbPick([1600, 256, 768], 100, 1, 1), 256, 'thumbPick: lista fora de ordem');
+eq(CCL.thumbPick([256, 768, 1600], 280, 5, 2, 6481), 0, 'thumbPick: muito zoom numa imagem grande → original');
+eq(CCL.thumbPick([256, 768, 1600], 280, 5, 2, 1600), 1600, 'thumbPick: a imagem não é maior do que a miniatura → fica a miniatura');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

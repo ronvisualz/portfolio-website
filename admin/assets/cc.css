@@ -143,7 +143,8 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
   background-color: var(--cc-board); background-image: radial-gradient(var(--cc-grid) 1.1px, transparent 1.2px); background-size: 24px 24px; }
 .ccb-vp.panning, .ccb-vp.space { cursor: grab; } .ccb-vp.panning:active { cursor: grabbing; }
 .ccb-vp.tool-draw { cursor: crosshair; } .ccb-vp.tool-arrow { cursor: alias; }
-.ccb-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.ccb-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.ccb-world.moving, .ccb-world.anim { will-change: transform; }   /* §33.5: fixo, prendia a nitidez na escala inicial */
 .ccb-world.anim { transition: transform .45s cubic-bezier(.2,.7,.2,1); }
 .ccb-arrows { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .ccb-arrows path { fill: none; stroke: var(--mute); stroke-width: 2; }
