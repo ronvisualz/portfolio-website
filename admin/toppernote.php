@@ -145,6 +145,7 @@ if ($boardId) {
 <script src="<?= asset_url('drive/core.js') ?>" defer></script>
 <script src="<?= asset_url('cc_audio.js') ?>" defer></script>
 <script src="<?= asset_url('cc_rt.js') ?>" defer></script>
+<script src="<?= asset_url('cc_logic.js') ?>" defer></script>
 <script src="<?= asset_url('cc.js') ?>" defer></script>
 <?php
     render_footer();
@@ -304,5 +305,6 @@ render_flashes();
 </div>
 <script src="<?= asset_url('drive/core.js') ?>" defer></script>
 <script src="<?= asset_url('cc_audio.js') ?>" defer></script>
+<script src="<?= asset_url('cc_logic.js') ?>" defer></script>
 <script src="<?= asset_url('cc.js') ?>" defer></script>
 <?php render_footer();
