@@ -584,3 +584,13 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-viewer .ibtn:focus-visible { outline: 2px solid #81CFE3; outline-offset: 2px; }
 .cc-viewer output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
 @media (pointer: coarse) { .cc-viewer .ibtn { width: 44px; height: 44px; } }
+
+/* §33.13: som em Apresentar */
+.ccc .pres-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 2; }
+.ccc audio.pres-media { display: none; }
+.ccc .pres-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; }
+.cc-pres .pr-media { display: inline-flex; align-items: center; gap: 6px; margin: 0 6px; }
+.cc-pres .pr-media[hidden] { display: none; }
+.cc-pres .pr-t { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; opacity: .8; }
+.cc-pres input[type=range] { width: 90px; accent-color: var(--hi); }
+.cc-pres [data-p="mute"][aria-pressed="true"] { background: var(--hi); color: #111; }

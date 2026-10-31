@@ -2638,6 +2638,7 @@
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
       if (viewer) { viewerKey(e); return; }
+      if (root.classList.contains('present')) return;   // em Apresentar, as teclas são da apresentação
       if ((pickState || pmenu) && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (pmenu) closePalMenu(); else stopPick(); return; }
       if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
       if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
@@ -3073,6 +3074,7 @@
     }
 
     // ── apresentação ──
+    var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
     function present() {
       var items = [];
       B.cards.forEach(function (c) { if (!c.col && c.type !== 'arrow' && c.type !== 'drawing') items.push(c); });
@@ -3081,16 +3083,67 @@
       var i = 0, bar = document.createElement('div');
       root.classList.add('present');
       bar.className = 'cc-pres';
-      bar.innerHTML = '<button type="button" data-p="-1" aria-label="Anterior">‹</button><span data-pn></span><button type="button" data-p="1" aria-label="Seguinte">›</button><button type="button" data-p="x">Sair (Esc)</button>';
-      document.body.appendChild(bar);
+      bar.innerHTML = '<button type="button" data-p="-1" aria-label="Anterior">‹</button><span data-pn></span><button type="button" data-p="1" aria-label="Seguinte">›</button>'
+        + '<span class="pr-media" hidden><span class="pr-t" data-pt></span><button type="button" data-p="play" aria-label="Pausa ( Espaço )">❚❚</button>'
+        + '<input type="range" min="0" max="1" step="0.05" value="' + PRES.vol + '" aria-label="Volume" data-vol><button type="button" data-p="mute" aria-pressed="' + PRES.muted + '">Sem som</button></span>'
+        + '<button type="button" data-p="x">Sair (Esc)</button>';
+      root.appendChild(bar);   // dentro do elemento em ecrã inteiro (fora dele não aparece)
       if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
+      if (AU && AU.hub && AU.hub.pause) AU.hub.pause();
+      // §33.13: só em Apresentar o vídeo/áudio toca com som — ao chegar toca, ao sair pára; fora daqui nunca há som sozinho
+      var media = null;
+      function stopMedia() {
+        if (!media) return;
+        media.el.pause(); media.el.removeAttribute('src'); try { media.el.load(); } catch (e) {}
+        media.el.remove(); if (media.btn) media.btn.remove();
+        media = null;
+      }
+      function paintMedia() {
+        var w = $('.pr-media', bar), c = items[i], isM = (c.type === 'video' || c.type === 'audio') && c.asset && c.asset.orig;
+        w.hidden = !isM;
+        if (!isM) return;
+        $('[data-pt]', bar).textContent = (c.type === 'video' ? 'Vídeo · ' : 'Áudio · ') + (c.asset.title || c.asset.file || '');
+        var pb = $('[data-p="play"]', bar), on = media && !media.el.paused;
+        pb.textContent = on ? '❚❚' : '▶'; pb.setAttribute('aria-label', on ? 'Pausa ( Espaço )' : 'Tocar ( Espaço )');
+        $('[data-p="mute"]', bar).setAttribute('aria-pressed', PRES.muted ? 'true' : 'false');
+      }
+      function startMedia(c) {
+        var a = c.asset, el = B.els.get(c.id);
+        if (!a || !a.orig || !el) return;
+        var m = document.createElement(c.type === 'video' ? 'video' : 'audio');
+        m.className = 'pres-media'; m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
+        m.muted = PRES.muted; m.volume = PRES.vol;
+        (c.type === 'video' ? ($('.ccc-media', el) || el) : el).appendChild(m);
+        media = { c: c, el: m };
+        m.addEventListener('play', paintMedia); m.addEventListener('pause', paintMedia);
+        var p = m.play();
+        if (p && p.catch) p.catch(function () {
+          // o browser não deixou tocar com som: «Tocar» no cartão (nada fica a tocar escondido)
+          if (!media || media.el !== m) return;
+          m.pause();
+          var btn = document.createElement('button');
+          btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar';
+          btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); }).catch(function () {}); });
+          el.appendChild(btn); media.btn = btn;
+          paintMedia();
+        });
+      }
+      function toggleMedia() { if (!media) return false; if (media.el.paused) { var p = media.el.play(); if (p && p.catch) p.catch(function () {}); } else media.el.pause(); return true; }
       function go() {
         var c = items[i], b = bbox(c);
+        stopMedia();
         animateView(function () { fitTo(b, 70, 3); });
         $('[data-pn]', bar).textContent = (i + 1) + ' / ' + items.length;
         select([]);
+        if ((c.type === 'video' || c.type === 'audio') && c.asset) startMedia(c);
+        paintMedia();
       }
+      bar.addEventListener('input', function (e) {
+        if (!e.target.hasAttribute('data-vol')) return;
+        PRES.vol = +e.target.value; if (media) media.el.volume = PRES.vol;
+      });
       function stop() {
+        stopMedia();
         root.classList.remove('present');
         bar.remove();
         window.removeEventListener('keydown', pk, true);
@@ -3098,13 +3151,21 @@
         setTimeout(function () { fitAll(true); }, 50);
       }
       function pk(e) {
-        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(items.length - 1, i + 1); go(); }
+        if (e.key === ' ' && media) { toggleMedia(); }   // §33.13: com vídeo/áudio, Espaço pausa/retoma
+        else if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(items.length - 1, i + 1); go(); }
         else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { i = Math.max(0, i - 1); go(); }
         else if (e.key === 'Escape') stop();
         else return;
         e.preventDefault(); e.stopImmediatePropagation();
       }
-      bar.addEventListener('click', function (e) { var b = e.target.closest('[data-p]'); if (!b) return; var v = b.getAttribute('data-p'); if (v === 'x') stop(); else { i = clamp(i + +v, 0, items.length - 1); go(); } });
+      bar.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-p]'); if (!b) return;
+        var v = b.getAttribute('data-p');
+        if (v === 'x') stop();
+        else if (v === 'play') toggleMedia();
+        else if (v === 'mute') { PRES.muted = !PRES.muted; if (media) media.el.muted = PRES.muted; paintMedia(); }
+        else { i = clamp(i + +v, 0, items.length - 1); go(); }
+      });
       document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement && root.classList.contains('present')) { document.removeEventListener('fullscreenchange', f); stop(); } });
       window.addEventListener('keydown', pk, true);
       setTimeout(go, 80);
