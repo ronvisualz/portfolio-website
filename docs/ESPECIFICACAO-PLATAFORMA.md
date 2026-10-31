@@ -4154,3 +4154,40 @@ Verificado no main: mover/copiar faz uma **cópia servidor a servidor no R2 fich
 
 ### 32.7 Bug visual: árvore de pastas no modo escuro
 Ao passar o cursor numa pasta da árvore lateral (ex.: «Leads»), a linha fica **branca e o texto também branco** — ilegível. Corrigir o estado hover (e focus/selecionado) com os tokens de cor dos dois modos (§11): no escuro, fundo ligeiramente mais claro que o painel (ex.: branco a 6–8% de opacidade) com o texto e o tamanho a manter o contraste; no claro, cinzento suave. Transição curta (120 ms), raio igual ao item ativo, sem mexer no amarelo do item selecionado. Verificar o mesmo padrão em todas as listas/árvores da plataforma (menus, Centro Criativo, Definições).
+
+## 33. Toppernote (ex-Centro Criativo) — melhorias pedidas pela equipa (31 out 2026)
+
+### 33.0 Nome
+A aba **Centro Criativo** passa a chamar-se **Toppernote** em toda a interface (menu lateral, títulos, migalhas, Definições, notificações, emails, portal do cliente, ajuda e IA). O endereço antigo (`criativo.php`) redireciona; o código interno (`cc_*`) pode manter-se. Atualizar a especificação nas referências visíveis.
+
+### 33.1 Listas
+- Enter no fim de um item cria logo o seguinte (vazio, com o cursor lá); vários itens seguidos sem nome; itens vazios no fim não se gravam.
+- O **primeiro item é editável** como os outros (bug atual: não deixa escrever).
+- Backspace num item vazio apaga-o e sobe; colar várias linhas cria um item por linha; arrastar para reordenar.
+
+### 33.2 Amostra de cor
+- O seletor de cor abre **junto do cartão** (popover ancorado, que se reposiciona para caber no ecrã), não no canto superior esquerdo.
+- Campo **#HEX** editável (aceita com ou sem #, 3 ou 6 dígitos), botão **copiar #HEX** e **colar** um #HEX da área de transferência (Ctrl V sobre a amostra selecionada também troca a cor).
+
+### 33.3 Desenhar
+- **Cor da caneta escolhida numa paleta** (as cores da marca + seletor livre com #HEX), em vez de mudar de cor a cada clique.
+- **Espessura** (fina/média/grossa) e **borracha** (apaga traços tocados; atalho E).
+- **Escala corrigida:** redimensionar um desenho escala os traços na proporção (viewBox/transform), sem deformar nem cortar; espessura acompanha opcionalmente.
+
+### 33.4 Comentários ao passar o cursor
+- Passar o cursor (ou tocar) no **ícone com o número** no canto inferior direito do cartão mostra um balão com os últimos comentários (autor, data, texto curto) e «Ver todos»; sem abrir o detalhe.
+
+### 33.5 Qualidade das imagens
+- Bug: logo após o envio (e às vezes após recarregar) a imagem aparece em baixa resolução até se clicar. Causa provável: o cartão escolhe a miniatura disponível no momento (antes de as maiores estarem geradas) e não volta a pedir. Corrigir: usar `srcset`/escolha pela largura real × zoom × densidade do ecrã, trocar automaticamente para a miniatura maior quando ficar pronta (e ao fazer zoom), e mostrar o original enquanto as miniaturas não existem.
+
+### 33.6 Copiar e colar qualquer item
+- **Ctrl/Cmd C, X, V e D (duplicar)** com qualquer cartão ou seleção múltipla (notas, listas, imagens, vídeos, links, amostras, desenhos, colunas, setas entre os itens copiados), entre quadros e entre separadores; cola na posição do cursor. Colar texto/imagem de fora continua como hoje.
+
+### 33.7 Painel de detalhes redimensionável
+- Arrastar a borda esquerda do painel lateral de detalhes muda a largura (mín. 280 px, máx. 60% do ecrã); duplo clique repõe; largura lembrada por pessoa.
+
+### 33.8 Cartões de link com título e miniatura
+- YouTube, Vimeo, Instagram, TikTok, Behance, Dribbble, ArtStation, X, Spotify, SoundCloud e sites genéricos: **título, miniatura e autor** no cartão (oEmbed onde existir; senão metadados Open Graph do servidor), como já acontece com o Pinterest. Vídeos com botão ▶ e duração; reprodução dentro do detalhe quando o site o permitir.
+
+### 33.9 Enviar ficheiros: dispositivo ou Drive
+- O botão de enviar abre a escolha **«Do dispositivo»** ou **«Da Drive»**. «Da Drive» abre um seletor da Drive (pesquisa, pastas, recentes, seleção múltipla) e coloca os ficheiros no quadro **sem os copiar** (o cartão aponta para o ficheiro da Drive).
