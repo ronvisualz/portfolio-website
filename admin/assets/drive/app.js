@@ -980,7 +980,7 @@
         const one = sel.length === 1 ? sel[0] : null;
         acts = b('download', 'download', one && !one.folder ? 'Descarregar' : 'Descarregar ZIP') +
           (anyRoot ? '' : b('move', 'move', 'Mover para…')) + b('copyto', 'copy', 'Copiar para…') +
-          (one && !anyRoot ? b('share', 'link', 'Partilhar') : '') + (anyRoot ? '' : b('trash', 'trash', 'Lixo', ' danger'));
+          (one && !anyRoot ? b('quicklink', 'link', 'Copiar link de partilha') + b('share', 'link', 'Partilhar…') : '') + (anyRoot ? '' : b('trash', 'trash', 'Lixo', ' danger'));
       }
       stripEl.className = 'dr-strip is-sel';
       stripEl.innerHTML = '<button type="button" class="dr-iconbtn" data-sb="clear" aria-label="Limpar a seleção" title="Limpar a seleção (Esc)">' + ic('close') + '</button>' +
@@ -1806,6 +1806,19 @@
     });
   }
   function copyPath(k) { TD.copyText(k).then(ok => TD.toast(ok ? 'Caminho copiado: ' + k : 'Não foi possível copiar.', ok ? 'ok' : 'err')); }
+  /**
+   * «Copiar link de partilha» (§32.6): cria (ou reaproveita) um link «Só ver» com a validade por defeito e copia-o no
+   * mesmo clique. Uma pasta com documentos privados pede confirmação no diálogo «Partilhar link…».
+   */
+  function quickLink(key) {
+    const made = TD.api({ do: 'share_quick', key }).then(j => {
+      if (j && j.code === 'private') { shareDialog(key); throw new Error('Esta pasta tem documentos privados: confirme no diálogo.'); }
+      if (!j || !j.ok) throw new Error((j && j.error) || 'Não foi possível criar o link.');
+      if (!j.reused) { S.shares = S.shares.filter(x => x.id !== j.share.id).concat([j.share]); renderSide(); scheduleDetails(true); }
+      return j.url;
+    });
+    TD.copyLink(made);
+  }
   /** Copia o link de uma partilha (§32.5): nunca uma que já expirou; se a cópia falhar, mostra o link para copiar à mão. */
   function copyLink(url, sh) {
     if (sh && !sh.forever && sh.exp && sh.exp * 1000 < Date.now()) { TD.toast('Este link já expirou: crie um novo.', 'err'); return; }
@@ -2019,6 +2032,7 @@
       S.clip && { label: 'Colar' + (pasteOk ? ' em «' + one.name + '»' : ''), icon: 'paste', kbd: MODK + 'V', disabled: !pasteOk && S.view !== 'folder', fn: () => paste(pasteOk ? one.k : null) },
       '-',
       { label: fav ? 'Remover dos favoritos' : 'Adicionar aos favoritos', icon: 'star', fn: () => setFav(list, !fav) },
+      one && { label: 'Copiar link de partilha', icon: 'link', disabled: anyRoot, fn: () => quickLink(one.k) },
       one && { label: 'Partilhar link…', icon: 'link', disabled: anyRoot, fn: () => shareDialog(one.k) },
       one && { label: 'Copiar caminho (não é um link)', icon: 'copy', fn: () => copyPath(one.k) },
       { label: 'Detalhes', icon: 'info', kbd: 'I', fn: () => openDetails(true) },
@@ -2597,6 +2611,26 @@
     if (s) { const by = s.dataset.sort; setSort(by, S.sort.by === by ? -S.sort.dir : (by === 'name' || by === 'kind' ? 1 : -1)); return; }
     if (e.target.closest('[data-hcheck]')) { if (S.sel.size === S.items.length) clearSel(); else selectAll(); }
   });
+  // toque longo (500 ms, sem arrastar) num item → o mesmo menu do clique direito; o toque que se segue não abre o item
+  let lp = null, lpFired = false;
+  itemsEl.addEventListener('touchstart', e => {
+    const row = e.target.closest('[data-i]');
+    if (!row || e.touches.length !== 1 || e.target.closest('[data-act], .dr-check, input')) return;
+    const t0 = e.touches[0], x = t0.clientX, y = t0.clientY;
+    lpFired = false;
+    clearTimeout(lp && lp.t);
+    lp = { x, y, t: setTimeout(() => {
+      const i = +row.dataset.i;
+      if (!S.items[i]) return;
+      lpFired = true;
+      if (!S.sel.has(S.items[i].k)) { selectOnly(i); applySel(); }
+      setFocus(i, { scroll: false });
+      itemMenu({ x, y });
+    }, 500) };
+  }, { passive: true });
+  itemsEl.addEventListener('touchmove', e => { if (lp && e.touches[0] && Math.hypot(e.touches[0].clientX - lp.x, e.touches[0].clientY - lp.y) > 10) { clearTimeout(lp.t); lp = null; } }, { passive: true });
+  itemsEl.addEventListener('touchend', e => { if (lp) { clearTimeout(lp.t); lp = null; } if (lpFired) e.preventDefault(); });
+  itemsEl.addEventListener('click', e => { if (lpFired) { lpFired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   scrollEl.addEventListener('contextmenu', e => {
     if (e.target.closest('input, textarea, .dr-hits, .dr-quick')) return;
     e.preventDefault();
@@ -2629,6 +2663,7 @@
     if (a === 'download') download(list);
     else if (a === 'move') moveTo(list, 'move');
     else if (a === 'copyto') moveTo(list, 'copy');
+    else if (a === 'quicklink') quickLink(realKey(list[0]));
     else if (a === 'share') shareDialog(realKey(list[0]));
     else if (a === 'trash') trashItems(list);
     else if (a === 'restore') restoreItems(list);

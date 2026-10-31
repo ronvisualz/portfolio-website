@@ -313,6 +313,10 @@ function settings_defs(): array {
                                'help' => 'As subpastas nascem com o primeiro ficheiro. Negócio perdido ou lead arquivada → Arquivo/; reabertos voltam. A Faturação só aparece a quem vê o Financeiro.'],
         'drive_reorg'      => ['tab' => 'drive', 'group' => 'Pastas', 'label' => 'Reorganizar o que já existia', 'type' => 'link', 'href' => '/admin/reorganizar.php', 'show' => 'Reorganizar o Drive',
                                'help' => 'Pré-visualização do que vai mudar (negócios perdidos para o Arquivo, faturas antigas, peças de marketing, originais do Centro Criativo) e execução em segundo plano. Só administradores.'],
+        'drive_share_hours' => ['tab' => 'drive', 'group' => 'Partilhas', 'label' => 'Validade por defeito dos links', 'type' => 'int', 'min' => 1, 'max' => 168, 'unit' => 'h', 'default' => 24,
+                               'help' => 'A validade de «Copiar link de partilha» (clique direito) e a sugerida ao partilhar. Máximo 7 dias.'],
+        'drive_share_upload_mb' => ['tab' => 'drive', 'group' => 'Partilhas', 'label' => 'Tamanho máximo por envio num link «Pode editar»', 'type' => 'int', 'min' => 1, 'max' => 5120, 'unit' => 'MB', 'default' => 2048,
+                               'help' => 'Cada ficheiro que alguém de fora carrega através de um link com edição. Máximo 5 GB.'],
 
         // ── Integrações ──
         'int_google'       => ['tab' => 'integracoes', 'group' => 'Google', 'label' => 'Ligação à Google', 'type' => 'google_int',

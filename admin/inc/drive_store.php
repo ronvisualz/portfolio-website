@@ -291,13 +291,14 @@ function drive_share_row(array $r): array {
             'forever' => $forever, 'exp' => $forever ? 0 : drive_ts($r['expires_at']), 'created' => drive_ts($r['created_at']),
             'downloads' => (int)$r['downloads'], 'revoked' => (int)$r['revoked'] === 1,
             'protected' => (string)($r['pw_hash'] ?? '') !== '', 'pw_hash' => (string)($r['pw_hash'] ?? ''),
-            'pw_fails' => (int)($r['pw_fails'] ?? 0), 'pw_fail_at' => drive_ts($r['pw_fail_at'] ?? null)];
+            'pw_fails' => (int)($r['pw_fails'] ?? 0), 'pw_fail_at' => drive_ts($r['pw_fail_at'] ?? null),
+            'perm' => (string)($r['perm'] ?? 'view') === 'edit' ? 'edit' : 'view', 'created_by' => (int)($r['created_by'] ?? 0), 'inc_private' => (int)($r['inc_private'] ?? 0) === 1];
 }
 
 /** Para o JSON: {id, k, url, exp, forever, folder, downloads, created}. Sem prazo: forever=true e exp=0. */
 function drive_share_out(array $s): array {
     return ['id' => $s['id'], 'k' => $s['k'], 'url' => drive_share_url($s['token']), 'exp' => $s['exp'], 'forever' => $s['forever'], 'protected' => $s['protected'],
-            'folder' => $s['folder'], 'downloads' => $s['downloads'], 'created' => $s['created']];
+            'folder' => $s['folder'], 'downloads' => $s['downloads'], 'created' => $s['created'], 'perm' => $s['perm'] ?? 'view'];
 }
 
 /** $forever só vale para pastas (um ficheiro partilhado tem sempre prazo). */
@@ -308,6 +309,22 @@ function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours, boo
     $pdo->prepare('INSERT INTO drive_shares (token, obj_key, is_folder, expires_at, created_at, downloads, revoked, pw_hash) VALUES (?,?,?,?,?,0,0,?)')
         ->execute([$tok, $key, $folder ? 1 : 0, $until, drive_now(), $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null]);
     return drive_share_get($pdo, (int)$pdo->lastInsertId());
+}
+
+/**
+ * «Copiar link de partilha» (§32.6): reaproveita a partilha «Só ver» ativa desta chave exata, sem password e com mais
+ * de 1 h de validade; senão cria uma com a validade por defeito (Definições › Drive). Devolve [partilha, reaproveitada].
+ */
+function drive_share_quick(PDO $pdo, string $key, bool $folder, int $by): array {
+    foreach (array_reverse(drive_shares_active($pdo, $key)) as $s) {
+        if ($s['protected'] || ($s['perm'] ?? 'view') !== 'view') continue;
+        if (!$s['forever'] && $s['exp'] - time() <= 3600) continue;
+        return [$s, true];
+    }
+    $hours = max(1, min(DRIVE_SHARE_MAX_HOURS, (int)setting($pdo, 'drive_share_hours', 24)));
+    $s = drive_share_create($pdo, $key, $folder, $hours);
+    if ($by && db_has_column($pdo, 'drive_shares', 'created_by')) $pdo->prepare('UPDATE drive_shares SET created_by = ? WHERE id = ?')->execute([$by, $s['id']]);
+    return [$s, false];
 }
 
 function drive_share_get(PDO $pdo, int $id): ?array {

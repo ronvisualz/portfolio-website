@@ -993,6 +993,22 @@ try {
         $s = drive_share_create($pdo, $key, $folder, $hours, $forever, $pw);
         api_out(200, ['ok' => true, 'share' => drive_share_out($s)]);
     }
+    case 'share_quick': {   // «Copiar link de partilha» (§32.6): reaproveita ou cria um link «Só ver» com a validade por defeito
+        $key = want_any($str('key'));
+        $folder = substr($key, -1) === '/';
+        if (drive_is_root($key)) api_err('As pastas base não podem ser partilhadas. Partilhe uma subpasta ou os ficheiros.');
+        if (!drive_exists($key)) api_err($folder ? 'A pasta já não existe.' : 'O ficheiro já não existe.', 404);
+        if ($folder && function_exists('ai_private') && !ai_private($key)) {
+            $l = strlen($key);
+            foreach (drive_catalog()['objects'] as $o) {
+                $k = (string)$o['key'];
+                if (strncmp($k, $key, $l) === 0 && substr($k, -1) !== '/' && ai_private($k)) api_err('Esta pasta contém documentos privados: use «Partilhar link…» para confirmar.', 409, ['code' => 'private']);
+            }
+        }
+        [$s, $reused] = drive_share_quick($pdo, $key, $folder, (int)(current_user()['id'] ?? 0));
+        $o = drive_share_out($s);
+        api_out(200, ['ok' => true, 'url' => $o['url'], 'share' => $o, 'reused' => $reused]);
+    }
     case 'share_list': {
         $key = $str('key') !== '' ? want_any($str('key')) : null;
         api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', drive_shares_active($pdo, $key))]);
