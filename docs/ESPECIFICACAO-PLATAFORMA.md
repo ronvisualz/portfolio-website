@@ -4203,3 +4203,11 @@ Os **quadros** passam a chamar-se **Topperboards** em toda a interface: «Projet
 - **Anular/Refazer visíveis:** botões na barra do Topperboard (Ctrl Z / Ctrl Shift Z já existem, 80 passos); ações destrutivas também com aviso «Anular». **Anular por pessoa em tempo real:** cada pessoa só anula as suas próprias ações, nunca as de um colega no mesmo Topperboard.
 - Ajustes às anteriores: listas com Tab (sub-itens) e Ctrl Enter (marcar); seletor de cor com as últimas 8 cores usadas; balão de comentários só de leitura (responder abre o detalhe); colar no mesmo Topperboard desloca ligeiramente a cópia; atalhos P caneta, E borracha, 1–5 cores.
 - **Fase futura (não agora):** personalização com paleta fixa (cores da marca + 6 neutros) para fundos, contornos e setas, e 3 formas (retângulo, círculo, losango).
+
+### 33.11 Conta-gotas na paleta das imagens (31 out 2026)
+No detalhe de uma imagem (e de um vídeo, no fotograma em pausa), a «Paleta» automática ganha:
+- Botão **«+ Escolher da imagem»** (ícone conta-gotas, atalho **I**) que liga o **modo conta-gotas** só enquanto se escolhe — o cursor normal não é afetado o resto do tempo. Esc ou clique fora sai.
+- Ao mover o cursor sobre a imagem aparece uma **lupa** (círculo com píxeis ampliados ×8 e a mira no centro) e, por baixo, o **#HEX** do tom e uma amostra; amostra feita no **original em resolução total** (não na miniatura), média 3×3 para evitar ruído (opção 1 px com Alt).
+- **Clique adiciona** a cor à paleta (fica marcada como «escolhida por» quem a adicionou, distinta das automáticas); Shift + clique adiciona várias seguidas sem sair do modo.
+- **Clique em qualquer cor** da paleta copia o **#HEX** (aviso «#7C7774 copiado»); menu ⋯ na cor: copiar como RGB/HSL, renomear (ex.: «Pele»), remover (só as adicionadas à mão; as automáticas podem esconder-se), criar **cartão Amostra de cor** no Topperboard. Botão **«Copiar paleta»** copia todos os #HEX.
+- A paleta (automática + manual) fica guardada na referência e entra na pesquisa por cor da Biblioteca. Leitura de píxeis no mesmo domínio (cc_file.php) para o canvas não ficar bloqueado.
