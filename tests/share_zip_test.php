@@ -68,6 +68,19 @@ $r = tests_http('GET', $P . '&zip=1&maxobjs=2', [], 0);
 t_true($r['code'] === 413 && str_contains($r['body'], 'grande demais') && !str_starts_with($r['body'], 'PK'), 'pasta grande demais → 413 com mensagem, nunca um ZIP a meio (' . $r['code'] . ')');
 $r = tests_http('POST', $P . '&zip=1&maxobjs=2', ['sel' => ['Sub/', 'a.txt']], 0, true);
 t_eq($r['code'], 413, 'o mesmo na seleção');
+// link com password: o ZIP só depois da password; um POST da seleção sem ela não conta como tentativa errada
+$pw = drive_share_create($pdo, $dir, true, 24, false, 'segredo123', 'view', 1);
+$PW = '/admin/partilha.php?t=' . $pw['token'];
+$fails = fn() => (int)$pdo->query('SELECT pw_fails FROM drive_shares WHERE id = ' . (int)$pw['id'])->fetchColumn();
+$r = tests_http('POST', $PW . '&zip=1', ['sel' => ['a.txt']], 0, true);
+t_true(!str_starts_with($r['body'], 'PK') && str_contains($r['body'], 'password'), 'sem password: pede a password, não dá o ZIP');
+t_eq($fails(), 0, 'e não conta como tentativa errada');
+$jar = tempnam(sys_get_temp_dir(), 'pw');
+$c = curl_init(TESTS_BASE . $PW); curl_setopt_array($c, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => 'pw=segredo123', CURLOPT_COOKIEJAR => $jar, CURLOPT_COOKIEFILE => $jar, CURLOPT_RETURNTRANSFER => true]); curl_exec($c); curl_close($c);
+$c = curl_init(TESTS_BASE . $PW . '&zip=1'); curl_setopt_array($c, [CURLOPT_COOKIEFILE => $jar, CURLOPT_RETURNTRANSFER => true]); $zb = (string)curl_exec($c); curl_close($c);
+t_true(str_starts_with($zb, 'PK'), 'com a password dada: o ZIP vem');
+$pdo->exec('UPDATE drive_shares SET revoked = 1 WHERE id = ' . (int)$pw['id']);
+
 // revogado → 410
 $pdo->prepare('UPDATE drive_shares SET revoked = 1 WHERE id IN (?,?,?)')->execute([$s['id'], $e['id'], $e2['id']]);
 t_eq(tests_http('GET', $P . '&zip=1', [], 0)['code'], 410, 'link revogado → 410');

@@ -69,6 +69,33 @@ $put((string)($r3['json']['url'] ?? ''), 'mais comprido do que o declarado');
 t_eq(visit($P, ['a' => 'done', 'ticket' => $r3['json']['ticket'] ?? ''])['code'], 413, 'tamanho diferente do declarado → recusado');
 t_eq(r2_get($dir . 'a.txt'), 'versao 2', 'e o ficheiro fica como estava');
 
+// dois visitantes com o mesmo nome ao mesmo tempo: os dois ficheiros ficam (antes o segundo escrevia por cima)
+$d1 = visit($P, ['a' => 'sign', 'rel' => 'dup.txt', 'size' => 3]);
+$d2 = visit($P, ['a' => 'sign', 'rel' => 'dup.txt', 'size' => 3]);
+$put((string)($d1['json']['url'] ?? ''), 'one'); $put((string)($d2['json']['url'] ?? ''), 'two');
+$f1 = visit($P, ['a' => 'done', 'ticket' => $d1['json']['ticket'] ?? '']);
+$f2 = visit($P, ['a' => 'done', 'ticket' => $d2['json']['ticket'] ?? '']);
+$g = fn(string $k): string => r2_head($k) !== null ? r2_get($k) : '';
+$got = [$g($dir . 'dup.txt'), $g($dir . 'dup (2).txt')]; sort($got);
+t_eq($got, ['one', 'two'], 'mesmo nome ao mesmo tempo: os dois ficheiros ficam («dup.txt» e «dup (2).txt»)');
+t_true(($f1['json']['rel'] ?? '') !== ($f2['json']['rel'] ?? ''), 'e cada confirmação diz o nome com que ficou');
+// nomes compridos demais: encurtados, com a extensão
+$long = str_repeat('fotografia-', 30) . '.jpg';
+$ln = visit($P, ['a' => 'sign', 'rel' => $long, 'size' => 1]);
+t_true($ln['code'] === 200 && str_ends_with((string)($ln['json']['rel'] ?? ''), '.jpg') && strlen((string)($ln['json']['rel'] ?? '')) <= 200, 'nome comprido demais é encurtado e fica com a extensão (' . $ln['code'] . ')');
+// «Nova pasta» com subpastas: cria o caminho todo
+t_eq(visit($P, ['a' => 'mkdir', 'rel' => 'Ano/Mes/Dia'])['code'], 200, 'nova pasta com subpastas');
+t_true(drive_folder_exists($dir . 'Ano/') && drive_folder_exists($dir . 'Ano/Mes/') && drive_folder_exists($dir . 'Ano/Mes/Dia/'), 'cria cada nível');
+// envios nunca confirmados: limpos ao fim de um dia
+$ab = visit($P, ['a' => 'sign', 'rel' => 'a.txt', 'size' => 3, 'replace' => true]);
+$put((string)($ab['json']['url'] ?? ''), 'xyz');
+$inc = '.topper/incoming/' . (int)$edit['id'] . '/';
+t_true(count(r2_list_all($inc, 1)) >= 1, 'um envio abandonado fica na passagem');
+drive_share_incoming_cleanup(86400);
+t_true(count(r2_list_all($inc, 1)) >= 1, 'com menos de um dia não se mexe');
+drive_share_incoming_cleanup(0);
+t_eq(count(r2_list_all($inc, 1)), 0, 'passado o prazo, a limpeza tira-o');
+
 // renomear para um nome que existe → 409; nunca sobrescreve
 t_eq(visit($P, ['a' => 'rename', 'rel' => 'a.txt', 'to' => 'novo.txt'])['code'], 409, 'renomear para um nome existente → 409');
 t_eq(visit($P, ['a' => 'rename', 'rel' => 'a.txt', 'to' => 'b.txt'])['code'], 200, 'renomear');

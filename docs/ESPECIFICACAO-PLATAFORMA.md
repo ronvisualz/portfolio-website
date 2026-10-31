@@ -2299,6 +2299,18 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   - renomear por link uma pasta com mais de 1000 ficheiros é recusado com mensagem;
   - ZIP de mais de 50 000 itens é recusado com mensagem, em vez de sair incompleto;
   - hover da lista de conversas do assistente legível no escuro.
+- **Ronda dos menores** (31 out):
+  - todos os envios dos visitantes passam pela passagem `.topper/incoming/`, e o nome final escolhe-se no «done», um
+    de cada vez por pasta: dois visitantes com o mesmo nome ao mesmo tempo ficam com «nome» e «nome (2)» (antes o
+    segundo escrevia por cima do primeiro);
+  - os nomes compridos demais são encurtados com a extensão;
+  - «Nova pasta» com «Ano/Mês/Dia» cria cada nível;
+  - as passagens com mais de um dia são limpas pelo cron;
+  - um link antigo, sem dono, passa a ter como dono quem o altera;
+  - o diálogo «Partilhar link…» começa na validade das Definições;
+  - pedir o ZIP de uma seleção sem a password já não conta como tentativa errada;
+  - um «falhou» na fila de mover não escreve por cima de um «anulado»; as políticas da fila ficam documentadas
+    (`error`, `rename`, `overwrite`, `merge`).
 - **Permissões da Drive no servidor** (decidido com a equipa, 31 out): quem só pode ver a Drive não muda nada — envios,
   pastas, mover, copiar, renomear, Lixo, apagar e links de partilha dão 403 («Só quem pode editar a Drive…»).
   Favoritos, recentes e miniaturas em cache continuam abertos. Nos links: a lista esconde os de faturação a quem não

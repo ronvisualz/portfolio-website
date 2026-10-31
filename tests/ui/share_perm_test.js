@@ -11,6 +11,9 @@ execFileSync('php', [path.join(__dirname, 'seed_drive.php')]);
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  // a validade por defeito vem das Definições (Drive › Partilhas): com 6 h, o diálogo começa em «6 h»
+  const setHours = h => execFileSync('php', ['-r', 'require "tests/boot.php"; $pdo->prepare("REPLACE INTO settings (skey, svalue) VALUES (\'drive_share_hours\', ?)")->execute([' + h + ']);']);
+  setHours(6);
   const p = await ctx.newPage();
   await p.goto(BASE + '/admin/__as/1');
   await p.goto(BASE + '/admin/drive.php?p=' + encodeURIComponent('Empresa/'));
@@ -19,6 +22,8 @@ execFileSync('php', [path.join(__dirname, 'seed_drive.php')]);
   const row = p.locator('.dr-row', { hasText: 'Teste32' }).first();
   await row.click({ button: 'right' });
   await p.locator('.dr-menu-it', { hasText: 'Partilhar link…' }).click();
+  check(await p.getAttribute('.dr-share-o[aria-checked="true"]', 'data-h') === '6', 'o diálogo começa na validade das Definições (6 h)');
+  setHours(24);
   const edit = p.locator('input[name=dr-sh-perm][value=edit]');
   check(await edit.count() === 1, 'o diálogo tem a opção «Pode editar»');
   check(await p.locator('input[name=dr-sh-perm][value=view]').isChecked().catch(() => false), '«Só ver» vem escolhido');

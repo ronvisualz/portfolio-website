@@ -236,7 +236,7 @@ if (!$unlocked) {
     $ck = 'td_sh_' . substr(hash('sha256', $s['token']), 0, 16);
     $unlocked = isset($_COOKIE[$ck]) && is_string($_COOKIE[$ck]) && hash_equals(drive_share_pw_cookie($s), $_COOKIE[$ck]);
     $pwError = '';
-    if (!$unlocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$unlocked && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pw'])) {   // só o formulário da password conta
         $wait = drive_share_pw_wait($s);
         if ($wait > 0) $pwError = 'Demasiadas tentativas. Tente outra vez dentro de ' . max(1, (int)ceil($wait / 60)) . ' min.';
         elseif (drive_share_pw_check($pdo, $s, is_string($_POST['pw'] ?? null) ? $_POST['pw'] : '')) {

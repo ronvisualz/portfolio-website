@@ -2,6 +2,7 @@
 // §32.2: «Só ver» / «Pode editar» ao criar; mudar a permissão depois sem mudar o link; editar exige poder editar a Drive.
 require __DIR__ . '/boot.php';
 require __DIR__ . '/fixtures.php';
+require_once __DIR__ . '/../admin/inc/drive_store.php';
 
 $dir = 'Empresa/Teste32/perm-' . bin2hex(random_bytes(3)) . '/';
 tests_put($dir . 'a.txt');
@@ -44,6 +45,12 @@ if ($member) {
     t_eq($api(['do' => 'share_update', 'id' => (int)($own['json']['share']['id'] ?? 0), 'hours' => 48], $member)['code'], 200, 'altera o seu próprio link');
 }
 t_eq($api(['do' => 'share_update', 'id' => $bid, 'hours' => 48])['code'], 200, 'um admin com Financeiro altera');
+// um link antigo, sem dono, que um admin altera passa a ter dono (para os avisos dos visitantes chegarem a alguém)
+$leg = drive_share_create($pdo, $dir, true, 24, false, '', 'view', 0);
+t_eq((string)$pdo->query('SELECT COALESCE(created_by, 0) FROM drive_shares WHERE id = ' . (int)$leg['id'])->fetchColumn(), '0', 'link antigo sem dono');
+$api(['do' => 'share_update', 'id' => (int)$leg['id'], 'perm' => 'edit']);
+t_eq((string)$pdo->query('SELECT created_by FROM drive_shares WHERE id = ' . (int)$leg['id'])->fetchColumn(), '1', 'depois de alterado, o dono é quem o alterou');
+$pdo->exec('UPDATE drive_shares SET revoked = 1 WHERE id = ' . (int)$leg['id']);
 $pdo->exec('UPDATE drive_shares SET revoked = 1 WHERE id = ' . $bid);
 r2_delete($bill);
 r2_delete($dir . 'a.txt'); drive_catalog_invalidate();

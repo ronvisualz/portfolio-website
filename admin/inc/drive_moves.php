@@ -23,6 +23,10 @@ require_once __DIR__ . '/drive.php';
 require_once __DIR__ . '/drive_store.php';
 
 const DRIVE_MOVE_HOPS = 10;
+// Políticas de uma linha: 'error' (o destino estava livre ao pôr na fila; se entretanto ficar ocupado, falha),
+// 'rename' (o mesmo, com o nome livre já escolhido), 'overwrite' («Substituir»: escreve por cima) e 'merge'
+// (o inverso de um «Anular»: junta de volta à origem o que já tinha sido copiado).
+const DRIVE_MOVE_POLICIES = ['error', 'rename', 'overwrite', 'merge'];
 
 // ── partes puras ────────────────────────────────────────────
 
@@ -170,7 +174,7 @@ function drive_moves_status(PDO $pdo, int $uid): array {
  * Faz a fila: por ordem de id, uma linha de cada vez, até $budget segundos. Uma só execução de cada vez (GET_LOCK).
  * Um movimento cancelado a meio para (o inverso, se houver, vem a seguir na fila).
  */
-function drive_moves_run(PDO $pdo, float $budget): string {
+function drive_moves_run(PDO $pdo, float $budget, int $maxObjects = 0): string {
     if (!drive_moves_ready($pdo) || !r2_config()) return '';
     if ((int)$pdo->query("SELECT GET_LOCK('topper_drive_moves', 0)")->fetchColumn() !== 1) return 'Drive: a fila já está a correr noutro pedido.';
     $end = microtime(true) + max(1.0, $budget);
@@ -182,8 +186,9 @@ function drive_moves_run(PDO $pdo, float $budget): string {
             $id = (int)$r['id'];
             $src = (string)$r['src']; $dst = (string)$r['dst'];
             $calls = 0; $stopped = false;
-            $more = static function () use ($pdo, $id, $end, &$calls, &$stopped): bool {
+            $more = static function () use ($pdo, $id, $end, $maxObjects, &$calls, &$stopped): bool {
                 if (microtime(true) >= $end) return false;
+                if ($maxObjects > 0 && $calls >= $maxObjects) return false;   // só nos testes: deixar a meio
                 if (++$calls % 50 === 0) {
                     $s = $pdo->query('SELECT status FROM drive_moves WHERE id = ' . $id)->fetchColumn();
                     if ($s === 'cancelled') { $stopped = true; return false; }
@@ -215,7 +220,7 @@ function drive_moves_run(PDO $pdo, float $budget): string {
                     if (!$stopped) break;   // acabou o tempo: continua na próxima vez
                 }
             } catch (Throwable $e) {
-                $pdo->prepare("UPDATE drive_moves SET status = 'failed', error = ?, done_at = ? WHERE id = ?")->execute([mb_substr($e->getMessage(), 0, 300), drive_now(), $id]);
+                drive_moves_mark_failed($pdo, $id, $e->getMessage());
                 error_log('drive_moves #' . $id . ': ' . $e->getMessage());
                 $failed++;
             } finally {
@@ -227,6 +232,12 @@ function drive_moves_run(PDO $pdo, float $budget): string {
     }
     $left = drive_moves_status($pdo, 0);
     return 'Drive: ' . $done . ' movimentos concluídos' . ($failed ? ', ' . $failed . ' falharam' : '') . ' · ' . $left['moves'] . ' por acabar';
+}
+
+/** Marca como falhado — só o que ainda estava por fazer (um «Anular» entretanto ganha). */
+function drive_moves_mark_failed(PDO $pdo, int $id, string $error): void {
+    $pdo->prepare("UPDATE drive_moves SET status = 'failed', error = ?, done_at = ? WHERE id = ? AND status IN ('queued','running')")
+        ->execute([mb_substr($error, 0, 300), drive_now(), $id]);
 }
 
 /**

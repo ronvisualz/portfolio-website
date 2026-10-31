@@ -1097,6 +1097,8 @@ try {
             api_err('Só quem criou este link (ou um administrador) o pode alterar. Pode criar um link seu.', 403);
         }
         if (($in['perm'] ?? '') === 'edit' && !can('drive', PERM_EDIT)) api_err('Só quem pode editar a Drive dá permissão para editar.', 403);
+        // um link antigo, sem dono, passa a ter como dono quem o altera (os avisos dos visitantes precisam de alguém)
+        if (empty($cur['created_by'])) $pdo->prepare('UPDATE drive_shares SET created_by = ? WHERE id = ? AND created_by IS NULL')->execute([(int)(current_user()['id'] ?? 0) ?: null, $id]);
         try { $s = drive_share_update($pdo, $id, array_intersect_key($in, array_flip(['perm', 'hours', 'forever', 'password', 'clear_password']))); }
         catch (RuntimeException $e) { api_err($e->getMessage(), $e->getCode() ?: 400); }
         api_out(200, ['ok' => true, 'share' => drive_share_out($s)]);

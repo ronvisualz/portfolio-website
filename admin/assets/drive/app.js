@@ -2232,8 +2232,8 @@
     const priv = it.folder && !privateKey(key) ? S.objects.filter(o => o.k.indexOf(key) === 0 && !P.isFolder(o.k) && privateKey(o.k)).map(o => o.k.slice(key.length)) : [];
     // 0 = «Sem prazo» (só pastas); nunca fica guardado como predefinição
     const opts = [[1, '1 h'], [6, '6 h'], [24, '24 h'], [72, '3 dias'], [168, '7 dias']].concat(it.folder ? [[0, 'Sem prazo']] : []);
-    let hours = TD.store.get('drive.shareHours', 24);
-    if (!opts.some(o => o[0] === hours) || hours === 0) hours = 24;
+    // começa sempre na validade das Definições (a mesma da partilha rápida); a mais próxima das opções do diálogo
+    let hours = opts.filter(o => o[0] > 0).reduce((b, o) => Math.abs(o[0] - TD.cfg.shareHours) < Math.abs(b - TD.cfg.shareHours) ? o[0] : b, 24);
     TD.dialog.open((box, done) => {
       box.classList.add('dr-dlg', 'dr-share');
       box.setAttribute('aria-label', 'Partilhar «' + it.name + '»');
@@ -2293,7 +2293,6 @@
       paintList();
       create.onclick = async () => {
         create.disabled = true; create.textContent = 'A criar…';
-        if (hours !== 0) TD.store.set('drive.shareHours', hours);
         const pw = pwOn.checked ? pwIn.value : '';
         const permEl = box.querySelector('input[name=dr-sh-perm]:checked');
         const made = run({ kind: 'share', payload: hours === 0 ? { key, forever: true } : { key, hours } }, { quiet: true, includePrivate: !!(privBox && privBox.checked), password: pw, perm: permEl ? permEl.value : 'view' });

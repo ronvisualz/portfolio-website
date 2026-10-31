@@ -75,6 +75,25 @@ t_true(in_array($base . 'u/H/a.txt', $keys(), true), 'aparece logo de volta na o
 drive_moves_run($pdo, 30.0);
 t_true(r2_head($base . 'u/H/a.txt') !== null && r2_head($base . 'dst/H2/a.txt') === null, 'e o armazenamento volta ao que era');
 
+// 5b. «Anular» com a cópia já a meio: para e tudo volta à origem
+for ($i = 1; $i <= 12; $i++) tests_put(sprintf('%smeio/P/f%02d.txt', $base, $i), 'p' . $i);
+$b5 = bin2hex(random_bytes(8));
+$api(['do' => 'move', 'from' => $base . 'meio/P/', 'to' => $base . 'meio2/P/', 'on_conflict' => 'error', 'instant' => true, 'batch' => $b5]);
+drive_moves_run($pdo, 30.0, 4);   // só 4 objetos: fica a meio
+$st5 = (string)$pdo->query("SELECT status FROM drive_moves WHERE batch = " . $pdo->quote($b5))->fetchColumn();
+t_eq($st5, 'running', 'a cópia ficou a meio');
+t_true(r2_head($base . 'meio2/P/f01.txt') !== null && r2_head($base . 'meio/P/f12.txt') !== null, 'parte no destino, parte na origem');
+t_eq($api(['do' => 'move_undo', 'batch' => $b5])['code'], 200, 'anular a meio');
+drive_moves_run($pdo, 60.0);
+$back = count(array_filter(r2_list_all($base . 'meio/P/', 1), fn($o) => substr($o['key'], -1) !== '/'));
+t_eq($back, 12, 'os 12 ficheiros voltaram à origem');
+t_eq(count(array_filter(r2_list_all($base . 'meio2/P/', 1), fn($o) => substr($o['key'], -1) !== '/')), 0, 'e nada ficou no destino');
+// 5c. um «falhou» não escreve por cima de um «anulado»
+$cid = drive_move_enqueue($pdo, $base . 'nada.txt', $base . 'nada2.txt', false, 'error', 1, bin2hex(random_bytes(8)));
+$pdo->exec("UPDATE drive_moves SET status = 'cancelled' WHERE id = " . (int)$cid);
+drive_moves_mark_failed($pdo, $cid, 'teste');
+t_eq((string)$pdo->query('SELECT status FROM drive_moves WHERE id = ' . (int)$cid)->fetchColumn(), 'cancelled', '«falhou» não escreve por cima de «anulado»');
+
 // 6. conflitos decididos antes, como hoje
 tests_put($base . 'c/a.txt', '1'); tests_put($base . 'c2/a.txt', '2');
 t_eq($api(['do' => 'move', 'from' => $base . 'c/a.txt', 'to' => $base . 'c2/a.txt', 'on_conflict' => 'error', 'instant' => true])['code'], 409, 'conflito → 409 (diálogo)');

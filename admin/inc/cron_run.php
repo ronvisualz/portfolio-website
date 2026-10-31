@@ -66,6 +66,8 @@ try {
         try {
             require_once __DIR__ . '/drive_moves.php';
             if (r2_config() && ($dm = drive_moves_run($pdo, (float)min(60, $sec / 4))) !== '') $out .= $dm . "\n";
+            require_once __DIR__ . '/drive_share.php';   // envios de visitantes nunca confirmados (mais de um dia)
+            if (r2_config() && ($nc = drive_share_incoming_cleanup(86400)) > 0) $out .= 'Drive: ' . $nc . " envios por confirmar apagados\n";
         } catch (Throwable $e) { $out .= 'Drive (mover): ' . $e->getMessage() . "\n"; }
         // Financeiro (§28): as caixas de email (IMAP, só leitura) e os custos fixos / calendário fiscal
         require_once __DIR__ . '/fin.php';
