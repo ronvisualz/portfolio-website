@@ -618,7 +618,7 @@
         var fc = document.createElement('canvas'); fc.width = m.videoWidth; fc.height = m.videoHeight;
         fc.getContext('2d').drawImage(m, 0, 0); fc.getContext('2d').getImageData(0, 0, 1, 1);
         ready(fc, fc.width, fc.height);
-      } catch (e) { p.hint.textContent = 'Não foi possível ler este fotograma aqui. Use a imagem de um frame-chave.'; }
+      } catch (e) { p.hint.textContent = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.'; }
     } else {
       var url = (a.kind === 'image' && a.orig ? a.orig : a.thumb + '&s=' + Math.max.apply(null, (a.tw || []).concat([768]))) + '&px=1';
       fetch(url, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
@@ -1503,7 +1503,7 @@
     // ── enviar: do dispositivo ou da Drive (§33.9) ──
     function driveApi(body) {
       return fetch('/admin/drive_api.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF }, body: JSON.stringify(body) })
-        .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Resposta inesperada do servidor.' }; }).then(function (j) { j.status = r.status; return j; }); });
+        .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Não foi possível falar com a Drive. Tente outra vez.' }; }).then(function (j) { j.status = r.status; return j; }); });
     }
     function driveRun(body) { return driveApi(body).then(function (j) { return j.ok && j.done === false && j.next ? driveRun(j.next) : j; }); }
     var upm = null;
@@ -1602,7 +1602,7 @@
       q.addEventListener('input', function () { last = -1; paint(); });
       el.hidden = false; q.focus();
       driveApi({ do: 'catalog' }).then(function (j) {
-        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível ler a Drive.') + '</p>'; return; }
+        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; return; }
         objs = (j.objects || []).filter(function (o) { return o.k.slice(-1) !== '/'; });
         roots = j.roots || [];
         var have = {}; objs.forEach(function (o) { have[o.k] = o; });
@@ -1667,7 +1667,7 @@
       if (cut && EDIT) delSel();
     }
     function pasteClip(pack, at) {
-      if (!EDIT) { toast('A sua conta vê este Topperboard mas não o edita.'); return Promise.resolve(); }
+      if (!EDIT) { toast('Pode ver este Topperboard, mas não editá-lo.'); return Promise.resolve(); }
       var items = CCL.clipPlace(pack, at, pack.board === B.id);
       return api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
         B.rev = j.rev;
@@ -2071,7 +2071,7 @@
       el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(top) + 'px';
       var inp = $('.cp-in', el), err = $('.cp-err', el), free = $('.cp-free', el);
       function say(m, bad) { err.textContent = m || ''; err.classList.toggle('bad', !!bad); inp.setAttribute('aria-invalid', bad ? 'true' : 'false'); }
-      function pick(h, keep) { var v = window.CCL ? CCL.hexParse(h) : h; if (!v) { say('Isto não é uma cor. Use #RRGGBB, por exemplo #FFC718.', true); return false; } cur = v; inp.value = v; free.value = v.toLowerCase(); say(''); onPick(v); if (!keep) closeColorPop(); return true; }
+      function pick(h, keep) { var v = window.CCL ? CCL.hexParse(h) : h; if (!v) { say('Escreva a cor como #RRGGBB, por exemplo #FFC718.', true); return false; } cur = v; inp.value = v; free.value = v.toLowerCase(); say(''); onPick(v); if (!keep) closeColorPop(); return true; }
       el.addEventListener('click', function (e) {
         var b = e.target.closest('button');
         if (!b) return;
@@ -2468,6 +2468,10 @@
           if (drag !== lp || lp.moved) return;
           vp.classList.remove('panning');
           drag = { kind: 'marq', p0: lp.p0, el: null, add: false };
+          // o modo mudou: sinal no ponto tocado (o iPad não vibra)
+          vp.classList.add('marq-ready');
+          var dot = document.createElement('i'); dot.className = 'ccb-holddot'; dot.setAttribute('aria-hidden', 'true');
+          dot.style.left = lp.p0.x + 'px'; dot.style.top = lp.p0.y + 'px'; vp.appendChild(dot);
           if (navigator.vibrate) navigator.vibrate(8);
         }, 400);
       }
@@ -2611,6 +2615,7 @@
     }
     function upEv(e) {
       pointers.delete(e.pointerId);
+      vp.classList.remove('marq-ready'); var hd = $('.ccb-holddot', vp); if (hd) hd.remove();
       if (pinch) { if (pointers.size < 2) pinch = null; return; }
       vp.classList.remove('panning');
       if (!drag) return;

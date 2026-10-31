@@ -181,6 +181,10 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-lane > b small { font: 500 15px var(--body); color: var(--mute); margin-left: 10px; }
 .ccb-lane.drop { background: color-mix(in srgb, var(--lane) 18%, transparent); }
 
+.ccb-holddot { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 2px solid var(--cc-sel); background: rgba(47, 119, 177, .14); pointer-events: none; z-index: 9; animation: ccHold .18s ease-out; }
+@keyframes ccHold { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ccb-holddot { animation: none; } }
+.ccb-vp.marq-ready { cursor: crosshair; }
 .ccb-marq { position: absolute; border: 1.5px dashed var(--cc-sel); background: rgba(47, 119, 177, .12); border-radius: 2px; pointer-events: none; z-index: 9; }
 .ccb-vp.alt:not(.panning) { cursor: crosshair; }
 .ccb-vp.alt .ccc { cursor: default; }

@@ -32,7 +32,7 @@ const hex = () => JSON.parse(execFileSync('php', ['-r', `require "tests/boot.php
     check((await inp.inputValue()).toUpperCase() === '#FFC718', 'o campo #HEX mostra a cor atual');
     // texto que não é cor → aviso, a cor não muda
     await inp.fill('azul'); await inp.press('Enter'); await p.waitForTimeout(500);
-    check(/não é uma cor/i.test(await pop.innerText()) && hex() === '#FFC718', 'texto que não é cor → aviso e a cor fica');
+    check(/Escreva a cor como #RRGGBB/i.test(await pop.innerText()) && hex() === '#FFC718', 'texto que não é cor → aviso e a cor fica');
     await inp.fill('  2f77b1 '); await inp.press('Enter'); await p.waitForTimeout(900);
     check(hex() === '#2F77B1', 'escrever «2f77b1» + Enter muda a amostra (' + hex() + ')');
   }

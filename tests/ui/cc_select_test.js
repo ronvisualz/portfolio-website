@@ -62,10 +62,14 @@ const selCount = p => p.locator('.ccc.sel').count();
   const x0 = tn.x - 12, y0 = tn.y - 12;
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
   await t.waitForTimeout(500);
+  // ao chegar aos 0,4 s, antes de mexer, mostra-se que o modo mudou (no iPad não há vibração)
+  const hold = await t.evaluate(() => ({ cls: document.querySelector('.ccb-vp').classList.contains('marq-ready'), dot: !!document.querySelector('.ccb-holddot') }));
+  check(hold.cls && hold.dot, 'iPad: ao fim de 0,4 s aparece o sinal de seleção no ponto tocado (' + JSON.stringify(hold) + ')');
   for (let i = 1; i <= 6; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + i * 10, y: y0 + i * 8 }] }); await t.waitForTimeout(30); }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await t.waitForTimeout(300);
   check(await t.locator('.ccc.sel').count() >= 1, 'iPad: tocar e manter 0,4 s e arrastar seleciona');
+  check(await t.locator('.ccb-holddot').count() === 0 && !(await t.locator('.ccb-vp.marq-ready').count()), 'iPad: o sinal desaparece ao largar');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);
