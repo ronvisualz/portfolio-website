@@ -455,6 +455,8 @@
   function assetDetailHtml(a) {
     var media;
     if (isAudio(a)) media = auPlayerHtml(a);
+    else if (a.vembed && /^https:\/\/(www\.youtube-nocookie\.com\/embed|player\.vimeo\.com\/video)\/[A-Za-z0-9_-]+$/.test(a.vembed))   // §33.8: o leitor do serviço (só toca com ▶)
+      media = '<iframe src="' + esc(a.vembed) + '" title="' + esc(a.title || 'Vídeo') + '" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>';
     else if (a.kind === 'video' && a.orig) media = '<video controls playsinline preload="metadata" src="' + esc(a.orig) + '" poster="' + esc(thumbUrl(a, 768)) + '"></video>';
     else if (a.thumb) media = '<img src="' + esc(thumbUrl(a, 1600)) + '" alt="' + esc(a.title) + '">';
     else if (a.kind === 'image' && a.orig) media = '<img src="' + esc(a.orig) + '" alt="' + esc(a.title) + '">';   // §33.5: sem miniaturas, o original
@@ -1219,8 +1221,11 @@
           break;
         }
         case 'link':
-          h = (a && a.thumb ? '<div class="ccc-media" style="aspect-ratio:' + (a.w && a.h ? a.w + '/' + a.h : '1.91/1') + '"><img alt="" decoding="async" draggable="false"></div>' : '')
-            + '<div class="ccc-cap ccc-link"><span class="site">' + esc(a ? (hostOf(a.url)) : '') + '</span><b>' + esc(a ? a.title : 'Link') + '</b>' + esc(a && a.caption ? a.caption.slice(0, 140) : '') + '</div>';
+          // §33.8: miniatura, título, autor; nos vídeos ▶ e duração
+          h = (a && a.thumb ? '<div class="ccc-media" style="aspect-ratio:' + (a.w && a.h ? a.w + '/' + a.h : '1.91/1') + '"><img alt="" decoding="async" draggable="false">'
+              + (a.vembed ? '<span class="ccc-play">' + ico('play') + '</span>' + (a.ldur ? '<span class="ccc-dur">' + fmtDur(a.ldur) + '</span>' : '') : '') + '</div>' : '')
+            + '<div class="ccc-cap ccc-link"><span class="site">' + esc(a ? (a.provider || hostOf(a.url)) : '') + '</span><b>' + esc(a ? a.title : 'Link') + '</b>'
+            + (a && a.author ? '<span class="by">' + esc(a.author) + '</span>' : '') + esc(a && a.caption ? a.caption.slice(0, 140) : '') + '</div>';
           break;
         case 'audio': {   // forma de onda (picos guardados), tocar/pausar, duração; um áudio de cada vez
           var d = auDur(a), cat = a && a.acat && ACATS[a.acat] ? ACATS[a.acat] : (a && a.embed ? hostOf(a.url) : '');

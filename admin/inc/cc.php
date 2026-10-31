@@ -672,6 +672,8 @@ function cc_asset_public(array $a, bool $full = false): array {
         'pal' => array_column(cc_palette_hex($a['palette']), 'hex'),
         'ai' => (string)$a['ai_status'], 'origin' => (string)$a['origin'], 'inbox' => (int)$a['inbox'],
         'caption' => is_array($an) ? (string)($an['caption'] ?? '') : '',
+        'author' => is_array($an) ? (string)($an['author'] ?? '') : '', 'provider' => is_array($an) ? (string)($an['provider'] ?? '') : '',
+        'ldur' => is_array($an) ? (int)($an['duration'] ?? 0) : 0, 'vembed' => is_array($an) ? (string)($an['vembed'] ?? '') : '',
         'facets' => array_filter(['style' => $a['style'], 'technique' => $a['technique'], 'camera' => $a['camera'], 'environment' => $a['environment'], 'light' => $a['light']]),
         'tags' => array_values(array_filter(array_map('trim', explode(',', (string)$a['tags'])))),
         'file' => (string)$a['file_name'], 'mime' => (string)$a['mime'],
@@ -783,10 +785,64 @@ function cc_fetch(string $url, int $max = 3145728, int $timeout = 8): ?array {
     return null;
 }
 
-/** Título, descrição e imagem de uma página (Open Graph / Twitter / <title>). */
-function cc_link_meta(string $url): array {
-    $out = ['title' => '', 'description' => '', 'image' => '', 'site' => (string)parse_url($url, PHP_URL_HOST), 'audio' => '', 'video' => '', 'type' => ''];
-    $r = cc_fetch($url, 1572864);
+// ── cartões de link (§33.8): serviços conhecidos com oEmbed; o resto por Open Graph ──
+
+/** O serviço de um link: ['name', 'oembed' => endpoint da lista fixa ou null, 'video' => bool, 'id' => id do vídeo]. null = site genérico.
+ *  Os endpoints nunca vêm da página (nada de <link rel=alternate type=json+oembed>): só desta lista. */
+function cc_link_provider(string $url): ?array {
+    $p = parse_url($url);
+    if (!$p || !in_array(strtolower((string)($p['scheme'] ?? '')), ['http', 'https'], true)) return null;
+    $host = preg_replace('/^(www|m|mobile)\./', '', strtolower((string)($p['host'] ?? '')));
+    $path = (string)($p['path'] ?? '');
+    parse_str((string)($p['query'] ?? ''), $q);
+    $enc = rawurlencode($url);
+    if ($host === 'youtube.com' || $host === 'youtu.be') {
+        $id = $host === 'youtu.be' ? ltrim($path, '/') : (preg_match('~^/(?:shorts|embed|live)/([A-Za-z0-9_-]{6,20})~', $path, $m) ? $m[1] : (string)($q['v'] ?? ''));
+        if (!preg_match('/^[A-Za-z0-9_-]{6,20}$/', $id)) return null;
+        return ['name' => 'YouTube', 'oembed' => 'https://www.youtube.com/oembed?format=json&url=' . rawurlencode('https://www.youtube.com/watch?v=' . $id), 'video' => true, 'id' => $id];
+    }
+    if ($host === 'vimeo.com' && preg_match('~^/(?:video/)?(\d{5,12})~', $path, $m)) return ['name' => 'Vimeo', 'oembed' => 'https://vimeo.com/api/oembed.json?url=' . $enc, 'video' => true, 'id' => $m[1]];
+    if ($host === 'instagram.com' && preg_match('~^/(?:p|reel|tv)/[A-Za-z0-9_-]+~', $path)) return ['name' => 'Instagram', 'oembed' => null, 'video' => false];
+    if ($host === 'tiktok.com' && preg_match('~^/@[^/]+/video/(\d+)~', $path, $m)) return ['name' => 'TikTok', 'oembed' => 'https://www.tiktok.com/oembed?url=' . $enc, 'video' => true, 'id' => $m[1]];
+    if ($host === 'behance.net' && preg_match('~^/gallery/\d+~', $path)) return ['name' => 'Behance', 'oembed' => null, 'video' => false];
+    if ($host === 'dribbble.com' && preg_match('~^/shots/\d+~', $path)) return ['name' => 'Dribbble', 'oembed' => null, 'video' => false];
+    if ($host === 'artstation.com' && preg_match('~^/artwork/[A-Za-z0-9]+~', $path)) return ['name' => 'ArtStation', 'oembed' => null, 'video' => false];
+    if (in_array($host, ['x.com', 'twitter.com'], true) && preg_match('~^/[A-Za-z0-9_]{1,15}/status/\d+~', $path)) return ['name' => 'X', 'oembed' => 'https://publish.twitter.com/oembed?omit_script=1&url=' . $enc, 'video' => false];
+    if ($host === 'open.spotify.com' && preg_match('~^/(?:intl-[a-z-]+/)?(track|album|playlist|episode|show)/~', $path)) return ['name' => 'Spotify', 'oembed' => 'https://open.spotify.com/oembed?url=' . $enc, 'video' => false];
+    if ($host === 'soundcloud.com' && preg_match('~^/[^/]+/[^/]+~', $path)) return ['name' => 'SoundCloud', 'oembed' => 'https://soundcloud.com/oembed?format=json&url=' . $enc, 'video' => false];
+    return null;
+}
+
+/** Uma resposta oEmbed (JSON) → ['title','author','thumb','w','h','duration','html']; [] se não for JSON válido. */
+function cc_oembed_parse(string $json): array {
+    $j = json_decode($json, true);
+    if (!is_array($j) || (!isset($j['title']) && !isset($j['thumbnail_url']) && !isset($j['author_name']))) return [];
+    $s = static fn($v, int $n) => mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$v)), 0, $n);
+    $thumb = (string)($j['thumbnail_url'] ?? '');
+    return ['title' => $s($j['title'] ?? '', 200), 'author' => $s($j['author_name'] ?? '', 120), 'thumb' => preg_match('~^https://~i', $thumb) ? $thumb : '',
+            'w' => (int)($j['thumbnail_width'] ?? 0), 'h' => (int)($j['thumbnail_height'] ?? 0), 'duration' => (int)($j['duration'] ?? 0),
+            'html' => mb_substr((string)($j['html'] ?? ''), 0, 4000)];
+}
+
+/** Título, descrição e imagem de uma página: oEmbed (serviços conhecidos) e Open Graph / Twitter / <title> para o resto.
+ *  $fetch: só para os testes (por omissão cc_fetch, com o IP público verificado a cada salto). */
+function cc_link_meta(string $url, ?callable $fetch = null): array {
+    $fetch = $fetch ?: 'cc_fetch';
+    $out = ['title' => '', 'description' => '', 'image' => '', 'site' => (string)parse_url($url, PHP_URL_HOST), 'audio' => '', 'video' => '', 'type' => '',
+            'author' => '', 'provider' => '', 'duration' => 0, 'embed' => ''];
+    $prov = cc_link_provider($url);
+    $oe = [];
+    if ($prov) {
+        $out['provider'] = $prov['name'];
+        if ($prov['oembed']) {
+            $r = $fetch($prov['oembed'], 262144);   // ≤ 256 KB: um oEmbed maior não é oEmbed
+            if ($r && str_contains((string)$r[1], 'json')) $oe = cc_oembed_parse((string)$r[0]);
+        }
+        if (!empty($prov['id']) && $prov['name'] === 'YouTube') $out['embed'] = 'https://www.youtube-nocookie.com/embed/' . $prov['id'];
+        if (!empty($prov['id']) && $prov['name'] === 'Vimeo') $out['embed'] = 'https://player.vimeo.com/video/' . $prov['id'];
+    }
+    if ($oe) { $out['title'] = $oe['title']; $out['author'] = $oe['author']; $out['image'] = $oe['thumb']; $out['duration'] = $oe['duration']; $out['site'] = $prov['name']; }
+    $r = $fetch($url, 1572864);
     if (!$r) return $out;
     [$html, $type, $final] = $r;
     $out['type'] = $type;
@@ -799,15 +855,16 @@ function cc_link_meta(string $url): array {
             $meta[strtolower($k[1])] = html_entity_decode($v[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
         }
     }
-    $out['title'] = $meta['og:title'] ?? $meta['twitter:title'] ?? (preg_match('~<title[^>]*>(.*?)</title>~is', $html, $t) ? html_entity_decode(trim($t[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8') : '');
+    if ($out['title'] === '') $out['title'] = $meta['og:title'] ?? $meta['twitter:title'] ?? (preg_match('~<title[^>]*>(.*?)</title>~is', $html, $t) ? html_entity_decode(trim($t[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8') : '');
+    if ($out['author'] === '') $out['author'] = mb_substr(trim((string)($meta['author'] ?? $meta['article:author'] ?? $meta['twitter:creator'] ?? '')), 0, 120);
     $out['description'] = $meta['og:description'] ?? $meta['description'] ?? $meta['twitter:description'] ?? '';
     $img = $meta['og:image'] ?? $meta['og:image:url'] ?? $meta['twitter:image'] ?? '';
     if ($img !== '' && !preg_match('~^https?://~i', $img)) {
         $b = parse_url($final);
         $img = str_starts_with($img, '//') ? ($b['scheme'] ?? 'https') . ':' . $img : ($b['scheme'] ?? 'https') . '://' . $b['host'] . '/' . ltrim($img, '/');
     }
-    $out['image'] = $img;
-    $out['site'] = $meta['og:site_name'] ?? $out['site'];
+    if ($out['image'] === '') $out['image'] = $img;
+    $out['site'] = $prov ? $prov['name'] : ($meta['og:site_name'] ?? $out['site']);
     // a pré-escuta que as bibliotecas de música põem na página (og:audio) e o leitor embutido (og:video, ex.: Bandcamp)
     foreach (['audio' => ['og:audio:secure_url', 'og:audio', 'og:audio:url'], 'video' => ['og:video:secure_url', 'og:video', 'og:video:url']] as $k => $keys) {
         foreach ($keys as $mk) if (!empty($meta[$mk]) && preg_match('~^https://~i', $meta[$mk])) { $out[$k] = $meta[$mk]; break; }
@@ -836,6 +893,10 @@ function cc_asset_from_link(PDO $pdo, string $url, array $o): array {
     if ($new) {
         $an = ['caption' => $meta['description'], 'site' => $meta['site']];
         if ($embed) $an['embed'] = $embed;   // o leitor do serviço: o cartão passa a ser de áudio
+        // §33.8: autor, serviço, duração e leitor de vídeo (YouTube/Vimeo, anfitriões da CSP)
+        foreach (['author', 'provider'] as $k) if (!empty($meta[$k])) $an[$k] = $meta[$k];
+        if (!empty($meta['duration'])) $an['duration'] = (int)$meta['duration'];
+        if (!empty($meta['embed']) && !$embed) $an['vembed'] = $meta['embed'];
         $pdo->prepare('UPDATE cc_assets SET analysis = ? WHERE id = ?')->execute([json_encode($an, JSON_UNESCAPED_UNICODE), (int)$a['id']]);
         cc_asset_reindex($pdo, (int)$a['id']);
         $a = cc_asset_get($pdo, (int)$a['id']);
@@ -845,7 +906,7 @@ function cc_asset_from_link(PDO $pdo, string $url, array $o): array {
 }
 
 /** Os leitores de música que entram no Topperboard (frame-src da CSP das páginas do Toppernote). */
-const CC_EMBED_FRAMES = 'https://w.soundcloud.com https://open.spotify.com https://player-widget.mixcloud.com https://www.mixcloud.com https://embed.music.apple.com https://bandcamp.com';
+const CC_EMBED_FRAMES = 'https://w.soundcloud.com https://open.spotify.com https://player-widget.mixcloud.com https://www.mixcloud.com https://embed.music.apple.com https://bandcamp.com https://www.youtube-nocookie.com https://player.vimeo.com';
 const CC_AUDIO_LINK_MAX = 52428800;   // um ficheiro de áudio por link: até 50 MB
 
 /** O leitor embutido de um serviço de música (SoundCloud, Spotify, Mixcloud, Apple Music, Bandcamp), ou null. */
