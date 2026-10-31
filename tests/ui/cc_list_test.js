@@ -65,7 +65,8 @@ const items = () => JSON.parse(execFileSync('php', ['-r', `require "tests/boot.p
   const h = p.locator('.ccc-li[data-i="0"] .ccc-lh');
   check(await h.count() === 1, 'cada item tem a pega ⋮⋮ para arrastar');
   await p.locator('.ccc-li[data-i="0"]').hover();
-  await h.dragTo(p.locator('.ccc-li[data-i="1"]'), { targetPosition: { x: 40, y: 12 } });
+  const t1 = await p.locator('.ccc-li[data-i="1"]').boundingBox();   // metade de baixo do 2.º item (o zoom muda com a largura do painel)
+  await h.dragTo(p.locator('.ccc-li[data-i="1"]'), { targetPosition: { x: Math.min(40, t1.width / 2), y: Math.round(t1.height * 0.75) } });
   await p.waitForTimeout(900);
   check(items()[0] === 'Segundo' && items()[1] === 'Primeiroabc', 'arrastar o 1.º para baixo do 2.º troca-os (' + JSON.stringify(items().slice(0, 3)) + ')');
   await b.close();

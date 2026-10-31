@@ -1426,6 +1426,16 @@
       } else { r.selectNodeContents(el); r.collapse(false); }
       s.removeAllRanges(); s.addRange(r);
     }
+    /** Cursor no ponto (x, y) do ecrã, se cair dentro de `el` (§33.10). */
+    function caretAt(el, x, y) {
+      var r = null;
+      if (document.caretRangeFromPoint) r = document.caretRangeFromPoint(x, y);
+      else if (document.caretPositionFromPoint) { var cp = document.caretPositionFromPoint(x, y); if (cp) { r = document.createRange(); r.setStart(cp.offsetNode, cp.offset); } }
+      if (!r || !el.contains(r.startContainer)) return false;
+      r.collapse(true);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      return true;
+    }
     /** Editar no sítio. opts: {before: estado da sessão (as listas encadeiam itens numa só anulação), caret: 'start'|'end'|'all'|n}. */
     function startEdit(c, itemIndex, opts) {
       if (!EDIT) return;
@@ -1444,7 +1454,7 @@
       target.focus();
       // um título por defeito («Coluna», «Lista») fica selecionado: escrever substitui-o
       var dflt = (c.type === 'column' && (c.c.title || '') === 'Coluna') || (c.type === 'list' && !isItem && (c.c.title || '') === 'Lista');
-      setCaret(target, opts.caret != null ? opts.caret : dflt ? 'all' : 'end');
+      if (!(opts.at && caretAt(target, opts.at.x, opts.at.y))) setCaret(target, opts.caret != null ? opts.caret : dflt ? 'all' : 'end');
       function text() { return target.innerText.replace(/ /g, ' ').replace(/\n$/, ''); }
       function detach() {
         off = true;
@@ -1940,6 +1950,7 @@
       if (arrowHit) { select([+arrowHit.getAttribute('data-arrow')], e.shiftKey); return; }
       if (t.closest('.ccc-res') && c && EDIT) { drag = { kind: 'resize', c: c, p0: w, w0: c.w, h0: c.h || cardH(c), before: snapshot(c) }; return; }
       if (c) {
+        var wasSel = B.sel.size === 1 && B.sel.has(c.id);   // §33.10: 2.º clique numa nota já selecionada edita no ponto do clique
         if (!B.sel.has(c.id) && !(e.shiftKey || e.metaKey || e.ctrlKey)) select([c.id]);
         if (!EDIT) { drag = { kind: 'click', c: c, p0: p, shift: e.shiftKey || e.metaKey || e.ctrlKey }; return; }
         // arrastar pela coluna: só pelo cabeçalho (o corpo deixa arrastar os cartões de dentro)
@@ -1947,7 +1958,7 @@
         if (ids.indexOf(c.id) < 0) ids = [c.id];
         if (c.col) ids = [c.id];
         else ids = ids.filter(function (id) { return !B.cards.get(id).col; });
-        drag = { kind: 'drag', c: c, ids: ids, p0: p, w0: w, moved: false, shift: e.shiftKey || e.metaKey || e.ctrlKey, before: ids.map(function (id) { return snapshot(B.cards.get(id)); }) };
+        drag = { kind: 'drag', c: c, ids: ids, p0: p, w0: w, moved: false, wasSel: wasSel, at: { x: e.clientX, y: e.clientY }, shift: e.shiftKey || e.metaKey || e.ctrlKey, before: ids.map(function (id) { return snapshot(B.cards.get(id)); }) };
         return;
       }
       if (e.shiftKey) { drag = { kind: 'marq', p0: p, el: null }; return; }
@@ -2099,6 +2110,7 @@
       if (d.kind === 'drag') {
         if (d.moved) finishDrag(e);
         else if (d.shift) select([d.c.id], true);
+        else if (d.wasSel && d.c.type === 'note' && EDIT && e.pointerType !== 'touch') startEdit(d.c, null, { at: d.at });
         else select([d.c.id]);
       } else if (d.kind === 'click') {
         select([d.c.id], d.shift);
@@ -2130,10 +2142,11 @@
       var el = tg.closest('.ccc');
       if (!el) { if (EDIT && B.tool === 'select' && !tg.closest('.ccb-zoom')) { var p = vpPoint(e), w = toWorld(p.x, p.y); addNote('', { x: Math.round((w.x - 120) / GRID) * GRID, y: Math.round((w.y - 30) / GRID) * GRID }); } return; }
       var c = B.cards.get(+el.getAttribute('data-id'));
-      if (!c) return;
+      if (!c || B.editing === c.id) return;
+      var at = { at: { x: e.clientX, y: e.clientY } };
       if (c.type === 'board' && c.ref) { if (tg.closest('.ccc-bt b') && EDIT) startEdit(c); else location.href = '/admin/toppernote.php?b=' + c.ref; return; }
-      if (c.type === 'list') { var li = tg.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null); return; }
-      if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c); return; }
+      if (c.type === 'list') { var li = tg.closest('.ccc-li'); startEdit(c, li ? +li.getAttribute('data-i') : null, at); return; }
+      if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c, null, at); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
       if (c.type === 'file' && c.asset && c.asset.orig) { window.open(c.asset.orig, '_blank', 'noopener'); return; }
       if (c.asset) { select([c.id]); B.side = 'det'; sideEl.hidden = false; sideSync(); }
