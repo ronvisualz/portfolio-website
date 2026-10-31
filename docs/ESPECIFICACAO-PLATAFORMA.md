@@ -4136,7 +4136,7 @@ Verificado no main: mover/copiar faz uma **cópia servidor a servidor no R2 fich
 
 ### 32.2 Partilha com permissões
 - Ao partilhar, escolher **«Só ver»** ou **«Pode editar»**, validade e (opcional) palavra-passe; mudar a permissão depois sem mudar o link.
-- **Pode editar** (pastas): quem tem o link pode **carregar ficheiros, criar subpastas e substituir versões**; não apaga (só os internos apagam). Tudo o que entra fica registado (nome indicado pelo visitante, data, IP parcial) e é notificado ao dono da pasta. Limite de tamanho por envio (parâmetro).
+- **Pode editar** (pastas) — confirmado 31 out 2026: quem tem o link pode **carregar ficheiros, criar subpastas, renomear e substituir versões**, mas **nunca apagar nada** (nem ficheiros, nem pastas, nem versões; substituir guarda a anterior no histórico). Verificado no servidor, não só escondido na interface. A **validade do link** continua obrigatória à escolha (como hoje). Tudo o que entra fica registado (nome indicado pelo visitante, data, IP parcial) e é notificado ao dono da pasta. Limite de tamanho por envio (parâmetro).
 - Ficheiro: «Pode editar» = substituir por nova versão (a anterior fica no histórico).
 
 ### 32.3 Pré-visualização no link partilhado
