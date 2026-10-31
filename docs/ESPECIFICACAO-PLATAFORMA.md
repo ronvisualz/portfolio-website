@@ -4151,3 +4151,6 @@ Verificado no main: mover/copiar faz uma **cópia servidor a servidor no R2 fich
 
 ### 32.6 Partilha rápida (clique direito)
 - Clique direito (ou toque longo) num ficheiro → **«Copiar link de partilha»**: cria (ou reaproveita) uma partilha «Só ver» com a validade por defeito e copia logo o link, num só passo. Também na barra de ações quando há um ficheiro selecionado.
+
+### 32.7 Bug visual: árvore de pastas no modo escuro
+Ao passar o cursor numa pasta da árvore lateral (ex.: «Leads»), a linha fica **branca e o texto também branco** — ilegível. Corrigir o estado hover (e focus/selecionado) com os tokens de cor dos dois modos (§11): no escuro, fundo ligeiramente mais claro que o painel (ex.: branco a 6–8% de opacidade) com o texto e o tamanho a manter o contraste; no claro, cinzento suave. Transição curta (120 ms), raio igual ao item ativo, sem mexer no amarelo do item selecionado. Verificar o mesmo padrão em todas as listas/árvores da plataforma (menus, Centro Criativo, Definições).
