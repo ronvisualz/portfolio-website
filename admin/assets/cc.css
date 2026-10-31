@@ -135,6 +135,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-tools button, .ccb-tools label { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; position: relative; flex: none; }
 .ccb-tools button:hover, .ccb-tools label:hover { background: var(--chip); color: var(--fg); }
 .ccb-tools button.on { background: var(--fg); color: var(--bg); }
+.ccb-tools button:disabled { opacity: .35; cursor: default; background: none; }
 .ccb-tools hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; width: auto; }
 .ccb-tools .sw { position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px var(--panel); }
 

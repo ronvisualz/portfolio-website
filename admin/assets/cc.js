@@ -24,7 +24,10 @@
   var reduced = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
   // ── ícones (traço, 24×24) ──────────────────────────────────
+  var MODK = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘' : 'Ctrl';
   var IC = {
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
     eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
     drive: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     cursor: '<path d="m4 4 7 17 2.5-7.5L21 11Z"/>',
@@ -935,7 +938,9 @@
         + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
         + '<div class="ccb-main">'
         + '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
-        + tb('select', 'cursor', 'Selecionar e mover ( V )') + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
+        + tb('select', 'cursor', 'Selecionar e mover ( V )')
+        + (EDIT ? '<button type="button" data-undo="0" aria-label="Anular (' + MODK + ' Z)" data-tip disabled>' + ico('undo') + '</button><button type="button" data-undo="1" aria-label="Refazer (' + MODK + ' Shift Z)" data-tip disabled>' + ico('redo') + '</button><hr>' : '')
+        + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
           + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
           + '<hr>' + '<label data-tip aria-label="Carregar imagens, vídeos ou ficheiros">' + ico('upload') + '<input type="file" multiple hidden data-up></label>'
           + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
@@ -1285,7 +1290,7 @@
 
     // ── gravar (com «Anular») ──
     function snapshot(c) { return { id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, col: c.col, ord: c.ord, lane: c.lane }; }
-    function push(entry) { B.undo.push(entry); if (B.undo.length > 80) B.undo.shift(); B.redo.length = 0; }
+    function push(entry) { B.undo.push(entry); if (B.undo.length > 80) B.undo.shift(); B.redo.length = 0; undoSync(); }
     function save(items) {
       if (!items.length) return Promise.resolve();
       if (RT) RT.publish(items);
@@ -1306,23 +1311,32 @@
       renderAll();
       return save(states.map(function (s) { return Object.assign({}, s); }));
     }
+    // §33.10: cada pessoa só anula o que ela própria fez — o que outra pessoa mudou entretanto fica (CCL.undoPlan)
     function undo(redo) {
       var st = redo ? B.redo : B.undo, other = redo ? B.undo : B.redo;
       var e = st.pop();
-      if (!e) { toast(redo ? 'Nada para refazer.' : 'Nada para anular.'); return; }
-      other.push(e);
-      applyEntry(e, redo);
+      if (!e) { toast(redo ? 'Nada para refazer.' : 'Nada para anular.'); undoSync(); return; }
+      var plan = CCL.undoPlan(e, B.cards, redo), n = planCount(plan);
+      if (n) { other.push(e); runPlan(e, plan, redo); }
+      if (plan.skipped) toast(CCL.skippedMsg(plan.skipped));
+      undoSync();
     }
-    function applyEntry(e, redo) {
-      if (e.t === 'multi') { (redo ? e.list : e.list.slice().reverse()).forEach(function (x) { applyEntry(x, redo); }); return; }
-      if (e.t === 'move') applyStates(e.items.map(function (i) { return redo ? i.after : i.before; }));
+    function planCount(p) { return p.apply.reduce(function (s, x) { return s + (x && x.apply ? planCount(x) : 1); }, 0); }
+    function runPlan(e, plan, redo) {
+      if (e.t === 'multi') { plan.apply.forEach(function (p) { runPlan(p.entry, p, redo); }); return; }
+      if (!plan.apply.length) return;
+      if (e.t === 'move') applyStates(plan.apply.map(function (s) { return Object.assign({}, s); }));
       else if (e.t === 'add' || e.t === 'del') {
         var restore = (e.t === 'add') === !!redo;
-        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: e.ids }).then(function () { if (RT) RT.signal(); reload(); }).catch(fail);
+        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: plan.apply }).then(function () { if (RT) RT.signal(); reload(); }).catch(fail);
       } else if (e.t === 'content') {
-        var c = B.cards.get(e.id);
-        if (c) { c.c = redo ? e.after : e.before; rerender(c); save([{ id: c.id, content: c.c }]); }
+        plan.apply.forEach(function (x) { var c = B.cards.get(x.id); if (c) { c.c = JSON.parse(JSON.stringify(x.c)); rerender(c); save([{ id: c.id, content: c.c }]); } });
       }
+    }
+    function undoSync() {
+      var u = $('[data-undo="0"]', root), r = $('[data-undo="1"]', root);
+      if (u) u.disabled = !B.undo.length;
+      if (r) r.disabled = !B.redo.length;
     }
 
     // ── criar ──
@@ -1747,6 +1761,8 @@
       root.addEventListener('click', function (e) {
         var tool = e.target.closest('[data-tool]');
         if (tool) { runTool(tool.getAttribute('data-tool')); return; }
+        var ub = e.target.closest('[data-undo]');
+        if (ub) { if (!ub.disabled) undo(ub.getAttribute('data-undo') === '1'); return; }
         var z = e.target.closest('[data-z]');
         if (z) { var k = +z.getAttribute('data-z'); if (k === 0) fitAll(true); else zoomAt(center(), k > 0 ? 1.25 : 0.8); return; }
         var a = e.target.closest('[data-a]');
@@ -2241,10 +2257,17 @@
       else if (!mod && k === '1') zoomAt(center(), 1 / B.view.s);
       else if (k.indexOf('Arrow') === 0 && B.sel.size && EDIT && !mod) {
         var st = e.shiftKey ? GRID : 1, dx = k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0, dy = k === 'ArrowUp' ? -st : k === 'ArrowDown' ? st : 0, ch = [];
-        B.sel.forEach(function (id) { var c = B.cards.get(id); if (!c || c.col || c.type === 'arrow') return; c.x += dx; c.y += dy; place(c); ch.push({ id: c.id, x: c.x, y: c.y }); });
+        if (!keys.before) keys.before = new Map();   // uma sequência de setas = uma só entrada de Anular
+        B.sel.forEach(function (id) { var c = B.cards.get(id); if (!c || c.col || c.type === 'arrow') return; if (!keys.before.has(c.id)) keys.before.set(c.id, snapshot(c)); c.x += dx; c.y += dy; place(c); ch.push({ id: c.id, x: c.x, y: c.y }); });
         drawArrows();
         if (RT) RT.live(ch.map(function (x) { return x.id; }));
-        clearTimeout(keys.t); keys.t = setTimeout(function () { save(ch); }, 400);
+        clearTimeout(keys.t); keys.t = setTimeout(function () {
+          var items = [];
+          keys.before.forEach(function (b, id) { var c = B.cards.get(id); if (c) items.push({ before: b, after: snapshot(c) }); });
+          keys.before = null;
+          if (items.length) push({ t: 'move', items: items });
+          save(ch);
+        }, 400);
       }
       else handled = false;
       if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }

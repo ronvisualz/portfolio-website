@@ -84,5 +84,33 @@ eq(CCL.drawBox([{ pts: [6, 6, 306, 186] }, { pts: [10, 20, 40, 60] }]), { vw: 31
 eq(CCL.toLocal({ w: 640, h: 400 }, { vw: 320, vh: 200 }, 320, 200), [160, 100], 'toLocal: o meio do cartão a 200% é o meio do desenho');
 eq(CCL.toLocal({ w: 400, h: 400 }, { vw: 200, vh: 100 }, 200, 200), [100, 50], 'toLocal: com proporção diferente fica centrado (meet)');
 
+// ── anular por pessoa (§33.10) ──
+const cur = new Map([
+  [1, { id: 1, x: 100, y: 50, w: 240, h: 0, col: null, ord: 0, lane: '', c: { text: 'olá', color: '', brief: false } }],
+  [2, { id: 2, x: 300, y: 80, w: 240, h: 0, col: null, ord: 0, lane: '', c: { text: 'b' } }],
+]);
+const mv = { t: 'move', items: [
+  { before: { id: 1, x: 0, y: 0, w: 240, h: 0, col: null, ord: 0, lane: '' }, after: { id: 1, x: 100, y: 50, w: 240, h: 0, col: null, ord: 0, lane: '' } },
+  { before: { id: 2, x: 0, y: 0, w: 240, h: 0, col: null, ord: 0, lane: '' }, after: { id: 2, x: 200, y: 80, w: 240, h: 0, col: null, ord: 0, lane: '' } },
+] };
+r = CCL.undoPlan(mv, cur, false);
+eq([r.apply.map(s => s.id), r.skipped], [[1], 1], 'move: o cartão mexido por outra pessoa fica; o meu volta');
+eq(r.apply[0].x, 0, 'move: repõe o estado de antes');
+r = CCL.undoPlan(mv, new Map([[1, Object.assign({}, cur.get(1), { x: 0, y: 0 })]]), true);
+eq([r.apply.map(s => s.x), r.skipped], [[100], 1], 'refazer move: só se o cartão está como ficou depois de anular; apagado conta como saltado');
+const ct = { t: 'content', id: 1, before: { text: 'oi' }, after: { text: 'olá ' } };
+r = CCL.undoPlan(ct, cur, false);
+eq([r.apply, r.skipped], [[{ id: 1, c: { text: 'oi' } }], 0], 'content igual (o servidor normaliza espaços e campos por defeito) → aplica');
+r = CCL.undoPlan(ct, new Map([[1, Object.assign({}, cur.get(1), { c: { text: 'mudado por outra pessoa' } })]]), false);
+eq([r.apply.length, r.skipped], [0, 1], 'content mudado por outra pessoa → saltado');
+r = CCL.undoPlan({ t: 'add', ids: [1, 9] }, cur, false);
+eq([r.apply, r.skipped], [[1], 1], 'add: anular só apaga os que ainda existem');
+r = CCL.undoPlan({ t: 'del', ids: [1, 9] }, cur, false);
+eq([r.apply, r.skipped], [[9], 1], 'del: anular só repõe os que não existem');
+r = CCL.undoPlan({ t: 'multi', list: [ct, { t: 'add', ids: [9] }] }, cur, false);
+eq([r.apply.length, r.skipped], [2, 1], 'multi: soma os saltados de cada parte');
+eq(CCL.skippedMsg(1), '1 alteração não anulada: outra pessoa mudou este cartão.', 'aviso no singular');
+eq(CCL.skippedMsg(3), '3 alterações não anuladas: outras pessoas mudaram estes cartões.', 'aviso no plural');
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

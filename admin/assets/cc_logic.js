@@ -121,5 +121,46 @@
     return [(px - ox) / s, (py - oy) / s];
   }
 
-  return { version: 1, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── anular por pessoa (§33.10) ──
+  /** Forma canónica para comparar estados (o servidor apara texto, arredonda e acrescenta campos por defeito). */
+  function canon(v) {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === 'object') {
+      var o = {};
+      Object.keys(v).sort().forEach(function (k) { var x = canon(v[k]); if (x !== undefined) o[k] = x; });
+      return o;
+    }
+    if (typeof v === 'string') { v = v.trim(); return v === '' ? undefined : v; }
+    if (typeof v === 'number') { v = Math.round(v * 10) / 10; return v === 0 ? undefined : v; }
+    return v === false || v == null ? undefined : v;
+  }
+  function same(a, b) { return JSON.stringify(canon(a)) === JSON.stringify(canon(b)); }
+  var GEO = ['x', 'y', 'w', 'h', 'col', 'ord', 'lane'];
+  function geo(c) { var o = {}; GEO.forEach(function (k) { o[k] = c[k]; }); return o; }
+  /** O que um Ctrl Z (ou Ctrl Shift Z) pode repor sem desfazer o trabalho de outra pessoa: só os cartões que ainda estão
+   *  como esta pessoa os deixou. entry: move | content | add | del | multi; current: Map id → cartão.
+   *  Devolve {apply, skipped}: move → estados; content → [{id, c}]; add/del → ids; multi → planos de cada parte. */
+  function undoPlan(entry, current, redo) {
+    var apply = [], skipped = 0;
+    if (entry.t === 'multi') {
+      (redo ? entry.list : entry.list.slice().reverse()).forEach(function (x) { var p = undoPlan(x, current, redo); p.entry = x; apply.push(p); skipped += p.skipped; });
+    } else if (entry.t === 'move') {
+      entry.items.forEach(function (it) {
+        var c = current.get(it.before.id), want = redo ? it.before : it.after;
+        if (c && same(geo(c), geo(want))) apply.push(redo ? it.after : it.before); else skipped++;
+      });
+    } else if (entry.t === 'content') {
+      var c = current.get(entry.id);
+      if (c && same(c.c, redo ? entry.before : entry.after)) apply.push({ id: entry.id, c: redo ? entry.after : entry.before }); else skipped++;
+    } else if (entry.t === 'add' || entry.t === 'del') {
+      var shouldExist = (entry.t === 'add') !== !!redo;   // anular «add» apaga (têm de existir); anular «del» repõe (não podem existir)
+      entry.ids.forEach(function (id) { if (current.has(id) === shouldExist) apply.push(id); else skipped++; });
+    }
+    return { apply: apply, skipped: skipped };
+  }
+  function skippedMsg(n) {
+    return n === 1 ? '1 alteração não anulada: outra pessoa mudou este cartão.' : n + ' alterações não anuladas: outras pessoas mudaram estes cartões.';
+  }
+
+  return { version: 1, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
