@@ -1123,6 +1123,7 @@ function cc_card_public(array $c, ?array $asset = null, array $comments = []): a
         'asset' => $asset ? cc_asset_public($asset) : null, 'nc' => (int)($comments[(int)$c['id']] ?? 0),
         'ut' => !empty($c['updated_at']) ? strtotime((string)$c['updated_at']) * 1000 : 0,   // para o tempo real saber o que é mais recente
     ];
+    if ($asset && !empty($asset['drive_gone'])) $out['gone'] = true;   // §33.9: o ficheiro da Drive foi apagado
     return $out;
 }
 
@@ -1391,5 +1392,84 @@ function cc_assets_by_ids(PDO $pdo, array $ids): array {
     foreach ($pdo->query('SELECT * FROM cc_assets WHERE deleted_at IS NULL AND id IN (' . implode(',', $ids) . ')')->fetchAll() as $a) $rows[(int)$a['id']] = $a;
     $out = [];
     foreach ($ids as $id) if (isset($rows[$id])) $out[] = $rows[$id];
+    return $out;
+}
+
+// ── ficheiros da Drive no Topperboard (§33.9) ───────────────
+
+/** Estas chaves (ficheiros ou pastas) foram para o Lixo da Drive: as referências que apontam para elas ficam marcadas.
+ *  O item do Lixo é o mais recente com essa chave (ou a pasta que a contém). Devolve os ids das referências marcadas. */
+function cc_drive_gone(PDO $pdo, array $keys, int $trashId = 0): array {
+    if (!$keys || !db_has_column($pdo, 'cc_assets', 'drive_gone')) return [];
+    $ids = [];
+    $now = cc_now();
+    $trashOf = $pdo->prepare('SELECT id FROM drive_trash WHERE orig_key = ? ORDER BY id DESC LIMIT 1');
+    $up = $pdo->prepare('UPDATE cc_assets SET drive_gone = ?, drive_trash_id = ? WHERE id = ?');
+    foreach ($keys as $k) {
+        $k = (string)$k;
+        if ($k === '') continue;
+        $tid = $trashId;
+        if (!$tid) { $trashOf->execute([$k]); $tid = (int)$trashOf->fetchColumn(); }
+        $st = substr($k, -1) === '/'
+            ? $pdo->prepare("SELECT id FROM cc_assets WHERE deleted_at IS NULL AND file_key LIKE ? ESCAPE '!'")
+            : $pdo->prepare('SELECT id FROM cc_assets WHERE deleted_at IS NULL AND file_key = ?');
+        $st->execute([substr($k, -1) === '/' ? 'r2:' . strtr($k, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%' : 'r2:' . $k]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) { $up->execute([$now, $tid ?: null, (int)$id]); $ids[] = (int)$id; }
+    }
+    return array_values(array_unique($ids));
+}
+
+/** O item $trashId do Lixo voltou (para $dest, que pode ter outro nome): as referências dele deixam de estar marcadas e
+ *  passam a apontar para onde ficou. Devolve quantas. */
+function cc_drive_back(PDO $pdo, int $trashId, string $orig, string $dest): int {
+    if (!db_has_column($pdo, 'cc_assets', 'drive_gone')) return 0;
+    $st = $pdo->prepare('SELECT id, file_key FROM cc_assets WHERE drive_trash_id = ?');
+    $st->execute([$trashId]);
+    $up = $pdo->prepare('UPDATE cc_assets SET drive_gone = NULL, drive_trash_id = NULL, file_key = ? WHERE id = ?');
+    $n = 0;
+    foreach ($st->fetchAll() as $r) {
+        $k = substr((string)$r['file_key'], 3);
+        $nk = substr($orig, -1) === '/' && strncmp($k, $orig, strlen($orig)) === 0 ? $dest . substr($k, strlen($orig)) : ($k === $orig ? $dest : $k);
+        $up->execute(['r2:' . $nk, (int)$r['id']]);
+        $n++;
+    }
+    return $n;
+}
+
+/** Os cartões de um Topperboard cujo ficheiro da Drive foi apagado: [{card, asset, name, trash_id|null, at}]. Um item do
+ *  Lixo que já não existe (esvaziado/apagado de vez) deixa de ter «Restaurar do Lixo». */
+function cc_board_gone(PDO $pdo, int $boardId): array {
+    if (!db_has_column($pdo, 'cc_assets', 'drive_gone')) return [];
+    $st = $pdo->prepare('SELECT c.id AS card, a.id AS asset, a.file_name, a.title, a.file_key, a.drive_trash_id, a.drive_gone
+                          FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id
+                          WHERE c.board_id = ? AND c.deleted_at IS NULL AND a.drive_gone IS NOT NULL ORDER BY c.id');
+    $st->execute([$boardId]);
+    $out = [];
+    $exists = $pdo->prepare('SELECT 1 FROM drive_trash WHERE id = ?');
+    foreach ($st->fetchAll() as $r) {
+        $tid = (int)$r['drive_trash_id'];
+        if ($tid) { $exists->execute([$tid]); if (!$exists->fetchColumn()) { $pdo->prepare('UPDATE cc_assets SET drive_trash_id = NULL WHERE id = ?')->execute([(int)$r['asset']]); $tid = 0; } }
+        $out[] = ['card' => (int)$r['card'], 'asset' => (int)$r['asset'], 'name' => (string)($r['file_name'] ?: $r['title'] ?: basename(substr((string)$r['file_key'], 3))),
+                  'trash_id' => $tid ?: null, 'at' => substr((string)$r['drive_gone'], 0, 16)];
+    }
+    return $out;
+}
+
+/** Notificações (§33.9): a quem criou cartões com ficheiros da Drive apagados — uma por Topperboard (não uma por ficheiro). */
+function cc_drive_alerts(PDO $pdo, int $uid): array {
+    if (!db_has_column($pdo, 'cc_assets', 'drive_gone')) return [];
+    $st = $pdo->prepare("SELECT c.board_id, b.title, COUNT(*) AS n, MAX(a.drive_gone) AS at FROM cc_cards c
+                          JOIN cc_assets a ON a.id = c.asset_id JOIN cc_boards b ON b.id = c.board_id
+                          WHERE c.created_by = ? AND c.deleted_at IS NULL AND a.drive_gone IS NOT NULL AND b.status <> 'deleted' AND a.drive_gone >= ?
+                          GROUP BY c.board_id, b.title ORDER BY at DESC LIMIT 10");
+    $st->execute([$uid, date('Y-m-d H:i:s', time() - 14 * 86400)]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        $n = (int)$r['n'];
+        $out[] = ['key' => 'ccg:' . $r['board_id'] . ':' . strtotime((string)$r['at']), 'kind' => 'drive', 'icon' => 'drive', 'sev' => 'warn', 'date' => substr((string)$r['at'], 0, 10),
+                  'title' => $n === 1 ? 'Um ficheiro usado num Topperboard foi apagado da Drive' : $n . ' ficheiros usados num Topperboard foram apagados da Drive',
+                  'sub' => '«' . $r['title'] . '» · pode restaurá-lo do Lixo ou retirá-lo do Topperboard',
+                  'url' => '/admin/toppernote.php?b=' . (int)$r['board_id']];
+    }
     return $out;
 }

@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 40;
+const SCHEMA_VERSION = 41;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -346,6 +346,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 40 · Drive (§32): partilhas «Só ver»/«Pode editar», mover instantâneo, versões e registo das partilhas ──
     require_once __DIR__ . '/migrate_files.php';
     migrate_drive_40($pdo);
+    // ── 41 · Toppernote (§33.9): ficheiros da Drive no Topperboard que foram para o Lixo ──
+    require_once __DIR__ . '/migrate_creative.php';
+    migrate_cc_41($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -122,6 +122,11 @@ function my_alerts(PDO $pdo): array {
         try { require_once __DIR__ . '/drive_share.php'; $out['drive'] = drive_share_alerts($pdo, $uid); } catch (Throwable $e) { error_log('drive alerts: ' . $e->getMessage()); }
     }
 
+    // Toppernote (§33.9): ficheiros da Drive usados nos Topperboards desta pessoa que foram apagados.
+    if (can('criativo') && db_has_table($pdo, 'cc_assets')) {
+        try { require_once __DIR__ . '/cc.php'; $out['drive'] = array_merge($out['drive'], cc_drive_alerts($pdo, $uid)); } catch (Throwable $e) { error_log('cc drive alerts: ' . $e->getMessage()); }
+    }
+
     // O resumo semanal (Relatórios, segunda às 9h): as 3 coisas a fazer, durante a semana.
     if (can('relatorios') && db_has_table($pdo, 'metrics_weekly')) {
         $st = $pdo->prepare('SELECT week, todo FROM metrics_weekly WHERE user_id = 0 AND week >= ? ORDER BY week DESC LIMIT 1');

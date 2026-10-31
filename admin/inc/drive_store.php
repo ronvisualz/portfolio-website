@@ -197,6 +197,16 @@ function drive_store_trashed_many(PDO $pdo, array $keys): void {
     if (is_file(__DIR__ . '/files.php')) {
         try { require_once __DIR__ . '/files.php'; files_trashed($pdo, $keys); } catch (Throwable $e) { error_log('files_trashed: ' . $e->getMessage()); }
     }
+    // §33.9: as referências do Toppernote que apontam para estas chaves ficam «apagadas da Drive»
+    if (is_file(__DIR__ . '/cc.php')) {
+        try { require_once __DIR__ . '/cc.php'; cc_drive_gone($pdo, $keys); } catch (Throwable $e) { error_log('cc_drive_gone: ' . $e->getMessage()); }
+    }
+}
+
+/** Um item do Lixo voltou (§33.9): as referências do Toppernote deixam de estar marcadas e seguem o sítio para onde voltou. */
+function drive_store_restored(PDO $pdo, int $trashId, string $orig, string $dest): void {
+    if (!is_file(__DIR__ . '/cc.php')) return;
+    try { require_once __DIR__ . '/cc.php'; cc_drive_back($pdo, $trashId, $orig, $dest); } catch (Throwable $e) { error_log('cc_drive_back: ' . $e->getMessage()); }
 }
 
 // ── Lixo ────────────────────────────────────────────────────

@@ -428,6 +428,7 @@ function api_restore_many(PDO $pdo, array $in, callable $more, callable $nextBod
                 $r = drive_transfer(drive_trash_prefix($id) . $cur['row']['k'], $cur['to'], true, '', $cur['check'], $more);
                 if (!$r['done']) $reply(false);
                 drive_trash_remove($pdo, $id);
+                api_books(static fn() => drive_store_restored($pdo, $id, (string)$cur['row']['k'], (string)$cur['to']));
                 $items[] = ['id' => $id, 'k' => $cur['to']];
                 $cur = null; $n++;
                 continue;
@@ -488,6 +489,7 @@ function api_restore_many(PDO $pdo, array $in, callable $more, callable $nextBod
             foreach ($jobs as $i => $job) {
                 if ($errs[$i] === null) {
                     drive_trash_remove($pdo, $group[$i]['id']);
+                    api_books(static fn() => drive_store_restored($pdo, (int)$group[$i]['id'], (string)$group[$i]['k'], (string)$job[1]));
                     $items[] = ['id' => $group[$i]['id'], 'k' => $job[1]];
                 } else $failed[] = ['id' => $group[$i]['id'], 'error' => $errs[$i]];
                 $n++;
@@ -954,6 +956,7 @@ try {
                 'next' => $nextBody(['do' => 'restore', 'id' => $id, 'cont' => true, 'to' => $dest, 'on_conflict' => $oc, 'n' => $n, 'total' => $total])]);
         }
         drive_trash_remove($pdo, $id);
+        api_books(static fn() => drive_store_restored($pdo, $id, (string)$row['k'], $dest));
         api_out(200, ['ok' => true, 'done' => true, 'id' => $id, 'k' => $dest, 'moved' => $n, 'progress' => api_progress($n, $total)]);
     }
     case 'purge': {

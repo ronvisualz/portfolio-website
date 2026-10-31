@@ -67,6 +67,12 @@ if (!empty($_GET['f']) && !$public) {
     }
 }
 if (!$key) ccf_404();
+// §33.9: um ficheiro da Drive (fora de .topper/) só se vê aqui se a pessoa o vê na Drive (Faturação → Financeiro)
+if (strncmp($key, 'r2:', 3) === 0) {
+    require_once __DIR__ . '/inc/drive.php';
+    $dk = substr($key, 3);
+    if (!drive_hidden($dk) && ($public || !drive_can_see($dk))) ccf_404();
+}
 if ($mime === '' || $size > 0) {
     $ext = strtolower(pathinfo($key, PATHINFO_EXTENSION));
     $mime = ['webp' => 'image/webp', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png'][$ext] ?? ($mime ?: 'application/octet-stream');

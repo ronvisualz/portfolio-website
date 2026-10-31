@@ -206,7 +206,7 @@ case 'board': {
                'pages' => $pages ?: new stdClass(), 'treatment' => $treat ? json_decode((string)$treat, true) : null,
                'edit' => can('criativo', PERM_EDIT) && $b['status'] === 'active', 'manage' => can('criativo', PERM_MANAGE),
                'users' => users_light($pdo), 'ai' => (bool)cc_ai_config(), 'embed' => (bool)cc_embed_config(), 'me' => $by,
-               'prefs' => cc_prefs($pdo, $by), 'brief' => cc_brief_text($pdo, $b), 'reactions' => CC_REACTIONS, 'now' => (int)round(microtime(true) * 1000),
+               'prefs' => cc_prefs($pdo, $by), 'gone' => cc_board_gone($pdo, (int)$b['id']), 'brief' => cc_brief_text($pdo, $b), 'reactions' => CC_REACTIONS, 'now' => (int)round(microtime(true) * 1000),
                'rt' => cc_rt_connect_info($pdo, $b, $user, can('criativo', PERM_EDIT) && $b['status'] === 'active')]);
 }
 
