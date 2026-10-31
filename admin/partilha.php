@@ -199,6 +199,15 @@ if ($s === null || drive_hidden($s['k'])) share_gone(404);
 if ($s['state'] !== 'ok') share_gone(410);
 // ── password: o link pode pedir uma; a prova é um cookie que só quem a deu recebe ──
 $unlocked = !$s['protected'];
+$isJson = $_SERVER['REQUEST_METHOD'] === 'POST' && str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json');
+if (!$unlocked && $isJson) {   // as ações de edição (§32.2) só depois de a password ter sido dada nesta página
+    $ck = 'td_sh_' . substr(hash('sha256', $s['token']), 0, 16);
+    if (!(isset($_COOKIE[$ck]) && is_string($_COOKIE[$ck]) && hash_equals(drive_share_pw_cookie($s), $_COOKIE[$ck]))) {
+        http_response_code(401); header('Content-Type: application/json; charset=utf-8');
+        exit(json_encode(['ok' => false, 'error' => 'Abra o link com a password primeiro.']));
+    }
+    $unlocked = true;
+}
 if (!$unlocked) {
     $ck = 'td_sh_' . substr(hash('sha256', $s['token']), 0, 16);
     $unlocked = isset($_COOKIE[$ck]) && is_string($_COOKIE[$ck]) && hash_equals(drive_share_pw_cookie($s), $_COOKIE[$ck]);
@@ -237,6 +246,25 @@ if (!$unlocked) {
 }
 $left = $s['forever'] ? 31536000 : $s['exp'] - time();   // sem prazo: o limite dos URLs curtos é só o do tipo de ficheiro
 
+// ── o que quem tem um link «Pode editar» faz (§32.2): POST em JSON com o token do formulário da página ──
+// Carregar, criar pastas, renomear, substituir (a anterior fica no histórico). Não há nenhuma ação que apague.
+require_once __DIR__ . '/inc/drive_share.php';
+if ($isJson) {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    $out = ['ok' => false, 'error' => 'Erro.']; $code = 500;
+    if (!hash_equals(drive_share_form_token($s), (string)($_SERVER['HTTP_X_SHARE_FORM'] ?? ''))) { $code = 403; $out['error'] = 'Recarregue a página e tente outra vez.'; }
+    elseif (!is_array($in = json_decode((string)file_get_contents('php://input'), true))) { $code = 400; $out['error'] = 'Pedido inválido.'; }
+    else {
+        try { [$code, $out] = drive_share_visitor($pdo, $s, $in); }
+        catch (RuntimeException $e) { $c = (int)$e->getCode(); $code = $c >= 400 && $c < 600 ? $c : 500; $out = ['ok' => false, 'error' => $e->getMessage()]; }
+        catch (Throwable $e) { error_log('partilha edit: ' . $e->getMessage()); $code = 500; $out = ['ok' => false, 'error' => 'Não foi possível concluir agora. Tente outra vez.']; }
+    }
+    http_response_code($code);
+    exit(json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+$ft = drive_share_form_token($s);
+
 try {
     // ── um ficheiro ─────────────────────────────────────────
     if (!$s['folder']) {
@@ -257,7 +285,7 @@ try {
         $src = $pv !== '' ? 'partilha.php?t=' . rawurlencode($t) . '&pv=1' : '';
         share_head($name);
         ?>
-  <section class="card">
+  <section class="card" data-ft="<?= share_h($ft) ?>" data-perm="<?= share_h($s['perm']) ?>">
     <div class="head">
       <div class="badge"><?= share_icon($icon) ?></div>
       <div>
@@ -308,7 +336,7 @@ try {
     $max = 2000;
     share_head($name);
     ?>
-  <section class="card">
+  <section class="card" data-ft="<?= share_h($ft) ?>" data-perm="<?= share_h($s['perm']) ?>">
     <div class="head">
       <div class="badge"><?= share_icon('folder') ?></div>
       <div>

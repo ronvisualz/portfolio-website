@@ -298,6 +298,7 @@ const NOTIF_CATS = [
     'invoice' => ['Por receber', 'Valores em atraso (quem vê o Financeiro)', false],
     'team'    => ['Equipa', 'Mensagens, pedidos de reunião, pedidos de ajuda e férias', true],
     'report'  => ['Resumo semanal', 'À segunda às 9h: metas, o que melhorou e piorou e as 3 coisas a fazer (Relatórios)', true],
+    'drive'   => ['Drive · links partilhados', 'O que alguém de fora carregou, renomeou ou substituiu num link «Pode editar» que criou', true],
 ];
 
 /** As preferências pessoais (users.prefs em JSON): notificações e vista inicial de cada aba. */

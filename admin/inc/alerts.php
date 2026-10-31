@@ -111,11 +111,16 @@ function aging_bucket(int $age): string {
 function my_alerts(PDO $pdo): array {
     static $out = null;
     if ($out !== null) return $out;
-    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => [], 'team' => [], 'report' => []];
+    $out = ['task' => [], 'lead' => [], 'deal' => [], 'invoice' => [], 'queue' => [], 'team' => [], 'report' => [], 'drive' => []];
     $me = current_user();
     if ($me === null) return $out;
     $uid = (int)$me['id'];
     $lim = alert_limits($pdo);
+
+    // Drive (§32.2): o que os visitantes fizeram nos links «Pode editar» que esta pessoa criou.
+    if (can('drive') && db_has_table($pdo, 'drive_share_log')) {
+        try { require_once __DIR__ . '/drive_share.php'; $out['drive'] = drive_share_alerts($pdo, $uid); } catch (Throwable $e) { error_log('drive alerts: ' . $e->getMessage()); }
+    }
 
     // O resumo semanal (Relatórios, segunda às 9h): as 3 coisas a fazer, durante a semana.
     if (can('relatorios') && db_has_table($pdo, 'metrics_weekly')) {

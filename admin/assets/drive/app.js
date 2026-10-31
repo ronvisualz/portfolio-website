@@ -2397,6 +2397,7 @@
       h += '<section class="dr-det-sec"><h3>Links de partilha</h3><div class="dr-det-shares" data-shares></div>' +
         (act.length ? '' : '<p class="muted">Nenhum link ativo.</p>') +
         '<button type="button" class="btn ghost sm" data-det="share">' + ic('link') + 'Criar link…</button></section>';
+      if (!it.folder) h += '<section class="dr-det-sec" data-versions hidden><h3>Versões anteriores</h3><ul class="dr-det-vers"></ul></section>';
     }
     if (key !== '') {
       if (!it.folder) h += '<section class="dr-det-sec"><h3>Assistente</h3><div class="dr-det-idx" data-index><span class="muted">A ver…</span></div></section>';
@@ -2411,8 +2412,22 @@
     box.textContent = '';
     S.shares.filter(s => s.k === key).forEach(s => box.appendChild(shareRow(s)));
   }
+  /** As versões anteriores (§32.2: um link «Pode editar» substituiu o ficheiro); só aparece quando há. */
+  function fetchVersions(key) {
+    const sec = detEl.querySelector('[data-versions]');
+    if (!sec) return;
+    TD.api({ do: 'versions', key }).then(j => {
+      const t = detTarget();
+      if (!j.ok || !j.items || !j.items.length || !t.it || realKey(t.it) !== key) return;
+      const ul = sec.querySelector('ul');
+      ul.innerHTML = j.items.map(v => '<li><span>' + esc(TD.fmt.date(v.at)) + (v.by ? ' · ' + esc(v.by) : '') + ' · ' + esc(TD.fmt.size(v.size)) + '</span>' +
+        '<a class="btn ghost sm" href="' + esc(v.url) + '" rel="noopener">' + ic('download') + 'Descarregar</a></li>').join('');
+      sec.hidden = false;
+    });
+  }
   function fetchInfo(key, force) {
     paintDetailShares();
+    fetchVersions(key);
     const box = detEl.querySelector('[data-index]');
     const c = infoCache.get(key);
     if (c && !force && Date.now() - c.t < 60000) { paintInfo(key, c.j); return; }

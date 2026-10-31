@@ -1024,6 +1024,13 @@ try {
         $o = drive_share_out($s);
         api_out(200, ['ok' => true, 'url' => $o['url'], 'share' => $o, 'reused' => $reused]);
     }
+    case 'versions': {   // §32.2: as versões anteriores de um ficheiro (substituídas por um link «Pode editar»)
+        require_once __DIR__ . '/inc/drive_share.php';
+        $key = want_key($str('key'));
+        $items = array_map(fn($v) => ['id' => (int)$v['id'], 'size' => (int)$v['size'], 'by' => (string)$v['by_label'], 'at' => drive_ts($v['created_at']),
+                                     'url' => r2_get_url((string)$v['ver_key'], false, '', 3600)], drive_versions($pdo, $key));
+        api_out(200, ['ok' => true, 'items' => $items]);
+    }
     case 'share_list': {
         $key = $str('key') !== '' ? want_any($str('key')) : null;
         api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', drive_shares_active($pdo, $key))]);
