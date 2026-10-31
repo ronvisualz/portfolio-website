@@ -4194,3 +4194,12 @@ Os **quadros** passam a chamar-se **Topperboards** em toda a interface: «Projet
 
 ### 33.9 Enviar ficheiros: dispositivo ou Drive
 - O botão de enviar abre a escolha **«Do dispositivo»** ou **«Da Drive»**. «Da Drive» abre um seletor da Drive (pesquisa, pastas, recentes, seleção múltipla) e coloca os ficheiros no Topperboard **sem os copiar** (o cartão aponta para o ficheiro da Drive). Confirmado: se o ficheiro for **movido ou renomeado** na Drive, o cartão acompanha; se for **apagado** (ou ir para o Lixo), o cartão fica marcado «Ficheiro apagado da Drive» e aparece um **aviso no respetivo Topperboard** (e notificação a quem o criou), com «Restaurar do Lixo» enquanto lá estiver e «Retirar do Topperboard».
+
+### 33.10 Segunda ronda de melhorias (31 out 2026, aprovadas)
+- **Navegação entre sub-Topperboards sem recarregar** (hoje `location.href` recarrega a página): abrir dentro da mesma página com transição curta de zoom para o cartão; pré-carregar os dados dos sub-Topperboards visíveis em tempo ocioso; **migalhas** no topo («Projeto › Referências › Luz»); Voltar/Avançar do browser funcionam (History API).
+- **Editar nota no ponto do clique:** duplo clique (ou segundo clique numa nota já selecionada) entra em edição com o cursor no sítio exato.
+- **Envio otimista:** ao largar ficheiros, o cartão aparece logo com pré-visualização local, progresso no cartão e estado «a enviar»; troca sozinho para a versão do servidor; em erro fica marcado com «Tentar outra vez», nunca desaparece.
+- **Visualizador interno:** clique seleciona; duplo clique ou Espaço abre ecrã inteiro dentro da plataforma (fundo escuro, zoom com roda/pinça, setas para a imagem anterior/seguinte do Topperboard, Esc fecha).
+- **Anular/Refazer visíveis:** botões na barra do Topperboard (Ctrl Z / Ctrl Shift Z já existem, 80 passos); ações destrutivas também com aviso «Anular». **Anular por pessoa em tempo real:** cada pessoa só anula as suas próprias ações, nunca as de um colega no mesmo Topperboard.
+- Ajustes às anteriores: listas com Tab (sub-itens) e Ctrl Enter (marcar); seletor de cor com as últimas 8 cores usadas; balão de comentários só de leitura (responder abre o detalhe); colar no mesmo Topperboard desloca ligeiramente a cópia; atalhos P caneta, E borracha, 1–5 cores.
+- **Fase futura (não agora):** personalização com paleta fixa (cores da marca + 6 neutros) para fundos, contornos e setas, e 3 formas (retângulo, círculo, losango).
