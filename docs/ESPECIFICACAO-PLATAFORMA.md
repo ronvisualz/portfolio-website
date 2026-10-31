@@ -2289,9 +2289,11 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   - alterados: `partilha.php`, `drive_api.php`, `drive.php`, `inc/drive_store.php`, `inc/r2.php` (`r2_stream`),
     `inc/migrate_files.php`, `inc/migrate.php`, `inc/settings_def.php`, `inc/alerts.php`, `inc/bootstrap.php`,
     `inc/cron_run.php`, `assets/drive/app.js`, `core.js`, `drive.css`, `core.css`, `io.css`, `assets/app.css`.
-- **Por decidir:**
-  - hoje quem só pode ver a Drive ainda consegue mover, apagar e partilhar (só «Pode editar» exige poder editar);
-  - `share_list` e `share_revoke` (já no main) não filtram a faturação nem o dono.
+- **Permissões da Drive no servidor** (decidido com a equipa, 31 out): quem só pode ver a Drive não muda nada — envios,
+  pastas, mover, copiar, renomear, Lixo, apagar e links de partilha dão 403 («Só quem pode editar a Drive…»).
+  Favoritos, recentes e miniaturas em cache continuam abertos. Nos links: a lista esconde os de faturação a quem não
+  tem o Financeiro; alterar ou revogar um link só para quem o criou (ou um admin) e, na faturação, só com o Financeiro.
+  Os links antigos, sem dono registado, só um admin os altera ou revoga. Teste: `tests/drive_perm_test.php`.
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 

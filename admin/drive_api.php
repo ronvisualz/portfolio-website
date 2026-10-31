@@ -79,6 +79,13 @@ $str = static fn(string $k): string => is_string($in[$k] ?? null) ? $in[$k] : ''
 // Financeiro: nenhuma chave pedida pode lá estar, os itens do Lixo também não, e uma pasta que
 // os tenha lá dentro não se apaga nem se partilha por quem não os vê.
 $FIN = can('financeiro');
+// Quem só pode ver a Drive não muda nada: envios, pastas, mover/copiar/renomear, Lixo, apagar e links de partilha.
+// (Favoritos, recentes e miniaturas em cache são pessoais ou só leitura e ficam abertos.)
+const DRIVE_WRITE_ACTIONS = ['sign', 'mp_sign', 'mp_parts', 'mp_complete', 'mp_abort', 'upload_done', 'mkdir', 'move', 'copy', 'move_undo',
+                             'trash', 'restore', 'purge', 'purge_all', 'delete', 'rename', 'share_create', 'share_quick', 'share_update', 'share_revoke'];
+if (in_array($do, DRIVE_WRITE_ACTIONS, true) && !can('drive', PERM_EDIT)) {
+    api_err('Só quem pode editar a Drive pode fazer isto. Peça a um administrador.', 403);
+}
 const DRIVE_BILLING_ERR = 'Os documentos de faturação só estão disponíveis para quem tem acesso ao Financeiro.';
 /** Há documentos de faturação debaixo desta pasta? */
 function api_has_billing(string $folder): bool {
@@ -1112,11 +1119,18 @@ try {
     }
     case 'share_list': {
         $key = $str('key') !== '' ? want_any($str('key')) : null;
-        api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', drive_shares_active($pdo, $key))]);
+        $items = array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !drive_billing((string)$x['k'])));
+        api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', $items)]);
     }
     case 'share_revoke': {
         $id = (int)($in['id'] ?? 0);
-        if ($id < 1 || !drive_share_revoke($pdo, $id)) api_err('Este link já não existe.', 404);
+        $cur = $id > 0 ? drive_share_get($pdo, $id) : null;
+        if (!$cur) api_err('Este link já não existe.', 404);
+        if (!$FIN && drive_billing((string)$cur['k'])) api_err(DRIVE_BILLING_ERR, 403);
+        if (!is_admin() && (int)($cur['created_by'] ?? 0) !== (int)(current_user()['id'] ?? 0)) {
+            api_err('Só quem criou este link (ou um administrador) o pode revogar.', 403);
+        }
+        if (!drive_share_revoke($pdo, $id)) api_err('Este link já não existe.', 404);
         api_out(200, ['ok' => true]);
     }
 
