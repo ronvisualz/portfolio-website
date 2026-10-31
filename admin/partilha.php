@@ -334,6 +334,93 @@ try {
         if ($key === null || !drive_share_sees($s, $key)) share_gone(404);
         return $key;
     };
+    // ── ZIP (§32.4): tudo (&zip=1[&p=]) ou a seleção (POST sel[]), em streaming, com a estrutura de pastas ──
+    if (!empty($_GET['zip'])) {
+        if (!drive_share_allows($s, 'zip')) share_gone(404);
+        $zsub = is_string($_GET['p'] ?? null) && $_GET['p'] !== '' ? $_GET['p'] : '';
+        $zcur = $zsub === '' ? $prefix : $inside($zsub, true);
+        $sel = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sel']) ? $_POST['sel'] : null;
+        $objs = [];
+        $take = static function (array $o) use (&$objs, $s, $zcur): void {
+            if (strncmp($o['key'], $zcur, strlen($zcur)) === 0 && drive_share_sees($s, $o['key'])) $objs[$o['key']] = $o;
+        };
+        if ($sel === null) {
+            foreach (r2_list_all($zcur, 50) as $o) $take($o);
+        } else {
+            if (!is_array($sel) || !$sel || count($sel) > 5000) share_gone(404);
+            foreach ($sel as $rel) {
+                $rel = is_string($rel) ? $rel : '';
+                $isDir = substr($rel, -1) === '/';
+                $k = $inside($rel, $isDir);
+                if (strncmp($k, $zcur, strlen($zcur)) !== 0) share_gone(404);
+                if ($isDir) { foreach (r2_list_all($k, 50) as $o) $take($o); if (!drive_folder_exists($k)) share_gone(404); continue; }
+                $h = r2_head($k);
+                if ($h === null) share_gone(404);
+                $take(['key' => $k, 'size' => (int)$h['size'], 'modified' => (int)($h['modified'] ?? 0)]);
+            }
+        }
+        if ($sel === null && !$objs && !drive_folder_exists($zcur)) share_gone(404);
+        ksort($objs, SORT_STRING);
+        // partes: no máximo 2000 itens e 4 GB cada (um ficheiro maior vai sozinho, em ZIP64)
+        $maxFiles = IS_LOCAL && isset($_GET['maxfiles']) ? max(1, (int)$_GET['maxfiles']) : 2000;
+        $maxBytes = 4 * 1024 ** 3;
+        $parts = [[]]; $n = 0; $b = 0;
+        foreach ($objs as $o) {
+            $sz = substr($o['key'], -1) === '/' ? 0 : (int)$o['size'];
+            if ($parts[array_key_last($parts)] && ($n >= $maxFiles || $b + $sz > $maxBytes)) { $parts[] = []; $n = 0; $b = 0; }
+            $parts[array_key_last($parts)][] = $o; $n++; $b += $sz;
+        }
+        $root = drive_base(rtrim($zcur, '/'));
+        $np = count($parts);
+        $keep = ($zsub !== '' ? '&p=' . rawurlencode($zsub) : '') . (IS_LOCAL && isset($_GET['maxfiles']) ? '&maxfiles=' . $maxFiles : '');
+        $part = isset($_GET['part']) ? (int)$_GET['part'] : ($np > 1 ? 0 : 1);
+        if ($part === 0) {   // grande demais para um só ZIP: escolher a parte
+            share_head($root . '.zip');
+            echo '<section class="card"><div class="head"><div class="badge">', share_icon('download'), '</div><div><p class="kicker">Descarregar em partes</p>',
+                 '<h1>', share_h($root), '</h1><p class="meta">São ', count($objs), ' itens: para o download não falhar a meio, vai em ', $np,
+                 ' ZIP (até 2000 ficheiros e 4 GB cada).</p></div></div><div class="actions">';
+            foreach ($parts as $i => $p) {
+                $label = 'Parte ' . ($i + 1) . ' de ' . $np . ' · ' . drive_size(array_sum(array_map(fn($o) => (int)$o['size'], $p)));
+                if ($sel === null) {
+                    echo '<a class="btn" rel="nofollow" href="', share_h($tq . '&zip=1' . $keep . '&part=' . ($i + 1)), '">', share_icon('download'), ' ', share_h($label), '</a>';
+                } else {
+                    echo '<form method="post" action="', share_h($tq . '&zip=1' . $keep . '&part=' . ($i + 1)), '">';
+                    foreach ($sel as $r) echo '<input type="hidden" name="sel[]" value="', share_h((string)$r), '">';
+                    echo '<button class="btn" type="submit">', share_icon('download'), ' ', share_h($label), '</button></form>';
+                }
+            }
+            echo '</div></section>';
+            share_foot();
+            exit;
+        }
+        if ($part < 1 || $part > $np) share_gone(404);
+        // a partir daqui o ZIP vai sendo enviado: um erro a meio deixa-o sem fim (o browser dá o download como falhado)
+        require_once __DIR__ . '/inc/zipstream.php';
+        @set_time_limit(0);
+        ignore_user_abort(false);
+        @ini_set('zlib.output_compression', '0');
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: application/zip');
+        header('Content-Disposition: ' . r2_disposition($root . ($np > 1 ? ' (parte ' . $part . ' de ' . $np . ')' : '') . '.zip', false));
+        header('Cache-Control: no-store');
+        header('X-Accel-Buffering: no');
+        header('X-Content-Type-Options: nosniff');
+        drive_share_hit($pdo, $s['id']);
+        $zip = new ZipStream(static function (string $bytes): void { echo $bytes; flush(); });
+        $zbase = substr($zcur, 0, strlen($zcur) - strlen($root) - 1);   // o que fica antes do nome da pasta
+        try {
+            foreach ($parts[$part - 1] as $o) {
+                $name = substr($o['key'], strlen($zbase));
+                if (substr($o['key'], -1) === '/') { $zip->addDir($name, (int)$o['modified']); continue; }
+                $zip->addFile($name, (int)$o['modified'] ?: time(), static fn(callable $sink) => r2_stream($o['key'], $sink), (int)$o['size']);
+                if (connection_aborted()) exit;
+            }
+            $zip->finish();
+        } catch (Throwable $e) {
+            error_log('partilha zip: ' . $e->getMessage());
+        }
+        exit;
+    }
     if (isset($_GET['f'])) {
         $key = $inside(is_string($_GET['f']) ? $_GET['f'] : '', false);
         $h = r2_head($key);
@@ -402,6 +489,14 @@ try {
       <?php endforeach; ?>
     </nav>
     <?php endif; ?>
+    <?php if ($folders || $files): $zq = $tq . '&zip=1' . ($sub !== '' ? '&p=' . rawurlencode($sub) : ''); ?>
+    <div class="actions sh-dl">
+      <a class="btn" data-zip href="<?= share_h($zq) ?>" rel="nofollow"><?= share_icon('download') ?> Descarregar tudo (.zip)</a>
+      <form method="post" action="<?= share_h($zq) ?>" data-sel-form hidden></form>
+      <button type="button" class="btn ghost" data-zip-sel hidden><?= share_icon('download') ?> <span>Descarregar seleção</span></button>
+      <button type="button" class="sh-clear" data-sel-clear hidden>Limpar seleção</button>
+    </div>
+    <?php endif; ?>
     <?php if ($edit): ?>
       <div class="sh-tools">
         <label class="sh-who"><span>O seu nome</span><input id="sh-who" type="text" maxlength="80" autocomplete="name" placeholder="Para quem partilhou saber quem enviou"></label>
@@ -418,6 +513,7 @@ try {
       <div class="sh-grid">
       <?php foreach ($folders as $fo): ?>
         <div class="sh-cell">
+          <label class="sh-sel" title="Escolher"><input type="checkbox" data-sel="<?= share_h($fo['rel']) ?>" aria-label="Escolher <?= share_h($fo['name']) ?>"></label>
           <a class="sh-folder" href="<?= share_h($tq . '&p=' . rawurlencode($fo['rel'])) ?>">
             <span class="sh-thumb"><?= share_icon('folder') ?></span>
             <span class="sh-name"><?= share_h($fo['name']) ?></span>
@@ -427,6 +523,7 @@ try {
       <?php endforeach; ?>
       <?php foreach ($files as $i => $fi): $th = $tq . '&th=1&f=' . rawurlencode($fi['rel']); ?>
         <div class="sh-cell">
+          <label class="sh-sel" title="Escolher"><input type="checkbox" data-sel="<?= share_h($fi['rel']) ?>" aria-label="Escolher <?= share_h($fi['name']) ?>"></label>
           <button type="button" class="sh-card" data-kind="<?= share_h($fi['kind']) ?>" data-i="<?= $i ?>" aria-label="Abrir <?= share_h($fi['name']) ?>">
             <span class="sh-thumb">
               <?php if ($fi['kind'] === 'image'): ?>

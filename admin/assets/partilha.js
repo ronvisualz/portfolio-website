@@ -103,6 +103,31 @@
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) show(cur + (dx < 0 ? 1 : -1));
   }, { passive: true });
 
+  // ── descarregar a seleção (§32.4): um POST com os caminhos escolhidos; o servidor faz o ZIP ──
+  var selBtn = document.querySelector('[data-zip-sel]'), selForm = document.querySelector('[data-sel-form]'), selClear = document.querySelector('[data-sel-clear]');
+  function picked() { return Array.prototype.slice.call(document.querySelectorAll('[data-sel]:checked')); }
+  function syncSel() {
+    if (!selBtn) return;
+    var n = picked().length;
+    selBtn.hidden = selClear.hidden = n === 0;
+    selBtn.querySelector('span').textContent = 'Descarregar seleção (' + n + ')';
+    if (page) page.classList.toggle('has-sel', n > 0);
+  }
+  document.addEventListener('change', function (e) { if (e.target.matches('[data-sel]')) syncSel(); });
+  if (selBtn) {
+    selBtn.addEventListener('click', function () {
+      selForm.innerHTML = '';
+      picked().forEach(function (c) {
+        var i = document.createElement('input');
+        i.type = 'hidden'; i.name = 'sel[]'; i.value = c.getAttribute('data-sel');
+        selForm.appendChild(i);
+      });
+      if (selForm.children.length) selForm.submit();
+    });
+    selClear.addEventListener('click', function () { picked().forEach(function (c) { c.checked = false; }); syncSel(); });
+    syncSel();   // o browser pode repor caixas marcadas ao voltar atrás
+  }
+
   // ── «Pode editar» ────────────────────────────────────────
   if (!D.edit || !page) return;
   var who = document.getElementById('sh-who'), statusEl = document.querySelector('[data-status]');

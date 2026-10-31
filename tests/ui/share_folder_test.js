@@ -31,6 +31,17 @@ const [VIEW, EDIT] = execFileSync('php', [path.join(__dirname, 'seed_gallery.php
   check(await p.locator('.sh-viewer video').count() === 1, 'o vídeo tem leitor');
   await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   check(await p.locator('.sh-viewer').isHidden(), 'Esc fecha');
+  // §32.4: descarregar tudo e a seleção
+  check(/zip=1/.test(await p.getAttribute('[data-zip]', 'href') || ''), '«Descarregar tudo (.zip)» aponta para o ZIP');
+  check(await p.locator('[data-zip-sel]').isHidden(), 'sem seleção, não há «Descarregar seleção»');
+  await p.locator('.sh-cell', { hasText: '01-vermelho.png' }).locator('.sh-sel input').check();
+  await p.locator('.sh-cell', { hasText: 'Sub' }).first().locator('.sh-sel input').check();
+  check(await p.locator('.sh-viewer').isHidden(), 'escolher não abre o visualizador');
+  check((await p.locator('[data-zip-sel]').innerText()).includes('2'), '«Descarregar seleção (2)»');
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 15000 }), p.click('[data-zip-sel]')]);
+  const zp = path.join(os.tmpdir(), 'sel-' + Date.now() + '.zip'); await dl.saveAs(zp);
+  const list = execFileSync('unzip', ['-Z1', zp]).toString();
+  check(dl.suggestedFilename().endsWith('.zip') && list.includes('galeria/01-vermelho.png') && list.includes('galeria/Sub/dentro.txt') && !list.includes('02-azul'), 'a seleção vem num ZIP com as pastas (' + list.trim().split('\n').join(', ') + ')');
   // subpastas
   await p.locator('.sh-folder', { hasText: 'Sub' }).click();
   await p.waitForLoadState('load');

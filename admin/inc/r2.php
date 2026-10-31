@@ -170,6 +170,28 @@ function r2_request(string $method, string $key, array $query = [], string $body
     return ['code' => $code, 'headers' => $box->h, 'body' => (string)$out];
 }
 
+/**
+ * GET em streaming (§32.4): cada bloco do objeto vai para $sink(string) à medida que chega, sem o guardar em memória.
+ * Lança R2Exception se o objeto não existir, se a resposta não for 200 ou se a ligação cair a meio.
+ */
+function r2_stream(string $key, callable $sink, int $timeout = 0): void {
+    [$ch, $box] = r2_prepare('GET', $key, [], '', [], $timeout, 0);
+    $bad = 0;
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+    curl_setopt($ch, CURLOPT_WRITEFUNCTION, static function ($ch, string $chunk) use ($sink, &$bad): int {
+        $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        if ($code !== 200) { $bad = $code; return 0; }   // não passa uma página de erro para dentro do ZIP
+        $sink($chunk);
+        return strlen($chunk);
+    });
+    $ok = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($bad || $code !== 200) throw new R2Exception('Não foi possível ler «' . basename($key) . '» (' . ($bad ?: $code) . ').');
+    if ($ok === false) throw new R2Exception('A leitura de «' . basename($key) . '» falhou a meio (' . $err . ').');
+}
+
 /** O pedido assinado, pronto a correr: [handle do cURL, caixa onde caem os cabeçalhos da resposta (->h)]. */
 function r2_prepare(string $method, string $key, array $query, string $body, array $headers, int $timeout, int $maxBytes): array {
     $c = r2_config();
