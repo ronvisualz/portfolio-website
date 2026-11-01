@@ -1466,8 +1466,15 @@
     function selBar() {
       var ids = Array.from(B.sel).filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; });
       var bar = $('.ccb-selbar', root);
-      if (pickMore && !ids.length) { pickMore = false; vp.classList.remove('pick-more'); }
-      if (ids.length < 2 && !(ids.length === 1 && (coarse.matches || pickMore))) { if (bar) bar.hidden = true; return; }
+      if (pickMore && !ids.length) { pickMore = false; if (vp) vp.classList.remove('pick-more'); }
+      if (ids.length < 2 && !(ids.length === 1 && (coarse.matches || pickMore))) {
+        if (bar && !bar.hidden) {
+          var hadFocus = bar.contains(document.activeElement);
+          bar.hidden = true;
+          if (hadFocus && vp) vp.focus({ preventScroll: true });   // o foco não se perde no corpo da página
+        }
+        return;
+      }
       if (!bar) {
         bar = document.createElement('div');
         bar.className = 'ccb-selbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Seleção');
@@ -1477,7 +1484,7 @@
           var b = e.target.closest('button'); if (!b) return;
           var k = b.getAttribute('data-sb'), al = b.getAttribute('data-align');
           if (k === 'copy') copySel(false);
-          else if (k === 'more') { setPickMore(!pickMore); var mb = $('[data-sb="more"]', bar); if (mb) mb.focus(); }
+          else if (k === 'more') { setPickMore(!pickMore); var mb = $('[data-sb="more"]', bar); if (mb && !bar.hidden) mb.focus(); }
           else if (k === 'del') delSel();
           else if (k === 'align') { var m = $('.sb-menu', bar); m.hidden = !m.hidden; b.setAttribute('aria-expanded', m.hidden ? 'false' : 'true'); if (!m.hidden) $('button', m).focus(); }
           else if (al) { $('.sb-menu', bar).hidden = true; alignSel(al); }
@@ -1485,8 +1492,8 @@
       }
       bar.hidden = false;
       bar.innerHTML = '<span class="sb-n" aria-live="polite">' + ids.length + (ids.length === 1 ? ' selecionado' : ' selecionados') + '</span>'
-        + '<button type="button" class="btn sm ghost sb-more" data-sb="more" aria-pressed="' + pickMore + '">' + (pickMore ? 'Concluído' : 'Escolher mais') + '</button>'
-        + (pickMore ? '<span class="sb-hint">Toque nos cartões para juntar ou tirar.</span>' : '')
+        + '<button type="button" class="btn sm ghost sb-more' + (pickMore ? ' on' : '') + '" data-sb="more">' + (pickMore ? 'Concluído' : 'Escolher mais') + '</button>'
+        + '<span class="sb-hint" role="status">' + (pickMore ? 'Toque nos cartões para juntar ou tirar.' : '') + '</span>'
         + '<button type="button" class="btn sm ghost" data-sb="copy" title="Copiar ( ' + MODK + ' C )">Copiar</button>'
         + (EDIT ? '<span class="sb-wrap"><button type="button" class="btn sm ghost" data-sb="align" aria-haspopup="menu" aria-expanded="false">Alinhar ▾</button><div class="sb-menu" role="menu" hidden>'
           + '<button type="button" role="menuitem" data-align="left">À esquerda</button><button type="button" role="menuitem" data-align="top">Em cima</button>'
@@ -2829,7 +2836,8 @@
       if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
       var ae = document.activeElement;
       if (cpop && ae && cpop.el.contains(ae)) return;
-      if (ae && ae.closest && ae.closest('.cc-dpick, .cc-pmenu, .cc-upmenu, .ccb-selbar .sb-menu')) return;   // as teclas são do diálogo/menu
+      if (ae && ae.closest && ae.closest('.cc-dpick, .cc-pmenu, .cc-upmenu, .ccb-selbar .sb-menu')) return;
+      if (ae && ae.closest && ae.closest('.ccb-selbar') && (e.key === ' ' || e.key === 'Enter')) return;   // Espaço/Enter carregam no botão, não abrem o visualizador   // as teclas são do diálogo/menu
       if (typing(ae)) return;
       if (slash && e.key !== 'Escape') return;
       var mod = e.metaKey || e.ctrlKey, k = e.key;

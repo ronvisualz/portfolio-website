@@ -53,6 +53,14 @@ const selCount = p => p.locator('.ccc.sel').count();
   await p.keyboard.press('Control+z'); await p.waitForTimeout(900);
   const xs2 = JSON.parse(execFileSync('php', ['-r', `require "tests/boot.php"; echo json_encode($pdo->query("SELECT x FROM cc_cards WHERE board_id=${BID} AND type IN ('note','list','swatch') AND deleted_at IS NULL")->fetchAll(PDO::FETCH_COLUMN));`]).toString()).map(Number);
   check(new Set(xs2).size === 3, 'Ctrl Z desfaz o alinhamento');
+  // a barra esconde-se com o foco lá dentro → o foco vai para a tela (não se perde no corpo da página)
+  await p.locator('.ccb-selbar [data-sb="more"]').focus(); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+  check(await p.evaluate(() => document.activeElement && document.activeElement.matches('.ccb-vp')), 'Esc com o foco na barra: o foco passa para a tela');
+  await p.locator('.ccc.t-note').click(); await p.locator('.ccc.t-list').click({ modifiers: ['Shift'] }); await p.waitForTimeout(200);
+  await p.locator('.ccb-selbar [data-sb="more"]').click(); await p.locator('.ccc.t-list').click(); await p.waitForTimeout(200);
+  check(await selCount(p) === 1, 'computador: com o modo ligado, clicar tira a lista (fica 1)');
+  await p.locator('.ccb-selbar [data-sb="more"]').click(); await p.waitForTimeout(200);
+  check(await p.evaluate(() => document.activeElement && document.activeElement.matches('.ccb-vp')), '«Concluído» com 1 selecionado esconde a barra e o foco passa para a tela');
   // iPad: tocar e manter e arrastar
   const ctx = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
   const t = await ctx.newPage();
@@ -82,7 +90,7 @@ const selCount = p => p.locator('.ccc.sel').count();
   const mb = m.locator('.ccb-selbar'), more = mb.locator('[data-sb="more"]');
   check(await mb.isVisible().catch(() => false) && await more.count() === 1 && /Escolher mais/.test(await more.innerText()), 'iPad: com 1 cartão a barra mostra «Escolher mais»');
   await more.tap(); await m.waitForTimeout(200);
-  check(await more.getAttribute('aria-pressed') === 'true' && /Concluído/.test(await more.innerText()) && /Toque nos cartões para juntar ou tirar/.test(await mb.innerText()), 'ligado: botão premido «Concluído» e a dica');
+  check(/Concluído/.test(await more.innerText()) && await more.getAttribute('aria-pressed') === null && /Toque nos cartões para juntar ou tirar/.test(await mb.locator('[role="status"]').innerText()), 'ligado: o botão diz «Concluído» (sem aria-pressed, rótulo e estado não se contradizem) e a dica é anunciada');
   await tapCard('.ccc.t-list');
   check(await selCount(m) === 2 && await isSel('.ccc.t-note') === 1 && await isSel('.ccc.t-list') === 1, 'tocar na lista junta-a (2 selecionados)');
   await tapCard('.ccc.t-note');
@@ -92,12 +100,31 @@ const selCount = p => p.locator('.ccc.sel').count();
   await m.touchscreen.tap(nb.x + 10, nb.y + 230); await m.waitForTimeout(250);
   check(await selCount(m) === 1, 'tocar no fundo não limpa a seleção enquanto está ligado');
   await more.tap(); await m.waitForTimeout(200);
-  check(await more.getAttribute('aria-pressed') === 'false', '«Concluído» desliga');
+  check(/Escolher mais/.test(await more.innerText()) && !(await m.locator('.ccb-vp.pick-more').count()), '«Concluído» desliga');
   await tapCard('.ccc.t-note');
   check(await selCount(m) === 1 && await isSel('.ccc.t-note') === 1, 'desligado: tocar num cartão volta a substituir a seleção');
+  // Espaço com o foco no botão (teclado no iPad) não abre o visualizador da imagem selecionada
+  await tapCard('.ccc.t-image');
+  await m.locator('.ccb-selbar [data-sb="more"]').focus(); await m.keyboard.press('Space'); await m.waitForTimeout(400);
+  check(await m.locator('.cc-viewer').count() === 0 && await m.locator('.ccb-vp.pick-more').count() === 1, 'Espaço no «Escolher mais» liga o modo e não abre o visualizador');
+  await m.locator('.ccb-selbar [data-sb="more"]').tap(); await m.waitForTimeout(150);
   await m.locator('.ccb-selbar [data-sb="more"]').tap(); await m.waitForTimeout(150);
   await m.keyboard.press('Escape'); await m.waitForTimeout(200);
   check(!(await m.locator('.ccb-vp.pick-more').count()) && await selCount(m) === 0, 'Esc desliga o modo (e limpa a seleção)');
+  // escuro automático (sem tema guardado): o texto do botão ligado tem contraste
+  const ctx3 = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true, isMobile: true, colorScheme: 'dark' });
+  const d = await ctx3.newPage();
+  await d.goto(BASE + '/admin/__as/1'); await d.goto(BASE + '/admin/toppernote.php?b=' + BID);
+  await d.waitForSelector('.ccc.t-note'); await d.evaluate(() => document.documentElement.removeAttribute('data-theme')); await d.waitForTimeout(400);
+  const dn = await box(d, '.ccc.t-note'); await d.touchscreen.tap(dn.x + dn.width / 2, dn.y + 8); await d.waitForTimeout(250);
+  await d.locator('.ccb-selbar [data-sb="more"]').tap(); await d.waitForTimeout(200);
+  const ratio = await d.evaluate(() => {
+    const e = document.querySelector('.ccb-selbar [data-sb="more"]'), cs = getComputedStyle(e);
+    const rgb = s => s.match(/[\d.]+/g).slice(0, 3).map(Number), lum = c => { const v = c.map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+    const a = lum(rgb(cs.color)), b2 = lum(rgb(cs.backgroundColor));
+    return (Math.max(a, b2) + 0.05) / (Math.min(a, b2) + 0.05);
+  });
+  check(ratio >= 4.5, 'escuro automático: contraste do botão ligado ≥ 4,5 (' + ratio.toFixed(2) + ')');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);
