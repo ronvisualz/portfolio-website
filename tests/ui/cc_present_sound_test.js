@@ -12,9 +12,9 @@ const WEBM = path.join(dir, 'v.webm'), WAV = path.join(dir, 'a.wav');
 execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '6', '-c:v', 'libvpx', '-b:v', '150k', '-c:a', 'libvorbis', WEBM]);
 execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=330', '-t', '6', WAV]);
 // um vídeo e um áudio à direita dos outros cartões (ficam no fim da ordem de leitura da 2.ª linha)
-execFileSync('php', ['-r', `require "tests/boot.php"; require_once "admin/inc/cc.php";
-  [$v] = cc_asset_create($pdo, file_get_contents("${WEBM}"), ['name' => 'v.webm', 'mime' => 'video/webm', 'kind' => 'video', 'w' => 320, 'h' => 240]);
-  [$a] = cc_asset_create($pdo, file_get_contents("${WAV}"), ['name' => 'a.wav', 'mime' => 'audio/wav', 'kind' => 'audio']);
+execFileSync('php', ['-r', `require "tests/boot.php"; require_once "admin/inc/cc.php"; require "tests/fixtures.php";
+  [$v] = tests_cc_asset($pdo, file_get_contents("${WEBM}"), ['name' => 'v.webm', 'mime' => 'video/webm', 'kind' => 'video', 'w' => 320, 'h' => 240]);
+  [$a] = tests_cc_asset($pdo, file_get_contents("${WAV}"), ['name' => 'a.wav', 'mime' => 'audio/wav', 'kind' => 'audio']);
   cc_card_add($pdo, ${BID}, ['type' => 'video', 'x' => 1100, 'y' => 420, 'w' => 280, 'asset_id' => $v['id']], 1);
   cc_card_add($pdo, ${BID}, ['type' => 'audio', 'x' => 1450, 'y' => 420, 'w' => 300, 'asset_id' => $a['id']], 1);`]);
 

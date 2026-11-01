@@ -2400,6 +2400,11 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   - Alt/Option + arrastar desenha o retângulo de seleção; Shift soma; Shift + clique um a um; Ctrl/Cmd A tudo.
   - No iPad: tocar e manter 0,4 s e arrastar. Aparece um anel no ponto tocado quando o modo muda.
   - Barra «N selecionados» com Copiar, Alinhar e Apagar.
+  - **«Escolher mais»** (decidido com a equipa, 1 nov): na barra da seleção, para escolher vários só com toques no
+    iPad sem teclado. Ligado, o botão fica premido («Concluído»), aparece a dica «Toque nos cartões para juntar ou
+    tirar.» e a tela ganha um contorno. Tocar num cartão junta-o ou tira-o; tocar no fundo não limpa; dois toques numa
+    nota não a editam; arrastar continua a mover a seleção. Desliga com «Concluído», Esc, seleção vazia ou ao abrir
+    outro Topperboard. Nos ecrãs táteis a barra aparece já com 1 cartão; no computador, com 2 ou mais.
 - **Som só em Apresentar (§33.13):**
   - Em Apresentar, o vídeo/áudio toca com som ao chegar, pausa ao avançar ou recuar, e Espaço pausa/retoma.
   - A barra tem volume e «Sem som», e «Tocar» aparece se o browser recusar.
@@ -2428,10 +2433,9 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
   - colar já não traz um pacote antigo quando a área de transferência não tem texto;
   - «Restaurar do Lixo» mostra a razão real de uma falha;
   - Esc fecha o seletor da Drive mesmo com cartões selecionados.
-- **Fica para depois:**
-  - personalização de cores/formas;
-  - no iPad sem teclado, uma alternativa à seleção múltipla por toque longo (por exemplo «Escolher mais» na barra da
-    seleção).
+- **Fica para depois:** personalização de cores/formas.
+- **Testes na bancada:** o R2 simulado vive em memória; `tests_cc_asset()` (`tests/fixtures.php`) repõe o objeto de
+  uma referência reaproveitada depois de a bancada reiniciar, e as imagens do teste de envio otimista são únicas.
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 

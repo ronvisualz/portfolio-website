@@ -7,7 +7,7 @@ const BASE = 'http://127.0.0.1:8765';
 let ok = 0, fail = 0;
 const check = (c, msg) => { if (c) ok++; else { fail++; console.error('FALHA: ' + msg); } };
 const BID = execFileSync('php', [path.join(__dirname, 'seed_board.php')]).toString().trim();
-const mk = (n, w, h) => { const f = path.join(os.tmpdir(), 'cc_opt_' + process.pid + '_' + n + '.png'); execFileSync('php', ['-r', `$im=imagecreatetruecolor(${w},${h}); imagefill($im,0,0,imagecolorallocate($im,${n * 40 % 255},90,${(Date.now() + n) % 255})); imagepng($im, $argv[1]);`, f]); return f; };
+const mk = (n, w, h) => { const f = path.join(os.tmpdir(), 'cc_opt_' + process.pid + '_' + n + '.png'); execFileSync('php', ['-r', `$im=imagecreatetruecolor(${w},${h}); imagefill($im,0,0,imagecolorallocate($im,${n * 40 % 255},90,${(Date.now() + n) % 255})); imagestring($im, 2, 2, 2, uniqid('', true), imagecolorallocate($im, 255, 255, 255)); imagepng($im, $argv[1]);`, f]); return f; };
 const A1 = mk(1, 1200, 800), A2 = mk(2, 900, 900), HEIC = path.join(os.tmpdir(), 'cc_opt_' + process.pid + '.heic');
 fs.writeFileSync(HEIC, Buffer.from('não é uma imagem que o browser leia ' + Date.now()));
 

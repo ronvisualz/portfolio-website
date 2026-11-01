@@ -17,10 +17,12 @@ $im = imagecreatetruecolor(2400, 1600);
 imagefilledrectangle($im, 0, 0, 1199, 1599, imagecolorallocate($im, 220, 40, 40));
 imagefilledrectangle($im, 1200, 0, 2399, 1599, imagecolorallocate($im, 47, 119, 177));
 ob_start(); imagepng($im); $png = (string)ob_get_clean();
-[$asset] = cc_asset_create($pdo, $png, ['name' => 'teste33.png', 'mime' => 'image/png']);
-$aid = (int)(is_array($asset) ? $asset['id'] : $asset);
+require_once __DIR__ . '/../fixtures.php';
+[$asset, $restored] = tests_cc_asset($pdo, $png, ['name' => 'teste33.png', 'mime' => 'image/png']);
+$aid = (int)$asset['id'];
 // a referência é reaproveitada entre corridas (mesma impressão digital): repõe as miniaturas se um teste as tirou
-if (is_array($asset) && trim((string)$asset['thumbs']) === '') {
+// ou se a bancada foi reiniciada (o R2 simulado perdeu-as)
+if (trim((string)$asset['thumbs']) === '' || $restored) {
     $pdo->prepare('UPDATE cc_assets SET thumbs = ? WHERE id = ?')->execute([json_encode(cc_thumbs_make($im, 't/' . substr((string)$asset['sha1'], 0, 2) . '/' . $asset['sha1'])), $aid]);
 }
 

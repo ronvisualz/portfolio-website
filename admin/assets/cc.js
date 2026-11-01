@@ -1455,10 +1455,19 @@
       if (RT) RT.decorate();
     }
     // §33.12: barra da seleção múltipla — «N selecionados», Copiar, Alinhar, Apagar
+    // «Escolher mais»: enquanto está ligado, tocar num cartão junta-o ou tira-o (como Shift + clique) e tocar no fundo não
+    // limpa — escolher vários só com toques, no iPad sem teclado (alternativa ao toque longo + arrastar)
+    var pickMore = false, coarse = window.matchMedia ? matchMedia('(pointer: coarse)') : { matches: false };
+    function setPickMore(on) {
+      pickMore = !!on;
+      if (vp) vp.classList.toggle('pick-more', pickMore);
+      selBar();
+    }
     function selBar() {
       var ids = Array.from(B.sel).filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; });
       var bar = $('.ccb-selbar', root);
-      if (ids.length < 2) { if (bar) bar.hidden = true; return; }
+      if (pickMore && !ids.length) { pickMore = false; vp.classList.remove('pick-more'); }
+      if (ids.length < 2 && !(ids.length === 1 && (coarse.matches || pickMore))) { if (bar) bar.hidden = true; return; }
       if (!bar) {
         bar = document.createElement('div');
         bar.className = 'ccb-selbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Seleção');
@@ -1468,13 +1477,16 @@
           var b = e.target.closest('button'); if (!b) return;
           var k = b.getAttribute('data-sb'), al = b.getAttribute('data-align');
           if (k === 'copy') copySel(false);
+          else if (k === 'more') { setPickMore(!pickMore); var mb = $('[data-sb="more"]', bar); if (mb) mb.focus(); }
           else if (k === 'del') delSel();
           else if (k === 'align') { var m = $('.sb-menu', bar); m.hidden = !m.hidden; b.setAttribute('aria-expanded', m.hidden ? 'false' : 'true'); if (!m.hidden) $('button', m).focus(); }
           else if (al) { $('.sb-menu', bar).hidden = true; alignSel(al); }
         });
       }
       bar.hidden = false;
-      bar.innerHTML = '<span class="sb-n" aria-live="polite">' + ids.length + ' selecionados</span>'
+      bar.innerHTML = '<span class="sb-n" aria-live="polite">' + ids.length + (ids.length === 1 ? ' selecionado' : ' selecionados') + '</span>'
+        + '<button type="button" class="btn sm ghost sb-more" data-sb="more" aria-pressed="' + pickMore + '">' + (pickMore ? 'Concluído' : 'Escolher mais') + '</button>'
+        + (pickMore ? '<span class="sb-hint">Toque nos cartões para juntar ou tirar.</span>' : '')
         + '<button type="button" class="btn sm ghost" data-sb="copy" title="Copiar ( ' + MODK + ' C )">Copiar</button>'
         + (EDIT ? '<span class="sb-wrap"><button type="button" class="btn sm ghost" data-sb="align" aria-haspopup="menu" aria-expanded="false">Alinhar ▾</button><div class="sb-menu" role="menu" hidden>'
           + '<button type="button" role="menuitem" data-align="left">À esquerda</button><button type="button" role="menuitem" data-align="top">Em cima</button>'
@@ -2446,15 +2458,16 @@
       if (arrowHit) { select([+arrowHit.getAttribute('data-arrow')], e.shiftKey); return; }
       if (t.closest('.ccc-res') && c && EDIT) { drag = { kind: 'resize', c: c, p0: w, w0: c.w, h0: c.h || cardH(c), before: snapshot(c) }; return; }
       if (c) {
-        var wasSel = B.sel.size === 1 && B.sel.has(c.id);   // §33.10: 2.º clique numa nota já selecionada edita no ponto do clique
-        if (!B.sel.has(c.id) && !(e.shiftKey || e.metaKey || e.ctrlKey)) select([c.id]);
-        if (!EDIT) { drag = { kind: 'click', c: c, p0: p, shift: e.shiftKey || e.metaKey || e.ctrlKey }; return; }
+        var multi = e.shiftKey || e.metaKey || e.ctrlKey || pickMore;
+        var wasSel = B.sel.size === 1 && B.sel.has(c.id) && !pickMore;   // §33.10: 2.º clique numa nota já selecionada edita no ponto do clique
+        if (!B.sel.has(c.id) && !multi) select([c.id]);
+        if (!EDIT) { drag = { kind: 'click', c: c, p0: p, shift: multi }; return; }
         // arrastar pela coluna: só pelo cabeçalho (o corpo deixa arrastar os cartões de dentro)
         var ids = Array.from(B.sel).filter(function (id) { var k = B.cards.get(id); return k && k.type !== 'arrow'; });
         if (ids.indexOf(c.id) < 0) ids = [c.id];
         if (c.col) ids = [c.id];
         else ids = ids.filter(function (id) { return !B.cards.get(id).col; });
-        drag = { kind: 'drag', c: c, ids: ids, p0: p, w0: w, moved: false, wasSel: wasSel, at: { x: e.clientX, y: e.clientY }, shift: e.shiftKey || e.metaKey || e.ctrlKey, before: ids.map(function (id) { return snapshot(B.cards.get(id)); }) };
+        drag = { kind: 'drag', c: c, ids: ids, p0: p, w0: w, moved: false, wasSel: wasSel, at: { x: e.clientX, y: e.clientY }, shift: multi, before: ids.map(function (id) { return snapshot(B.cards.get(id)); }) };
         return;
       }
       // §33.12: Alt/Option + arrastar no fundo = retângulo de seleção (Shift soma); arrastar sem Alt continua a mover a tela
@@ -2628,7 +2641,7 @@
       } else if (d.kind === 'click') {
         select([d.c.id], d.shift);
       } else if (d.kind === 'pan' && d.bg && !d.moved) {
-        if (B.sel.size) select([]);
+        if (B.sel.size && !pickMore) select([]);
       } else if (d.kind === 'resize') {
         var c = d.c;
         push({ t: 'move', items: [{ before: d.before, after: snapshot(c) }] });
@@ -2651,6 +2664,7 @@
       drag = null;
     }
     function dbl(e) {
+      if (pickMore) return;   // a escolher vários: dois toques seguidos num cartão juntam e tiram, não editam
       // com a captura do ponteiro o alvo pode chegar como a tela: vê o que está debaixo do rato
       var tg = e.target.closest('.ccc') ? e.target : (document.elementFromPoint(e.clientX, e.clientY) || e.target);
       var el = tg.closest('.ccc');
@@ -3454,7 +3468,7 @@
         if (EDIT !== wasEdit) editChrome();
         B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
         B.cards.clear(); j.cards.forEach(function (c) { B.cards.set(c.id, c); });
-        B.sel.clear(); B.undo = []; B.redo = []; B.editing = null; B.arrowFrom = null;
+        B.sel.clear(); B.undo = []; B.redo = []; pickMore = false; vp.classList.remove('pick-more'); B.editing = null; B.arrowFrom = null;
         B.els.forEach(function (el) { el.remove(); }); B.els.clear();
         $('.ccb-top', root).innerHTML = topHtml();
         var lb = $('[data-lanebar]', root);
