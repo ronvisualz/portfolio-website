@@ -4523,7 +4523,7 @@ Cada frente regista tempo por sub-etapa, rondas, atraso, valor (linhas do orçam
 
 Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Crew, Assembly, Dealflow, Pulse). Mantém a §11 e os tokens de `admin/assets/app.css` (claro e escuro com o mesmo cuidado); acrescenta estes padrões, a aplicar em todas as abas à medida que forem redesenhadas. Maquetes de referência: briefing «Linha visual v2».
 1. **Cabeçalho vivo:** migalhas, título grande, uma frase com números ao vivo, chip de data e **uma** ação principal à direita (amarela).
-2. **KPIs com herói:** 4 cartões (ícone+legenda, número grande em `--mono`/tabular, chip de variação ok/bad, 2 linhas de detalhe, mini-linha); **um cartão herói** com `--g-yel` e texto preto.
+2. **KPIs com herói:** 4 cartões (ícone+legenda, número grande em `--head` com algarismos tabulares — `--mono` fica para códigos e números pequenos —, chip de variação ok/bad, 2 linhas de detalhe, mini-linha); **um cartão herói** com `--g-yel` e texto preto.
 3. **Uma peça central por página**, com dados reais (Pipeline: funil; Equipa: constelação; Dashboard: pódio). Nunca decorativa; no máximo uma; leve no iPad (Canvas/SVG, sem 3D pesado).
 4. **Cartão escuro de destaque** (`--side`/`--g-side` com brilho subtil) para a peça central, também no modo claro; no escuro, um tom acima do fundo com contorno.
 5. **Faixa de insight da IA:** uma linha discreta no topo («Insight: … · Ver detalhes»), fechável.
@@ -4534,4 +4534,5 @@ Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Cr
 10. **Carga da equipa:** barra por pessoa empilhada por negócio/serviço com linha de capacidade.
 11. **Saúde por linha** nas tabelas (anel de pontuação + mini-linha de atividade).
 12. **Movimento:** entradas 200–300 ms, mudanças de vista/morph 700–1100 ms com aceleração suave (smoothstep / cubic-bezier(.2,.8,.2,1)), números que contam até ao valor, molas nas barras de meta; tudo desligado com `prefers-reduced-motion`.
+13. **Cores dos serviços** (tokens `--s-vfx`, `--s-3d`, `--s-md`, `--s-cmp`, `--s-ed`, `--s-adv`, `--s-cam`; claro / escuro), validadas para daltonismo (pares vizinhos) e contraste ≥ 3:1 nos dois modos: VFX #2F77B1 / #4A8FD0 · 3D #B8860B / #B98A1E · Motion Design #7A5CC9 / #8E74DC · Composit #D0653F / #D3714D · Edição #00879E / #1E9DB3 · Adverts #C2417A / #CC5A8A · Campanhas #5A8F1F / #6FA233. Etiqueta = fundo a 14% da cor, texto em `--fg`, marcador na cor, **sempre com o nome**; nas barras segmentadas, 2 px de intervalo entre fatias e tracejado para «à espera». O amarelo nunca é cor de serviço (é ação). Maquetes: briefing «Pipeline v2».
 **Não usar:** partículas/globos/3D decorativos, neon multicolor, azul como cor de ação (a ação é amarela), barra de navegação flutuante em baixo.
