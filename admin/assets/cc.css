@@ -633,6 +633,11 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .ccc.gone { outline: 2px dashed var(--bad-fg); outline-offset: 2px; }
 .ccc.gone .ccc-media, .ccc.gone > :not(.ccc-gone):not(.ccc-nc):not(.ccc-res) { opacity: .55; }
 .ccc-gone { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font: 600 12px var(--body); color: #fff; background: var(--bad-fg); border-radius: 9px 9px 0 0; }
+/* §33.9: ficheiro da Faturação e quem vê não tem o Financeiro */
+.ccc.noacc { padding: 0; display: block; }
+.ccc-noacc { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 96px; padding: 16px;
+  border-radius: 9px; background: var(--chip); color: var(--mute); font: 600 12.5px var(--body); text-align: center; }
+.ccc-noacc .ico { width: 22px; height: 22px; }
 
 /* §33.8: cartões de link */
 .ccc-link .by { display: block; font-size: 12px; color: var(--mute); margin: 2px 0 4px; }

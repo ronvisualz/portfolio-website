@@ -54,10 +54,16 @@ if (!empty($_GET['f']) && !$public) {
     $st->execute([(int)$_GET['f']]);
     $f = $st->fetch();
     if (!$f) ccf_404();
+    // §33.9: o frame é do ficheiro da referência; quem não vê esse ficheiro na Drive também não vê os frames
+    $fa = cc_asset_get($pdo, (int)$f['asset_id']);
+    if (!$fa || cc_asset_blocked($fa)) ccf_404();
     $key = $size > 0 ? cc_thumb_pick($f['thumbs'], $size) : $f['file_key'];
 } else {
     $a = cc_asset_get($pdo, (int)($_GET['a'] ?? 0));
     if (!$a || ($a['deleted_at'] && !$public)) ccf_404();
+    // §33.9: as miniaturas (.topper/cc/…) são feitas a partir do ficheiro da Drive: verifica-se a chave da própria
+    // referência, para qualquer tamanho (a Faturação só a quem tem o Financeiro; na página do cliente, nunca)
+    if (cc_asset_blocked($a)) ccf_404();
     if ($size > 0) {
         $key = cc_thumb_pick($a['thumbs'], $size);
     } else {

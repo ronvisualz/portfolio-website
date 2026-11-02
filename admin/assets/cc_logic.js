@@ -250,10 +250,20 @@
     }).filter(Boolean).join('\n');
   }
 
+  /** O cartão a publicar no tempo real (JSON sem os campos locais), ou '' quando nem todos o podem ver (§33.9: ficheiro
+   *  da Faturação marcado «restrito», ou «sem acesso» para quem o publica): esse chega a cada um pelo servidor. */
+  function rtPub(c) {
+    var a = c && c.asset;
+    if (!c || c.noaccess || (a && (a.restricted || a.noaccess))) return '';
+    var pub = {};
+    Object.keys(c).forEach(function (k) { if (k !== '_mh' && k !== '__new') pub[k] = c[k]; });
+    return JSON.stringify(pub);
+  }
+
   /** O pacote guardado ao copiar, se o texto da área de transferência for o que se copiou (senão null). */
   function clipMatch(stored, text) {
     return stored && stored.pack && text && text === stored.txt ? stored.pack : null;
   }
 
-  return { version: 1, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  return { version: 1, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

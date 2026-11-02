@@ -169,5 +169,14 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(CCL.clipMatch(st, 'outra coisa'), null, 'clipMatch: texto diferente → nada');
   eq(CCL.clipMatch(null, 'x'), null, 'clipMatch: sem pacote guardado → nada'); }
 
+// Faturação (§33.9): o tempo real não espalha o cartão de um ficheiro que nem todos podem ver (o servidor dá-o a cada um)
+{ const rtPub = typeof CCL.rtPub === 'function' ? CCL.rtPub : () => 'sem rtPub';
+  const parse = s => { try { return JSON.parse(s); } catch (e) { return s; } };
+  const pub = rtPub({ id: 7, type: 'image', x: 1, asset: { id: 3, title: 'foto' }, _mh: 40, __new: true });
+  eq(parse(pub), { id: 7, type: 'image', x: 1, asset: { id: 3, title: 'foto' } }, 'rtPub: um cartão normal vai inteiro (sem os campos locais)');
+  eq(rtPub({ id: 8, type: 'image', asset: { id: 4, title: 'recibo', restricted: true } }), '', 'rtPub: referência «restrita» (Faturação) → não vai pelo tempo real');
+  eq(rtPub({ id: 9, type: 'image', noaccess: true, asset: { id: 4, title: '', noaccess: true } }), '', 'rtPub: cartão «sem acesso» → também não (quem o vê teria o vazio)');
+  eq(parse(rtPub({ id: 10, type: 'note', c: { text: 'olá' } })), { id: 10, type: 'note', c: { text: 'olá' } }, 'rtPub: nota sem referência vai inteira'); }
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

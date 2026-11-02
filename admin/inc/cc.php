@@ -660,6 +660,25 @@ function cc_frames(PDO $pdo, int $assetId): array {
     return $st->fetchAll();
 }
 
+/** A chave na Drive de uma referência que aponta para um ficheiro da Drive (fora de .topper/), ou ''. */
+function cc_asset_drive_key(array $a): string {
+    $k = (string)($a['file_key'] ?? '');
+    if (strncmp($k, 'r2:', 3) !== 0) return '';
+    $k = substr($k, 3);
+    return drive_hidden($k) ? '' : $k;
+}
+
+/**
+ * §33.9: a referência aponta para um ficheiro da Drive que esta pessoa não vê na Drive (a Faturação sem o
+ * Financeiro). Então não recebe as miniaturas, o original, os frames, o nome nem o que se tirou do conteúdo.
+ * Sem sessão (página do cliente) ninguém tem o Financeiro: a Faturação nunca sai. Os originais enviados para o
+ * Toppernote também vivem na Drive (cc_place_original), por isso o resto da Drive continua a servir-se.
+ */
+function cc_asset_blocked(array $a): bool {
+    $k = cc_asset_drive_key($a);
+    return $k !== '' && !drive_can_see($k);
+}
+
 /** A referência para a interface (sem chaves de ficheiro nem embeddings). */
 function cc_asset_public(array $a, bool $full = false): array {
     $an = json_decode((string)($a['analysis'] ?? ''), true);
@@ -702,6 +721,18 @@ function cc_asset_public(array $a, bool $full = false): array {
             $out['drive'] = drive_page(drive_parent($k), 'f=' . rawurlencode($k));
             $out['drive_path'] = drive_parent($k);
         }
+    }
+    $dk = cc_asset_drive_key($a);
+    if (cc_asset_blocked($a)) {
+        // §33.9: só o número e o tipo; o resto vazio (com o mesmo formato, para a interface não falhar)
+        $keep = ['id' => 1, 'kind' => 1, 'origin' => 1, 'inbox' => 1];
+        foreach ($out as $f => $v) {
+            if (isset($keep[$f])) continue;
+            $out[$f] = is_array($v) ? [] : (is_int($v) ? 0 : (is_float($v) ? 0.0 : (is_bool($v) ? false : ($v === null ? null : ''))));
+        }
+        $out['noaccess'] = true;
+    } elseif ($dk !== '' && drive_billing($dk)) {
+        $out['restricted'] = true;   // nem todos o veem: o tempo real não o publica (cada um recebe-o do servidor)
     }
     return $out;
 }
@@ -1185,6 +1216,7 @@ function cc_card_public(array $c, ?array $asset = null, array $comments = []): a
         'ut' => !empty($c['updated_at']) ? strtotime((string)$c['updated_at']) * 1000 : 0,   // para o tempo real saber o que é mais recente
     ];
     if ($asset && !empty($asset['drive_gone'])) $out['gone'] = true;   // §33.9: o ficheiro da Drive foi apagado
+    if (!empty($out['asset']['noaccess'])) $out['noaccess'] = true;   // §33.9: «Sem acesso a este ficheiro»
     return $out;
 }
 
@@ -1510,6 +1542,10 @@ function cc_board_gone(PDO $pdo, int $boardId): array {
     foreach ($st->fetchAll() as $r) {
         $tid = (int)$r['drive_trash_id'];
         if ($tid) { $exists->execute([$tid]); if (!$exists->fetchColumn()) { $pdo->prepare('UPDATE cc_assets SET drive_trash_id = NULL WHERE id = ?')->execute([(int)$r['asset']]); $tid = 0; } }
+        if (cc_asset_blocked($r)) {   // §33.9: da Faturação, para quem não tem o Financeiro: nem o nome nem o Lixo
+            $out[] = ['card' => (int)$r['card'], 'asset' => (int)$r['asset'], 'name' => 'Sem acesso a este ficheiro', 'trash_id' => null, 'at' => substr((string)$r['drive_gone'], 0, 16)];
+            continue;
+        }
         $out[] = ['card' => (int)$r['card'], 'asset' => (int)$r['asset'], 'name' => (string)($r['file_name'] ?: $r['title'] ?: basename(substr((string)$r['file_key'], 3))),
                   'trash_id' => $tid ?: null, 'at' => substr((string)$r['drive_gone'], 0, 16)];
     }

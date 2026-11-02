@@ -282,6 +282,7 @@ case 'asset': {
                                           'caption' => (string)(json_decode((string)$f['analysis'], true)['caption'] ?? ''), 'pal' => array_column(cc_palette_hex($f['palette'], 5), 'hex')],
                                cc_frames($pdo, (int)$x['id']));
     $pub['palette'] = cc_palette_hex($x['palette'], 8);
+    if (!empty($pub['noaccess'])) { $pub['frames'] = []; $pub['palette'] = []; }   // §33.9: da Faturação, sem o Financeiro
     $st = $pdo->prepare("SELECT DISTINCT b.id, b.title, b.kind FROM cc_cards c JOIN cc_boards b ON b.id = c.board_id WHERE c.asset_id = ? AND c.deleted_at IS NULL AND b.status <> 'deleted' ORDER BY b.id DESC LIMIT 20");
     $st->execute([(int)$x['id']]);
     $pub['boards'] = array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => $r['kind']], $st->fetchAll());
@@ -692,16 +693,19 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
     $keys = json_decode((string)rq('keys', '[]'), true);
     if (!is_array($keys) || !$keys) cfail('Nada para juntar.');
     release_session();
+    require_once __DIR__ . '/inc/drive_moves.php';
     $cards = []; $skipped = 0; $i = 0;
     foreach (array_slice($keys, 0, 30) as $k) {
-        $k = (string)$k;
-        if ($k === '' || str_ends_with($k, '/') || drive_hidden($k) || !drive_can_see($k) || !($h = r2_head($k))) { $skipped++; continue; }
+        if (!is_string($k) || $k === '' || str_ends_with($k, '/') || drive_hidden($k) || !drive_can_see($k)) { $skipped++; continue; }
+        // §32.1: com um mover instantâneo ainda na fila, o objeto está no sítio antigo; o cartão aponta para o novo
+        $phys = drive_resolve($pdo, $k);
+        if (!($h = r2_head($phys))) { $skipped++; continue; }
         $name = drive_base($k);
         $mime = r2_mime($name);
         $kind = cc_kind_for($mime, $name);
         $o = ['name' => $name, 'mime' => $mime, 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
               'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'];
-        if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($k, null, 41943040);
+        if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($phys, null, 41943040);
         [$x] = cc_asset_create($pdo, null, $o);
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
         $type = cc_card_type_for($x);

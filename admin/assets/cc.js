@@ -51,7 +51,8 @@
     x: '<path d="M18 6 6 18M6 6l12 12"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/>',
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     side: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>', ext: '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
-    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   function ico(n, cls) { return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (IC[n] || IC.file) + '</svg>'; }
 
@@ -1210,7 +1211,13 @@
     function cardHtml(c) {
       if (c.local) return localHtml(c);
       var a = c.asset, x = c.c || {}, h = '';
-      var badges = (c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '')
+      var ncb = c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '';
+      // §33.9: um ficheiro da Faturação e quem vê não tem o Financeiro: o servidor não manda miniatura, nome nem análise
+      if (c.noaccess) {
+        return '<div class="ccc-noacc" role="note"' + ((c.type === 'image' || c.type === 'video') && c.h ? ' style="aspect-ratio:' + c.w + '/' + c.h + '"' : '') + '>'
+          + ico('lock') + '<span>Sem acesso a este ficheiro</span></div>' + ncb + '<div class="ccc-hov"><button type="button" data-cact="com" title="Comentários">' + ico('bubble') + '</button></div>';
+      }
+      var badges = ncb
         + (x.state === 'keep' ? '<span class="ccc-state">Manter</span>' : x.state === 'swap' ? '<span class="ccc-state swap">Trocar</span>' : '')
         + (a ? '<span class="ccc-ai">' + aiBadge(a) + '</span>' : '');
       var hov = '';
@@ -1287,7 +1294,7 @@
     }
     function makeEl(c) {
       var el = document.createElement('div');
-      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '') + (c.gone ? ' gone' : '');
+      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '') + (c.gone ? ' gone' : '') + (c.noaccess ? ' noacc' : '');
       el.setAttribute('data-id', c.id);
       if (c.type === 'note' && c.c && c.c.color) { el.style.setProperty('--note', c.c.color); el.classList.add('dark-ink'); }
       el.innerHTML = cardHtml(c);
@@ -1298,7 +1305,7 @@
       }
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
       if (c.type === 'video' && c.asset && c.asset.orig && !c.local) bindVideoHover(el, c);
-      if (c.type === 'audio') auNeedPeaks(c.asset, auUpdated);
+      if (c.type === 'audio' && !c.noaccess) auNeedPeaks(c.asset, auUpdated);
       return el;
     }
     function place(c, el) {
@@ -2414,7 +2421,7 @@
         if (e.key !== ' ' || !spaceDown) return;
         spaceDown = false; vp.classList.remove('space');
         // §33.10: Espaço sem arrastar, com uma imagem/vídeo selecionado, abre o visualizador
-        if (!spaceUsed && B.sel.size === 1 && !viewer) { var sc = B.cards.get(Array.from(B.sel)[0]); if (sc && (sc.type === 'image' || sc.type === 'video') && sc.asset && !sc.local) openViewer(sc); }
+        if (!spaceUsed && B.sel.size === 1 && !viewer) { var sc = B.cards.get(Array.from(B.sel)[0]); if (sc && viewable(sc)) openViewer(sc); }
         spaceUsed = false;
       }, true);
       window.addEventListener('resize', function () { applyView(); });
@@ -2684,15 +2691,17 @@
       if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c, null, at); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
       if (c.type === 'file' && c.asset && c.asset.orig) { window.open(c.asset.orig, '_blank', 'noopener'); return; }
-      if ((c.type === 'image' || c.type === 'video') && c.asset && !c.local) { openViewer(c); return; }
+      if (c.noaccess) { select([c.id]); return; }   // §33.9: nada para abrir
+      if (viewable(c)) { openViewer(c); return; }
       if (c.asset) { select([c.id]); B.side = 'det'; sideEl.hidden = false; sideSync(); }
     }
 
     // ── visualizador em ecrã inteiro (§33.10): duplo clique ou Espaço; zoom; ← → pelas imagens do Topperboard; Esc fecha ──
     var viewer = null;
+    function viewable(c) { return (c.type === 'image' || c.type === 'video') && !!c.asset && !c.local && !c.noaccess; }
     function viewList() {
       var l = [];
-      B.cards.forEach(function (c) { if ((c.type === 'image' || c.type === 'video') && c.asset && !c.local) l.push(c); });
+      B.cards.forEach(function (c) { if (viewable(c)) l.push(c); });
       var pos = function (c) { var p = c.col && B.cards.get(c.col) ? B.cards.get(c.col) : c; return { y: Math.round(p.y / 60), x: p.x, o: c.ord || 0 }; };
       return l.sort(function (a, b) { var A = pos(a), Bb = pos(b); return A.y - Bb.y || A.x - Bb.x || A.o - Bb.o; });
     }
@@ -2849,7 +2858,7 @@
       else if (!mod && (k === 'v' || k === 'V')) setTool('select');
       else if (!mod && (k === 'd' || k === 'D') && EDIT) runTool('draw');
       else if (!mod && !e.altKey && (k === 'p' || k === 'P') && EDIT) setTool('draw');
-      else if (!mod && !e.altKey && (k === 'i' || k === 'I') && EDIT && B.sel.size === 1 && (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic && ic.asset && (ic.type === 'image' || ic.type === 'video'); })()) {
+      else if (!mod && !e.altKey && (k === 'i' || k === 'I') && EDIT && B.sel.size === 1 && (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic && ic.asset && !ic.noaccess && (ic.type === 'image' || ic.type === 'video'); })()) {
         // §33.11: I abre o detalhe e liga o conta-gotas
         if (B.side === 'det' && !sideEl.hidden && $('.ccd-media', sideBody)) startPick(sideBody.firstChild, null || (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic.asset; })());
         else { B.pickNext = true; B.side = 'det'; sideEl.hidden = false; sideSync(); }
