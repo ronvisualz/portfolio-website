@@ -4453,3 +4453,69 @@ Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar vár
 Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
 - **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
 - **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
+
+## 34. Pipeline v2: 7 funis, categorias e execução em dois níveis (2 nov 2026)
+
+Substitui os funis da §19 e completa o crosselling da §22. Verificado no main: funis atuais `vfx` (VFX & Pós-produção), `cgi` (CGI / 3D), `adverts`, `campanhas`, `ads`, `buddy` (Marketing Buddy); leads com serviços «VFX / 3D · Marketing Buddy · Ambos».
+
+### 34.1 Funis (por esta ordem)
+**VFX · 3D · Motion Design · Composit · Edição · Adverts · Campanhas.**
+- **Marketing Buddy deixa de ser funil:** passa a **produto «Blame»** (software interno) vendido dentro de **Campanhas** (avença mensal, como era o Buddy).
+- **Ads** sai: os negócios passam para **Adverts**.
+- Serviços nos formulários de leads e no X-Ray: os 7 funis + «Blame».
+
+### 34.2 Categorias automáticas (não são funis)
+Calculadas a partir dos serviços do negócio (frentes), mostradas no negócio, pipeline, Relatórios e Dashboard:
+- **Pós-produção:** inclui **Edição** + pelo menos mais um dos serviços de produção (VFX, 3D, Motion Design, Composit). Ex.: VFX + Edição; VFX + 3D + Edição; One House Only (os 5).
+- **CGI:** dois ou mais de **VFX, 3D, Composit**, sem Edição. Ex.: VFX + 3D; 3D + Composit.
+- Combinações com **Motion Design sem Edição** (ex.: Motion Design + 3D): **sem categoria**, mostradas pelos nomes dos serviços.
+- Um só serviço: sem categoria.
+- Regras editáveis em Definições › Pipeline › Categorias (só admins), com pré-visualização das combinações.
+
+### 34.3 Dois níveis
+**Nível do negócio — 6 etapas iguais em todos os funis:**
+X-Ray → Proposta → Aguardar feedback → Kickoff → **Em execução** → **Entrega e pagamento final**.
+**Nível da frente — sub-etapas próprias de cada serviço**, dentro de «Em execução»; todas terminam em **Revisões** (rondas incluídas) → **Pronto**, para comparar serviços:
+
+| Serviço | Sub-etapas de execução |
+|---|---|
+| VFX | Turnover e breakdown → Look dev / shot de referência → Produção de shots → Finais e QC → Revisões (2) → Pronto |
+| 3D | Styleframes → Modelação e lookdev → Animação → Lighting e render → Revisões (1) → Pronto |
+| Motion Design | Guião visual e styleframes → Animatic → Animação → Som e ritmo → Revisões (1) → Pronto |
+| Composit | Preparação de plates → Composição → Integração e look → Finais e QC → Revisões (1) → Pronto |
+| Edição | Seleção e assembly → Montagem offline → Picture lock → Finalização (cor, som, legendas) → Revisões (2) → Pronto |
+| Adverts | Conceito e tratamento → Pré-produção (PPM) → Rodagem → Montagem e pós → Revisões (2) → Pronto |
+| Campanhas | Estratégia e calendário → Guiões do lote → Gravação do lote → Edição do lote → Revisões (1) → Pronto (e Agendamento e relatório) |
+| Campanhas · Blame | Onboarding → Configuração do Blame → **Ativo** (mensal: otimizar e reportar) → Revisão trimestral e renovação |
+
+(Valores iniciais propostos; editáveis em Definições. Rondas incluídas entre parênteses.)
+
+### 34.4 Avanço automático (sem microgestão)
+- Cada sub-etapa cria as suas tarefas ao começar; **quando as tarefas obrigatórias ficam feitas, a frente avança sozinha** (opção por sub-etapa «avançar automaticamente», ligada por defeito). Arrastar à mão continua possível (fica registado).
+- **O negócio avança sozinho:** Kickoff → Em execução quando a primeira frente começa; Em execução → Entrega e pagamento final quando **todas as frentes estão em Pronto** (Blame conta como pronto quando passa a «Ativo»).
+- **Dependências entre frentes** substituem a sincronização manual: uma frente pode esperar por outra chegar a uma sub-etapa (ex.: Composit espera 3D em «Lighting e render»; Edição espera VFX e Composit em «Pronto»). À espera mostra «À espera de 3D» e não conta como atrasada; ao cumprir-se arranca e avisa o responsável. Modelos de dependências por categoria (ex.: cadeia de Pós-produção), editáveis.
+- A sincronização da §22 (Sincronizadas / Timelines diferentes) passa a ser só a data de entrega: comum a todas, ou por frente.
+- **Aprovação final do cliente** e **confirmação do pagamento final** ficam no nível do negócio (etapa final), uma vez só.
+
+### 34.5 Vistas da Pipeline
+- **Negócios:** 6 colunas comuns; cada cartão com **barra segmentada por frentes** (cor por estado: em curso, à espera, atrasada, pronta) e a categoria.
+- **Por serviço** (um separador por funil): só as **frentes desse serviço**, de todos os negócios, nas sub-etapas do serviço — cada equipa vê o seu trabalho. Cartão da frente com código do negócio, cliente, responsável, prazo e dependências.
+- Ficha do negócio: bloco «Em execução» com uma linha por frente (sub-etapa atual, progresso, responsável, à espera de…).
+
+### 34.6 Automações otimizadas (Definições › Pipeline)
+Separadores: **Etapas comuns · Serviços (sub-etapas) · Automações · Dependências · Categorias · Blame**.
+- **Automações em dois níveis:** regras das **etapas comuns** (definidas uma vez, valem para todos os funis, com extras opcionais por funil) e regras das **sub-etapas de cada serviço**. Juntas sem duplicar (a mesma tarefa nunca se cria duas vezes num negócio com várias frentes).
+- **Gatilhos novos:** frente entra em sub-etapa; frente fica Pronta; todas as frentes Prontas; dependência cumprida; frente parada há N dias; rondas de revisão ultrapassadas; Blame mensal (dia N).
+- **Ações:** criar tarefa (tipo, responsável: comercial / responsável da frente / chefe do serviço / pessoa / por atribuir; prazo; obrigatória), notificar, pedir documento, criar Topperboard ou ligação de Review, mover o negócio (automático).
+- **Testar automações:** escolher uma combinação de serviços (ex.: VFX + 3D + Edição) e ver, sem criar nada, que tarefas nasceriam em cada etapa e sub-etapa e a cadeia de dependências.
+- **Medidor de ruído operacional:** cada regra mostra quantas tarefas criou, % concluídas e **% apagadas ou fechadas sem trabalho** (ex.: concluídas em < 1 min); acima de 40% sugere desligar ou rever a regra.
+- Responsável por defeito de cada serviço (chefe do departamento) e substituição por negócio.
+
+### 34.7 Métricas por serviço
+Cada frente regista tempo por sub-etapa, rondas, atraso, valor (linhas do orçamento por serviço) e custo (equipa declarada). Relatórios › Operacional e Financeiro passam a filtrar por serviço **e** por categoria, incluindo serviços dentro de negócios combinados.
+
+### 34.8 Migração
+- `vfx` (VFX & Pós-produção) → **VFX**; `cgi` (CGI / 3D) → **3D**; `ads` → **Adverts**; `buddy` → **Campanhas** com produto **Blame**; novos **Motion Design, Composit, Edição**.
+- Negócios em produção passam para «Em execução» com uma frente por serviço; a sub-etapa atual mapeada pela mais próxima (lista revista por um admin antes de aplicar).
+- **One House Only:** 5 frentes (VFX, 3D, Motion Design, Composit, Edição), categoria Pós-produção, com a cadeia de dependências de Pós-produção proposta para confirmar.
+- Tarefas, histórico e valores mantêm-se; nada se apaga.
