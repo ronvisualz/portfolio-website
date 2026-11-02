@@ -4518,3 +4518,20 @@ Cada frente regista tempo por sub-etapa, rondas, atraso, valor (linhas do orçam
 - Negócios em produção passam para «Em execução» com uma frente por serviço; a sub-etapa atual mapeada pela mais próxima (lista revista por um admin antes de aplicar).
 - **One House Only:** 5 frentes (VFX, 3D, Motion Design, Composit, Edição), categoria Pós-produção, com a cadeia de dependências de Pós-produção proposta para confirmar.
 - Tarefas, histórico e valores mantêm-se; nada se apaga.
+
+## 35. Linha visual v2 (2 nov 2026)
+
+Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Crew, Assembly, Dealflow, Pulse). Mantém a §11 e os tokens de `admin/assets/app.css` (claro e escuro com o mesmo cuidado); acrescenta estes padrões, a aplicar em todas as abas à medida que forem redesenhadas. Maquetes de referência: briefing «Linha visual v2».
+1. **Cabeçalho vivo:** migalhas, título grande, uma frase com números ao vivo, chip de data e **uma** ação principal à direita (amarela).
+2. **KPIs com herói:** 4 cartões (ícone+legenda, número grande em `--mono`/tabular, chip de variação ok/bad, 2 linhas de detalhe, mini-linha); **um cartão herói** com `--g-yel` e texto preto.
+3. **Uma peça central por página**, com dados reais (Pipeline: funil; Equipa: constelação; Dashboard: pódio). Nunca decorativa; no máximo uma; leve no iPad (Canvas/SVG, sem 3D pesado).
+4. **Cartão escuro de destaque** (`--side`/`--g-side` com brilho subtil) para a peça central, também no modo claro; no escuro, um tom acima do fundo com contorno.
+5. **Faixa de insight da IA:** uma linha discreta no topo («Insight: … · Ver detalhes»), fechável.
+6. **Kanban rico:** cabeçalho com contagem e valor somado; cartões com etiquetas de serviço, progresso, avatares, chip de prazo (cor pelo atraso) e presença («Ana está a editar»); colunas com fundo ligeiramente tingido.
+7. **Etapas em chips** no topo das fichas (✓ concluídas, ● atual com «dia N», futuras em cinzento).
+8. **Painel de detalhe à direita** (redimensionável, §33.7) e **menu lateral rico**: vistas guardadas com contadores, «Online agora», mini-widget no fundo (meta do período).
+9. **Timeline com dependências** (Gantt) com interruptor «Dependências» e linha «Hoje».
+10. **Carga da equipa:** barra por pessoa empilhada por negócio/serviço com linha de capacidade.
+11. **Saúde por linha** nas tabelas (anel de pontuação + mini-linha de atividade).
+12. **Movimento:** entradas 200–300 ms, mudanças de vista/morph 700–1100 ms com aceleração suave (smoothstep / cubic-bezier(.2,.8,.2,1)), números que contam até ao valor, molas nas barras de meta; tudo desligado com `prefers-reduced-motion`.
+**Não usar:** partículas/globos/3D decorativos, neon multicolor, azul como cor de ação (a ação é amarela), barra de navegação flutuante em baixo.
