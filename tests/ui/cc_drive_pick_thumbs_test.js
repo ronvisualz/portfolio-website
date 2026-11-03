@@ -21,12 +21,12 @@ async function openPicker(p, term) {
   if (term) { await dlg.locator('input[type=search]').fill(term); await p.waitForTimeout(400); }
   return dlg;
 }
-async function page(b, uid, errs) {
+async function page(b, uid, errs, also) {
   const ctx = await b.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   p.setDefaultTimeout(6000);
   p.on('pageerror', e => errs.push('pageerror: ' + e.message));
-  p.on('console', m => { if (m.type() === 'error' && !IGNORE.test(m.text() + ' ' + ((m.location() || {}).url || ''))) errs.push('console: ' + m.text()); });
+  p.on('console', m => { const t = m.text() + ' ' + ((m.location() || {}).url || ''); if (m.type() === 'error' && !IGNORE.test(t) && !(also && also.test(t))) errs.push('console: ' + m.text()); });
   await p.goto(BASE + '/admin/__as/' + uid);
   return p;
 }
@@ -137,7 +137,7 @@ const spy = p => {
   // ── 3) sem o Financeiro: a Faturação nunca aparece nem se pede; geração recusada → ícones, sem erros ──
   const F = seed('dpf' + Date.now().toString(36), 'bill');
   const errs3 = [];
-  const p3 = await page(b, 3, errs3);
+  const p3 = await page(b, 3, errs3, /403 \(Forbidden\) .*drive_api\.php/);   // o registo do próprio browser para a recusa simulada abaixo
   const s3 = spy(p3);
   await p3.route('**/admin/drive_api.php', r => /"thumb_sign"/.test(r.request().postData() || '')
     ? r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Recusado.' }) }) : r.continue());

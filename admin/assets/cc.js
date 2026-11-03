@@ -11,6 +11,8 @@
   var EDIT = root.getAttribute('data-edit') === '1';
   var MANAGE = root.getAttribute('data-manage') === '1';
   var API = '/admin/cc_api.php';
+  // as miniaturas da Drive (TD.thumbs, no seletor «Da Drive») usam o TD.api, que só lê o token do #drive da página da Drive
+  if (window.TD && TD.cfg && !TD.cfg.csrf) TD.cfg.csrf = CSRF;
 
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
@@ -1867,13 +1869,22 @@
       el.innerHTML = '<div class="cc-dpick" role="dialog" aria-modal="true" aria-label="Juntar da Drive"><div class="dp-h"><h3>Juntar da Drive</h3>'
         + '<input type="search" placeholder="Procurar na Drive (nome ou pasta)" aria-label="Procurar na Drive"></div>'
         + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="group" aria-label="Ficheiros da Drive"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
-        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários.</span>'
+        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários. Também pode arrastá-los para o sítio certo do Topperboard.</span>'
         + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
       document.body.appendChild(el);
       var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
       var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
       var back = document.activeElement;
-      function close() { el.remove(); document.removeEventListener('keydown', escKey, true); if (back && back.focus) back.focus(); }
+      // miniaturas como na Drive (TD.thumbs): as que existem (catalog.thumbs) pedem-se em lote, as que faltam fazem-se no
+      // browser; só as que se veem. Só se pedem etags que vieram do catálogo (que já esconde a Faturação a quem não a vê).
+      var TH = window.TD && TD.thumbs && TD.kind ? TD.thumbs : null, hasTh = new Set(), thumbUrl = new Map();
+      var io = TH && 'IntersectionObserver' in window ? new IntersectionObserver(seen, { root: list, rootMargin: '200px' }) : null, seenQ = [], seenT = 0;
+      function close() {
+        el.remove(); document.removeEventListener('keydown', escKey, true);
+        if (io) io.disconnect();
+        clearTimeout(seenT);
+        if (back && back.focus) back.focus();
+      }
       // Esc fecha sempre (antes dos atalhos da tela); Tab fica dentro do diálogo
       function escKey(e) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
@@ -1884,9 +1895,79 @@
       }
       document.addEventListener('keydown', escKey, true);
       function base(k) { var p = k.replace(/\/$/, '').split('/'); return p[p.length - 1]; }
-      function paint() {
+      function kindOfKey(k) { return window.TD && TD.kind ? TD.kind(k) : { id: 'other', preview: '' }; }
+      function thumbOf(e) {
+        var u = thumbUrl.get(e);
+        if (!u && TH && TH.cached) { u = TH.cached(e) || ''; if (u) thumbUrl.set(e, u); }
+        return u || '';
+      }
+      function imgHtml(u) { return '<img src="' + esc(u) + '" alt="" decoding="async" draggable="false">'; }
+      function iconHtml(k, kd) {
+        var x = (base(k).match(/\.([a-z0-9]{1,5})$/i) || [])[1] || '';
+        return (window.TD && TD.icon ? TD.icon(kd.id) : ico('file')) + (x ? '<span class="dp-ext">' + esc(x.toUpperCase()) + '</span>' : '');
+      }
+      // uma célula da grelha: pré-visualização (miniatura, ou ícone e extensão), visto, nome, pasta e tamanho
+      function cellHtml(o, i, path) {
+        var on = picked.has(o.k), kd = kindOfKey(o.k), pv = kd.preview === 'image' || kd.preview === 'video';
+        var e = o.e && (pv || hasTh.has(o.e)) ? o.e : '', u = e ? thumbOf(e) : '';
+        return '<button type="button" class="dp-f' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-i="' + i + '" draggable="true">'
+          + '<span class="dp-th k-' + esc(kd.id) + (u ? ' has-img' : '') + '"' + (e ? ' data-e="' + esc(e) + '"' : '') + '>' + (u ? imgHtml(u) : iconHtml(o.k, kd))
+          + (kd.id === 'video' ? '<span class="dp-play" aria-hidden="true"></span>' : '') + '</span>'
+          + '<i class="dp-ck" aria-hidden="true"></i><span class="dp-nm"><b>' + esc(base(o.k)) + '</b>'
+          + (path ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '<small>' + fmtBytes(o.s || 0) + '</small></span></button>';
+      }
+      function paintThumb(e, u) {
+        if (!u || !el.isConnected) return;
+        thumbUrl.set(e, u);
+        $$('.dp-th[data-e="' + e + '"]', list).forEach(function (t) {
+          if (t.classList.contains('has-img')) return;
+          var play = $('.dp-play', t);
+          t.innerHTML = imgHtml(u) + (play ? play.outerHTML : '');
+          t.classList.add('has-img');
+        });
+      }
+      // uma miniatura que não carrega (URL caducado, removida): volta o ícone, sem erro
+      list.addEventListener('error', function (ev) {
+        var img = ev.target; if (!img || img.tagName !== 'IMG') return;
+        var t = img.closest('.dp-th'), f = t && t.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+        if (!o) return;
+        var play = $('.dp-play', t);
+        thumbUrl.delete(t.getAttribute('data-e'));
+        t.classList.remove('has-img'); t.innerHTML = iconHtml(o.k, kindOfKey(o.k)) + (play ? play.outerHTML : '');
+      }, true);
+      function seen(entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          io.unobserve(en.target);
+          var f = en.target.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+          if (o && o.e) seenQ.push(o);
+        });
+        clearTimeout(seenT);
+        if (seenQ.length) seenT = setTimeout(flushSeen, 40);
+      }
+      function flushSeen() {
+        var l = seenQ.filter(function (o) { return !thumbUrl.has(o.e); }); seenQ = [];
+        var have = l.filter(function (o) { return hasTh.has(o.e); }), make = l.filter(function (o) { return !hasTh.has(o.e); });
+        try {
+          if (have.length) Promise.resolve(TH.urls(have.map(function (o) { return o.e; }))).then(function (map) {
+            var miss = [];
+            have.forEach(function (o) { if (map && map[o.e]) paintThumb(o.e, map[o.e]); else miss.push(o); });
+            if (miss.length) TH.ensure(miss, paintThumb);
+          }).catch(function () {});
+          if (make.length) TH.ensure(make, paintThumb);
+        } catch (err) { /* sem miniaturas: ficam os ícones */ }
+      }
+      function watchThumbs() {
+        if (!io) return;
+        io.disconnect();
+        $$('.dp-th[data-e]:not(.has-img)', list).forEach(function (t) { io.observe(t); });
+      }
+      function bar() {
         addB.disabled = !picked.size;
         addB.textContent = picked.size ? 'Adicionar ' + picked.size : 'Adicionar';
+      }
+      function paint() {
+        bar();
         var term = fold(q.value.trim()), html = '';
         shown = [];
         if (term) {
@@ -1901,36 +1982,46 @@
           html += Object.keys(dirs).sort().map(function (d) { return '<button type="button" class="dp-d" data-dp-go="' + esc(d) + '">' + ico('drive') + ' ' + esc(base(d)) + '</button>'; }).join('');
           if (!prefix && recents.length) { html += '<h4>Recentes</h4>'; shown = recents.slice(0, 12); }
         }
-        html += shown.map(function (o, i) {
-          var on = picked.has(o.k);
-          return '<button type="button" class="dp-f' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-i="' + i + '"><i class="dp-ck" aria-hidden="true"></i><span><b>' + esc(base(o.k)) + '</b>'
-            + (term || !prefix ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '</span><small>' + fmtBytes(o.s || 0) + '</small></button>';
-        }).join('');
+        if (shown.length) html += '<div class="dp-grid">' + shown.map(function (o, i) { return cellHtml(o, i, term || !prefix); }).join('') + '</div>';
         list.innerHTML = html || '<p class="muted">' + (term ? 'Nada encontrado com «' + esc(q.value.trim()) + '».' : 'Pasta vazia.') + '</p>';
+        watchThumbs();
+      }
+      // escolher muda só o visto (as imagens ficam: nada se volta a desenhar)
+      function mark() {
+        $$('.dp-f', list).forEach(function (f) { var o = shown[+f.getAttribute('data-i')], on = !!o && picked.has(o.k); f.classList.toggle('on', on); f.setAttribute('aria-pressed', on); });
+        bar();
       }
       function toggle(i, range) {
         if (range && last >= 0) { var a = Math.min(last, i), b2 = Math.max(last, i); for (var j = a; j <= b2; j++) picked.add(shown[j].k); }
         else { var k = shown[i].k; if (picked.has(k)) picked.delete(k); else picked.add(k); }
-        last = i; paint();
+        last = i; mark();
         var f = $('.dp-f[data-i="' + i + '"]', list); if (f) f.focus();
       }
       el.addEventListener('click', function (e) {
         if (e.target === el || e.target.closest('[data-dp-cancel]')) { close(); return; }
         var g = e.target.closest('[data-dp-go]'); if (g) { prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint(); return; }
         var f = e.target.closest('.dp-f'); if (f) { toggle(+f.getAttribute('data-i'), e.shiftKey); return; }
-        if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(JSON.stringify(keys), at); }
+        if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(keys, at); }
       });
       el.addEventListener('keydown', function (e) {
         var f = e.target.closest && e.target.closest('.dp-f');
         if (f && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(+f.getAttribute('data-i'), e.shiftKey); }
-        else if (f && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); var n = f[e.key === 'ArrowDown' ? 'nextElementSibling' : 'previousElementSibling']; if (n && n.classList.contains('dp-f')) n.focus(); }
+        else if (f && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(e.key)) {
+          // setas na grelha (as colunas contam-se pelo desenho: mudam com a largura)
+          e.preventDefault();
+          var cells = $$('.dp-f', list), cols = cells.filter(function (c) { return c.offsetTop === cells[0].offsetTop; }).length;
+          var j = CCL.gridStep(cells.indexOf(f), e.key, cols, cells.length);
+          if (j >= 0) { cells[j].focus(); if (cells[j].scrollIntoView) cells[j].scrollIntoView({ block: 'nearest' }); }
+        }
       });
       q.addEventListener('input', function () { last = -1; paint(); });
       el.hidden = false; q.focus();
       driveApi({ do: 'catalog' }).then(function (j) {
+        if (!el.isConnected) return;
         if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; return; }
         objs = (j.objects || []).filter(function (o) { return o.k.slice(-1) !== '/'; });
         roots = j.roots || [];
+        hasTh = new Set(j.thumbs || []);
         var have = {}; objs.forEach(function (o) { have[o.k] = o; });
         recents = (j.recents || []).map(function (r) { return have[r.k]; }).filter(Boolean);
         paint();
@@ -2143,7 +2234,7 @@
     }
     function addDrive(keys, at) {
       var p = at || spot(300), row = Up.add('Da Drive');
-      return api('drive_add', { board: B.id, keys: keys, x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
+      return api('drive_add', { board: B.id, keys: typeof keys === 'string' ? keys : JSON.stringify(keys), x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
         row.done();
         B.rev = j.rev;
         if (j.cards.length) {

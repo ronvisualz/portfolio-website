@@ -143,6 +143,7 @@ if ($boardId) {
 <script src="<?= asset_url('vendor/rt/topper-rt.js') ?>" defer></script>
 <?php endif; ?>
 <script src="<?= asset_url('drive/core.js') ?>" defer></script>
+<script src="<?= asset_url('drive/upload.js') ?>" defer></script><?php /* TD.thumbs: as miniaturas da Drive no seletor «Da Drive» */ ?>
 <script src="<?= asset_url('cc_audio.js') ?>" defer></script>
 <script src="<?= asset_url('cc_rt.js') ?>" defer></script>
 <script src="<?= asset_url('cc_logic.js') ?>" defer></script>

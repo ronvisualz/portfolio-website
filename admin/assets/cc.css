@@ -656,7 +656,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-upmenu button { display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 9px 10px; border-radius: 8px; font: 500 13px var(--body); color: var(--fg); cursor: pointer; min-height: 40px; }
 .cc-upmenu button:hover, .cc-upmenu button:focus-visible { background: var(--chip); outline: none; }
 .cc-dpick-back { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,.4); display: grid; place-items: center; padding: 16px; }
-.cc-dpick { width: min(640px, 100%); max-height: min(720px, calc(100vh - 32px)); display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.cc-dpick { width: min(880px, 100%); max-height: min(720px, calc(100vh - 32px)); display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
 .cc-dpick .dp-h { padding: 16px 18px 10px; display: flex; flex-direction: column; gap: 10px; }
 .cc-dpick .dp-h h3 { margin: 0; }
 .cc-dpick .dp-crumb { padding: 0 18px 8px; font-size: 12.5px; color: var(--mute); }
@@ -671,9 +671,21 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-ck { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--mute); border-radius: 4px; display: grid; place-items: center; }
 .cc-dpick .dp-f.on .dp-ck { background: var(--hi); border-color: var(--hi); }
 .cc-dpick .dp-f.on .dp-ck::after { content: ''; width: 8px; height: 4px; border: 2px solid #111; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
-.cc-dpick .dp-f span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cc-dpick .dp-f span b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-dpick .dp-f .dp-nm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cc-dpick .dp-f .dp-nm b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-dpick .dp-f small { color: var(--mute); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* §33.9: grelha com pré-visualização, como a «Grelha» da Drive (o CSS da Drive não está nesta página: classes próprias) */
+.cc-dpick .dp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; padding: 6px 0; }
+.cc-dpick .dp-grid .dp-f { position: relative; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: 12px; }
+.cc-dpick .dp-grid .dp-f.on { box-shadow: inset 0 0 0 2px var(--hi); }
+.cc-dpick .dp-grid .dp-ck { position: absolute; top: 12px; left: 12px; z-index: 1; width: 20px; height: 20px; border-radius: 6px; background: var(--raise); }
+.cc-dpick .dp-th { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden; background: var(--chip); color: var(--mute); }
+.cc-dpick .dp-th img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+.cc-dpick .dp-th svg { width: 40px; height: 40px; }
+.cc-dpick .dp-ext { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: 5px; background: var(--raise); color: var(--fg); font: 700 10px/1.4 var(--body); letter-spacing: .04em; }
+.cc-dpick .dp-play { position: absolute; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: rgba(0,0,0,.55); }
+.cc-dpick .dp-play::after { content: ''; margin-left: 3px; border-style: solid; border-width: 7px 0 7px 11px; border-color: transparent transparent transparent #fff; }
+.cc-dpick .dp-grid .dp-nm { padding: 0 2px 2px; }
 .cc-dpick .dp-f-bar { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
 .cc-dpick .dp-f-bar span { flex: 1; }
 .ccb-gone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; background: var(--warn-bg, #fff4d6); color: var(--warn-fg, #7a5300); border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -704,6 +716,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .ccd-pal .ccd-pm { min-width: 44px; }
   .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
 }
+@media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 @media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }
 @media (pointer: coarse) and (max-width: 640px) { .ccb-tools.wide button { width: 44px; } }
 .ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
