@@ -78,6 +78,12 @@ if (strncmp($key, 'r2:', 3) === 0) {
     require_once __DIR__ . '/inc/drive.php';
     $dk = substr($key, 3);
     if (!drive_hidden($dk) && ($public || !drive_can_see($dk))) ccf_404();
+    // com o mover instantâneo ainda na fila, o ficheiro continua fisicamente na origem: lê-se de lá (como a Drive);
+    // a permissão é a do sítio onde o ficheiro está para o utilizador (verificada acima)
+    if (!drive_hidden($dk)) {
+        require_once __DIR__ . '/inc/drive_moves.php';
+        $key = 'r2:' . drive_resolve($pdo, $dk);
+    }
 }
 if ($mime === '' || $size > 0) {
     $ext = strtolower(pathinfo($key, PATHINFO_EXTENSION));

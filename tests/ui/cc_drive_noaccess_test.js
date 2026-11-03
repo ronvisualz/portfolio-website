@@ -49,17 +49,12 @@ const setup = JSON.parse(execFileSync('php', ['-r', `require "tests/boot.php"; r
   check(/Sem acesso a este ficheiro/.test(await side.innerText().catch(() => '')), 'o Detalhe diz «Sem acesso a este ficheiro» (' + (await side.innerText().catch(() => '')).slice(0, 120) + ')');
   check(await side.locator('[data-d], button:has-text("Guardar")').count() === 0, 'o Detalhe não tem «Guardar», «Analisar outra vez», «Mais como este» nem «Apagar»');
   check(await side.locator('input, textarea, select').count() === 0, 'o Detalhe não tem campos para editar');
-  // a Biblioteca: a gaveta da mesma referência também só diz «Sem acesso»
+  // a Biblioteca: o recibo nem aparece (nada de mosaico vazio «Sem acesso»; as pesquisas e os números também não o contam)
   await p.goto(BASE + '/admin/toppernote.php?t=biblioteca');
-  const tile = p.locator('.ccl-tile[data-id="' + setup.asset + '"]');
-  await tile.waitFor({ timeout: 10000 }).catch(() => {});
-  check(await tile.count() === 1, 'a referência aparece na Biblioteca');
-  await tile.click().catch(() => {});
-  const drawer = p.locator('.ccd');
-  await drawer.locator('.ccd-b').waitFor({ timeout: 5000 }).catch(() => {});
+  await p.locator('.ccl-tile').first().waitFor({ timeout: 10000 }).catch(() => {});
   await p.waitForTimeout(800);
-  check(/Sem acesso a este ficheiro/.test(await drawer.innerText().catch(() => '')), 'a gaveta da Biblioteca diz «Sem acesso a este ficheiro»');
-  check(await drawer.locator('[data-d], input, textarea, select').count() === 0, 'a gaveta da Biblioteca não tem campos nem ações');
+  check(await p.locator('.ccl-tile').count() > 0 && await p.locator('.ccl-tile[data-id="' + setup.asset + '"]').count() === 0,
+        'a Biblioteca abre com as outras referências, sem o recibo');
   check(fileReqs.length === 0, 'nenhum pedido ao ficheiro do recibo depois do Detalhe e da Biblioteca (' + fileReqs.join(' ') + ')');
   check(errs.length === 0, 'sem erros de JavaScript (' + errs.join(' | ') + ')');
   // ── quem tem o Financeiro ──
@@ -71,6 +66,10 @@ const setup = JSON.parse(execFileSync('php', ['-r', `require "tests/boot.php"; r
   await q.waitForFunction(id => { const i = document.querySelector('.ccc[data-id="' + id + '"] img'); return i && i.complete && i.naturalWidth > 0; }, setup.card, { timeout: 8000 }).catch(() => {});
   check(await c1.locator('img').evaluate(i => i.naturalWidth > 0).catch(() => false), 'quem tem o Financeiro vê a miniatura');
   check(!/Sem acesso/.test(await c1.innerText().catch(() => '')), 'e não vê o aviso «Sem acesso»');
+  await q.goto(BASE + '/admin/toppernote.php?t=biblioteca');
+  const t1 = q.locator('.ccl-tile[data-id="' + setup.asset + '"]');
+  await t1.waitFor({ timeout: 10000 }).catch(() => {});
+  check(await t1.count() === 1, 'quem tem o Financeiro encontra o recibo na Biblioteca');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);

@@ -442,7 +442,8 @@ function cc_pdf_refs(PDO $pdo, array $ids): array {
     $out = [];
     foreach (array_slice($ids, 0, 6) as $id) {
         $a = cc_asset_get($pdo, (int)$id);
-        $key = $a ? cc_thumb_pick($a['thumbs'], 768) : null;
+        if (!$a || cc_asset_billing($a)) continue;   // §33.9: o cliente nunca recebe um ficheiro da Faturação
+        $key = cc_thumb_pick($a['thumbs'], 768);
         if (!$key) continue;
         try { $img = cc_gd_open(cc_store_get($key, 8388608)); } catch (Throwable $e) { $img = null; }
         if (!$img) continue;

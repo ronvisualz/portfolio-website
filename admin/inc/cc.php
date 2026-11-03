@@ -679,6 +679,12 @@ function cc_asset_blocked(array $a): bool {
     return $k !== '' && !drive_can_see($k);
 }
 
+/** A referência é um ficheiro da Faturação (seja quem for que pede): nunca vai para o cliente nem para a IA. */
+function cc_asset_billing(array $a): bool {
+    $k = cc_asset_drive_key($a);
+    return $k !== '' && drive_billing($k);
+}
+
 /**
  * §33.9: os ids das referências que esta pessoa não vê (cc_asset_blocked), para as pesquisas, os números e os
  * parecidos as deixarem de fora; senão um pedaço do nome, da legenda ou da cor dizia que o recibo existe (e o total
@@ -747,7 +753,6 @@ function cc_asset_public(array $a, bool $full = false): array {
             $out['drive_path'] = drive_parent($k);
         }
     }
-    $dk = cc_asset_drive_key($a);
     if (cc_asset_blocked($a)) {
         // §33.9: só o número e o tipo; o resto vazio (com o mesmo formato, para a interface não falhar)
         $keep = ['id' => 1, 'kind' => 1, 'origin' => 1, 'inbox' => 1];
@@ -756,7 +761,7 @@ function cc_asset_public(array $a, bool $full = false): array {
             $out[$f] = is_array($v) ? [] : (is_int($v) ? 0 : (is_float($v) ? 0.0 : (is_bool($v) ? false : ($v === null ? null : ''))));
         }
         $out['noaccess'] = true;
-    } elseif ($dk !== '' && drive_billing($dk)) {
+    } elseif (cc_asset_billing($a)) {
         $out['restricted'] = true;   // nem todos o veem: o tempo real não o publica (cada um recebe-o do servidor)
     }
     return $out;

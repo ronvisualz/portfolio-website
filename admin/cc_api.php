@@ -144,8 +144,9 @@ case 'boards': {
     if ($rows) {
         $ids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
         // capa: as primeiras 4 imagens do Topperboard (ou dos sub-Topperboards)
+        // §33.9: sem as que esta pessoa não vê (a miniatura daria 404)
         $cs = $pdo->query("SELECT COALESCE(p.parent_id, p.id) AS root, a.id, a.sha1 FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id JOIN cc_boards p ON p.id = c.board_id
-                            WHERE (p.id IN ($ids) OR p.parent_id IN ($ids)) AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL ORDER BY c.id LIMIT 2000");
+                            WHERE (p.id IN ($ids) OR p.parent_id IN ($ids)) AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL" . cc_blocked_sql($pdo, 'a.id') . " ORDER BY c.id LIMIT 2000");
         foreach ($cs->fetchAll() as $c) {
             $r = (int)$c['root'];
             if (count($covers[$r] ?? []) < 4) $covers[$r][] = '/admin/cc_file.php?a=' . (int)$c['id'] . '&s=256&v=' . substr((string)$c['sha1'], 0, 8);
@@ -287,11 +288,13 @@ case 'asset': {
                                           'caption' => (string)(json_decode((string)$f['analysis'], true)['caption'] ?? ''), 'pal' => array_column(cc_palette_hex($f['palette'], 5), 'hex')],
                                cc_frames($pdo, (int)$x['id']));
     $pub['palette'] = cc_palette_hex($x['palette'], 8);
-    if (!empty($pub['noaccess'])) { $pub['frames'] = []; $pub['palette'] = []; }   // §33.9: da Faturação, sem o Financeiro
+    // §33.9: da Faturação, sem o Financeiro: nem os frames, a paleta, os Topperboards onde está ou o negócio
+    $hidden = !empty($pub['noaccess']);
+    if ($hidden) { $pub['frames'] = []; $pub['palette'] = []; }
     $st = $pdo->prepare("SELECT DISTINCT b.id, b.title, b.kind FROM cc_cards c JOIN cc_boards b ON b.id = c.board_id WHERE c.asset_id = ? AND c.deleted_at IS NULL AND b.status <> 'deleted' ORDER BY b.id DESC LIMIT 20");
     $st->execute([(int)$x['id']]);
-    $pub['boards'] = array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => $r['kind']], $st->fetchAll());
-    if ($x['deal_id']) {
+    $pub['boards'] = $hidden ? [] : array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => $r['kind']], $st->fetchAll());
+    if ($x['deal_id'] && !$hidden) {
         $d = $pdo->query('SELECT code, name, disclose FROM deals WHERE id = ' . (int)$x['deal_id'])->fetch();
         if ($d) $pub['deal'] = ['code' => (string)$d['code'], 'name' => (string)$d['name'], 'disclose' => (string)($d['disclose'] ?? '')];
     }

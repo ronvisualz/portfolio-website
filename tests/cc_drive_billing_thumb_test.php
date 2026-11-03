@@ -60,11 +60,27 @@ t_true(str_contains($j1['body'], $NAME) && $c1 && empty($c1['noaccess']) && ($c1
 // para o tempo real não espalhar o cartão a quem não o pode ver: quem o vê recebe a marca «restrito»
 t_true(!empty($c1['asset']['restricted']), 'quem tem o Financeiro recebe o cartão marcado «restrito» (o tempo real não o publica inteiro)');
 t_true(empty($c3['asset']['restricted']) || !empty($c3['noaccess']), 'quem não tem o Financeiro só tem a marca «sem acesso»');
+// a capa do Topperboard na lista (as primeiras imagens) não pede a miniatura que daria 404
+$covers = function (int $uid) use ($BID): ?array {
+    foreach (tests_http('GET', '/admin/cc_api.php?a=boards&q=' . rawurlencode('Teste33 · faturação'), [], $uid)['json']['boards'] ?? [] as $r) if ((int)$r['id'] === $BID) return $r['covers'];
+    return null;
+};
+$cv3 = $covers(3);
+t_true(is_array($cv3) && !str_contains(json_encode($cv3), "a=$aid&"), 'a capa do Topperboard na lista não usa o recibo para quem não tem o Financeiro (' . json_encode($cv3) . ')');
+t_true(str_contains(json_encode($covers(1)), "a=$aid&"), 'quem tem o Financeiro vê o recibo na capa');
 
 // ── os outros caminhos para a mesma referência ──
+$dealAny = (int)$pdo->query('SELECT id FROM deals ORDER BY id DESC LIMIT 1')->fetchColumn();
+$pdo->exec("UPDATE cc_assets SET deal_id = $dealAny WHERE id = $aid");   // a ficha também diz o negócio
 $d3 = tests_http('GET', "/admin/cc_api.php?a=asset&id=$aid", [], 3);
 t_true($d3['code'] === 200 && !str_contains($d3['body'], $NAME) && ($d3['json']['asset']['frames'] ?? null) === [], 'a ficha da referência não traz o nome nem os frames');
-t_true(str_contains(tests_http('GET', "/admin/cc_api.php?a=asset&id=$aid", [], 1)['body'], $NAME), 'quem tem o Financeiro vê a ficha');
+$d1 = tests_http('GET', "/admin/cc_api.php?a=asset&id=$aid", [], 1);
+t_true(str_contains($d1['body'], $NAME), 'quem tem o Financeiro vê a ficha');
+t_true(($d3['json']['asset']['boards'] ?? null) === [] && !isset($d3['json']['asset']['deal']),
+       'nem em que Topperboards está, nem o negócio (' . json_encode([$d3['json']['asset']['boards'] ?? null, $d3['json']['asset']['deal'] ?? null]) . ')');
+t_true(in_array($BID, array_map('intval', array_column($d1['json']['asset']['boards'] ?? [], 'id')), true) && isset($d1['json']['asset']['deal']),
+       'quem tem o Financeiro vê em que Topperboards está e o negócio');
+$pdo->exec("UPDATE cc_assets SET deal_id = NULL WHERE id = $aid");
 t_true(!str_contains(tests_http('GET', '/admin/cc_api.php?a=library&q=' . $NAME, [], 3)['body'], $NAME), 'a Biblioteca não traz o nome');
 t_true(!str_contains(tests_http('GET', "/admin/cc_api.php?a=jobs&ids=$aid", [], 3)['body'], $NAME), 'o estado das análises não traz o nome');
 
@@ -170,6 +186,17 @@ $r1 = $refs(1);
 t_true($has($r1['json'] ?? [], $aid), '«Referências para o brief» pelas palavras traz o recibo a quem tem o Financeiro (' . substr($r1['body'], 0, 120) . ')');
 t_true(!$has($refs(3)['json'] ?? [], $aid), '«Referências para o brief» não traz o recibo a quem não tem o Financeiro');
 $pdo->exec("DELETE FROM cc_ai_usage WHERE id = $capRow");
+// a Biblioteca deixa de mostrar mosaicos vazios «sem acesso» (o que a pessoa não vê não vem)
+t_true(!array_filter($l3['items'] ?? [], fn($x) => !empty($x['noaccess'])), 'a Biblioteca de quem não tem o Financeiro não tem mosaicos «sem acesso»');
+
+// ── o tratamento para imprimir: a imagem do recibo (e o título no alt) só para quem tem o Financeiro ──
+$pdo->prepare("INSERT INTO cc_pages (board_id, lane, data) VALUES (?, 'T', ?)")
+    ->execute([$BID, json_encode(['title' => 'Tratamento do teste', 'logline' => '', 'sections' => [['heading' => 'Uma', 'body' => 'texto', 'refs' => [$aid]]]])]);
+$tp = fn(int $uid) => tests_http('GET', "/admin/toppernote.php?print=treatment&b=$BID", [], $uid);
+$tp3 = $tp(3);
+t_true($tp3['code'] === 200 && str_contains($tp3['body'], 'Tratamento do teste') && !str_contains($tp3['body'], "a=$aid&") && !str_contains($tp3['body'], $NAME),
+       'o tratamento para imprimir não traz a imagem nem o título do recibo a quem não tem o Financeiro');
+t_true(str_contains($tp(1)['body'], "a=$aid&"), 'quem tem o Financeiro vê a imagem no tratamento');
 
 // ── apagado da Drive: o aviso do Topperboard também não diz o nome ──
 $t = tests_http('POST', '/admin/drive_api.php', ['do' => 'trash', 'key' => $bill], 1);
@@ -200,6 +227,21 @@ $okKey = tests_put("Biblioteca criativa/Teste33-$NAME/ok.png", $okBytes, 'image/
 $pdo->prepare('UPDATE cc_assets SET file_key = ? WHERE id = ?')->execute(['r2:' . $okKey, $okId]);
 t_eq($code("/admin/cc_file.php?pt=$token&a=$okId&s=256", 0), 302, 'a página do cliente mostra uma referência cujo original está na Drive (fora da Faturação)');
 t_eq($code("/admin/cc_file.php?pt=$token&a=$aid&s=256", 0), 404, 'a página do cliente não serve a miniatura de um ficheiro da Faturação');
+// o PDF da proposta e o portal do cliente também nunca levam a Faturação (seja quem for que os gera)
+require_once __DIR__ . '/../admin/inc/budget_pdf.php';
+t_eq(count(cc_pdf_refs($pdo, [$aid, $okId])), 1, 'o PDF da proposta só desenha a referência que não é da Faturação');
+$BP = cc_board_create($pdo, ['title' => 'Teste33 · portal', 'kind' => 'free', 'deal_id' => $dealAny], 1);
+$pdo->prepare("INSERT INTO cc_pages (board_id, lane, data) VALUES (?, 'T', ?)")
+    ->execute([$BP, json_encode(['title' => 'Portal', 'logline' => '', 'sections' => [['heading' => 'x', 'body' => 'y', 'refs' => [$aid, $okId]]]])]);
+$ptok = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+$pdo->prepare("INSERT INTO cc_share (deal_id, token_hash, boards, tabs, expires_on, created_by, created_at) VALUES (?, ?, ?, 'boards', ?, 1, NOW())")
+    ->execute([$dealAny, hash('sha256', $ptok), (string)$BP, date('Y-m-d', time() + 86400)]);
+$shareId = (int)$pdo->lastInsertId();
+t_eq($code("/admin/portal.php?t=$ptok&ref=$okId", 0), 302, 'o portal do cliente mostra a referência do tratamento');
+t_eq($code("/admin/portal.php?t=$ptok&ref=$aid", 0), 404, 'o portal do cliente não serve a miniatura de um ficheiro da Faturação');
+$pdo->exec("DELETE FROM cc_share WHERE id = $shareId");
+$pdo->exec("DELETE FROM cc_pages WHERE board_id = $BP");
+$pdo->exec("UPDATE cc_boards SET status = 'deleted' WHERE id = $BP");
 $pdo->exec("DELETE FROM cc_pages WHERE board_id = $BID");
 $pdo->exec("DELETE FROM proposals WHERE id = $pid");
 $pdo->exec("DELETE FROM cc_frames WHERE id = $fid");
@@ -216,6 +258,12 @@ t_eq(count($rm['json']['cards'] ?? []), 1, 'o ficheiro a caminho do sítio novo 
 $mAid = (int)($rm['json']['cards'][0]['asset']['id'] ?? 0);
 t_true(empty($rm['json']['cards'][0]['asset']['restricted']), 'um ficheiro da Drive fora da Faturação não é «restrito»');
 t_eq((string)$pdo->query("SELECT file_key FROM cc_assets WHERE id = $mAid")->fetchColumn(), 'r2:' . $mvNew, 'o cartão aponta para o sítio novo');
+// o original abre-se já (lê-se de onde ainda está fisicamente, como a Drive)
+$o = tests_http('GET', "/admin/cc_file.php?a=$mAid&s=0", [], 1);
+$loc = (string)($o['headers']['location'] ?? '');
+if ($loc !== '' && $loc[0] === '/') $loc = TESTS_BASE . $loc;
+$ob = $o['code'] === 302 && $loc !== '' ? tests_curl('GET', $loc, null, null, []) : ['code' => 0, 'body' => ''];
+t_true($ob['code'] === 200 && str_starts_with($ob['body'], 'mover '), 'o original abre-se com o movimento ainda na fila (' . $o['code'] . ' → ' . $ob['code'] . ')');
 drive_moves_run($pdo, 60);
 t_eq((string)$pdo->query("SELECT file_key FROM cc_assets WHERE id = $mAid")->fetchColumn(), 'r2:' . $mvNew, 'e continua lá depois de a fila correr');
 
@@ -225,4 +273,10 @@ $rk = tests_http('POST', '/admin/cc_api.php?a=drive_add', ['board' => $BID, 'key
 t_true(is_array($rk['json']) && count($rk['json']['cards'] ?? []) === 1 && str_contains((string)($rk['json']['msg'] ?? ''), '2 sem acesso'),
        'só a chave válida entra; as outras duas contam como ignoradas (' . substr($rk['body'], 0, 200) . ')');
 t_true(!preg_match('/Warning|Notice|Array to string/i', $rk['body']), 'sem avisos do PHP na resposta');
+
+// ── a IA do Topperboard não recebe os ficheiros da Faturação como contexto (o que escreve fica à vista de todos) ──
+require_once __DIR__ . '/../admin/inc/cc_ai.php';
+$ctx = cc_board_refs_text($pdo, $BID);
+t_true(str_contains($ctx, "#$mAid ·") && !str_contains($ctx, "#$aid ·") && !str_contains($ctx, "#$auId ·") && !str_contains($ctx, $NAME),
+       'o contexto da IA tem as referências do Topperboard menos as da Faturação (' . mb_substr($ctx, 0, 200) . ')');
 t_done();

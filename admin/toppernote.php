@@ -64,7 +64,7 @@ if (($_GET['print'] ?? '') === 'treatment') {
   <?php foreach ((array)$doc['sections'] as $s): ?>
     <h2><?= e((string)($s['heading'] ?? '')) ?></h2>
     <p><?= e((string)($s['body'] ?? '')) ?></p>
-    <?php $imgs = array_filter(array_map(fn($id) => $rows[(int)$id] ?? null, (array)($s['refs'] ?? [])), fn($x) => $x && $x['thumbs']); ?>
+    <?php $imgs = array_filter(array_map(fn($id) => $rows[(int)$id] ?? null, (array)($s['refs'] ?? [])), fn($x) => $x && $x['thumbs'] && !cc_asset_blocked($x)); ?>
     <?php if ($imgs): ?><div class="refs"><?php foreach (array_slice($imgs, 0, 6) as $x): ?><img src="<?= e(cc_file_url($x, 768)) ?>" alt="<?= e((string)$x['title']) ?>"><?php endforeach; ?></div><?php endif; ?>
   <?php endforeach; ?>
 </main></body></html><?php
