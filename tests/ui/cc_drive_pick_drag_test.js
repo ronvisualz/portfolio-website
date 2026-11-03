@@ -1,6 +1,7 @@
 // «Juntar da Drive» — arrastar para o Topperboard (§33.9): do seletor (arrasto real do rato) o cartão fica onde se larga
 // (na grelha), o seletor fecha e Ctrl+Z tira-o; com 2 escolhidos entram os 2; um não escolhido entra sozinho; largar fora
-// do Topperboard devolve o diálogo como estava; um clique durante um arrasto preso não fecha o diálogo. Da página da Drive
+// do Topperboard devolve o diálogo como estava; um clique que mexe uns píxeis não junta nada nem fecha o diálogo; um
+// clique durante um arrasto preso não fecha o diálogo. Da página da Drive
 // (outro separador): o que a Drive põe no arrasto entra no Topperboard; pastas ditas à parte; mais de 30 ficheiros entram
 // todos (pedidos de 30).   node tests/ui/cc_drive_pick_drag_test.js
 const { chromium } = require('playwright');
@@ -111,8 +112,43 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   check(st && !st.drag && st.pe === 'auto' && st.op === '1', 'o diálogo volta como estava (' + JSON.stringify(st) + ')');
   check(/Adicionar 2/.test(await dlg.locator('[data-dp-add]').innerText().catch(() => '')) && await dlg.locator('.dp-f[aria-pressed="true"]').count() === 2, 'com a mesma escolha («Adicionar 2»)');
 
-  // C6: arrasto preso (sem dragend): um clique no fundo não fecha o diálogo e devolve-o
-  await cell(dlg, 'b.png').evaluate(el => el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })));
+  // C7: um clique que mexe uns píxeis (o Chromium começa o arrasto aos 4 px; no trackpad e com Shift/Ctrl é comum) não
+  // é um largar no Topperboard: o diálogo não desaparece, nada entra e a escolha fica
+  for (const [nm, dx, dy] of [['b.png', 6, 0], ['a.png', 4, 4], ['b.png', 0, 16]]) {
+    const tag = nm + ' +' + dx + ',' + dy + ' px';
+    if (!await p.locator('.cc-dpick').count()) { dlg = await open(); await cell(dlg, 'a.png').click(); await cell(dlg, 'c.png').click(); }   // o caso anterior fechou-o
+    const nB = await cards();
+    const a = await cell(dlg, nm).boundingBox();
+    const x0 = Math.round(a.x + a.width / 2), y0 = Math.round(a.y + a.height / 3);
+    await p.mouse.move(x0, y0); await p.mouse.down();
+    await p.mouse.move(x0 + dx, y0 + dy, { steps: 3 });
+    await p.waitForTimeout(250);
+    const m = await midState();
+    await p.mouse.up(); await p.waitForTimeout(700);
+    check(m.op === '1' && m.pe !== 'none', tag + ': com o botão em baixo o diálogo continua à vista (' + JSON.stringify(m) + ')');
+    check(await cards() === nB, tag + ': nada entra no Topperboard (' + (await cards() - nB) + ' cartões novos)');
+    const s7 = await p.evaluate(() => { const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick'); return bk && d ? { drag: bk.classList.contains('is-dragging'), pe: getComputedStyle(bk).pointerEvents, op: getComputedStyle(d).opacity } : null; });
+    check(s7 && !s7.drag && s7.pe === 'auto' && s7.op === '1', tag + ': o diálogo fica aberto como estava (' + JSON.stringify(s7) + ')');
+    check(s7 && /Adicionar 2/.test(await dlg.locator('[data-dp-add]').innerText().catch(() => '')) && await dlg.locator('.dp-f[aria-pressed="true"]').count() === 2, tag + ': com a mesma escolha («Adicionar 2»)');
+  }
+  if (!await p.locator('.cc-dpick').count()) dlg = await open();
+
+  // C6: arrasto preso antes de sair do sítio (sem dragover longe nem dragend): o diálogo continua à vista e o clique
+  // seguinte numa célula escolhe-a (não é engolido)
+  const pk = await dlg.locator('.dp-f[aria-pressed="true"]').count();
+  await cell(dlg, 'b.png').evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 3, dataTransfer: new DataTransfer() })); });
+  await p.waitForTimeout(150);
+  check(await p.evaluate(() => !document.querySelector('.cc-dpick-back').classList.contains('is-dragging')), 'arrasto preso no sítio: o diálogo continua à vista (sem is-dragging)');
+  const bb = await cell(dlg, 'b.png').boundingBox(), clickB = () => p.mouse.click(Math.round(bb.x + bb.width / 2), Math.round(bb.y + bb.height / 3));   // o rato real (sem as esperas do Playwright)
+  await clickB(); await p.waitForTimeout(150);
+  check(await dlg.locator('.dp-f[aria-pressed="true"]').count() === pk + 1 && await cell(dlg, 'b.png').getAttribute('aria-pressed') === 'true', 'e o clique seguinte escolhe a célula');
+  if (await cell(dlg, 'b.png').getAttribute('aria-pressed') === 'true') { await clickB(); await p.waitForTimeout(150); }
+  // C6: arrasto preso (sem dragend) depois de sair do sítio: um clique no fundo não fecha o diálogo e devolve-o
+  await cell(dlg, 'b.png').evaluate(el => {
+    const r = el.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 3, dt = new DataTransfer();
+    el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }));
+    el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x + 120, clientY: y + 60, dataTransfer: dt }));
+  });
   await p.waitForTimeout(150);
   check(await p.evaluate(() => document.querySelector('.cc-dpick-back').classList.contains('is-dragging')), 'arrasto começado (is-dragging)');
   const d6 = await dlg.boundingBox();

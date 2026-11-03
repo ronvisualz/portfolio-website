@@ -2021,20 +2021,33 @@
         }
       });
       // ── arrastar para o Topperboard: o escolhido (ou todos os escolhidos) vai para onde se larga ──
-      // Durante o arrasto o diálogo fica transparente e deixa passar o rato (is-dragging); largar na tela junta e fecha
-      // (pickDrag, chamado pelo drop da tela); largar noutro sítio devolve o diálogo como estava (dragend). Se o dragend
-      // não chegar (arrasto perdido), o próximo toque/clique ou 15 s sem eventos de arrasto devolvem o diálogo.
-      var drag = null;
+      // Quando o rato se afasta do sítio onde começou (DRAG_OUT px), o diálogo fica transparente e deixa passar o rato
+      // (is-dragging); largar na tela junta e fecha (pickDrag, chamado pelo drop da tela); largar noutro sítio devolve o
+      // diálogo como estava (dragend). Antes disso o diálogo fica à vista e por cima da tela: um clique que mexe uns
+      // píxeis (o browser começa o arrasto aos 4 px) acaba no próprio diálogo e não junta nada. Se o dragend não chegar
+      // (arrasto perdido), o próximo toque/clique ou 15 s sem eventos de arrasto devolvem o diálogo.
+      var drag = null, DRAG_OUT = 24;
       function endDrag(restore) {
         if (!drag) return;
         var d = drag; drag = null;
         if (pickDrag === d.api) pickDrag = null;
-        clearTimeout(d.watch); clearTimeout(d.start);
+        clearTimeout(d.watch);
         document.removeEventListener('pointerdown', d.down, true);
         el.classList.remove('is-dragging'); hint.textContent = '';
         if (restore && d.cell.isConnected) d.cell.focus();
       }
       function watchdog() { if (!drag) return; clearTimeout(drag.watch); drag.watch = setTimeout(function () { endDrag(true); }, 15000); }
+      // o rato saiu do sítio: o diálogo deixa ver e largar na tela (nunca no próprio dragstart: mudar o estilo da origem
+      // aí cancela o arrasto no Chromium)
+      el.addEventListener('dragover', function (e) {
+        var d = drag;
+        if (!d || d.out || Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_OUT) return;
+        d.out = true;
+        var r = vp.getBoundingClientRect();   // a dica no topo da tela, ao meio
+        hint.style.left = Math.round(r.left + r.width / 2) + 'px'; hint.style.top = Math.round(r.top + 16) + 'px';
+        el.classList.add('is-dragging');
+        hint.textContent = 'Largue no Topperboard para juntar.';
+      });
       el.addEventListener('dragstart', function (e) {
         var f = e.target.closest && e.target.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
         if (!o || !e.dataTransfer) { if (!f) return; e.preventDefault(); return; }
@@ -2049,19 +2062,14 @@
         document.body.appendChild(g);
         try { dt.setDragImage(g, -12, -8); } catch (err) { /* sem imagem */ }
         setTimeout(function () { g.remove(); }, 0);
-        var d = drag = { cell: f, keys: keys, watch: 0 };
+        var fr = f.getBoundingClientRect(), hasXY = e.clientX || e.clientY;
+        var d = drag = { cell: f, keys: keys, watch: 0, out: false,
+          x0: hasXY ? e.clientX : fr.left + fr.width / 2, y0: hasXY ? e.clientY : fr.top + fr.height / 2 };
         d.api = pickDrag = { close: close };
-        // arrasto perdido: o próximo toque devolve o diálogo (e não chega à tela nem fecha o diálogo)
-        d.down = function (ev) { ev.stopPropagation(); ev.preventDefault(); endDrag(true); };
-        // a classe só no tick seguinte: mudar o estilo da origem no próprio dragstart cancela o arrasto no Chromium
-        d.start = setTimeout(function () {
-          if (drag !== d) return;
-          var r = vp.getBoundingClientRect();   // a dica no topo da tela, ao meio
-          hint.style.left = Math.round(r.left + r.width / 2) + 'px'; hint.style.top = Math.round(r.top + 16) + 'px';
-          el.classList.add('is-dragging');
-          hint.textContent = 'Largue no Topperboard para juntar.';
-          document.addEventListener('pointerdown', d.down, true);
-        }, 0);
+        // arrasto perdido: com o diálogo transparente, o próximo toque devolve-o (e não chega à tela nem fecha o diálogo);
+        // ainda à vista, o toque segue normalmente
+        d.down = function (ev) { if (d.out) { ev.stopPropagation(); ev.preventDefault(); endDrag(true); } else endDrag(false); };
+        document.addEventListener('pointerdown', d.down, true);
         watchdog();
       });
       el.addEventListener('drag', watchdog);
