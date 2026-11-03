@@ -252,6 +252,46 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   check(tr && (tr.width >= 0.7 * 1180 || tr.height >= 0.7 * 820), 'iPad: a imagem em ecrã inteiro');
   const bb = await t.evaluate(() => [...document.querySelectorAll('.cc-pickfs .pf-bar button')].map(x => Math.min(x.getBoundingClientRect().width, x.getBoundingClientRect().height)));
   check(bb.length >= 3 && bb.every(v => v >= 44), 'iPad: botões da barra com 44 px (' + bb.join(',') + ')');
+  check(/Dois dedos: aproximar/.test(await t.locator('.cc-pickfs .pf-hint').textContent({ timeout: 3000 }).catch(() => '')), 'iPad: a dica fala da pinça');
+  const cdp = await tctx.newCDPSession(t);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id: id || 1 })) });
+  const loupe = () => t.evaluate(() => { const e = document.querySelector('.cc-loupe'); return e && !e.hidden ? e.getBoundingClientRect().toJSON() : null; });
+  const zoomTxt = () => t.locator('.cc-pickfs output').textContent({ timeout: 2000 }).catch(() => '(fechado)');
+  // a lupa fica acima do dedo (ou ao lado, quando não cabe acima) — nunca debaixo do dedo e da mão
+  // (antes: com o dedo na metade de cima da imagem saltava 60 px para baixo do dedo)
+  if (tr) {
+    const fx = Math.round(tr.x + tr.width / 2), spots = [];
+    await touch('touchStart', [[fx, 600]]);
+    for (const fy of [600, 360, 200]) {
+      await touch('touchMove', [[fx, fy]]); await t.waitForTimeout(80);
+      const l = await loupe();
+      spots.push(l && { fy, top: Math.round(l.top), bottom: Math.round(l.bottom), left: Math.round(l.left), right: Math.round(l.right),
+        ok: l.top < fy && (l.bottom <= fy - 24 || l.right <= fx - 24 || l.left >= fx + 24) });
+    }
+    await touch('touchCancel', []); await t.waitForTimeout(200);
+    check(spots.length === 3 && spots.every(s => s && s.ok), 'iPad: a lupa fica acima do dedo ou ao lado, nunca por baixo (' + JSON.stringify(spots) + ')');
+  }
+  // pinça de dois dedos: aproxima à volta do meio e não escolhe nada (antes: o 2.º dedo acrescentava uma cor e fechava)
+  if (tr) {
+    const cx = Math.round(tr.x + tr.width / 2), cy = Math.round(tr.y + tr.height / 2);
+    await touch('touchStart', [[cx - 40, cy, 1]]); await t.waitForTimeout(60);
+    await touch('touchStart', [[cx - 40, cy, 1], [cx + 40, cy, 2]]); await t.waitForTimeout(60);
+    const lp2 = await loupe();
+    for (let i = 1; i <= 5; i++) await touch('touchMove', [[cx - 40 - i * 30, cy, 1], [cx + 40 + i * 30, cy, 2]]);
+    await t.waitForTimeout(100);
+    const zp = await zoomTxt();
+    await touch('touchEnd', [[cx + 190, cy, 2]]);
+    await touch('touchMove', [[cx + 150, cy + 40, 2]]); await t.waitForTimeout(60);
+    const lp1 = await loupe();
+    await touch('touchEnd', []);
+    await t.waitForTimeout(1000);
+    check(adds.length === 0, 'iPad: a pinça não acrescenta nenhuma cor (' + adds.length + ' pedidos)');
+    check(await t.locator('.cc-pickfs').count() === 1, 'iPad: depois da pinça o conta-gotas continua aberto');
+    check(parseInt(zp, 10) > 100, 'iPad: a pinça aproxima (' + zp + ')');
+    check(!lp2 && !lp1, 'iPad: a lupa desaparece com o 2.º dedo e não volta com o dedo que fica (' + JSON.stringify([lp2, lp1]) + ')');
+    await t.keyboard.press('0'); await t.waitForTimeout(150);
+    check(await zoomTxt() === '100%', 'iPad: 0 volta ao ajustado depois da pinça');
+  }
   if (tr) await t.touchscreen.tap(tr.x + tr.width * 0.25, tr.y + tr.height * 0.5);
   await t.waitForTimeout(1000);
   check(adds.length === 1, 'iPad: um toque acrescenta uma vez só (' + adds.length + ' pedidos)');
