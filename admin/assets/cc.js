@@ -2056,6 +2056,8 @@
         // a classe só no tick seguinte: mudar o estilo da origem no próprio dragstart cancela o arrasto no Chromium
         d.start = setTimeout(function () {
           if (drag !== d) return;
+          var r = vp.getBoundingClientRect();   // a dica no topo da tela, ao meio
+          hint.style.left = Math.round(r.left + r.width / 2) + 'px'; hint.style.top = Math.round(r.top + 16) + 'px';
           el.classList.add('is-dragging');
           hint.textContent = 'Largue no Topperboard para juntar.';
           document.addEventListener('pointerdown', d.down, true);

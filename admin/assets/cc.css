@@ -691,7 +691,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick-back.is-dragging { background: transparent; pointer-events: none; }
 .cc-dpick-back.is-dragging .cc-dpick { opacity: 0; }
 .cc-dpick-back .dp-drag-hint { display: none; }
-.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; left: 50%; top: 88px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
+.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; left: 50%; top: 128px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
   background: var(--fg); color: var(--bg); font: 600 13.5px var(--body); box-shadow: var(--shadow-lg); white-space: nowrap; }
 .dp-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 400; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 10px;
   background: var(--fg); color: var(--bg); font: 600 13px/1.2 var(--body); }
