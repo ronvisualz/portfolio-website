@@ -38,6 +38,29 @@ const setup = JSON.parse(execFileSync('php', ['-r', `require "tests/boot.php"; r
   await p.waitForTimeout(500);
   check(await p.locator('.cc-viewer').count() === 0, 'duplo clique não abre o visualizador');
   check(fileReqs.length === 0, 'nenhum pedido ao ficheiro do recibo (' + fileReqs.join(' ') + ')');
+  // o painel «Detalhe» com o cartão escolhido: só o aviso (sem formulário, sem «Guardar», que apagava o título)
+  await p.locator('[data-a="side"]').first().click();
+  await p.waitForTimeout(300);
+  if (!(await p.locator('[data-tab="det"]').isVisible())) { await p.locator('[data-a="side"]').first().click(); await p.waitForTimeout(300); }
+  await p.click('[data-tab="det"]');
+  await card.click({ position: { x: 20, y: 20 } });
+  await p.waitForTimeout(1200);
+  const side = p.locator('[data-side-b]');
+  check(/Sem acesso a este ficheiro/.test(await side.innerText().catch(() => '')), 'o Detalhe diz «Sem acesso a este ficheiro» (' + (await side.innerText().catch(() => '')).slice(0, 120) + ')');
+  check(await side.locator('[data-d], button:has-text("Guardar")').count() === 0, 'o Detalhe não tem «Guardar», «Analisar outra vez», «Mais como este» nem «Apagar»');
+  check(await side.locator('input, textarea, select').count() === 0, 'o Detalhe não tem campos para editar');
+  // a Biblioteca: a gaveta da mesma referência também só diz «Sem acesso»
+  await p.goto(BASE + '/admin/toppernote.php?t=biblioteca');
+  const tile = p.locator('.ccl-tile[data-id="' + setup.asset + '"]');
+  await tile.waitFor({ timeout: 10000 }).catch(() => {});
+  check(await tile.count() === 1, 'a referência aparece na Biblioteca');
+  await tile.click().catch(() => {});
+  const drawer = p.locator('.ccd');
+  await drawer.locator('.ccd-b').waitFor({ timeout: 5000 }).catch(() => {});
+  await p.waitForTimeout(800);
+  check(/Sem acesso a este ficheiro/.test(await drawer.innerText().catch(() => '')), 'a gaveta da Biblioteca diz «Sem acesso a este ficheiro»');
+  check(await drawer.locator('[data-d], input, textarea, select').count() === 0, 'a gaveta da Biblioteca não tem campos nem ações');
+  check(fileReqs.length === 0, 'nenhum pedido ao ficheiro do recibo depois do Detalhe e da Biblioteca (' + fileReqs.join(' ') + ')');
   check(errs.length === 0, 'sem erros de JavaScript (' + errs.join(' | ') + ')');
   // ── quem tem o Financeiro ──
   const q = await b.newPage({ viewport: { width: 1400, height: 900 } });

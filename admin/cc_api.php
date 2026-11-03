@@ -76,6 +76,11 @@ function board_editable(array $b): void {
     cc_board_version_session($pdo, $b, $by);
 }
 
+/** §33.9: um ficheiro da Faturação e quem pede não tem o Financeiro: não o muda, não o analisa, não procura parecidos. */
+function asset_visible(array $x): void {
+    if (cc_asset_blocked($x)) cfail('Sem acesso a este ficheiro.', 403);
+}
+
 /** Os cartões de um pedido em lote, só deste Topperboard. */
 function card_ids(PDO $pdo, int $boardId, $raw): array {
     $ids = array_values(array_unique(array_filter(array_map('intval', (array)$raw))));
@@ -298,6 +303,7 @@ case 'similar': {
     require_once __DIR__ . '/inc/cc_ai.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     release_session();
     $rows = cc_more_like($pdo, $x, 24);
     cout(200, ['ok' => true, 'items' => array_map(fn($r) => cc_asset_public($r[0]) + ['score' => round($r[1], 3)], $rows), 'by' => $x['embedding'] ? 'vetores' : 'etiquetas']);
@@ -555,6 +561,7 @@ case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida
     $c = cc_card_get($pdo, rint('card'));
     if (!$c || (int)$c['board_id'] !== (int)$b['id'] || !$c['asset_id']) cfail('Cartão inválido.');
     $x = cc_asset_get($pdo, (int)$c['asset_id']);
+    if ($x) asset_visible($x);
     release_session();
     $have = array_map('intval', $pdo->query('SELECT asset_id FROM cc_cards WHERE board_id = ' . (int)$b['id'] . ' AND deleted_at IS NULL AND asset_id IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN));
     $vec = cc_vec_unpack($x['embedding'] ?? null);
@@ -661,6 +668,7 @@ case 'upload_done': {
 case 'audio_meta': {   // um áudio já guardado (antigo, ou vindo da Drive): o browser calculou a forma de onda
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x || $x['deleted_at'] || $x['kind'] !== 'audio') cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $set = [];
     if (($pk = audio_peaks_in((string)rq('peaks'))) !== null && (string)$x['peaks'] === '') $set['peaks'] = $pk;
     if ((float)$x['duration'] <= 0 && is_numeric(rq('dur')) && (float)rq('dur') > 0) $set['duration'] = round((float)rq('dur'), 3);
@@ -741,6 +749,7 @@ case 'link_add': {
 case 'asset_save': {
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $in = [];
     foreach (['title', 'caption', 'why', 'composition', 'color', 'movement', 'tags', 'origin', 'acat', 'au_mood', 'au_genre', 'au_use', 'au_instruments', 'au_bpm', 'au_energy', ...array_keys(CC_VOCAB)] as $k) if (isset($_POST[$k])) $in[$k] = (string)$_POST[$k];
     foreach (array_keys(CC_VOCAB) as $k) if (isset($in[$k]) && $in[$k] !== '' && !in_array($in[$k], cc_vocab($pdo, $k), true)) cfail('«' . $in[$k] . '» não está no vocabulário (Definições › Toppernote).');
@@ -752,6 +761,7 @@ case 'asset_delete':
 case 'asset_restore': {
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $del = $a === 'asset_delete';
     $pdo->prepare('UPDATE cc_assets SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE id = ?')->execute($del ? [cc_now(), (int)$x['id']] : [(int)$x['id']]);
     // os Topperboards onde estava atualizam-se (o cartão deixa de aparecer; repor volta a mostrá-lo)
@@ -786,6 +796,7 @@ case 'analyze': {
     require_once __DIR__ . '/inc/cc_stt.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     if (!cc_ai_config()) cfail('A IA do Toppernote ainda não está ligada (Definições › Integrações).');
     // áudio e vídeo sem transcrição: primeiro a fala (se o serviço estiver ligado), depois a análise
     if (cc_ai_queue_asset($pdo, $x, $by, true) === '') {
@@ -953,6 +964,7 @@ case 'palette_add':
 case 'palette_edit': {
     $x = cc_asset_get($pdo, rint('asset'));
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     try {
         $out = $a === 'palette_add' ? cc_palette_add($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('name'), $by)
                                     : cc_palette_edit($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('op'), (string)rq('name'));

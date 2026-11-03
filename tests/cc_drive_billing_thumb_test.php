@@ -68,6 +68,47 @@ t_true(str_contains(tests_http('GET', "/admin/cc_api.php?a=asset&id=$aid", [], 1
 t_true(!str_contains(tests_http('GET', '/admin/cc_api.php?a=library&q=' . $NAME, [], 3)['body'], $NAME), 'a Biblioteca não traz o nome');
 t_true(!str_contains(tests_http('GET', "/admin/cc_api.php?a=jobs&ids=$aid", [], 3)['body'], $NAME), 'o estado das análises não traz o nome');
 
+// ── quem não vê o ficheiro também não o muda: «Guardar» no Detalhe (com os campos vazios) apagava o título e as
+//    etiquetas; «Analisar outra vez», a paleta, «Mais como este», «Trocar» e apagar/repor também ficam de fora ──
+$sv = tests_http('POST', '/admin/cc_api.php?a=asset_save', ['id' => $aid, 'title' => "Recibo $NAME", 'caption' => 'legenda humana', 'tags' => "fatura, $NAME"], 1, true);
+t_eq($sv['code'], 200, 'quem tem o Financeiro dá um título, uma legenda e etiquetas ao recibo');
+$pdo->exec("DELETE FROM cc_jobs WHERE asset_id = $aid AND status IN ('queued', 'running')");
+$pdo->exec("UPDATE cc_assets SET ai_status = 'error', ai_error = 'marca do teste' WHERE id = $aid");
+$snap = fn() => $pdo->query("SELECT title, tags, analysis, palette, ai_status, ai_error, edited_by, deleted_at FROM cc_assets WHERE id = $aid")->fetch(PDO::FETCH_ASSOC);
+$jobsN = fn() => (int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE asset_id = $aid")->fetchColumn();
+$before = $snap();
+$jobs0 = $jobsN();
+$hex0 = cc_palette_hex($before['palette'])[0]['hex'] ?? '#000000';
+foreach ([
+    ['asset_save', ['id' => $aid, 'title' => '', 'caption' => '', 'tags' => '', 'why' => '', 'composition' => '', 'color' => '']],
+    ['analyze', ['id' => $aid]],
+    ['palette_add', ['asset' => $aid, 'hex' => '#123456', 'name' => 'do teste']],
+    ['palette_edit', ['asset' => $aid, 'hex' => $hex0, 'op' => 'hide']],
+    ['card_swap', ['board' => $BID, 'card' => $cid]],
+    ['asset_delete', ['id' => $aid]],
+    ['asset_restore', ['id' => $aid]],
+] as [$act, $body]) {
+    $r = tests_http('POST', "/admin/cc_api.php?a=$act", $body, 3, true);
+    t_eq($r['code'], 403, "quem não tem o Financeiro não pode «{$act}» no recibo (" . substr($r['body'], 0, 120) . ')');
+    t_true(!str_contains($r['body'], $NAME), "a resposta de «{$act}» não traz o nome");
+}
+t_eq($snap(), $before, 'o recibo ficou como estava (título, etiquetas, análise, paleta, estado da IA, quem editou, não apagado)');
+t_eq($jobsN(), $jobs0, 'nenhuma análise nova na fila');
+t_eq((int)$pdo->query("SELECT asset_id FROM cc_cards WHERE id = $cid")->fetchColumn(), $aid, 'o cartão continua a apontar para o recibo');
+$s3 = tests_http('GET', "/admin/cc_api.php?a=similar&id=$aid", [], 3);
+t_eq($s3['code'], 403, '«Mais como este» não corre sobre o recibo (' . substr($s3['body'], 0, 120) . ')');
+t_eq(tests_http('GET', "/admin/cc_api.php?a=similar&id=$aid", [], 1)['code'], 200, 'quem tem o Financeiro pede «Mais como este»');
+t_eq(tests_http('POST', '/admin/cc_api.php?a=palette_add', ['asset' => $aid, 'hex' => '#123456', 'name' => 'do teste'], 1, true)['code'], 200, 'quem tem o Financeiro junta uma cor à paleta');
+// um áudio da Faturação: a forma de onda e a duração vindas do browser também não entram
+$au = tests_put("Empresa/Financeiro/2026/11/$NAME-chamada.mp3", random_bytes(4096), 'audio/mpeg');
+$ra = tests_http('POST', '/admin/cc_api.php?a=drive_add', ['board' => $BID, 'keys' => json_encode([$au]), 'x' => 0, 'y' => 1800], 1, true);
+$auId = (int)($ra['json']['cards'][0]['asset']['id'] ?? 0);
+t_true($auId > 0 && (string)$pdo->query("SELECT kind FROM cc_assets WHERE id = $auId")->fetchColumn() === 'audio', 'o áudio da Faturação entra (' . substr($ra['body'], 0, 120) . ')');
+$durBefore = $pdo->query("SELECT duration FROM cc_assets WHERE id = $auId")->fetchColumn();
+$rm3 = tests_http('POST', '/admin/cc_api.php?a=audio_meta', ['id' => $auId, 'dur' => '12.5'], 3, true);
+t_eq($rm3['code'], 403, 'quem não tem o Financeiro não manda a forma de onda do áudio (' . substr($rm3['body'], 0, 120) . ')');
+t_eq($pdo->query("SELECT duration FROM cc_assets WHERE id = $auId")->fetchColumn(), $durBefore, 'a duração do áudio ficou como estava');
+
 // ── apagado da Drive: o aviso do Topperboard também não diz o nome ──
 $t = tests_http('POST', '/admin/drive_api.php', ['do' => 'trash', 'key' => $bill], 1);
 t_eq($t['code'], 200, 'o recibo vai para o Lixo (' . substr($t['body'], 0, 120) . ')');

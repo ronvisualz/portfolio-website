@@ -453,7 +453,12 @@
 
   // ── detalhe de uma referência (gaveta na Biblioteca, painel no Topperboard) ──
   function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
+  // §33.9: um ficheiro da Faturação e quem vê não tem o Financeiro: só o aviso (sem formulário nem ações; o servidor também recusa)
+  function noAccessHtml() {
+    return '<div class="ccc-noacc ccd-noacc" role="note">' + ico('lock') + '<span>Sem acesso a este ficheiro</span><p>Só quem tem acesso ao Financeiro o pode abrir, analisar ou editar.</p></div>';
+  }
   function assetDetailHtml(a) {
+    if (a.noaccess) return noAccessHtml();
     var media;
     if (isAudio(a)) media = auPlayerHtml(a);
     else if (a.vembed && /^https:\/\/(www\.youtube-nocookie\.com\/embed|player\.vimeo\.com\/video)\/[A-Za-z0-9_-]+$/.test(a.vembed))   // §33.8: o leitor do serviço (só toca com ▶)
@@ -663,6 +668,7 @@
 
   /** Liga os botões do detalhe. o: onColor(hex), onAdd(asset), onChange(asset), onDelete(id), onOpen(id). */
   function bindAssetDetail(box, a, o) {
+    if (a.noaccess) return;
     o = o || {};
     if (isAudio(a)) bindAuPlayer(box, a);
     box.addEventListener('click', function (e) {
@@ -3030,6 +3036,7 @@
       if (B.side === 'det') {
         var c = sel.length === 1 ? sel[0] : null;
         if (!c || !c.asset) { sideBody.innerHTML = '<p class="muted">Selecione uma imagem, vídeo, áudio ou link para ver a análise, a paleta e editar.</p>'; return; }
+        if (c.noaccess) { B.pickNext = false; sideBody.innerHTML = noAccessHtml(); return; }
         sideBody.innerHTML = '<span class="spin"></span>';
         api('asset', { id: c.asset.id }, 'GET').then(function (j) {
           if (B.side !== 'det') return;
@@ -3041,7 +3048,7 @@
             onRestore: function () { reload(); },
             onAdd: function (aid) { addAsset(aid); }
           });
-          if (B.pickNext) { B.pickNext = false; startPick(sideBody.firstChild, j.asset); }
+          if (B.pickNext) { B.pickNext = false; if (!j.asset.noaccess) startPick(sideBody.firstChild, j.asset); }
         }).catch(fail);
         return;
       }
