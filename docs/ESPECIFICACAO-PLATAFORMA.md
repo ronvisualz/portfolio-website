@@ -4470,6 +4470,7 @@ Calculadas a partir dos serviços do negócio (frentes), mostradas no negócio, 
 - **CGI:** dois ou mais de **VFX, 3D, Composit**, sem Edição. Ex.: VFX + 3D; 3D + Composit.
 - Combinações com **Motion Design sem Edição** (ex.: Motion Design + 3D): **sem categoria**, mostradas pelos nomes dos serviços.
 - Um só serviço: sem categoria.
+- **Ordem de avaliação** (esclarecimento de 3 nov): 1) Pós-produção; 2) senão CGI; 3) senão sem categoria. Por isso VFX + 3D + Motion Design → **CGI** (tem dois de VFX/3D/Composit e não tem Edição).
 - Regras editáveis em Definições › Pipeline › Categorias (só admins), com pré-visualização das combinações.
 
 ### 34.3 Dois níveis
@@ -4492,19 +4493,19 @@ X-Ray → Proposta → Aguardar feedback → Kickoff → **Em execução** → *
 ### 34.4 Avanço automático (sem microgestão)
 - Cada sub-etapa cria as suas tarefas ao começar; **quando as tarefas obrigatórias ficam feitas, a frente avança sozinha** (opção por sub-etapa «avançar automaticamente», ligada por defeito). Arrastar à mão continua possível (fica registado).
 - **O negócio avança sozinho:** Kickoff → Em execução quando a primeira frente começa; Em execução → Entrega e pagamento final quando **todas as frentes estão em Pronto**.
-- **Dependências entre frentes** substituem a sincronização manual: uma frente pode esperar por outra chegar a uma sub-etapa (ex.: Composit espera 3D em «Lighting e render»; Edição espera VFX e Composit em «Pronto»). À espera mostra «À espera de 3D» e não conta como atrasada; ao cumprir-se arranca e avisa o responsável. Modelos de dependências por categoria (ex.: cadeia de Pós-produção), editáveis.
-- A sincronização da §22 (Sincronizadas / Timelines diferentes) passa a ser só a data de entrega: comum a todas, ou por frente.
+- **Dependências entre frentes** substituem a sincronização manual. Cada ligação é **«frente A conclui a sub-etapa X → frente B, sub-etapa Y»**: B corre normalmente até Y e aí fica «À espera de A» (não conta como atrasada); quando A conclui X, B arranca em Y e o responsável é avisado. Modelos de dependências por categoria, editáveis (ver §34.9).
+- A sincronização da §22 (Sincronizadas / Timelines diferentes) passa a ser só a data de entrega: comum a todas, ou por frente. Deixa de ser requisito para enviar a proposta; `sync_mode` migra (sync → data comum; independent → data por frente).
 - **Aprovação final do cliente** e **confirmação do pagamento final** ficam no nível do negócio (etapa final), uma vez só.
 
 ### 34.5 Vistas da Pipeline
-- **Negócios:** 6 colunas comuns; cada cartão com **barra segmentada por frentes** (cor por estado: em curso, à espera, atrasada, pronta) e a categoria.
+- **Negócios:** 6 colunas comuns; cada cartão com **barra segmentada por frentes** (uma fatia por frente, na cor do serviço; o estado lê-se pelo padrão: preenchida até ao progresso = em curso, contorno vermelho + «N d» = atrasada, tracejada = à espera, cheia com ✓ = pronta) e a categoria. Aparece em todos os negócios em Em execução e em Entrega, mesmo com uma só frente.
 - **Por serviço** (um separador por funil): só as **frentes desse serviço**, de todos os negócios, nas sub-etapas do serviço — cada equipa vê o seu trabalho. Cartão da frente com código do negócio, cliente, responsável, prazo e dependências.
 - Ficha do negócio: bloco «Em execução» com uma linha por frente (sub-etapa atual, progresso, responsável, à espera de…).
 
 ### 34.6 Automações otimizadas (Definições › Pipeline)
 Separadores: **Etapas comuns · Serviços (sub-etapas) · Automações · Dependências · Categorias**.
 - **Automações em dois níveis:** regras das **etapas comuns** (definidas uma vez, valem para todos os funis, com extras opcionais por funil) e regras das **sub-etapas de cada serviço**. Juntas sem duplicar (a mesma tarefa nunca se cria duas vezes num negócio com várias frentes).
-- **Gatilhos novos:** frente entra em sub-etapa; frente fica Pronta; todas as frentes Prontas; dependência cumprida; frente parada há N dias; rondas de revisão ultrapassadas; avença mensal de Campanhas (dia N).
+- **Gatilhos novos:** frente entra em sub-etapa; frente fica Pronta; todas as frentes Prontas; dependência cumprida; frente parada há N dias; rondas de revisão ultrapassadas; avença mensal de Campanhas (dia N). Somam-se aos da v1, que se mantêm (negócio entra em etapa; N dias antes/depois de uma data do negócio; ao validar a aceitação; ao validar um pagamento); a avença mensal substitui o «todos os meses».
 - **Ações:** criar tarefa (tipo, responsável: comercial / responsável da frente / chefe do serviço / pessoa / por atribuir; prazo; obrigatória), notificar, pedir documento, criar Topperboard ou ligação de Review, mover o negócio (automático).
 - **Testar automações:** escolher uma combinação de serviços (ex.: VFX + 3D + Edição) e ver, sem criar nada, que tarefas nasceriam em cada etapa e sub-etapa e a cadeia de dependências.
 - **Medidor de ruído operacional:** cada regra mostra quantas tarefas criou, % concluídas e **% apagadas ou fechadas sem trabalho** (ex.: concluídas em < 1 min); acima de 40% sugere desligar ou rever a regra.
@@ -4514,10 +4515,25 @@ Separadores: **Etapas comuns · Serviços (sub-etapas) · Automações · Depend
 Cada frente regista tempo por sub-etapa, rondas, atraso, valor (linhas do orçamento por serviço) e custo (equipa declarada). Relatórios › Operacional e Financeiro passam a filtrar por serviço **e** por categoria, incluindo serviços dentro de negócios combinados.
 
 ### 34.8 Migração
-- `vfx` (VFX & Pós-produção) → **VFX**; `cgi` (CGI / 3D) → **3D**; `ads` → **Adverts**; `buddy` → **Campanhas** (avença mensal); novos **Motion Design, Composit, Edição**.
+- `vfx` (VFX & Pós-produção) → **VFX**; `cgi` (CGI / 3D) → **3D**; `adverts` → **Adverts**; `ads` → **Adverts**; `campanhas` → **Campanhas**; `buddy` → **Campanhas** (avença mensal); novos **Motion Design, Composit, Edição**. Cada frente da v1 (`deal_lines`) passa ao serviço novo; duas frentes do mesmo serviço no mesmo negócio (ads + adverts, buddy + campanhas) juntam-se e vão a «Conflitos»; `vfx` pode esconder trabalhos só de Edição, Composit ou Motion Design, por isso a lista de revisão deixa trocar ou acrescentar serviços por negócio antes de aplicar.
 - Negócios em produção passam para «Em execução» com uma frente por serviço; a sub-etapa atual mapeada pela mais próxima (lista revista por um admin antes de aplicar).
 - **One House Only:** 5 frentes (VFX, 3D, Motion Design, Composit, Edição), categoria Pós-produção, com a cadeia de dependências de Pós-produção proposta para confirmar.
 - Tarefas, histórico e valores mantêm-se; nada se apaga.
+- **Duas partes:** (a) esquema — migração idempotente (`inc/migrate*.php`, `SCHEMA_VERSION`) que cria tabelas e colunas e não mexe nos negócios; (b) conversão dos dados — só corre quando um admin (verificado no servidor) carrega «Aplicar» depois de «Rever migração»; guarda o funil e a etapa antigos em cada negócio para «Reverter»; testada numa cópia da base.
+- Também migram: serviços das leads (Marketing Buddy → Campanhas; «VFX / 3D» e «Ambos» → lista para o admin escolher), pacotes, regras e oportunidades de crosselling (juntando repetidos), condições de pagamento do Buddy, perguntas do X-Ray de ads/buddy, metas e probabilidades por funil (passam a serviço e às 6 etapas comuns).
+
+### 34.9 Esclarecimentos (3 nov 2026, maquetes v2 — briefing «Pipeline v2»)
+- **Dependências — modelos iniciais.** Pós-produção: 3D conclui «Lighting e render» → Composit «Preparação de plates»; VFX conclui «Finais e QC» → Composit «Integração e look»; Composit conclui «Composição» → Edição «Picture lock»; Motion Design conclui «Revisões» → Edição «Picture lock». CGI: 3D conclui «Modelação e lookdev» → VFX «Look dev / shot de referência»; 3D conclui «Lighting e render» → Composit «Preparação de plates»; VFX conclui «Finais e QC» → Composit «Integração e look». Em combinações parciais, as ligações que passam por um serviço ausente ligam-se diretamente ao seguinte (ex.: VFX + 3D + Edição → VFX conclui «Finais e QC» e 3D conclui «Lighting e render» → Edição «Picture lock»). Na ficha pode acrescentar-se ou retirar-se uma ligação de um negócio (fica registado).
+- **Ciclo de vida da frente.** As frentes criam-se no Kickoff (uma por serviço), em «Por começar»; uma frente começa quando entra na 1.ª sub-etapa, só com o gate do Kickoff cumprido; nesse momento o negócio passa a «Em execução». As contagens por serviço contam as frentes começadas e ainda não em Pronto (incluindo as que estão à espera). «Ativa» fica reservado às avenças.
+- **Avanço automático.** Interruptor com precedência serviço → sub-etapa → frente (o da frente muda-o o responsável da frente ou um admin, verificado no servidor). «Desfazer» devolve à sub-etapa anterior e suspende o avanço automático dessa sub-etapa nessa frente até alguém reabrir ou fechar uma obrigatória. Arrastar à mão fica no histórico; para a frente obedece ao gate; forçar só admins, com motivo.
+- **Replaneamento.** Quando uma sub-etapa passa o prazo, as seguintes da mesma frente deslizam pelos dias de atraso (a data de entrega do negócio não muda); fica registado como «replaneado» e o responsável é avisado.
+- **Progresso.** A % de uma barra do cronograma, de uma fatia ou do anel de um cartão de frente é o progresso da **sub-etapa atual** (unidades feitas ÷ previstas quando há unidades, ex.: shots; senão obrigatórias feitas ÷ obrigatórias). O progresso do negócio é a média das frentes — cada uma (sub-etapas concluídas + fração da atual) ÷ n.º de sub-etapas — ponderada pelos dias previstos.
+- **Fecho.** Os dois movimentos do negócio (Kickoff → Em execução; Em execução → Entrega e pagamento final) são do sistema: não são regras de automação e não se desligam. Na Entrega, «Aprovação final» e «Pagamento final» («Pedir fatura» ao contabilista — a tarefa fecha com o PDF, a plataforma não emite faturas — e confirmação do pagamento pelo Financeiro); com as duas, o negócio passa a Concluído e sai do quadro. «Fechado» na meta do trimestre = Concluído no trimestre.
+- **Deduplicação de tarefas.** Chave = título normalizado + negócio + âmbito + ciclo (âmbito = frente + sub-etapa nas tarefas de frente; vazio nas de negócio). Antes de criar uma tarefa de negócio, o servidor procura a mesma tarefa aberta noutra frente do mesmo negócio e, se existir, não cria.
+- **Ruído.** Tarefa sem trabalho = apagada, concluída em menos de 1 min, ou concluída sem tempo, comentário, ficheiro nem subtarefa; nos avisos, conta o aviso dispensado sem ser aberto. A linha da regra mostra criadas e % sem trabalho; o detalhe mostra também % concluídas.
+- **Euros.** Sem acesso ao Financeiro: nenhum euro nem controlo «Valor»; as percentagens e barras proporcionais passam a contar negócios; o servidor não envia valores (HTML, JSON, canvas).
+- **Negócios novos** nascem da conversão de uma lead («Converter lead» no Pipeline). Os códigos são os da plataforma (`ID` + AA + MM + `-NN`).
+- **Definições › Pipeline:** um só cabeçalho e gravação explícita («Guardar alterações», «n alterações por guardar · Descartar») em todos os separadores.
 
 ## 35. Linha visual v2 (2 nov 2026)
 
