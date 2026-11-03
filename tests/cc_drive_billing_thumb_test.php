@@ -109,6 +109,68 @@ $rm3 = tests_http('POST', '/admin/cc_api.php?a=audio_meta', ['id' => $auId, 'dur
 t_eq($rm3['code'], 403, 'quem não tem o Financeiro não manda a forma de onda do áudio (' . substr($rm3['body'], 0, 120) . ')');
 t_eq($pdo->query("SELECT duration FROM cc_assets WHERE id = $auId")->fetchColumn(), $durBefore, 'a duração do áudio ficou como estava');
 
+// ── as pesquisas não encontram o recibo: a da Biblioteca procura no nome, no título, na legenda, nas etiquetas e na
+//    transcrição, por isso um pedaço do nome não pode dizer que existe (nem o total); nem a cor, nem os frames, nem os
+//    parecidos («Mais como este», «Trocar», «Referências para o brief»); quem tem o Financeiro encontra-o ──
+$lib = fn(string $qs, int $uid) => tests_http('GET', '/admin/cc_api.php?a=library&' . $qs, [], $uid)['json'] ?? [];
+$has = fn(array $j, int $id) => in_array($id, array_map('intval', array_column($j['items'] ?? [], 'id')), true);
+$hex = substr($NAME, 2);   // um pedaço do meio do nome
+$blue = rawurlencode('#2878c8');   // a cor do recibo (40, 120, 200)
+foreach (["q=$hex", "kind=image&q=$hex", "q=recibo+$hex", "kind=image&color=$blue&q=$hex"] as $qs) {
+    $lj = $lib($qs, 3);
+    t_true(!$has($lj, $aid) && ($lj['total'] ?? null) === 0, "a Biblioteca ($qs) não encontra o recibo a quem não tem o Financeiro (total " . json_encode($lj['total'] ?? null) . ')');
+    t_true($has($lib($qs, 1), $aid), "quem tem o Financeiro encontra-o ($qs)");
+}
+$col3 = $lib("kind=image&color=$blue", 3);
+$col1 = $lib("kind=image&color=$blue", 1);
+t_true(!$has($col3, $aid) && (int)($col1['total'] ?? 0) - (int)($col3['total'] ?? 0) >= 1,
+       'só pela cor: o recibo não vem nem conta no total de quem não tem o Financeiro (' . json_encode($col3['total'] ?? null) . ' contra ' . json_encode($col1['total'] ?? null) . ')');
+$fw = 'quadro' . $hex;   // só na análise do frame do recibo
+$pdo->prepare('UPDATE cc_frames SET analysis = ? WHERE id = ?')->execute([json_encode(['caption' => "um $fw azul"]), $fid]);
+$f3 = $lib("q=$fw", 3);
+t_true(!$has($f3, $aid) && ($f3['total'] ?? null) === 0, 'um frame do recibo que bate no texto também não o traz (total ' . json_encode($f3['total'] ?? null) . ')');
+t_true($has($lib("q=$fw", 1), $aid), 'quem tem o Financeiro encontra-o pelo frame');
+// os números da Biblioteca (total, filtros, Caixa de entrada) também não o contam
+$pdo->exec("UPDATE cc_assets SET style = 'Documental', inbox = 1 WHERE id = $aid");
+$doc = fn(array $j) => (int)(array_column($j['facets']['style'] ?? [], 'n', 'v')['Documental'] ?? 0);
+$l3 = $lib('', 3);
+$l1 = $lib('', 1);
+t_true((int)($l1['total'] ?? 0) - (int)($l3['total'] ?? 0) >= 1, 'o total da Biblioteca de quem não tem o Financeiro não conta o recibo');
+t_true($doc($l1) - $doc($l3) >= 1, 'nem o número de um filtro (Estilo: Documental ' . $doc($l3) . ' contra ' . $doc($l1) . ')');
+t_true((int)($l1['inbox_n'] ?? 0) - (int)($l3['inbox_n'] ?? 0) >= 1, 'nem o número da Caixa de entrada (' . json_encode($l3['inbox_n'] ?? null) . ' contra ' . json_encode($l1['inbox_n'] ?? null) . ')');
+$tabN = fn(int $uid) => preg_match('~\?t=entrada"[^>]*>[^<]*<em class="cc-n">(\d+)</em>~', tests_http('GET', '/admin/toppernote.php?t=biblioteca', [], $uid)['body'], $m) ? (int)$m[1] : 0;
+t_true($tabN(1) - $tabN(3) >= 1, 'nem o número no separador «Caixa de entrada» (' . $tabN(3) . ' contra ' . $tabN(1) . ')');
+$pdo->exec("UPDATE cc_assets SET inbox = 0 WHERE id = $aid");
+// «Mais como este» e «Trocar»: uma imagem de outra pessoa com o mesmo vetor que o recibo (o recibo é o mais parecido)
+require_once __DIR__ . '/../admin/inc/cc_ai.php';
+[, $xBytes] = $png(640, 480, [40, 120, 200]);
+[$X] = tests_cc_asset($pdo, $xBytes, ['name' => 'parecido-' . bin2hex(random_bytes(3)) . '.png', 'mime' => 'image/png']);
+$xid = (int)$X['id'];
+$vec = [];
+for ($i = 0; $i < 64; $i++) $vec[] = random_int(-1000, 1000) / 1000;
+$pdo->prepare('UPDATE cc_assets SET embedding = ?, embed_model = ? WHERE id IN (?, ?)')->execute([cc_vec_pack($vec), cc_embed_config()['model'] ?? CC_EMBED_MODEL, $aid, $xid]);
+$sim = fn(int $uid) => tests_http('GET', "/admin/cc_api.php?a=similar&id=$xid", [], $uid)['json'] ?? [];
+t_true($has($sim(1), $aid), '«Mais como este» de uma imagem parecida traz o recibo a quem tem o Financeiro');
+t_true(!$has($sim(3), $aid), '«Mais como este» não traz o recibo a quem não tem o Financeiro');
+$B2 = cc_board_create($pdo, ['title' => 'Teste33 · trocar', 'kind' => 'free'], 1);
+$c2 = cc_card_add($pdo, $B2, ['type' => cc_card_type_for(cc_asset_get($pdo, $xid)), 'asset_id' => $xid, 'x' => 0, 'y' => 0, 'w' => 280, 'h' => 210, 'content' => []], 1);
+$swapTo = fn() => (int)$pdo->query("SELECT asset_id FROM cc_cards WHERE id = $c2")->fetchColumn();
+$sw3 = tests_http('POST', '/admin/cc_api.php?a=card_swap', ['board' => $B2, 'card' => $c2], 3, true);
+t_true($swapTo() !== $aid, '«Trocar» não põe o recibo no cartão de quem não tem o Financeiro (' . substr($sw3['body'], 0, 120) . ')');
+$pdo->prepare('UPDATE cc_cards SET asset_id = ? WHERE id = ?')->execute([$xid, $c2]);
+tests_http('POST', '/admin/cc_api.php?a=card_swap', ['board' => $B2, 'card' => $c2], 1, true);
+t_eq($swapTo(), $aid, '«Trocar» de quem tem o Financeiro escolhe o recibo (o mais parecido)');
+$pdo->prepare('UPDATE cc_cards SET asset_id = ? WHERE id = ?')->execute([$xid, $c2]);
+// «Referências para o brief» sem vetores (com a IA no limite do mês, procura pelas palavras do texto)
+$pdo->prepare('INSERT INTO cc_ai_usage (created_at, purpose, provider, model, cost_usd) VALUES (?, ?, ?, ?, ?)')->execute([date('Y-m-d H:i:s'), 'teste-limite', 'voyage', 'teste', cc_ai_cap() + 1]);
+$capRow = (int)$pdo->lastInsertId();
+register_shutdown_function(fn() => $pdo->exec("DELETE FROM cc_ai_usage WHERE id = $capRow"));
+$refs = fn(int $uid) => tests_http('POST', '/admin/cc_api.php?a=ai', ['board' => $B2, 'act' => 'refs', 'text' => "recibo $hex"], $uid, true);
+$r1 = $refs(1);
+t_true($has($r1['json'] ?? [], $aid), '«Referências para o brief» pelas palavras traz o recibo a quem tem o Financeiro (' . substr($r1['body'], 0, 120) . ')');
+t_true(!$has($refs(3)['json'] ?? [], $aid), '«Referências para o brief» não traz o recibo a quem não tem o Financeiro');
+$pdo->exec("DELETE FROM cc_ai_usage WHERE id = $capRow");
+
 // ── apagado da Drive: o aviso do Topperboard também não diz o nome ──
 $t = tests_http('POST', '/admin/drive_api.php', ['do' => 'trash', 'key' => $bill], 1);
 t_eq($t['code'], 200, 'o recibo vai para o Lixo (' . substr($t['body'], 0, 120) . ')');
