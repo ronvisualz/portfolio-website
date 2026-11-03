@@ -360,11 +360,27 @@
       return { prev: frames[0].blob, w: W, h: H, dur: dur, frames: frames };
     }).catch(function () { cleanup(); return null; });
   }
+  /** O tipo pelo nome e pelo tipo MIME (como cc_kind_for): uma extensão de áudio passa à frente de video/* (menos .ogg com video/ogg). */
   function kindOf(file) {
+    if (isAudioName(file.name) && !(/\.ogg$/i.test(file.name) && file.type === 'video/ogg')) return 'audio';
     if (/^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) return 'video';
     if (/^image\//.test(file.type) || /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp)$/i.test(file.name)) return 'image';
-    if (/^audio\//.test(file.type) || isAudioName(file.name)) return 'audio';
+    if (/^audio\//.test(file.type)) return 'audio';
     return 'file';
+  }
+  /**
+   * O que o ficheiro é pelos bytes (CCL.sniffMedia, a mesma regra do servidor): os primeiros 64 KB e, num MP4/MOV que
+   * ainda não se sabe, 2 MB do início e 2 MB do fim (o moov pode estar no fim). Um MP3 chamado .mpeg (que o browser dá
+   * como video/mpeg) é áudio; nunca se decide por o browser não mostrar a imagem. null: não se sabe.
+   */
+  async function sniffFile(file) {
+    if (!window.CCL || !CCL.sniffMedia || !file || !file.slice) return null;
+    try {
+      var rd = function (a, b) { return file.slice(a, b).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
+      var head = await rd(0, 65536), r = CCL.sniffMedia(head, null, file.size), MORE = 2097152;
+      if (!r && CCL.sniffMore(head) && file.size > head.length) r = CCL.sniffMedia(await rd(0, MORE), file.size > MORE ? await rd(file.size - MORE, file.size) : null, file.size);
+      return r;
+    } catch (e) { return null; }
   }
   /** Envia um ficheiro. ctx: board, x, y, lane, column, inbox, cw. Devolve { asset, card }. */
   async function uploadFile(file, ctx) {
@@ -372,6 +388,8 @@
     var row0 = Up.add(file.name), row = { set: function (p) { row0.set(p); if (ctx.onp) ctx.onp(p); }, done: row0.done, fail: row0.fail };
     try {
       var kind = kindOf(file);
+      // um vídeo (ou ficheiro) que é só som vai como áudio, com a forma de onda; o servidor confirma pelos mesmos bytes
+      if (kind !== 'image') { var sn = await sniffFile(file); if (sn && sn.kind === 'audio') kind = 'audio'; }
       var fp = await fingerprint(file);
       var init = await api('upload_init', { name: file.name, size: file.size, mime: file.type, fp: fp });
       if (init.dup) {
@@ -1313,10 +1331,14 @@
       if (c.type === 'video' && c.asset && c.asset.orig && !c.local) bindVideoHover(el, c);
       if (c.type === 'audio' && !c.noaccess) auNeedPeaks(c.asset, auUpdated);
       // o cartão que se está a apresentar foi redesenhado (IA, forma de onda, sondagem, tempo real): o vídeo e o «▶ Tocar»
-      // passam para o cartão novo na mesma tarefa, por isso o browser não os pausa (o áudio vive na barra e não se mexe)
+      // passam para o cartão novo na mesma tarefa, por isso o browser não os pausa (o áudio vive na barra e não se mexe).
+      // Se mudou de referência ou de tipo (um «vídeo» que afinal é áudio), o que estava a tocar pára: ▶ começa o novo.
       if (presMedia && presMedia.c.id === c.id) {
-        if (presMedia.el.tagName === 'VIDEO') ($('.ccc-media', el) || el).appendChild(presMedia.el);
-        if (presMedia.btn) el.appendChild(presMedia.btn);
+        if (c.type !== presMedia.c.type || (c.asset && c.asset.id) !== (presMedia.c.asset && presMedia.c.asset.id)) { presStop(); if (presPaint) presPaint(); }
+        else {
+          if (presMedia.el.tagName === 'VIDEO') ($('.ccc-media', el) || el).appendChild(presMedia.el);
+          if (presMedia.btn) el.appendChild(presMedia.btn);
+        }
       }
       return el;
     }
@@ -3297,6 +3319,15 @@
     // ── apresentação ──
     var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
     var presMedia = null;   // o vídeo/áudio do diapositivo atual ({ c, el, btn }); makeEl e cull precisam de o conhecer
+    var presPaint = null;   // redesenha a barra da apresentação (▶/❚❚, «Vídeo ·»/«Áudio ·»), enquanto se apresenta
+    /** Pára e tira o vídeo/áudio da apresentação (o load() descarta o evento «pause»: quem chama redesenha a barra). */
+    function presStop() {
+      var m = presMedia;
+      if (!m) return;
+      presMedia = null;
+      m.el.pause(); m.el.removeAttribute('src'); try { m.el.load(); } catch (e) {}
+      m.el.remove(); if (m.btn) m.btn.remove();
+    }
     function present() {
       var items = [];
       B.cards.forEach(function (c) { if (!c.col && c.type !== 'arrow' && c.type !== 'drawing') items.push(c); });
@@ -3314,16 +3345,13 @@
       if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
       if (AU && AU.hub && AU.hub.pause) AU.hub.pause();
       // §33.13: só em Apresentar o vídeo/áudio toca com som — ao chegar toca, ao sair pára; fora daqui nunca há som sozinho
-      function stopMedia() {
-        var m = presMedia;
-        if (!m) return;
-        presMedia = null;
-        m.el.pause(); m.el.removeAttribute('src'); try { m.el.load(); } catch (e) {}
-        m.el.remove(); if (m.btn) m.btn.remove();
-      }
-      function isMediaSlide() { var c = items[i]; return (c.type === 'video' || c.type === 'audio') && !!c.asset && !!c.asset.orig; }
+      var stopMedia = presStop;
+      presPaint = function () { paintMedia(); };
+      // o cartão do diapositivo como está agora (um recarregamento troca os objetos; um trabalho pode mudar-lhe o tipo)
+      function slide() { var c = items[i]; return B.cards.get(c.id) || c; }
+      function isMediaSlide() { var c = slide(); return (c.type === 'video' || c.type === 'audio') && !!c.asset && !!c.asset.orig; }
       function paintMedia() {
-        var w = $('.pr-media', bar), c = items[i], isM = isMediaSlide();
+        var w = $('.pr-media', bar), c = slide(), isM = isMediaSlide();
         w.hidden = !isM;
         if (!isM) return;
         $('[data-pt]', bar).textContent = (c.type === 'video' ? 'Vídeo · ' : 'Áudio · ') + (c.asset.title || c.asset.file || '');
@@ -3358,9 +3386,9 @@
       }
       function toggleMedia() { if (!presMedia) return false; if (presMedia.el.paused) { var p = presMedia.el.play(); if (p && p.catch) p.catch(function () {}); } else presMedia.el.pause(); return true; }
       /** ❚❚/▶ e Espaço: pausa ou retoma; se ainda não há elemento, começa (nunca salta o diapositivo). */
-      function playPause() { if (!toggleMedia() && isMediaSlide()) { startMedia(items[i]); paintMedia(); } }
+      function playPause() { if (!toggleMedia() && isMediaSlide()) { startMedia(slide()); paintMedia(); } }
       function go() {
-        var c = items[i], b = bbox(c);
+        var c = slide(), b = bbox(c);
         stopMedia();
         animateView(function () { fitTo(b, 70, 3); });
         $('[data-pn]', bar).textContent = (i + 1) + ' / ' + items.length;
@@ -3374,6 +3402,7 @@
       });
       function stop() {
         stopMedia();
+        presPaint = null;
         root.classList.remove('present');
         bar.remove();
         window.removeEventListener('keydown', pk, true);

@@ -44,9 +44,14 @@ const row = name => JSON.parse(php(`echo json_encode($pdo->query("SELECT c.id, c
 (async () => {
   const b = await chromium.launch();   // a política de autoplay por omissão: o clique em «Apresentar» autoriza o som
   const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
-  const sent = [];   // o que o browser diz ao servidor em cada envio (kind e forma de onda)
-  p.on('request', q => { if (/cc_api\.php\?a=upload_done/.test(q.url())) sent.push((q.postDataBuffer() || Buffer.alloc(0)).toString('latin1')); });
   await p.addInitScript(() => {
+    // o que o browser diz ao servidor em cada envio (os campos de texto do FormData: kind, picos…)
+    window.__sent = [];
+    const send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (body) {
+      if (body instanceof FormData) { const o = {}; for (const [k, v] of body.entries()) if (typeof v === 'string') o[k] = v; window.__sent.push(o); }
+      return send.apply(this, arguments);
+    };
     window.__played = [];
     const o = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function () { if (window.__played.indexOf(this) < 0) window.__played.push(this); return o.apply(this, arguments); };
@@ -55,7 +60,7 @@ const row = name => JSON.parse(php(`echo json_encode($pdo->query("SELECT c.id, c
   await p.goto(BASE + '/admin/toppernote.php?b=' + S.bid);
   await p.waitForSelector('.ccc[data-id]'); await p.waitForTimeout(600);
   const until = async (fn, ms) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await p.waitForTimeout(250); } return false; };
-  const field = (body, k) => { const m = new RegExp('name="' + k + '"\\r\\n\\r\\n([^\\r]*)').exec(body || ''); return m ? m[1] : null; };
+  const sentFor = async name => (await p.evaluate(() => window.__sent)).find(o => o.name === name) || {};
   const waveOf = id => p.evaluate(id => { const el = document.querySelector('.ccc[data-id="' + id + '"]'); return !!el && el.classList.contains('t-audio') && !!el.querySelector('.au-wave:not(.empty)'); }, id);
   check(await p.locator(`.ccc[data-id="${S.oldCard}"].t-video`).count() === 1, 'o caso de produção começa como cartão de vídeo sem imagem (prova do teste)');
 
@@ -65,8 +70,8 @@ const row = name => JSON.parse(php(`echo json_encode($pdo->query("SELECT c.id, c
   await until(async () => !!row(upName) && !(await p.locator('.ccc.uploading').count()), 20000);
   let r = row(upName);
   check(!!r && r.kind === 'audio' && r.mime === 'audio/mpeg' && r.type === 'audio' && +r.h === 0, 'do dispositivo: referência áudio audio/mpeg e cartão de áudio h=0 (' + JSON.stringify(r) + ')');
-  const up = sent.find(x => x.includes(upName));
-  check(field(up, 'kind') === 'audio' && (field(up, 'peaks') || '').length > 100, 'o browser leu os bytes: envia como áudio, com a forma de onda (kind=' + field(up, 'kind') + ', picos=' + (field(up, 'peaks') || '').length + ')');
+  const up = await sentFor(upName);
+  check(up.kind === 'audio' && (up.peaks || '').length > 100, 'o browser leu os bytes: envia como áudio, com a forma de onda (kind=' + up.kind + ', picos=' + (up.peaks || '').length + ')');
   check(!!r && +r.pk > 100, 'a forma de onda ficou guardada no envio');
   check(!!r && await until(() => waveOf(r.id), 5000), 'o cartão mostra a forma de onda');
 
@@ -76,7 +81,7 @@ const row = name => JSON.parse(php(`echo json_encode($pdo->query("SELECT c.id, c
   await until(async () => !!row(vName) && !(await p.locator('.ccc.uploading').count()), 25000);
   r = row(vName);
   check(!!r && r.kind === 'video' && r.type === 'video', 'H.264+Opus (sem imagem no browser) continua vídeo (' + JSON.stringify(r) + ')');
-  check(field(sent.find(x => x.includes(vName)), 'kind') !== 'audio', 'o browser não o envia como áudio');
+  check((await sentFor(vName)).kind === 'video', 'o browser envia-o como vídeo (' + (await sentFor(vName)).kind + ')');
   check(!!r && await p.locator(`.ccc[data-id="${r.id}"].t-video`).count() === 1, 'e o cartão é de vídeo');
 
   // ── «Da Drive» ──
