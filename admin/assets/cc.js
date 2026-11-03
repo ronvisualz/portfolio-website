@@ -1835,6 +1835,8 @@
     }
     function driveRun(body) { return driveApi(body).then(function (j) { return j.ok && j.done === false && j.next ? driveRun(j.next) : j; }); }
     var upm = null;
+    // arrasto do seletor «Da Drive» para a tela: o largar na tela (vp drop) fecha o seletor por aqui (§33.9)
+    var pickDrag = null;
     function closeUpMenu() { if (upm) { upm.el.remove(); document.removeEventListener('pointerdown', upm.out, true); upm = null; } }
     function upMenu(btn) {
       var inp = $('[data-up]', root);
@@ -1871,6 +1873,9 @@
         + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="group" aria-label="Ficheiros da Drive"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
         + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários. Também pode arrastá-los para o sítio certo do Topperboard.</span>'
         + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
+      var hint = document.createElement('div');   // fora do diálogo (que fica transparente durante o arrasto)
+      hint.className = 'dp-drag-hint'; hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
+      el.appendChild(hint);
       document.body.appendChild(el);
       var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
       var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
@@ -1880,6 +1885,7 @@
       var TH = window.TD && TD.thumbs && TD.kind ? TD.thumbs : null, hasTh = new Set(), thumbUrl = new Map();
       var io = TH && 'IntersectionObserver' in window ? new IntersectionObserver(seen, { root: list, rootMargin: '200px' }) : null, seenQ = [], seenT = 0;
       function close() {
+        endDrag(false);
         el.remove(); document.removeEventListener('keydown', escKey, true);
         if (io) io.disconnect();
         clearTimeout(seenT);
@@ -2014,6 +2020,50 @@
           if (j >= 0) { cells[j].focus(); if (cells[j].scrollIntoView) cells[j].scrollIntoView({ block: 'nearest' }); }
         }
       });
+      // ── arrastar para o Topperboard: o escolhido (ou todos os escolhidos) vai para onde se larga ──
+      // Durante o arrasto o diálogo fica transparente e deixa passar o rato (is-dragging); largar na tela junta e fecha
+      // (pickDrag, chamado pelo drop da tela); largar noutro sítio devolve o diálogo como estava (dragend). Se o dragend
+      // não chegar (arrasto perdido), o próximo toque/clique ou 15 s sem eventos de arrasto devolvem o diálogo.
+      var drag = null;
+      function endDrag(restore) {
+        if (!drag) return;
+        var d = drag; drag = null;
+        if (pickDrag === d.api) pickDrag = null;
+        clearTimeout(d.watch); clearTimeout(d.start);
+        document.removeEventListener('pointerdown', d.down, true);
+        el.classList.remove('is-dragging'); hint.textContent = '';
+        if (restore && d.cell.isConnected) d.cell.focus();
+      }
+      function watchdog() { if (!drag) return; clearTimeout(drag.watch); drag.watch = setTimeout(function () { endDrag(true); }, 15000); }
+      el.addEventListener('dragstart', function (e) {
+        var f = e.target.closest && e.target.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+        if (!o || !e.dataTransfer) { if (!f) return; e.preventDefault(); return; }
+        endDrag(false);
+        var keys = CCL.dragKeys(picked, o.k), dt = e.dataTransfer;
+        dt.effectAllowed = 'copy';
+        try { dt.setData('application/x-td-keys', JSON.stringify(keys)); } catch (err) { /* sem dados */ }
+        // o fantasma: a pré-visualização do arrastado e quantos são
+        var g = document.createElement('div'), th = $('.dp-th', f), img = th && $('img', th);
+        g.className = 'dp-ghost';
+        g.innerHTML = (img ? imgHtml(img.getAttribute('src')) : iconHtml(o.k, kindOfKey(o.k)).replace(/<span class="dp-ext">[^<]*<\/span>/, '')) + '<span>' + (keys.length === 1 ? '1 ficheiro' : keys.length + ' ficheiros') + '</span>';
+        document.body.appendChild(g);
+        try { dt.setDragImage(g, -12, -8); } catch (err) { /* sem imagem */ }
+        setTimeout(function () { g.remove(); }, 0);
+        var d = drag = { cell: f, keys: keys, watch: 0 };
+        d.api = pickDrag = { close: close };
+        // arrasto perdido: o próximo toque devolve o diálogo (e não chega à tela nem fecha o diálogo)
+        d.down = function (ev) { ev.stopPropagation(); ev.preventDefault(); endDrag(true); };
+        // a classe só no tick seguinte: mudar o estilo da origem no próprio dragstart cancela o arrasto no Chromium
+        d.start = setTimeout(function () {
+          if (drag !== d) return;
+          el.classList.add('is-dragging');
+          hint.textContent = 'Largue no Topperboard para juntar.';
+          document.addEventListener('pointerdown', d.down, true);
+        }, 0);
+        watchdog();
+      });
+      el.addEventListener('drag', watchdog);
+      el.addEventListener('dragend', function () { endDrag(true); });   // largado fora da tela (ou cancelado com Esc)
       q.addEventListener('input', function () { last = -1; paint(); });
       el.hidden = false; q.focus();
       driveApi({ do: 'catalog' }).then(function (j) {
@@ -2232,21 +2282,40 @@
         if (RT) RT.added([j.card]);
       }).catch(function (e) { row.fail(e.message); });
     }
+    // ficheiros da Drive (seletor, arrasto do seletor ou da página da Drive): pedidos de até 30 (o limite do servidor),
+    // um a seguir ao outro; um só Anular e uma só mensagem para tudo
+    var DRIVE_ADD_MAX = 30;   // = CC_DRIVE_ADD_MAX (inc/cc.php)
     function addDrive(keys, at) {
-      var p = at || spot(300), row = Up.add('Da Drive');
-      return api('drive_add', { board: B.id, keys: typeof keys === 'string' ? keys : JSON.stringify(keys), x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
+      var p = at || spot(300), list = keys, row = Up.add('Da Drive');
+      if (typeof keys === 'string') { try { list = JSON.parse(keys); } catch (e) { list = null; } }
+      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX) : [{ keys: keys, x: p.x, y: p.y }];
+      var got = [], sum = { added: 0, folders: 0, skipped: 0, over: false }, msg = '';
+      function done() {
+        if (!got.length) return;
+        var ids = got.map(function (c) { return c.id; });
+        push({ t: 'add', ids: ids });
+        select(ids);
+        kickWorker();
+      }
+      return parts.reduce(function (pr, c) {
+        return pr.then(function () {
+          return api('drive_add', { board: B.id, keys: typeof c.keys === 'string' ? c.keys : JSON.stringify(c.keys), x: c.x, y: c.y, lane: laneAt(c.y) }).then(function (j) {
+            B.rev = j.rev;
+            if (j.cards.length) {
+              j.cards.forEach(function (x) { B.cards.set(x.id, x); });
+              cull();
+              if (RT) RT.added(j.cards);
+              got = got.concat(j.cards);
+            }
+            sum.added += j.cards.length; sum.folders += +j.folders || 0; sum.skipped += +j.skipped || 0; sum.over = sum.over || !!j.over;
+            msg = j.msg;
+          });
+        });
+      }, Promise.resolve()).then(function () {
         row.done();
-        B.rev = j.rev;
-        if (j.cards.length) {
-          j.cards.forEach(function (c) { B.cards.set(c.id, c); });
-          cull();
-          push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
-          if (RT) RT.added(j.cards);
-          select(j.cards.map(function (c) { return c.id; }));
-          kickWorker();
-        }
-        toast(j.msg, j.cards.length ? {} : { err: true });
-      }).catch(function (e) { row.fail(e.message); });
+        done();
+        toast(parts.length > 1 ? CCL.driveMsg(sum) : msg, got.length ? {} : { err: true });
+      }).catch(function (e) { done(); row.fail(e.message); });
     }
     // §33.10: envio otimista — o cartão aparece logo (pré-visualização local e progresso) e troca pelo do servidor no fim
     var localSeq = 0, localFiles = new Map();
@@ -2797,7 +2866,7 @@
         var aid = e.dataTransfer.getData('text/x-cc-asset');
         if (aid) { addAsset(+aid, at); return; }
         var tdk = e.dataTransfer.getData('application/x-td-keys');   // da Drive: o original fica lá e o tipo mantém-se
-        if (tdk) { addDrive(tdk, at); return; }
+        if (tdk) { if (pickDrag) pickDrag.close(); addDrive(tdk, at); return; }   // do seletor «Da Drive»: fecha-o
         if (e.dataTransfer.files && e.dataTransfer.files.length) { addFiles(e.dataTransfer.files, at); return; }
         var u = (e.dataTransfer.getData('text/uri-list') || '').split('\n')[0].trim();
         var t = u || e.dataTransfer.getData('text/plain');

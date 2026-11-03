@@ -59,7 +59,7 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   }
   const midState = () => p.evaluate(() => {
     const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick'), h = document.querySelector('.cc-dpick-back [role="status"]');
-    return { pe: bk && getComputedStyle(bk).pointerEvents, op: d && getComputedStyle(d).opacity, hint: h ? h.textContent : '', hintShown: !!h && h.offsetParent !== null };
+    return { pe: bk && getComputedStyle(bk).pointerEvents, op: d && getComputedStyle(d).opacity, hint: h ? h.textContent : '', hintShown: !!h && getComputedStyle(h).display !== 'none' && h.getBoundingClientRect().width > 0 };
   });
 
   // C1: nada escolhido; arrastar a imagem para um sítio do Topperboard que fica por baixo do diálogo (passa através dele)
@@ -154,9 +154,11 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   await noToasts();
   const many = Array.from({ length: 30 }, (_, i) => S.dir + 'falta-' + i + '.txt').concat([S.k[T + '-x.pdf']]);
   await dropKeys(many, to2.x, to2.y);
-  check(await waitCards(n0 + 5) === n0 + 5, 'com 31 chaves a 31.ª também entra (pedidos de 30)');
-  await p.waitForTimeout(300);
+  await p.waitForFunction(() => document.querySelectorAll('.tst').length > 0, null, { timeout: 8000 }).catch(() => {});
   tst = (await p.locator('.tst').allInnerTexts()).join(' | ');
+  // o 31.º fica 8 linhas abaixo (fora da vista, por isso conta-se na base de dados)
+  const pdfCards = php(`echo $pdo->query("SELECT COUNT(*) FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id WHERE c.board_id = ${S.b} AND c.deleted_at IS NULL AND a.file_key = 'r2:${S.k[T + '-x.pdf']}'")->fetchColumn();`);
+  check(pdfCards === '1', 'com 31 chaves a 31.ª também entra (pedidos de 30) (' + pdfCards + ')');
   check(/1 ficheiro da Drive no Topperboard\. 30 sem acesso ou já não existem\./.test(tst) && !/ficaram de fora/.test(tst), 'uma só mensagem com as contas somadas (' + tst + ')');
 
   check(errs.length === 0, 'sem erros na página (' + errs.join(' | ') + ')');

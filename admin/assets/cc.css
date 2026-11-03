@@ -686,6 +686,17 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-play { position: absolute; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: rgba(0,0,0,.55); }
 .cc-dpick .dp-play::after { content: ''; margin-left: 3px; border-style: solid; border-width: 7px 0 7px 11px; border-color: transparent transparent transparent #fff; }
 .cc-dpick .dp-grid .dp-nm { padding: 0 2px 2px; }
+.cc-dpick .dp-grid .dp-f { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* arrastar para o Topperboard: o diálogo some e deixa passar o rato até à tela; a dica fica à vista */
+.cc-dpick-back.is-dragging { background: transparent; pointer-events: none; }
+.cc-dpick-back.is-dragging .cc-dpick { opacity: 0; }
+.cc-dpick-back .dp-drag-hint { display: none; }
+.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; left: 50%; top: 88px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
+  background: var(--fg); color: var(--bg); font: 600 13.5px var(--body); box-shadow: var(--shadow-lg); white-space: nowrap; }
+.dp-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 400; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 10px;
+  background: var(--fg); color: var(--bg); font: 600 13px/1.2 var(--body); }
+.dp-ghost img, .dp-ghost svg { flex: none; width: 36px; height: 36px; border-radius: 6px; object-fit: cover; }
+.dp-ghost svg { padding: 6px; color: var(--hi); }
 .cc-dpick .dp-f-bar { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
 .cc-dpick .dp-f-bar span { flex: 1; }
 .ccb-gone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; background: var(--warn-bg, #fff4d6); color: var(--warn-fg, #7a5300); border-bottom: 1px solid var(--line); font-size: 13px; }
