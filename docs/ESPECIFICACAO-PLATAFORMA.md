@@ -4569,3 +4569,64 @@ Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Cr
 12. **Movimento:** entradas 200–300 ms, mudanças de vista/morph 700–1100 ms com aceleração suave (smoothstep / cubic-bezier(.2,.8,.2,1)), números que contam até ao valor, molas nas barras de meta; tudo desligado com `prefers-reduced-motion`.
 13. **Cores dos serviços** (tokens `--s-vfx`, `--s-3d`, `--s-md`, `--s-cmp`, `--s-ed`, `--s-adv`, `--s-cam`; claro / escuro), validadas para daltonismo (pares vizinhos) e contraste ≥ 3:1 nos dois modos: VFX #2F77B1 / #4A8FD0 · 3D #B8860B / #B98A1E · Motion Design #7A5CC9 / #8E74DC · Composit #D0653F / #D3714D · Edição #00879E / #1E9DB3 · Adverts #C2417A / #CC5A8A · Campanhas #5A8F1F / #6FA233. Etiqueta = fundo a 14% da cor, texto em `--fg`, marcador na cor, **sempre com o nome**; nas barras segmentadas, 2 px de intervalo entre fatias e tracejado para «à espera». O amarelo nunca é cor de serviço (é ação). Maquetes: briefing «Pipeline v2».
 **Não usar:** partículas/globos/3D decorativos, neon multicolor, azul como cor de ação (a ação é amarela), barra de navegação flutuante em baixo.
+
+## 36. Topperspace — execução externa e o espaço dos freelancers (3 nov 2026)
+
+A topper. consegue fazer todos os serviços dentro de casa, mas muitas vezes subcontrata partes a **freelancers** ou a **empresas** para entregar mais depressa, enquanto a equipa não cresce. Muitos destes freelancers são profissionais de topo que um dia se quer contratar: o Topperspace é a imagem da topper. perante eles. Princípios: **profissional, bonito, fácil e sem atrito** para quem está de fora; **sempre a par** para quem está dentro; nada que obrigue a perguntar «o que é suposto entregar?» ou «em que ponto está?».
+
+### 36.1 O que já existe e se reutiliza (verificado no main)
+- Freelancers e empresas nos **Contactos** (`contacts.is_freelancer`, `is_supplier`), com serviços e preços (`contact_services`).
+- **Orçamento**: cada linha tem `service_id` e quem executa — `contact_id` (externo) ou `user_id` (interno) (`budget_lines`).
+- **Portal do cliente** (`admin/portal.php`, `cc_share`): página pública sem sessão, token longo (na base só o hash e uma cópia cifrada), validade, revogação, pedidos limitados por IP, acessos registados, campos escolhidos um a um. O Topperspace segue **o mesmo padrão**, numa página e tabela próprias; o portal do cliente não muda.
+- **Drive** (§32.2): pessoas de fora podem carregar e substituir versões, **nunca apagar**.
+- Checklist de fecho (§15.5) com «fornecedores avaliados».
+
+### 36.2 Execução de cada frente (Pipeline v2)
+- Cada frente (§34.3) tem **Execução: Interna** ou **Externa**, e quem: uma pessoa da equipa, um freelancer ou uma empresa (contacto).
+- **Preenche-se sozinha a partir do orçamento aprovado**: a linha do serviço com `contact_id` → Externa · esse contacto; com `user_id` → Interna · essa pessoa. Pode mudar-se à mão (fica no histórico). Uma frente pode ter mais de um externo (ex.: dois freelancers de VFX), cada um com a sua parte.
+- Uma frente externa tem sempre um **responsável interno** (acompanha, aprova as entregas e responde perante o cliente).
+- Na interface: chip «Externa · Nome» com ícone próprio nos cartões, no cronograma da ficha e na vista «Por serviço» (filtro «Só externas»); estado nunca só por cor.
+
+### 36.3 O Topperspace (página pública para o freelancer)
+- **Acesso:** um **link pessoal por contacto** (não por trabalho), enviado por email quando lhe é atribuída a primeira frente. Sem palavra-passe (coerente com a §31). Token como no portal do cliente; validade renovável sozinha enquanto houver trabalhos ativos; revogável na ficha do contacto. «Perdi o link»: o freelancer escreve o email e, se tiver trabalhos ativos, recebe um link novo (a resposta no ecrã é sempre a mesma, para não revelar quem existe). Idioma PT ou EN, pelo idioma do contacto.
+- **Primeira entrada:** boas-vindas com a marca e **acordo de confidencialidade num clique** (texto editável em Definições; data, hora e IP guardados).
+- **O que vê:** só os **seus** trabalhos com a topper. — Em curso · Concluídos (histórico). O **nome do cliente final é visível por defeito**, com opção de esconder negócio a negócio (aparece «Cliente confidencial»).
+- **Cada trabalho mostra:**
+  - **Brief:** o que entregar, especificações técnicas (formato, resolução, fps, espaço de cor, nomenclatura), referências (ficheiros e Topperboards em só leitura, se partilhados), prazo final e prazos intermédios, rondas de revisão incluídas, contacto do responsável interno.
+  - **Etapas:** as sub-etapas da frente (ex.: 3D: Styleframes → Modelação e lookdev → … → Pronto) como lista de marcos; o freelancer marca o progresso e **carrega as entregas de cada marco** (WIP, finais). Carregar é arrastar ou escolher do telemóvel, com barra de progresso e retoma se a ligação cair.
+  - **Ponto de situação num clique:** «Tudo a correr» · «Há um bloqueio» · «Preciso de algo», com nota opcional. Também a partir do email de lembrete, sem abrir a página (link assinado de uso único).
+  - **Conversa do trabalho:** mensagens com o responsável interno (sem emails soltos); a equipa responde da ficha.
+  - **Estado das entregas:** «Em revisão» · «Aprovada» · «Pedidas alterações» (com os comentários).
+- **O que nunca vê:** valores do cliente, orçamento, margens, custos de outros, outros freelancers, notas e tarefas internas, outros negócios. Pode carregar e substituir; **nunca apagar**.
+- **Fase 1 sem euros:** o valor acordado com o freelancer não aparece no Topperspace (fica para a fase 2).
+
+### 36.4 Do lado da topper. (frente externa)
+- Na frente: «Último ponto de situação há 2 d», progresso por marco, entregas novas, conversa e botão **«Enviar brief»** (gera o email com o link; reenviar quando o brief muda, com o que mudou destacado).
+- **Entrega carregada** → tarefa «Rever entrega · {freelancer} · {marco}» para o responsável interno; **Aprovar** ou **Pedir alterações** (com comentários) avisa o freelancer por email. Aprovar o último marco pode fechar as obrigatórias da sub-etapa (o avanço automático da §34.4 continua a mandar).
+- **Lembretes:** sem ponto de situação há N dias (Definições, por defeito 3 úteis) → lembrete simpático ao freelancer; sem resposta mais 2 dias → aviso ao responsável interno. «Há um bloqueio» avisa logo o responsável.
+- **Automações (§34.6):** gatilhos novos «entrega externa carregada», «ponto de situação com bloqueio», «externo sem atualização há N dias»; ação nova «enviar brief ao externo».
+- O atraso de um externo conta para a frente como qualquer outro (risco e replaneamento: §34.9).
+
+### 36.5 Ficheiros
+- As entregas vão para a Drive do projeto: `Projetos/<ID>_<NOME>/<Serviço>/Externos/<Nome>/<Marco>/`, com versões (substituir guarda a anterior). Limites de tamanho e tipos configuráveis; ficheiros grandes por envio em partes direto para o armazenamento (R2), sem passar pela memória do servidor.
+- Pré-visualização como na Drive (imagens, vídeo com leitor, PDF). Uma entrega pode ser enviada para o **Review do Toppernote** (revisão interna e, se quiserem, depois ao cliente).
+
+### 36.6 Segurança e privacidade (security-review obrigatório)
+- Token só em hash na base (cópia cifrada para «Copiar link»), rotação ao revogar, validade, pedidos limitados por IP, formulários assinados, GET nunca altera nada, uploads verificados no servidor (tipo real, tamanho, nome limpo), cada resposta construída campo a campo.
+- O âmbito é sempre «este contacto × as frentes onde está atribuído»; ao concluir ou retirar a frente, o trabalho passa a «Concluído» (só leitura do que entregou) ou desaparece, conforme a escolha do responsável.
+- Registo de acessos e ações (ficha do contacto e da frente). Dados pessoais mínimos (RGPD): nome, email, idioma, aceitação do NDA.
+
+### 36.7 Avaliação interna (o freelancer não vê)
+- Por trabalho: entregue a tempo (sim/não, dias), rondas usadas vs incluídas, nota 1–5 e comentário do responsável interno (liga ao «fornecedores avaliados» da §15.5).
+- Na ficha do contacto: **Histórico com a topper.** — trabalhos, serviços, pontualidade, média das notas. Base objetiva para decidir quem contratar; só sócios e admins veem as notas.
+
+### 36.8 Imagem e experiência
+- Identidade topper. (Linha visual v2, §35): base escura com amarelo como ação, tipografia da marca, **pensado primeiro para telemóvel**, rápido, sem login.
+- Tom próximo e profissional; momentos de reconhecimento («Entrega aprovada — obrigado, Marta»); prazos sempre visíveis; nada técnico da plataforma interna à vista.
+- Acessibilidade: contraste AA nos dois modos, teclado, reduzir movimento.
+
+### 36.9 Fase 2 (depois — decidido a 3 nov)
+O freelancer carrega a fatura ou o recibo verde no Topperspace (entra no Financeiro em «A pagar», com a retenção de IRS) e vê quando vai ser pago.
+
+### 36.10 Preservar a estrutura
+Acrescenta, não substitui: contactos, serviços dos contactos, orçamento, Drive, portal do cliente (`portal.php`, `cc_share`) e checklist de fecho mantêm-se; tabelas novas próprias (ex.: `tspace_access`, `tspace_assign`, `tspace_updates`); página nova própria (ex.: `admin/topperspace.php`). Nunca mostrar «§» na interface.
