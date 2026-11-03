@@ -126,6 +126,38 @@ const D = img(5, 5, (x, y) => x === 2 && y === 2 ? [220, 40, 40] : [200, 40, 40]
 eq(CCL.avg3(D, 5, 2, 2, false), '#CA2828', 'avg3: média 3×3 (8 × 200 + 220) / 9 = 202');
 eq(CCL.avg3(D, 5, 2, 2, true), '#DC2828', 'avg3 com Alt: o píxel exato');
 eq(CCL.avg3(D, 5, 0, 0, false), '#C82828', 'avg3 no canto: só os vizinhos que existem');
+// §33.14: nas bordas da imagem, a caixa de recolha só tem parte dos píxeis; os que ficam fora da caixa não contam
+const red7 = img(15, 15, x => x >= 7 ? [220, 40, 40] : [0, 0, 0]); for (let i = 0; i < red7.length; i += 4) if ((i / 4) % 15 < 7) red7[i + 3] = 0;
+eq(CCL.avg3(red7, 15, 7, 7, false, [7, 0, 15, 15]), '#DC2828', 'avg3 com caixa: borda esquerda (só as colunas ≥ 7 existem) → o vermelho, sem o transparente');
+const blue8 = img(15, 15, x => x <= 7 ? [47, 119, 177] : [0, 0, 0]); for (let i = 0; i < blue8.length; i += 4) if ((i / 4) % 15 > 7) blue8[i + 3] = 0;
+eq(CCL.avg3(blue8, 15, 7, 7, false, [0, 0, 8, 15]), '#2F77B1', 'avg3 com caixa: borda direita (só as colunas 0..7 existem) → o azul');
+eq(CCL.avg3(blue8, 15, 7, 7, true, [0, 0, 8, 15]), '#2F77B1', 'avg3 com caixa e Alt: o píxel exato');
+eq(CCL.avg3(D, 5, 2, 2, false, undefined), '#CA2828', 'avg3 sem caixa continua igual');
+// a imagem ajustada ao ecrã: o maior tamanho inteiro que cabe (pode ampliar até maxUp)
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(2400, 1600, 1368, 780, 8), { w: 1170, h: 780 }, 'fitRect: 2400×1600 em 1368×780 → 1170×780');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(300, 200, 1368, 780, 8), { w: 1170, h: 780 }, 'fitRect: imagem pequena é ampliada');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(100, 100, 1368, 780, 4), { w: 400, h: 400 }, 'fitRect: o limite de ampliação conta');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(1200, 2400, 1368, 780), { w: 390, h: 780 }, 'fitRect: imagem ao alto cabe pela altura');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(0, 0, 1368, 780), { w: 0, h: 0 }, 'fitRect: sem tamanho → 0×0');
+// o píxel do original debaixo do cursor (rect = getBoundingClientRect da imagem desenhada, já com o zoom)
+const R = { left: 100, top: 50, width: 1170, height: 780 };
+const PP = (...a) => typeof CCL.pickPx === 'function' ? CCL.pickPx(...a) : 'sem pickPx';
+eq(PP(R, 2400, 1600, 100, 50), { x: 0, y: 0 }, 'pickPx: canto de cima à esquerda → (0, 0)');
+eq(PP(R, 2400, 1600, 1270, 830), { x: 2399, y: 1599 }, 'pickPx: canto de baixo à direita → o último píxel');
+eq(PP(R, 2400, 1600, 99, 300), null, 'pickPx: fora da imagem (à esquerda) → null');
+eq(PP(R, 2400, 1600, 600, 831), null, 'pickPx: fora da imagem (em baixo) → null');
+eq(PP(R, 2400, 1600, 100 + 1170 / 2, 50 + 780 / 2), { x: 1200, y: 800 }, 'pickPx: o centro');
+eq(PP({ left: 505, top: 60, width: 390, height: 780 }, 1200, 2400, 505 + 390 * 0.375, 60 + 390), { x: 450, y: 1200 }, 'pickPx: imagem ao alto (a 2.ª de 4 riscas)');
+// a cor do texto que se lê sobre a amostra
+eq(typeof CCL.ink === 'function' && CCL.ink('#FFC718'), '#111111', 'ink: amarelo → texto escuro');
+eq(typeof CCL.ink === 'function' && CCL.ink('#2F77B1'), '#FFFFFF', 'ink: azul → texto branco');
+eq(typeof CCL.ink === 'function' && CCL.ink('#DC2828'), '#FFFFFF', 'ink: vermelho → texto branco');
+eq(typeof CCL.ink === 'function' && CCL.ink('#FFFFFF'), '#111111', 'ink: branco → texto escuro');
+// zoom à volta do cursor (ox, oy: distância ao centro do palco); 1 = ajustado, sem deslocar
+const ZA = (...a) => typeof CCL.zoomAbout === 'function' ? CCL.zoomAbout(...a) : 'sem zoomAbout';
+eq(ZA({ z: 1, px: 0, py: 0 }, 2, 100, 50, 16), { z: 2, px: -100, py: -50 }, 'zoomAbout: o ponto debaixo do cursor fica no sítio');
+eq(ZA({ z: 2, px: -100, py: -50 }, 0.25, 100, 50, 16), { z: 1, px: 0, py: 0 }, 'zoomAbout: abaixo de 1 volta ao ajustado e centrado');
+eq(ZA({ z: 8, px: 0, py: 0 }, 4, 0, 0, 16), { z: 16, px: 0, py: 0 }, 'zoomAbout: não passa do máximo');
 eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
 eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
 eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');

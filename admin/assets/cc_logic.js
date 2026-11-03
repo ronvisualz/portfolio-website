@@ -174,16 +174,46 @@
   }
 
   // ── conta-gotas (§33.11) ──
-  /** A cor em (x, y) de uma imagem RGBA (largura w): média 3×3, ou o píxel exato com Alt. */
-  function avg3(data, w, x, y, alt) {
+  /** A cor em (x, y) de uma imagem RGBA (largura w): média 3×3, ou o píxel exato com Alt.
+   *  box [x0, y0, x1, y1] (opcional, x1/y1 exclusivos): só os píxeis dentro dela existem (nas bordas da imagem, a
+   *  recolha só traz parte da caixa; o resto é transparente e não conta). */
+  function avg3(data, w, x, y, alt, box) {
     var h = Math.floor(data.length / 4 / w), r = 0, g = 0, b = 0, n = 0, R = alt ? 0 : 1;
+    var x0 = box ? Math.max(0, box[0]) : 0, y0 = box ? Math.max(0, box[1]) : 0, x1 = box ? Math.min(w, box[2]) : w, y1 = box ? Math.min(h, box[3]) : h;
     for (var dy = -R; dy <= R; dy++) for (var dx = -R; dx <= R; dx++) {
       var xx = x + dx, yy = y + dy;
-      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      if (xx < x0 || yy < y0 || xx >= x1 || yy >= y1) continue;
       var i = (yy * w + xx) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
     }
     var hx = function (v) { return ('0' + Math.round(v / (n || 1)).toString(16)).slice(-2); };
     return ('#' + hx(r) + hx(g) + hx(b)).toUpperCase();
+  }
+  /** O tamanho (inteiro, em px CSS) da imagem w×h ajustada a availW×availH sem cortar; amplia no máximo maxUp vezes. */
+  function fitRect(w, h, availW, availH, maxUp) {
+    if (!(w > 0 && h > 0)) return { w: 0, h: 0 };
+    var s = Math.min(Math.max(1, availW) / w, Math.max(1, availH) / h, maxUp > 0 ? maxUp : 8);
+    return { w: Math.max(1, Math.round(w * s)), h: Math.max(1, Math.round(h * s)) };
+  }
+  /** O píxel (x, y) do original w×h debaixo de (cx, cy); rect é o getBoundingClientRect da imagem desenhada (já com
+   *  zoom e deslocação). null fora da imagem. */
+  function pickPx(rect, w, h, cx, cy) {
+    if (!rect || !(rect.width > 0 && rect.height > 0) || !(w > 0 && h > 0)) return null;
+    var fx = (cx - rect.left) / rect.width, fy = (cy - rect.top) / rect.height;
+    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return null;
+    return { x: Math.min(w - 1, Math.floor(fx * w)), y: Math.min(h - 1, Math.floor(fy * h)) };
+  }
+  /** A cor do texto que se lê sobre a amostra hex: '#111111' ou '#FFFFFF' (o de maior contraste, WCAG). */
+  function ink(hex) {
+    var v = hexParse(hex); if (!v) return '#111111';
+    var lin = function (i) { var c = parseInt(v.substr(i, 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    var L = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5), Ld = 0.0056;   // #111111
+    return (1.05 / (L + 0.05)) >= ((L + 0.05) / (Ld + 0.05)) ? '#FFFFFF' : '#111111';
+  }
+  /** Zoom f à volta de um ponto (ox, oy: distância ao centro do palco); v = { z, px, py }; z entre 1 e max; em 1 fica centrado. */
+  function zoomAbout(v, f, ox, oy, max) {
+    var z0 = v.z || 1, z = Math.min(max || 16, Math.max(1, z0 * f));
+    if (z === 1) return { z: 1, px: 0, py: 0 };
+    return { z: z, px: ox - (ox - v.px) * z / z0, py: oy - (oy - v.py) * z / z0 };
   }
   /** '#RRGGBB' → 'rgb(r, g, b)' ou 'hsl(h, s%, l%)'. */
   function hexTo(hex, mode) {
@@ -449,5 +479,5 @@
     return adts(head, 0) ? asAudio('audio/aac') : null;
   }
 
-  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
