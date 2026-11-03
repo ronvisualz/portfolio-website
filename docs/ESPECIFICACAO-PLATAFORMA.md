@@ -4550,7 +4550,7 @@ A Pipeline v2 **acrescenta**; não remove nem substitui. As maquetes do briefing
 - **Permissões e âmbito:** vistas por serviço e carga da equipa usam `record_reach`/`reach_sql`; mudar o âmbito (ex.: responsável da frente) só em `inc/reach.php` com security-review. Horas disponíveis só para admins. «Chefe do serviço» = chefe de um departamento existente.
 - **Métricas:** tudo de `inc/metrics.php`; «ganho» continua a ser Kickoff; «Concluído no trimestre» é métrica nova.
 - **Código:** não copiar o CSS das maquetes; usar os componentes de `app.css`; só se criam os 7 tokens `--s-*`; prefixos novos sem colidir (`svc-` é dos Contactos, `exec` do Dashboard Executivo). Toppernote: `cc_on_kickoff`, sub-quadros por etapa e rondas da Review passam a ler as sub-etapas.
-- **Decidido a 3 nov:** «Em risco», faturação pelo comercial, comerciais veem todos os negócios no Pipeline e euros visíveis no Pipeline — ver §34.9. **Por decidir:** se o responsável de uma frente (produção) vê o negócio sem ser dono, para a vista «Por serviço».
+- **Decidido a 3 nov:** «Em risco», faturação pelo comercial, comerciais veem todos os negócios no Pipeline e euros visíveis no Pipeline — ver §34.9. Também decidido a 3 nov: quem é responsável por uma frente (ou tem tarefas nela) vê esse negócio **só em leitura**, mesmo sem ser o dono — muda-se em `inc/reach.php`, com security-review; editar continua a seguir as permissões atuais.
 
 ## 35. Linha visual v2 (2 nov 2026)
 
