@@ -571,8 +571,8 @@ function cc_refs_for_text(PDO $pdo, string $text, int $n = 9, array $exclude = [
     $words = array_unique(array_filter(preg_split('/[^\p{L}\p{N}]+/u', cc_fold($text)), fn($w) => mb_strlen($w) >= 5));
     usort($words, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
     $scores = [];
-    $ex = array_flip(array_map('intval', $exclude));
-    $st = $pdo->prepare('SELECT id FROM cc_assets WHERE deleted_at IS NULL AND search_text LIKE ? LIMIT 200');
+    $ex = array_flip(array_merge(array_map('intval', $exclude), cc_blocked_ids($pdo)));   // §33.9
+    $st = $pdo->prepare('SELECT id FROM cc_assets WHERE deleted_at IS NULL AND search_text LIKE ?' . cc_blocked_sql($pdo) . ' LIMIT 200');
     foreach (array_slice($words, 0, 14) as $w) {
         $st->execute(['%' . $w . '%']);
         foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) if (!isset($ex[(int)$id])) $scores[(int)$id] = ($scores[(int)$id] ?? 0) + 1;

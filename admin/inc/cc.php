@@ -679,6 +679,31 @@ function cc_asset_blocked(array $a): bool {
     return $k !== '' && !drive_can_see($k);
 }
 
+/**
+ * §33.9: os ids das referências que esta pessoa não vê (cc_asset_blocked), para as pesquisas, os números e os
+ * parecidos as deixarem de fora; senão um pedaço do nome, da legenda ou da cor dizia que o recibo existe (e o total
+ * contava-o). Vazio para quem tem o Financeiro. A regra é a da Drive (drive_billing), por isso corre em PHP.
+ */
+function cc_blocked_ids(PDO $pdo): array {
+    if (function_exists('can') && can('financeiro')) return [];
+    $ids = [];
+    foreach ($pdo->query("SELECT id, file_key FROM cc_assets WHERE file_key LIKE 'r2:%'")->fetchAll() as $r) {
+        if (cc_asset_blocked($r)) $ids[] = (int)$r['id'];
+    }
+    return $ids;
+}
+
+/** « AND <coluna> NOT IN (…)» com as referências que esta pessoa não vê, ou '' (para juntar a um WHERE). */
+function cc_blocked_sql(PDO $pdo, string $col = 'id'): string {
+    $ids = cc_blocked_ids($pdo);
+    return $ids ? " AND $col NOT IN (" . implode(',', $ids) . ')' : '';
+}
+
+/** O número da Caixa de entrada (sem o que esta pessoa não vê). */
+function cc_inbox_count(PDO $pdo): int {
+    return (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL' . cc_blocked_sql($pdo))->fetchColumn();
+}
+
 /** A referência para a interface (sem chaves de ficheiro nem embeddings). */
 function cc_asset_public(array $a, bool $full = false): array {
     $an = json_decode((string)($a['analysis'] ?? ''), true);
@@ -1327,7 +1352,7 @@ function cc_comment_add(PDO $pdo, array $board, ?array $card, string $body, arra
  * Devolve [lista de referências (públicas, com «match» quando é um frame), total].
  */
 function cc_library_search(PDO $pdo, array $f, int $limit = 60, int $offset = 0): array {
-    $where = ['a.deleted_at IS NULL'];
+    $where = ['a.deleted_at IS NULL' . cc_blocked_sql($pdo, 'a.id')];   // §33.9: nem na lista, nem no total
     $args = [];
     if (!empty($f['inbox'])) $where[] = 'a.inbox = 1';
     if (in_array($f['origin'] ?? '', ['external', 'topper'], true)) { $where[] = 'a.origin = ?'; $args[] = $f['origin']; }
@@ -1404,13 +1429,14 @@ function cc_library_search(PDO $pdo, array $f, int $limit = 60, int $offset = 0)
 /** As facetas com contagens (para os filtros da biblioteca). */
 function cc_library_facets(PDO $pdo): array {
     $out = [];
+    $hide = cc_blocked_sql($pdo);   // §33.9: os números não contam o que esta pessoa não vê
     foreach (array_keys(CC_VOCAB) as $k) {
-        $rows = $pdo->query("SELECT $k AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND $k <> '' GROUP BY $k ORDER BY n DESC, v LIMIT 40")->fetchAll();
+        $rows = $pdo->query("SELECT $k AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND $k <> ''$hide GROUP BY $k ORDER BY n DESC, v LIMIT 40")->fetchAll();
         $out[$k] = array_map(fn($r) => ['v' => (string)$r['v'], 'n' => (int)$r['n']], $rows);
     }
     if (db_has_column($pdo, 'cc_assets', 'audio_cat')) {
         $out['acat'] = array_map(fn($r) => ['v' => (string)$r['v'], 'n' => (int)$r['n']],
-            $pdo->query("SELECT audio_cat AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND kind = 'audio' AND audio_cat <> '' GROUP BY audio_cat")->fetchAll());
+            $pdo->query("SELECT audio_cat AS v, COUNT(*) AS n FROM cc_assets WHERE deleted_at IS NULL AND kind = 'audio' AND audio_cat <> ''$hide GROUP BY audio_cat")->fetchAll());
     }
     return $out;
 }
@@ -1441,7 +1467,8 @@ function cc_vec_dot(array $a, array $b): float {
  * facetas e paleta. $exclude: ids a deixar de fora.
  */
 function cc_nearest(PDO $pdo, ?array $vec, int $n = 24, array $exclude = [], ?array $like = null): array {
-    $ex = array_flip(array_map('intval', $exclude));
+    // §33.9: o que esta pessoa não vê nunca é «parecido» («Mais como este», «Trocar», «Referências para o brief»)
+    $ex = array_flip(array_merge(array_map('intval', $exclude), cc_blocked_ids($pdo)));
     $scores = [];
     if ($vec) {
         $model = (string)$pdo->query("SELECT embed_model FROM cc_assets WHERE embedding IS NOT NULL ORDER BY id DESC LIMIT 1")->fetchColumn();

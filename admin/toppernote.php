@@ -155,7 +155,7 @@ if ($boardId) {
 // ── os separadores ──────────────────────────────────────────
 $tab = isset(CC_TABS[$_GET['t'] ?? '']) ? (string)$_GET['t'] : 'projetos';
 csp_send('', CC_EMBED_FRAMES);   // a Biblioteca abre os leitores de música (SoundCloud, Spotify…)
-$inboxN = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
+$inboxN = cc_inbox_count($pdo);
 render_header('Toppernote', 'criativo', '', [CC_TABS[$tab]]);
 render_flashes();
 ?>

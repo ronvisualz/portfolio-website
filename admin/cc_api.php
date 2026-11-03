@@ -273,7 +273,7 @@ case 'library': {
     if (rint('offset') === 0) {
         $out['facets'] = cc_library_facets($pdo);
         $out['vocab'] = array_map(fn($k) => ['key' => $k, 'label' => CC_VOCAB[$k][0], 'values' => cc_vocab($pdo, $k)], array_keys(CC_VOCAB));
-        $out['inbox_n'] = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
+        $out['inbox_n'] = cc_inbox_count($pdo);
         $out['acats'] = CC_AUDIO_CATS;
     }
     cout(200, $out);
