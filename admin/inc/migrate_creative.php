@@ -275,4 +275,18 @@ function migrate_cc_42(PDO $pdo): void {
     }
     if ($now) cc_media_audio_cards($pdo, array_map(fn($a) => (int)$a['id'], $now));
     foreach ($queue as $id) cc_job_add($pdo, 'media_sniff', $id, null, null, null);
+    migrate_cc_42_rt_heal($pdo);
+}
+
+/**
+ * 42 · Toppernote (§33.10): os cartões repostos com «Anular» antes desta correção estão vivos na base, mas o tempo
+ * real esconde-os a todos (o marcador de apagado no documento é mais recente do que o cartão, e cada browser guarda
+ * uma cópia do documento). A base é quem sabe que cartões existem: os vivos passam a ter a hora de agora, e o
+ * primeiro browser que abrir o Topperboard limpa os marcadores antigos (o tempo real fica com o mais recente).
+ * Os apagados e quem mudou cada cartão ficam como estão. Nada lê o documento do tempo real nem o R2.
+ */
+function migrate_cc_42_rt_heal(PDO $pdo): void {
+    if (!db_has_table($pdo, 'cc_cards')) return;
+    $now = date('Y-m-d H:i:s');
+    $pdo->prepare('UPDATE cc_cards SET updated_at = ? WHERE deleted_at IS NULL AND (updated_at IS NULL OR updated_at < ?)')->execute([$now, $now]);
 }

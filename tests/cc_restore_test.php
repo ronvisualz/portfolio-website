@@ -86,4 +86,15 @@ $other = cc_board_create($pdo, ['title' => 'Teste33 · restaurar (outro)', 'kind
 $r = tests_http('POST', '/admin/cc_api.php?a=cards_restore', ['board' => $other, 'ids' => [$D]], 1, true);
 t_true($r['code'] !== 200 || !($r['json']['cards'] ?? []), 'cartões de outro Topperboard não são repostos nem devolvidos');
 
+// ── cura (migração 42): os cartões repostos antes desta correção estão vivos na base mas escondidos pelo marcador de
+//    apagado do tempo real; a hora dos cartões vivos passa a ser agora (a base ganha ao abrir), a dos apagados não muda ──
+require_once __DIR__ . '/../admin/inc/migrate_creative.php';
+$api('cards_delete', [$N], 1);   // a seta (do desenho para a nota) sai com a nota
+$old([$D, $N, $A, $F]);
+$t0 = date('Y-m-d H:i:s', time() - 1);
+migrate_cc_42($pdo);
+migrate_cc_42($pdo);   // idempotente
+t_true($row($D)['updated_at'] >= $t0 && $row($F)['updated_at'] >= $t0, 'a migração 42 põe a hora de agora nos cartões vivos (' . $row($D)['updated_at'] . ', ' . $row($F)['updated_at'] . ')');
+t_eq([$row($N)['updated_at'], $row($A)['updated_at'], (int)$row($D)['updated_by']], [$OLD, $OLD, 0], 'não toca nos apagados nem em quem mudou o cartão');
+
 t_done();
