@@ -4625,6 +4625,17 @@ A topper. consegue fazer todos os serviços dentro de casa, mas muitas vezes sub
 - Tom próximo e profissional; momentos de reconhecimento («Entrega aprovada — obrigado, Marta»); prazos sempre visíveis; nada técnico da plataforma interna à vista.
 - Acessibilidade: contraste AA nos dois modos, teclado, reduzir movimento.
 
+### 36.8.1 Esclarecimentos das maquetes (3 nov 2026)
+- **Link = credencial.** Na ficha do negócio só se vê o estado do acesso e «Gerir acesso na ficha do contacto». Copiar e gerir o link só na ficha do contacto, para quem pode editar o contacto (verificado no servidor); cada «Copiar link» fica registado. Duas ações: **«Trocar link»** (link exposto: roda o token; «Perdi o link» continua a funcionar) e **«Suspender acesso»** (roda o token e bloqueia «Perdi o link» e os emails com link até alguém reativar; avisa que os trabalhos ativos têm de ser reatribuídos). Aberto com uma sessão interna ativa, o link abre em pré-visualização só de leitura («A ver como …»), sem registar ações em nome do externo. Validade: 30 dias depois do último prazo ativo, renovada sozinha.
+- **Histórico visível ao externo:** só as frentes atribuídas a partir do envio do 1.º link. O externo nunca vê códigos internos (ID…).
+- **Brief:** o email «Novo trabalho» sai com «Enviar brief» (pelo responsável ou pela automação «enviar brief ao externo»), não ao atribuir a frente.
+- **Ponto de situação:** o clique envia logo; a seguir aparece «Juntar uma nota» durante uns segundos. Os 3 botões têm o mesmo peso visual. No email: escolher e confirmar na página mínima que abre (link assinado de uso único; o registo é por POST). Os lembretes contam dias úteis sem ponto de situação; carregar uma entrega também reinicia a contagem; mensagens não.
+- **Material e referências:** só ficheiros partilhados explicitamente com a frente, escolhidos um a um, servidos por URLs assinados de curta duração depois de validar o token e o âmbito (nunca uma ligação pública da Drive); downloads registados; o Topperboard abre só de leitura com o mesmo âmbito e fecha quando o acesso é suspenso.
+- **Tarefa interna:** «Rever entrega · {externo} · {marco}» (a versão vai na descrição; uma entrega nova atualiza a tarefa aberta).
+- **Empresas:** o link é por pessoa de contacto; cada pessoa da empresa tem o seu e aceita o NDA em nome próprio, ligada à empresa.
+- **Dados pessoais:** o IP da aceitação do NDA só aparece a admins («IP registado · ver»); o registo de acessos não guarda cidade nem dispositivo.
+- **Avaliação interna:** só na ficha do contacto (`admin/contact.php` / `inc/contact_view.php`), para sócios e admins; não aparece na ficha do negócio.
+
 ### 36.9 Fase 2 (depois — decidido a 3 nov)
 O freelancer carrega a fatura ou o recibo verde no Topperspace (entra no Financeiro em «A pagar», com a retenção de IRS) e vê quando vai ser pago.
 
