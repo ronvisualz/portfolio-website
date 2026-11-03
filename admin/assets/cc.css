@@ -667,7 +667,9 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-d, .cc-dpick .dp-f { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 8px; border-radius: 8px; color: var(--fg); font: 500 13px var(--body); cursor: pointer; min-height: 40px; }
 .cc-dpick .dp-d:hover, .cc-dpick .dp-f:hover { background: var(--chip); }
 .cc-dpick .dp-f.on { background: color-mix(in srgb, var(--hi) 18%, transparent); }
-.cc-dpick .dp-f:focus-visible, .cc-dpick .dp-d:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
+/* foco ≠ escolha: o foco é o anel de foco da plataforma (--focus, azul: 3:1 nos dois modos), a escolha é o amarelo */
+.cc-dpick .dp-d:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cc-dpick .dp-f:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cc-dpick .dp-ck { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--mute); border-radius: 4px; display: grid; place-items: center; }
 .cc-dpick .dp-f.on .dp-ck { background: var(--hi); border-color: var(--hi); }
 .cc-dpick .dp-f.on .dp-ck::after { content: ''; width: 8px; height: 4px; border: 2px solid #111; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
@@ -677,7 +679,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 /* §33.9: grelha com pré-visualização, como a «Grelha» da Drive (o CSS da Drive não está nesta página: classes próprias) */
 .cc-dpick .dp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; padding: 6px 0; }
 .cc-dpick .dp-grid .dp-f { position: relative; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: 12px; }
-.cc-dpick .dp-grid .dp-f.on { box-shadow: inset 0 0 0 2px var(--hi); }
+.cc-dpick .dp-grid .dp-f.on { box-shadow: inset 0 0 0 2px var(--hi); }   /* a escolha: por dentro (o foco fica por fora, a 2 px) */
 .cc-dpick .dp-grid .dp-ck { position: absolute; top: 12px; left: 12px; z-index: 1; width: 20px; height: 20px; border-radius: 6px; background: var(--raise); }
 .cc-dpick .dp-th { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden; background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-th img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }

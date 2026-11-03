@@ -105,6 +105,59 @@ const spy = p => {
   check(await focusI() === 1, '↑ volta à linha de cima');
   await p.keyboard.press('ArrowLeft'); await p.keyboard.press('ArrowLeft');
   check(await focusI() === 0, '← no primeiro fica');
+  // foco ≠ escolha (WCAG 2.4.7 e 1.4.11), no claro e no escuro: o foco tem anel próprio, fora da célula e com 3:1 sobre o
+  // diálogo; a escolha fica com o anel amarelo por dentro. Um escolhido com foco vê-se diferente de um escolhido sem foco.
+  const lum = c => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const ratio = (a, c) => { const x = lum(a), y = lum(c); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const look = loc => loc.evaluate(el => { const s = getComputedStyle(el); return { fv: el.matches(':focus-visible'), os: s.outlineStyle, ow: parseFloat(s.outlineWidth) || 0, oc: s.outlineColor,
+    oo: parseFloat(s.outlineOffset) || 0, bs: s.boxShadow, bg: getComputedStyle(el.closest('.cc-dpick')).backgroundColor }; });
+  const ring = l => l.os === 'none' || !l.ow ? 'sem anel' : l.ow + 'px ' + l.oc + ' a ' + l.oo + 'px';
+  const shot = async loc => { const r = await loc.boundingBox(); return (await p.screenshot({ clip: { x: r.x - 6, y: r.y - 6, width: r.width + 12, height: r.height + 12 } })).toString('base64'); };
+  const cmp = await (await b.newContext()).newPage();   // comparar píxeis numa página em branco (sem a CSP nem o estado do Topperboard)
+  const diff = (a, c) => cmp.evaluate(async ([a, c]) => {
+    const img = s => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = 'data:image/png;base64,' + s; });
+    const px = i => { const cv = document.createElement('canvas'); cv.width = i.width; cv.height = i.height; const x = cv.getContext('2d'); x.drawImage(i, 0, 0); return x.getImageData(0, 0, i.width, i.height).data; };
+    const A = px(await img(a)), C = px(await img(c));
+    let n = 0; for (let i = 0; i < A.length; i += 4) if (Math.max(Math.abs(A[i] - C[i]), Math.abs(A[i + 1] - C[i + 1]), Math.abs(A[i + 2] - C[i + 2])) > 48) n++;
+    return n;
+  }, [a, c]);
+  const xs = cell(dlg, 'x.pdf'), nt = cell(dlg, 'n.txt');
+  await p.mouse.move(2, 2);   // sem hover por cima das células
+  await xs.focus(); await p.keyboard.press(' ');
+  check(await xs.getAttribute('aria-pressed') === 'true' && await nt.getAttribute('aria-pressed') === 'false', 'x.pdf escolhido, n.txt não');
+  const theme0 = await p.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  for (const theme of ['light', 'dark']) {
+    await p.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
+    await p.waitForTimeout(150);
+    await xs.focus(); await p.waitForTimeout(60);
+    const fs = await look(xs), shFs = await shot(xs);            // escolhido, com foco
+    await nt.focus(); await p.waitForTimeout(60);
+    const s = await look(xs), shS = await shot(xs);              // escolhido, sem foco
+    const fn = await look(nt);                                   // com foco, não escolhido
+    const sel = (s.bs.match(/rgba?\([^)]*\)/) || [''])[0];
+    check(fs.fv && fn.fv, theme + ': o foco vem do teclado (:focus-visible)');
+    check(fs.os !== 'none' && fs.ow >= 2 && fn.os !== 'none' && fn.ow >= 2, theme + ': a célula com foco tem anel de foco (' + ring(fs) + ' / ' + ring(fn) + ')');
+    check(ring(fs) !== ring(s), theme + ': o anel de um escolhido com foco é diferente do de um escolhido sem foco (' + ring(fs) + ' vs ' + ring(s) + ')');
+    check(fs.bs === s.bs && fs.bs !== fn.bs, theme + ': com foco, o escolhido continua a mostrar a escolha e o não escolhido não (' + fs.bs + ' / ' + fn.bs + ')');
+    check(!!sel && fn.oc !== sel, theme + ': o foco não usa a cor da escolha (' + fn.oc + ' vs ' + sel + ')');
+    check(fn.oo >= 0, theme + ': o anel do foco fica fora da célula, onde a escolha não desenha (' + fn.oo + ' px)');
+    const cr = ratio(fn.oc, fn.bg);
+    check(cr >= 3, theme + ': o anel do foco tem pelo menos 3:1 sobre o diálogo (' + cr.toFixed(2) + ':1, ' + fn.oc + ' sobre ' + fn.bg + ')');
+    const dpx = await diff(shFs, shS);
+    check(dpx > 200, theme + ': um escolhido com foco vê-se diferente de um escolhido sem foco (' + dpx + ' píxeis diferentes)');
+  }
+  // as pastas (linhas por cima da grelha) também: foco com 3:1 nos dois modos
+  await dlg.locator('input[type=search]').fill(''); await p.waitForTimeout(400);
+  for (const theme of ['light', 'dark']) {
+    await p.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
+    await p.waitForTimeout(150);
+    await dlg.locator('input[type=search]').focus();
+    await dlg.locator('.dp-d').first().focus(); await p.waitForTimeout(60);
+    const fd = await look(dlg.locator('.dp-d').first()), cd = ratio(fd.oc, fd.bg);
+    check(fd.fv && fd.os !== 'none' && fd.ow >= 2 && cd >= 3, theme + ': a pasta com foco tem anel com pelo menos 3:1 (' + ring(fd) + ', ' + cd.toFixed(2) + ':1)');
+  }
+  await p.evaluate(t => t === null ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', t), theme0);
+  await cmp.context().close();
   // Tab fica dentro do diálogo
   let inside = true;
   for (let i = 0; i < n + 8; i++) { await p.keyboard.press('Tab'); inside = inside && await p.evaluate(() => !!document.activeElement.closest('.cc-dpick')); }
