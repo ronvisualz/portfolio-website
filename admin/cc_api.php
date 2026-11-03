@@ -722,9 +722,11 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
     if (!is_array($keys) || !$keys) cfail('Nada para juntar.');
     release_session();
     require_once __DIR__ . '/inc/drive_moves.php';
-    $cards = []; $skipped = 0; $i = 0;
-    foreach (array_slice($keys, 0, 30) as $k) {
-        if (!is_string($k) || $k === '' || str_ends_with($k, '/') || drive_hidden($k) || !drive_can_see($k)) { $skipped++; continue; }
+    $cards = []; $skipped = 0; $folders = 0; $i = 0;
+    $over = count($keys) > CC_DRIVE_ADD_MAX;
+    foreach (array_slice($keys, 0, CC_DRIVE_ADD_MAX) as $k) {
+        if (is_string($k) && str_ends_with($k, '/')) { $folders++; continue; }   // as pastas não entram (dito à parte)
+        if (!is_string($k) || $k === '' || drive_hidden($k) || !drive_can_see($k)) { $skipped++; continue; }
         // §32.1: com um mover instantâneo ainda na fila, o objeto está no sítio antigo; o cartão aponta para o novo
         $phys = drive_resolve($pdo, $k);
         if (!($h = r2_head($phys))) { $skipped++; continue; }
@@ -745,7 +747,8 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
         $i++;
     }
     $rev = $cards ? cc_board_touch($pdo, (int)$b['id']) : (int)$b['rev'];
-    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'msg' => count($cards) . (count($cards) === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.') . ($skipped ? ' ' . $skipped . ' sem acesso ou já não existem.' : '')]);
+    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'added' => count($cards), 'folders' => $folders, 'skipped' => $skipped, 'over' => $over,
+               'msg' => cc_drive_add_msg(count($cards), $folders, $skipped, $over)]);
 }
 
 case 'link_add': {

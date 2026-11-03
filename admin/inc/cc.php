@@ -1879,6 +1879,18 @@ function cc_assets_by_ids(PDO $pdo, array $ids): array {
 
 // ── ficheiros da Drive no Topperboard (§33.9) ───────────────
 
+/** Até quantas chaves entram num pedido drive_add (o seletor e o arrasto mandam pedidos deste tamanho). */
+const CC_DRIVE_ADD_MAX = 30;
+/** A mensagem de juntar da Drive — a mesma de CCL.driveMsg (cc_logic.js), que soma vários pedidos. */
+function cc_drive_add_msg(int $added, int $folders, int $skipped, bool $over): string {
+    $out = [];
+    if ($added || !$folders) $out[] = $added . ($added === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.');
+    if ($folders) $out[] = 'As pastas não entram: abra a pasta e escolha os ficheiros.';
+    if ($skipped) $out[] = $skipped . ($skipped === 1 ? ' sem acesso ou já não existe.' : ' sem acesso ou já não existem.');
+    if ($over) $out[] = 'Entram até ' . CC_DRIVE_ADD_MAX . ' de cada vez: os restantes ficaram de fora.';
+    return implode(' ', $out);
+}
+
 /** Estas chaves (ficheiros ou pastas) foram para o Lixo da Drive: as referências que apontam para elas ficam marcadas.
  *  O item do Lixo é o mais recente com essa chave (ou a pasta que a contém). Devolve os ids das referências marcadas. */
 function cc_drive_gone(PDO $pdo, array $keys, int $trashId = 0): array {
