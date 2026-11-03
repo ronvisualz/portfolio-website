@@ -2393,7 +2393,7 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
     Clique adiciona; Shift, várias; Esc sai.
   - Clicar numa cor copia o #HEX. O menu ⋯ tem RGB/HSL, renomear, remover (só as manuais) e criar Amostra de cor.
     «Copiar paleta» copia todas.
-  - Funciona no fotograma em pausa dos vídeos.
+  - Funciona no fotograma em pausa dos vídeos (ecrã inteiro e leitura do fotograma por um clone com CORS: §10.32).
   - `cc_file.php …&px=1` serve os píxeis no próprio domínio, só para imagens raster e com `CSP: sandbox`.
 - **Selecionar várias coisas (§33.12):**
   - Arrastar no fundo move a tela.
@@ -2436,6 +2436,77 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Fica para depois:** personalização de cores/formas.
 - **Testes na bancada:** o R2 simulado vive em memória; `tests_cc_asset()` (`tests/fixtures.php`) repõe o objeto de
   uma referência reaproveitada depois de a bancada reiniciar, e as imagens do teste de envio otimista são únicas.
+
+### 10.32 Toppernote — correções pedidas a 2 nov — §33.14 (2–3 nov 2026)
+
+Cada problema foi investigado até à causa (reprodução na bancada e um segundo revisor cético) antes de ser corrigido;
+cada correção tem um teste que falhava antes dela.
+
+- **Faturação (segurança, encontrado na investigação):**
+  - Causa: a miniatura de um ficheiro da Faturação posto num Topperboard por quem tem o Financeiro era servida a todos
+    (`cc_file.php` só verificava a chave que servia, `.topper/cc/t/…`, e não a da Drive). Também na Drive: o catálogo
+    dava os etags de todas as miniaturas (`.topper/thumbs/<etag>.jpg`) e `thumb_urls`/`thumb_sign` assinavam qualquer
+    etag — quem não tem o Financeiro lia a miniatura de um recibo com os valores em euros.
+  - Agora: `cc_asset_blocked` verifica a chave da Drive da própria referência para qualquer tamanho, para os
+    fotogramas e para `px=1`/`cors=1`; o cartão mostra «Sem acesso a este ficheiro» (sem título, miniatura nem
+    original), a Biblioteca, a pesquisa e as semelhantes deixam-no de fora e as ações sobre ele dão 403. Na Drive, o
+    catálogo só dá as miniaturas dos ficheiros que a pessoa vê, `thumb_urls` só assina essas e `thumb_sign` recusa um
+    etag que só existe na Faturação (um envio acabado de chegar continua a gravar a sua miniatura).
+- **Apresentar — vídeo e áudio até ao fim:**
+  - Causa: a pré-visualização ao passar o cursor não sabia de Apresentar e, ao sair o cursor, apagava o primeiro
+    `<video>` do cartão — o da apresentação.
+  - Agora: em Apresentar não há pré-visualização; o vídeo/áudio da apresentação é só dela, sobrevive a uma
+    re-renderização (sondagem, IA) e o cartão apresentado nunca sai da área desenhada; o MP3 toca na barra de
+    Apresentar; Espaço pausa/retoma e nunca salta um slide de media.
+- **MP3 como cartão de áudio:**
+  - Causa: o tipo `video/*` dado pelo browser vinha antes da extensão de áudio (no browser e no servidor), e o servidor
+    confiava no tipo do cliente. O caso real em produção: «WhatsApp Audio … .mpeg», `video/mpeg`, a começar por `ID3`.
+  - Agora: o servidor decide pelos primeiros bytes (`cc_media_sniff`, leituras parciais no R2): MP3/ID3, ADTS, Ogg,
+    FLAC, WAV e MP4/MOV/WebM sem pista de vídeo são áudio; um vídeo verdadeiro que o browser não descodifica (H.264 +
+    Opus, ProRes, HEVC) continua vídeo. Vale para envios, «Da Drive» e os já gravados (trabalho `media_sniff`).
+- **Anular depois da borracha (com tempo real):**
+  - Causa: repor um cartão não limpava o marcador de apagado do tempo real — o marcador era mais recente do que o
+    cartão e escondia-o logo a seguir ao Anular (na base o traço existia; ninguém o via).
+  - Agora: repor e apagar atualizam a hora do cartão e publicam a mudança no tempo real; o aviso de apagar tem
+    «Anular»; Anular espera pelos pedidos em curso (no máximo 10 s cada). A migração 42 repõe uma vez os cartões vivos
+    que tinham ficado escondidos.
+- **Barra de ferramentas estática e expansível:**
+  - Causa: 1 px a mais (botões de 36 px numa coluna de 35 px úteis) tornava a barra deslizável para o lado; com
+    barras de deslocação clássicas (Windows/Opera) via-se uma barra horizontal.
+  - Agora: a barra nunca desliza para o lado; seta na borda «Expandir ferramentas»/«Recolher ferramentas» e tecla ]
+    (também AltGr) mostram o nome de cada ferramenta; lembrado por pessoa (`cc_api pref`, k=tools) e mantido nos
+    sub-Topperboards; a vista compensa a largura para os cartões não saltarem; no toque a seta tem alvo de 44 px. O
+    painel de detalhes da direita ficou como estava.
+- **Conta-gotas em ecrã inteiro:**
+  - Causa: escolhia-se sobre a pré-visualização do painel (476×317 px na bancada: um píxel do ecrã ≈ 5×5 do original),
+    com a lupa de 120 px e o #HEX a 12 px; nas bordas e em imagens ao alto a posição falhava (object-fit).
+  - Agora: «+ Escolher da imagem» (I) abre a imagem — ou o fotograma em pausa do vídeo — em ecrã inteiro: zoom com a
+    roda, + − 0 e a pinça (iPad), deslocação com zoom; lupa de 168 px com a cor num retângulo e o #HEX a 20 px; barra
+    com amostra de 56×56 px, #HEX e RGB; média 3×3 só com os píxeis que existem (bordas certas), Alt = 1 px, Shift =
+    várias; «Concluir», Esc e clique fora saem e devolvem o foco; as teclas do Topperboard ficam paradas; no toque a
+    lupa fica acima ou ao lado do dedo e um toque acrescenta uma vez só. A entrada é só opacidade (com escala, um
+    clique rápido perto da borda caía no que está por trás).
+  - O fotograma lê-se por um clone do vídeo com `crossorigin` e um endereço assinado próprio (`cc_file.php …&cors=1`,
+    com os mesmos bloqueios da Faturação). **Depende da regra CORS do R2** aceitar a origem do admin; sem ela aparece
+    «Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.».
+- **«Juntar da Drive» com pré-visualização e arrastar:**
+  - Causa: o seletor foi feito só com nomes (sem miniaturas nem arrastar), e o fundo do diálogo tapava o Topperboard.
+  - Agora: grelha com as miniaturas da Drive (as que existem; as que faltam feitas no browser como na Drive, só para o
+    que se vê), ícone com a extensão no resto e ▶ nos vídeos; setas na grelha; arrastar uma célula (ou as escolhidas)
+    para o Topperboard põe os cartões onde se larga e fecha o seletor — o diálogo só fica transparente depois de o rato
+    se afastar 24 px (um clique trémulo não larga nada); largar fora devolve o diálogo com a escolha. Arrastar da
+    página da Drive noutro separador também entra. Pastas: «As pastas não entram: abra a pasta e escolha os
+    ficheiros.»; mais de 30 ficheiros vão em pedidos de 30 com um só Anular e uma só mensagem. No toque, tocar e
+    «Adicionar» continua a ser o caminho principal.
+- **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
+  trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
+  `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. Ao publicar, a migração vai antes de `inc/migrate.php`.
+- **Testes** (bancada): PHP `cc_drive_billing_thumb`, `cc_media_sniff`, `cc_media_kind`, `cc_restore`,
+  `cc_drive_add_msg`, `drive_thumbs_perm` (e `cc_pref`, `cc_file_px` alargados); JS `cc_logic_test.js`; Playwright
+  `cc_drive_noaccess`, `cc_present_hover`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_drive_pick_thumbs`,
+  `cc_drive_pick_drag` (e `cc_eyedropper`, `cc_drive_pick` alargados).
+- **A verificar depois de publicar:** escolher a cor do fotograma de um vídeo (tocar no detalhe, depois «+ Escolher da
+  imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium).
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
@@ -4453,3 +4524,20 @@ Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar vár
 Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
 - **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
 - **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
+
+### 33.14 Correções pedidas pela equipa (2 nov 2026)
+- **Apresentar:** ao passar o cursor por um vídeo em Apresentar ele não deve parar quando o cursor sai — **toca até
+  ao fim**. Os **MP3** ouvem-se em Apresentar.
+- **MP3 como áudio:** um MP3 aparece como ficheiro de áudio (forma de onda e leitor), não como um retângulo de vídeo
+  — também os que vêm com extensão `.mpeg` ou como `video/mpeg` (gravações do WhatsApp), nos envios novos, «Da Drive»
+  e nos já gravados.
+- **Barra de ferramentas do Topperboard:** **estática** (não desliza para o lado); «expansível» quer dizer poder
+  alargá-la com o nome das ferramentas, como a barra lateral do menu (seta na borda e tecla ]), lembrado por pessoa.
+  O painel de detalhes da direita fica como está.
+- **Conta-gotas:** «+ Escolher da imagem» abre a imagem em **ecrã inteiro** para acertar no píxel com precisão, com a
+  cor **em grande** (retângulo/quadrado com a amostra e o #HEX legível).
+- **Borracha:** apagar com a borracha e carregar em **Anular** repõe o que se apagou (como mover um cartão ou coluna).
+- **«Da Drive»:** o seletor mostra a **pré-visualização** dos ficheiros como a Drive, e os ficheiros **arrastam-se**
+  para o Topperboard — do seletor e da página da Drive noutro separador.
+- **Segurança (encontrado na investigação):** a miniatura, o nome e o original de um ficheiro da Faturação nunca chegam
+  a quem não tem o Financeiro, mesmo que alguém com o Financeiro o ponha num Topperboard ou o veja na Drive.
