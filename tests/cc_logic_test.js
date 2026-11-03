@@ -290,5 +290,41 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(S(Z(0)), null, 'sniffMedia: vazio → desconhecido');
   eq(typeof CCL.sniffMore === 'function' && CCL.sniffMore(m4a) && CCL.sniffMore(qt) && !CCL.sniffMore(B(ebml('webm'))) && !CCL.sniffMore(mp3), true, 'sniffMore: só MP4/MOV (o moov pode estar mais à frente ou no fim) pedem mais bytes'); }
 
+// ── seletor da Drive: arrastar e grelha (§33.9) ──
+{ const F = n => typeof CCL[n] === 'function' ? CCL[n] : () => 'sem ' + n;
+  const DK = F('dragKeys'), GS = F('gridStep'), DC = F('driveChunks'), DM = F('driveMsg');
+  eq(DK(['a', 'b'], 'b'), ['a', 'b'], 'dragKeys: arrastar um dos escolhidos leva todos os escolhidos');
+  eq(DK(['a', 'b'], 'c'), ['c'], 'dragKeys: arrastar um que não está escolhido leva só esse');
+  eq(DK([], 'a'), ['a'], 'dragKeys: sem nada escolhido leva o arrastado');
+  eq(DK(new Set(['x', 'y']), 'y'), ['x', 'y'], 'dragKeys: aceita o Set da seleção (pela ordem em que se escolheu)');
+  // grelha de 4 colunas com 10 ficheiros: 0-3 / 4-7 / 8-9
+  eq(GS(5, 'ArrowRight', 4, 10), 6, 'gridStep: → anda um');
+  eq(GS(3, 'ArrowRight', 4, 10), 4, 'gridStep: → no fim da linha passa para o primeiro da linha seguinte');
+  eq(GS(9, 'ArrowRight', 4, 10), -1, 'gridStep: → no último fica (-1 = não mexe)');
+  eq(GS(0, 'ArrowLeft', 4, 10), -1, 'gridStep: ← no primeiro fica');
+  eq(GS(4, 'ArrowLeft', 4, 10), 3, 'gridStep: ← no início da linha volta ao fim da linha de cima');
+  eq(GS(5, 'ArrowDown', 4, 10), 9, 'gridStep: ↓ desce uma linha (mesma coluna)');
+  eq(GS(6, 'ArrowDown', 4, 10), 9, 'gridStep: ↓ para uma linha mais curta vai ao último');
+  eq(GS(8, 'ArrowDown', 4, 10), -1, 'gridStep: ↓ na última linha fica');
+  eq(GS(9, 'ArrowUp', 4, 10), 5, 'gridStep: ↑ sobe uma linha');
+  eq(GS(1, 'ArrowUp', 4, 10), -1, 'gridStep: ↑ na primeira linha fica');
+  eq([GS(6, 'Home', 4, 10), GS(2, 'End', 4, 10)], [0, 9], 'gridStep: Home vai ao primeiro, End ao último');
+  eq([GS(0, 'ArrowDown', 1, 3), GS(2, 'ArrowDown', 1, 3)], [1, -1], 'gridStep: com uma coluna (telemóvel) ↓ anda um');
+  eq([GS(0, 'ArrowDown', 0, 3), GS(0, 'Enter', 4, 10), GS(7, 'ArrowRight', 4, 5)], [1, -1, -1], 'gridStep: colunas inválidas contam como 1; outras teclas e índices fora não mexem');
+  // juntar mais de 30: vários pedidos, cada um num bloco de linhas por baixo do anterior (o servidor põe 4 por linha, 320 px)
+  const keys = Array.from({ length: 65 }, (_, i) => 'k' + i);
+  const ch = DC(keys, { x: 100, y: 200 }, 30);
+  eq(Array.isArray(ch) && ch.map(c => [c.keys.length, c.keys[0], c.x, c.y]), [[30, 'k0', 100, 200], [30, 'k30', 100, 2760], [5, 'k60', 100, 5320]], 'driveChunks: 65 chaves → 30 + 30 + 5, cada bloco 8 linhas abaixo');
+  eq(DC(['a'], { x: 0, y: 0 }, 30).length, 1, 'driveChunks: uma chave → um pedido');
+  eq(DC([], { x: 0, y: 0 }, 30), [], 'driveChunks: nada → nenhum pedido');
+  // a mensagem (igual à do servidor quando um pedido não chega)
+  eq(DM({ added: 1 }), '1 ficheiro da Drive no Topperboard.', 'driveMsg: um');
+  eq(DM({ added: 65 }), '65 ficheiros da Drive no Topperboard.', 'driveMsg: vários');
+  eq(DM({ added: 1, folders: 1 }), '1 ficheiro da Drive no Topperboard. As pastas não entram: abra a pasta e escolha os ficheiros.', 'driveMsg: com uma pasta largada');
+  eq(DM({ added: 0, folders: 2 }), 'As pastas não entram: abra a pasta e escolha os ficheiros.', 'driveMsg: só pastas');
+  eq(DM({ added: 2, skipped: 1 }), '2 ficheiros da Drive no Topperboard. 1 sem acesso ou já não existe.', 'driveMsg: um sem acesso');
+  eq(DM({ added: 0, skipped: 3 }), '0 ficheiros da Drive no Topperboard. 3 sem acesso ou já não existem.', 'driveMsg: nenhum entrou');
+  eq(DM({ added: 30, over: 1 }), '30 ficheiros da Drive no Topperboard. Entram até 30 de cada vez: os restantes ficaram de fora.', 'driveMsg: mais de 30 num só pedido'); }
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

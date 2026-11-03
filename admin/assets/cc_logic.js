@@ -162,6 +162,44 @@
     return n === 1 ? '1 alteração não anulada: outra pessoa mudou este cartão.' : n + ' alterações não anuladas: outras pessoas mudaram estes cartões.';
   }
 
+  // ── seletor da Drive (§33.9) ──
+  /** O que se arrasta: todos os escolhidos se o arrastado é um deles; senão só o arrastado. picked: Array ou Set. */
+  function dragKeys(picked, k) {
+    var l = Array.from(picked || []);
+    return l.indexOf(k) >= 0 ? l : [k];
+  }
+  /** O índice seguinte numa grelha de n ficheiros com cols colunas (ordem de leitura); -1 = fica onde está.
+   *  ← → andam um (passam de linha); ↑ ↓ uma linha (↓ para uma linha mais curta vai ao último); Home/End. */
+  function gridStep(i, key, cols, n) {
+    cols = Math.max(1, Math.floor(+cols) || 1);
+    if (!(i >= 0 && i < n)) return -1;
+    var to = -1;
+    if (key === 'ArrowRight') to = i + 1;
+    else if (key === 'ArrowLeft') to = i - 1;
+    else if (key === 'ArrowUp') to = i - cols;
+    else if (key === 'ArrowDown') to = i + cols < n ? i + cols : (Math.floor(i / cols) < Math.floor((n - 1) / cols) ? n - 1 : -1);
+    else if (key === 'Home') to = 0;
+    else if (key === 'End') to = n - 1;
+    return to >= 0 && to < n ? to : -1;
+  }
+  /** Juntar da Drive em pedidos de até size chaves; o servidor põe 4 cartões por linha (310 × 320 px), por isso cada
+   *  pedido seguinte começa as linhas que o anterior ocupou mais abaixo. → [{keys, x, y}] */
+  function driveChunks(keys, at, size) {
+    size = Math.max(1, size || 30);
+    var out = [], rows = Math.ceil(size / 4);
+    for (var i = 0; i < (keys || []).length; i += size) out.push({ keys: keys.slice(i, i + size), x: at.x, y: at.y + (i / size) * rows * 320 });
+    return out;
+  }
+  /** A mensagem de juntar da Drive (a mesma do servidor, cc_api.php drive_add). c: {added, folders, skipped, over}. */
+  function driveMsg(c) {
+    var a = +c.added || 0, f = +c.folders || 0, s = +c.skipped || 0, out = [];
+    if (a || !f) out.push(a + (a === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.'));
+    if (f) out.push('As pastas não entram: abra a pasta e escolha os ficheiros.');
+    if (s) out.push(s + (s === 1 ? ' sem acesso ou já não existe.' : ' sem acesso ou já não existem.'));
+    if (c.over) out.push('Entram até 30 de cada vez: os restantes ficaram de fora.');
+    return out.join(' ');
+  }
+
   // ── miniaturas (§33.5) ──
   /** A largura de miniatura a pedir: a menor da lista ≥ cssW × zoom × densidade; 0 = o original (sem miniaturas, ou o pedido
    *  passa 1,25× a maior e a imagem é maior do que ela). origW: largura do original (opcional). */
@@ -497,5 +535,5 @@
     return adts(head, 0) ? asAudio('audio/aac') : null;
   }
 
-  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, loupeAt: loupeAt, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, loupeAt: loupeAt, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, dragKeys: dragKeys, gridStep: gridStep, driveChunks: driveChunks, driveMsg: driveMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
