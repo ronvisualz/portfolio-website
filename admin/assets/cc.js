@@ -636,7 +636,7 @@
   // clique fora saem. As teclas são todas do conta-gotas enquanto está aberto (o Topperboard não as recebe).
   var pickState = null;
   var PICK_HINT = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Esc: sair',
-      PICK_HINT_TOUCH = 'Toque e arraste para apontar; levante o dedo para escolher',
+      PICK_HINT_TOUCH = 'Toque e arraste para apontar; levante o dedo para escolher · Dois dedos: aproximar',
       PICK_ERR_FRAME = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.';
   /** O botão «+ Escolher da imagem» do painel vivo desta referência (o do box, ou o de um painel redesenhado). */
   function pickBtn(p) {
@@ -785,11 +785,9 @@
       $('[data-pf-hex]', el).textContent = hex;
       $('[data-pf-rgb]', el).textContent = CCL.hexTo(hex, 'rgb');
       p.loupe.hidden = false;
-      var lw = p.loupe.offsetWidth || 176, lh = p.loupe.offsetHeight || 236, lx, ly;
-      if (touch) { lx = x - lw / 2; ly = y - 120 - lh; if (ly < 8) ly = y + 60; }   // acima do dedo, para se ver
-      else { lx = x + 22; ly = y + 22; if (lx + lw > innerWidth - 8) lx = x - 22 - lw; if (ly + lh > innerHeight - 8) ly = y - 22 - lh; }
-      p.loupe.style.left = Math.round(clamp(lx, 8, Math.max(8, innerWidth - lw - 8))) + 'px';
-      p.loupe.style.top = Math.round(clamp(ly, 8, Math.max(8, innerHeight - lh - 8))) + 'px';
+      // no toque, acima do dedo (ou ao lado, sem espaço acima) — nunca por baixo do dedo e da mão
+      var at2 = CCL.loupeAt(x, y, p.loupe.offsetWidth || 176, p.loupe.offsetHeight || 236, innerWidth, innerHeight, touch);
+      p.loupe.style.left = at2.x + 'px'; p.loupe.style.top = at2.y + 'px';
     };
     var aim = function (e) {
       var hex = at(e.clientX, e.clientY, e.altKey);
@@ -815,17 +813,50 @@
 
     // apontar, escolher, deslocar com zoom (rato: arrastar ≥ 4 px; toque: arrastar aponta, levantar o dedo escolhe)
     var drag = null;
+    // dois dedos: pinça (zoom à volta do meio dos dedos, deslocar com o meio); nada se escolhe até levantar todos os dedos
+    var fingers = {}, pinch = null;
+    var pinchMove = function () {
+      var k = Object.keys(fingers);
+      if (k.length < 2) { pinch.ids = ''; return; }
+      var A = fingers[k[0]], B = fingers[k[1]], ids = k[0] + ',' + k[1];
+      var d = Math.hypot(B.x - A.x, B.y - A.y), m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      if (pinch.ids === ids && pinch.d > 0 && p.fit.w) {
+        var sr = p.stage.getBoundingClientRect();
+        var v2 = CCL.zoomAbout({ z: p.z, px: p.px + m.x - pinch.m.x, py: p.py + m.y - pinch.m.y }, d / pinch.d, m.x - (sr.left + sr.width / 2), m.y - (sr.top + sr.height / 2), 16);
+        p.z = v2.z; p.px = v2.px; p.py = v2.py; clampPan(); apply();
+      }
+      pinch.ids = ids; pinch.d = d; pinch.m = m;
+    };
+    var lift = function (e) {   // true: o dedo fazia parte de uma pinça (não escolhe)
+      if (e.pointerType !== 'touch') return !!pinch;
+      delete fingers[e.pointerId];
+      if (!pinch) return false;
+      if (!Object.keys(fingers).length) pinch = null;
+      return true;
+    };
     p.stage.addEventListener('pointerdown', function (e) {
       if (p.closing || (e.pointerType === 'mouse' && e.button !== 0)) return;
       if (e.pointerType === 'touch' && !p.touch) { p.touch = true; if (p.src) say(PICK_HINT_TOUCH); }
       e.preventDefault();
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch' };
+      if (e.pointerType === 'touch' && e.isPrimary) { fingers = {}; pinch = null; }   // um gesto novo: nada fica do anterior
+      else if (pinch && e.pointerType !== 'touch') return;
       try { p.stage.setPointerCapture(e.pointerId); } catch (err) {}
+      if (e.pointerType === 'touch') {
+        fingers[e.pointerId] = { x: e.clientX, y: e.clientY };
+        if (pinch || Object.keys(fingers).length > 1) {
+          drag = null; el.classList.remove('panning'); p.loupe.hidden = true;
+          pinch = pinch || { ids: '', d: 0, m: null };
+          pinchMove();
+          return;
+        }
+      }
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch' };
       p.last = { x: e.clientX, y: e.clientY };
       if (drag.touch) aim(e);
     });
     p.stage.addEventListener('pointermove', function (e) {
       if (p.closing) return;
+      if (pinch) { if (e.pointerType === 'touch' && fingers[e.pointerId]) { fingers[e.pointerId] = { x: e.clientX, y: e.clientY }; pinchMove(); } return; }
       p.last = { x: e.clientX, y: e.clientY };
       if (drag && drag.id === e.pointerId && !drag.touch && p.z > 1) {
         var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -835,6 +866,7 @@
       aim(e);
     });
     p.stage.addEventListener('pointerup', function (e) {
+      if (lift(e)) { p.loupe.hidden = true; return; }
       if (!drag || drag.id !== e.pointerId) return;
       var d = drag; drag = null; el.classList.remove('panning');
       if (d.pan || p.closing) return;
@@ -844,7 +876,7 @@
       add(hex);
       if (!e.shiftKey) { p.loupe.hidden = true; closeSoon(); }
     });
-    p.stage.addEventListener('pointercancel', function () { drag = null; el.classList.remove('panning'); p.loupe.hidden = true; });
+    p.stage.addEventListener('pointercancel', function (e) { lift(e); drag = null; el.classList.remove('panning'); p.loupe.hidden = true; });
     p.stage.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch' && !drag) p.loupe.hidden = true; });
     el.addEventListener('wheel', function (e) {
       e.preventDefault();
