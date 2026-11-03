@@ -87,6 +87,21 @@ if (in_array($do, DRIVE_WRITE_ACTIONS, true) && !can('drive', PERM_EDIT)) {
     api_err('Só quem pode editar a Drive pode fazer isto. Peça a um administrador.', 403);
 }
 const DRIVE_BILLING_ERR = 'Os documentos de faturação só estão disponíveis para quem tem acesso ao Financeiro.';
+/**
+ * As miniaturas da Drive são por etag (.topper/thumbs/<etag>.jpg), e a de um documento da Faturação mostra o documento
+ * (os valores em euros): [etags dos ficheiros que a pessoa vê, etags que só existem na Faturação]. O segundo fica
+ * vazio para quem tem o Financeiro. Com o mover instantâneo (§32.1) conta o sítio para onde o ficheiro vai, como no
+ * catálogo. Um etag que o catálogo ainda não conhece (um envio acabado de chegar) não está em nenhum dos dois.
+ */
+function api_thumb_scope(PDO $pdo, bool $fin): array {
+    $seen = []; $bill = [];
+    foreach (drive_moves_overlay(drive_catalog()['objects'], drive_moves_pending($pdo)) as $o) {
+        $e = (string)($o['etag'] ?? '');
+        if ($e === '') continue;
+        if (!$fin && drive_billing((string)$o['key'])) $bill[$e] = true; else $seen[$e] = true;
+    }
+    return [$seen, array_diff_key($bill, $seen)];
+}
 /** Há documentos de faturação debaixo desta pasta? */
 function api_has_billing(string $folder): bool {
     if (substr($folder, -1) !== '/') return false;
@@ -564,10 +579,11 @@ try {
         api_lazy_purge($pdo);
         $cat = drive_catalog(!empty($in['fresh']));
         $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));   // mover instantâneo (§32.1)
-        $objs = []; $have = [];
+        $objs = []; $have = []; $seenE = [];
         foreach ($cat['objects'] as $o) {
             if (!$FIN && drive_billing($o['key'])) continue;
             $objs[] = api_obj($o);
+            $seenE[(string)($o['etag'] ?? '')] = true;
             $have[$o['key']] = true;
             // as pastas que só existem por terem coisas lá dentro
             for ($p = drive_parent($o['key']); $p !== '' && !isset($have[$p]); $p = drive_parent($p)) $have[$p] = true;
@@ -581,7 +597,8 @@ try {
             'ok'        => true,
             'objects'   => $objs,
             'roots'     => DRIVE_ROOTS,
-            'thumbs'    => array_map('strval', array_keys($cat['thumbs'])),
+            // só as miniaturas dos ficheiros que a pessoa vê (a de um recibo da Faturação mostra o recibo)
+            'thumbs'    => array_map('strval', array_keys($FIN ? $cat['thumbs'] : array_intersect_key($cat['thumbs'], $seenE))),
             'favs'      => array_values(array_filter(drive_favs($pdo), static fn($k) => isset($have[$k]))),
             'recents'   => array_values(array_filter(drive_recents($pdo, 50), static fn($r) => isset($have[$r['k']]))),
             'trash'     => drive_trash_stats($pdo),
@@ -728,6 +745,9 @@ try {
     case 'thumb_sign': {
         $etag = strtolower($str('etag'));
         if (!preg_match(DRIVE_ETAG_RE, $etag)) api_err('Miniatura inválida.');
+        // nem ler nem reescrever a miniatura de um documento da Faturação sem o Financeiro; um etag que o catálogo
+        // ainda não tem (o envio que acabou de chegar faz já a sua miniatura) passa
+        if (!$FIN && isset(api_thumb_scope($pdo, false)[1][$etag])) api_err(DRIVE_BILLING_ERR, 403);
         $k = DRIVE_THUMBS . $etag . '.jpg';
         $hour = intdiv(time(), 3600) * 3600;
         api_out(200, ['ok' => true, 'url' => r2_presign('PUT', $k, 600), 'type' => 'image/jpeg',
@@ -736,13 +756,15 @@ try {
     case 'thumb_urls': {
         $etags = want_list($in['etags'] ?? null, 300, 'Demasiadas miniaturas de uma vez (máximo 300).');
         $thumbs = drive_catalog()['thumbs'];
+        // sem o Financeiro, só as miniaturas dos ficheiros que a pessoa vê (nunca a de um documento da Faturação)
+        $seenE = $FIN ? null : api_thumb_scope($pdo, false)[0];
         // Com a hora certa como data da assinatura, o URL é o mesmo durante uma hora (o browser
         // aproveita a cache) e vale sempre pelo menos 6 h.
         $hour = intdiv(time(), 3600) * 3600;
         $urls = [];
         foreach ($etags as $e) {
             $e = strtolower($e);
-            if (!preg_match(DRIVE_ETAG_RE, $e) || empty($thumbs[$e])) continue;
+            if (!preg_match(DRIVE_ETAG_RE, $e) || empty($thumbs[$e]) || ($seenE !== null && empty($seenE[$e]))) continue;
             $urls[$e] = r2_presign('GET', DRIVE_THUMBS . $e . '.jpg', 7 * 3600, [], $hour);
         }
         api_out(200, ['ok' => true, 'urls' => (object)$urls]);
