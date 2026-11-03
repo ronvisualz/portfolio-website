@@ -1312,6 +1312,12 @@
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
       if (c.type === 'video' && c.asset && c.asset.orig && !c.local) bindVideoHover(el, c);
       if (c.type === 'audio' && !c.noaccess) auNeedPeaks(c.asset, auUpdated);
+      // o cartão que se está a apresentar foi redesenhado (IA, forma de onda, sondagem, tempo real): o vídeo e o «▶ Tocar»
+      // passam para o cartão novo na mesma tarefa, por isso o browser não os pausa (o áudio vive na barra e não se mexe)
+      if (presMedia && presMedia.c.id === c.id) {
+        if (presMedia.el.tagName === 'VIDEO') ($('.ccc-media', el) || el).appendChild(presMedia.el);
+        if (presMedia.btn) el.appendChild(presMedia.btn);
+      }
       return el;
     }
     function place(c, el) {
@@ -1338,15 +1344,19 @@
       }
     }
     function updateThumbs() { B.els.forEach(function (el, id) { var c = B.cards.get(id); if (c) setThumb(c, el); }); }
+    /** Tira só a pré-visualização sem som (nunca o vídeo da apresentação, que é outro elemento). */
+    function killHoverPrev(el) { var v = $('video.hov-prev', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } }
     function bindVideoHover(el, c) {
       el.addEventListener('pointerenter', function (e) {
-        if (e.pointerType !== 'mouse' || $('video', el)) return;
+        // em Apresentar quem manda no vídeo é a apresentação: o cursor não toca nem pára nada
+        if (e.pointerType !== 'mouse' || root.classList.contains('present') || $('video', el)) return;
         var v = document.createElement('video');
+        v.className = 'hov-prev';
         v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.src = c.asset.orig;
         $('.ccc-media', el).appendChild(v);
         v.play().catch(function () {});
       });
-      el.addEventListener('pointerleave', function () { var v = $('video', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } });
+      el.addEventListener('pointerleave', function () { killHoverPrev(el); });
     }
     /** A forma de onda calculada: todos os cartões com essa referência. */
     function auUpdated(na) {
@@ -1376,7 +1386,8 @@
       var frag = null;
       B.cards.forEach(function (c) {
         if (c.col || c.type === 'arrow') return;
-        var bb = bbox(c), vis = bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1;
+        // o cartão que se está a apresentar conta sempre como à vista: deslocar a vista ou redesenhar tudo não lhe tira o vídeo
+        var bb = bbox(c), vis = (bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1) || !!(presMedia && presMedia.c.id === c.id);
         var el = B.els.get(c.id);
         if (vis && !el) {
           el = makeEl(c);
@@ -3285,6 +3296,7 @@
 
     // ── apresentação ──
     var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
+    var presMedia = null;   // o vídeo/áudio do diapositivo atual ({ c, el, btn }); makeEl e cull precisam de o conhecer
     function present() {
       var items = [];
       B.cards.forEach(function (c) { if (!c.col && c.type !== 'arrow' && c.type !== 'drawing') items.push(c); });
@@ -3292,6 +3304,7 @@
       items.sort(function (a, b) { return Math.round(a.y / 300) - Math.round(b.y / 300) || a.x - b.x; });
       var i = 0, bar = document.createElement('div');
       root.classList.add('present');
+      B.els.forEach(killHoverPrev);   // uma pré-visualização que já estava a correr não fica
       bar.className = 'cc-pres';
       bar.innerHTML = '<button type="button" data-p="-1" aria-label="Anterior">‹</button><span data-pn></span><button type="button" data-p="1" aria-label="Seguinte">›</button>'
         + '<span class="pr-media" hidden><span class="pr-t" data-pt></span><button type="button" data-p="play" aria-label="Pausa ( Espaço )">❚❚</button>'
@@ -3301,44 +3314,51 @@
       if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
       if (AU && AU.hub && AU.hub.pause) AU.hub.pause();
       // §33.13: só em Apresentar o vídeo/áudio toca com som — ao chegar toca, ao sair pára; fora daqui nunca há som sozinho
-      var media = null;
       function stopMedia() {
-        if (!media) return;
-        media.el.pause(); media.el.removeAttribute('src'); try { media.el.load(); } catch (e) {}
-        media.el.remove(); if (media.btn) media.btn.remove();
-        media = null;
+        var m = presMedia;
+        if (!m) return;
+        presMedia = null;
+        m.el.pause(); m.el.removeAttribute('src'); try { m.el.load(); } catch (e) {}
+        m.el.remove(); if (m.btn) m.btn.remove();
       }
+      function isMediaSlide() { var c = items[i]; return (c.type === 'video' || c.type === 'audio') && !!c.asset && !!c.asset.orig; }
       function paintMedia() {
-        var w = $('.pr-media', bar), c = items[i], isM = (c.type === 'video' || c.type === 'audio') && c.asset && c.asset.orig;
+        var w = $('.pr-media', bar), c = items[i], isM = isMediaSlide();
         w.hidden = !isM;
         if (!isM) return;
         $('[data-pt]', bar).textContent = (c.type === 'video' ? 'Vídeo · ' : 'Áudio · ') + (c.asset.title || c.asset.file || '');
-        var pb = $('[data-p="play"]', bar), on = media && !media.el.paused;
+        var pb = $('[data-p="play"]', bar), on = presMedia && !presMedia.el.paused;
         pb.textContent = on ? '❚❚' : '▶'; pb.setAttribute('aria-label', on ? 'Pausa ( Espaço )' : 'Tocar ( Espaço )');
         $('[data-p="mute"]', bar).setAttribute('aria-pressed', PRES.muted ? 'true' : 'false');
       }
       function startMedia(c) {
         var a = c.asset, el = B.els.get(c.id);
+        // um cartão longe do anterior ainda não está desenhado (o cull só corre no frame seguinte); o fitTo já pôs a vista
+        if (!el) { cull(); el = B.els.get(c.id); }
         if (!a || !a.orig || !el) return;
+        killHoverPrev(el);
         var m = document.createElement(c.type === 'video' ? 'video' : 'audio');
         m.className = 'pres-media'; m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
         m.muted = PRES.muted; m.volume = PRES.vol;
-        (c.type === 'video' ? ($('.ccc-media', el) || el) : el).appendChild(m);
-        media = { c: c, el: m };
+        // o vídeo vê-se no cartão; o áudio não se vê e fica na barra (nenhum redesenho do cartão o desliga)
+        (c.type === 'video' ? ($('.ccc-media', el) || el) : bar).appendChild(m);
+        var cur = presMedia = { c: c, el: m };
         m.addEventListener('play', paintMedia); m.addEventListener('pause', paintMedia);
         var p = m.play();
         if (p && p.catch) p.catch(function () {
           // o browser não deixou tocar com som: «Tocar» no cartão (nada fica a tocar escondido)
-          if (!media || media.el !== m) return;
+          if (presMedia !== cur) return;
           m.pause();
           var btn = document.createElement('button');
           btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar';
-          btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); }).catch(function () {}); });
-          el.appendChild(btn); media.btn = btn;
+          btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); if (cur.btn === btn) cur.btn = null; }).catch(function () {}); });
+          (B.els.get(c.id) || el).appendChild(btn); cur.btn = btn;
           paintMedia();
         });
       }
-      function toggleMedia() { if (!media) return false; if (media.el.paused) { var p = media.el.play(); if (p && p.catch) p.catch(function () {}); } else media.el.pause(); return true; }
+      function toggleMedia() { if (!presMedia) return false; if (presMedia.el.paused) { var p = presMedia.el.play(); if (p && p.catch) p.catch(function () {}); } else presMedia.el.pause(); return true; }
+      /** ❚❚/▶ e Espaço: pausa ou retoma; se ainda não há elemento, começa (nunca salta o diapositivo). */
+      function playPause() { if (!toggleMedia()) { startMedia(items[i]); paintMedia(); } }
       function go() {
         var c = items[i], b = bbox(c);
         stopMedia();
@@ -3350,7 +3370,7 @@
       }
       bar.addEventListener('input', function (e) {
         if (!e.target.hasAttribute('data-vol')) return;
-        PRES.vol = +e.target.value; if (media) media.el.volume = PRES.vol;
+        PRES.vol = +e.target.value; if (presMedia) presMedia.el.volume = PRES.vol;
       });
       function stop() {
         stopMedia();
@@ -3361,7 +3381,7 @@
         setTimeout(function () { fitAll(true); }, 50);
       }
       function pk(e) {
-        if (e.key === ' ' && media) { toggleMedia(); }   // §33.13: com vídeo/áudio, Espaço pausa/retoma
+        if (e.key === ' ' && isMediaSlide()) playPause();   // §33.13: num vídeo/áudio, Espaço pausa/retoma (não salta)
         else if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(items.length - 1, i + 1); go(); }
         else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { i = Math.max(0, i - 1); go(); }
         else if (e.key === 'Escape') stop();
@@ -3372,8 +3392,8 @@
         var b = e.target.closest('[data-p]'); if (!b) return;
         var v = b.getAttribute('data-p');
         if (v === 'x') stop();
-        else if (v === 'play') toggleMedia();
-        else if (v === 'mute') { PRES.muted = !PRES.muted; if (media) media.el.muted = PRES.muted; paintMedia(); }
+        else if (v === 'play') playPause();
+        else if (v === 'mute') { PRES.muted = !PRES.muted; if (presMedia) presMedia.el.muted = PRES.muted; paintMedia(); }
         else { i = clamp(i + +v, 0, items.length - 1); go(); }
       });
       document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement && root.classList.contains('present')) { document.removeEventListener('fullscreenchange', f); stop(); } });
