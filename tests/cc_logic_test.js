@@ -158,6 +158,26 @@ const ZA = (...a) => typeof CCL.zoomAbout === 'function' ? CCL.zoomAbout(...a) :
 eq(ZA({ z: 1, px: 0, py: 0 }, 2, 100, 50, 16), { z: 2, px: -100, py: -50 }, 'zoomAbout: o ponto debaixo do cursor fica no sítio');
 eq(ZA({ z: 2, px: -100, py: -50 }, 0.25, 100, 50, 16), { z: 1, px: 0, py: 0 }, 'zoomAbout: abaixo de 1 volta ao ajustado e centrado');
 eq(ZA({ z: 8, px: 0, py: 0 }, 4, 0, 0, 16), { z: 16, px: 0, py: 0 }, 'zoomAbout: não passa do máximo');
+// onde fica a lupa (176 × 236) no iPad (1180 × 820): no toque, acima do dedo; sem espaço, ao lado — nunca por baixo
+// (antes: com menos de 364 px acima do dedo saltava 60 px para baixo do dedo, debaixo da mão)
+const LA = (...a) => typeof CCL.loupeAt === 'function' ? CCL.loupeAt(...a) : 'sem loupeAt';
+eq(LA(590, 600, 176, 236, 1180, 820, true), { x: 502, y: 316 }, 'loupeAt toque: acima do dedo, centrada');
+eq(LA(590, 360, 176, 236, 1180, 820, true), { x: 502, y: 76 }, 'loupeAt toque: dedo a 360 → ainda acima (antes ia para 420, por baixo)');
+eq(LA(590, 292, 176, 236, 1180, 820, true), { x: 502, y: 8 }, 'loupeAt toque: o último ponto em que cabe acima');
+eq(LA(590, 291, 176, 236, 1180, 820, true), { x: 354, y: 55 }, 'loupeAt toque: sem espaço acima → à esquerda do dedo, o mais alto possível');
+eq(LA(590, 200, 176, 236, 1180, 820, true), { x: 354, y: 8 }, 'loupeAt toque: dedo a 200 → à esquerda (antes por baixo)');
+eq(LA(150, 200, 176, 236, 1180, 820, true), { x: 210, y: 8 }, 'loupeAt toque: perto da borda esquerda → à direita do dedo');
+eq(LA(1170, 600, 176, 236, 1180, 820, true), { x: 996, y: 316 }, 'loupeAt toque: perto da borda direita fica dentro do ecrã');
+eq(LA(195, 200, 176, 236, 390, 844, true), { x: 8, y: 8 }, 'loupeAt toque: telemóvel ao alto, sem lado que chegue → o lado com mais espaço, dentro do ecrã');
+eq(LA(500, 400, 176, 236, 1180, 820, false), { x: 522, y: 422 }, 'loupeAt rato: em baixo à direita do cursor');
+eq(LA(1100, 700, 176, 236, 1180, 820, false), { x: 902, y: 442 }, 'loupeAt rato: sem espaço → passa para o outro lado');
+{ let bad = [];
+  for (let x = 20; x <= 1160; x += 20) for (let y = 20; y <= 800; y += 20) {
+    const q = LA(x, y, 176, 236, 1180, 820, true); if (typeof q !== 'object') { bad.push(q); break; }
+    const above = q.y + 236 <= y - 24, aside = q.x + 176 <= x - 24 || q.x >= x + 24, inside = q.x >= 8 && q.y >= 8 && q.x + 176 <= 1172 && q.y + 236 <= 812;
+    if (!(above || aside) || q.y >= y || !inside) bad.push([x, y, q.x, q.y]);
+  }
+  eq(bad.slice(0, 3), [], 'loupeAt toque: em todo o iPad a lupa fica acima do dedo ou ao lado dele (nunca por baixo, nunca fora do ecrã)'); }
 eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
 eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
 eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');

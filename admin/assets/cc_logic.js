@@ -215,6 +215,24 @@
     if (z === 1) return { z: 1, px: 0, py: 0 };
     return { z: z, px: ox - (ox - v.px) * z / z0, py: oy - (oy - v.py) * z / z0 };
   }
+  /** Canto da lupa (lw × lh) para o ponto (x, y) num ecrã W × H, sempre dentro do ecrã (margem de 8 px).
+   *  Rato: em baixo à direita do cursor (ou do outro lado, sem espaço). Toque: acima do dedo, a 48 px; sem espaço acima,
+   *  ao lado (primeiro à esquerda: a mão de quem é destro vem da direita), o mais alto possível — nunca por baixo do dedo. */
+  function loupeAt(x, y, lw, lh, W, H, touch) {
+    var lx, ly, GAP = 48, SIDE = 60, M = 8;
+    if (!touch) {
+      lx = x + 22; ly = y + 22;
+      if (lx + lw > W - M) lx = x - 22 - lw;
+      if (ly + lh > H - M) ly = y - 22 - lh;
+    } else if (y - GAP - lh >= M) {
+      lx = x - lw / 2; ly = y - GAP - lh;
+    } else {
+      var left = x - SIDE - lw, right = x + SIDE;
+      lx = left >= M ? left : right + lw <= W - M ? right : (x - M >= W - M - x ? left : right);
+      ly = y - lh;
+    }
+    return { x: Math.round(Math.min(Math.max(lx, M), Math.max(M, W - lw - M))), y: Math.round(Math.min(Math.max(ly, M), Math.max(M, H - lh - M))) };
+  }
   /** '#RRGGBB' → 'rgb(r, g, b)' ou 'hsl(h, s%, l%)'. */
   function hexTo(hex, mode) {
     var v = hexParse(hex); if (!v) return '';
@@ -479,5 +497,5 @@
     return adts(head, 0) ? asAudio('audio/aac') : null;
   }
 
-  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, loupeAt: loupeAt, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
