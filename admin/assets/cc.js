@@ -3358,7 +3358,7 @@
       }
       function toggleMedia() { if (!presMedia) return false; if (presMedia.el.paused) { var p = presMedia.el.play(); if (p && p.catch) p.catch(function () {}); } else presMedia.el.pause(); return true; }
       /** ❚❚/▶ e Espaço: pausa ou retoma; se ainda não há elemento, começa (nunca salta o diapositivo). */
-      function playPause() { if (!toggleMedia()) { startMedia(items[i]); paintMedia(); } }
+      function playPause() { if (!toggleMedia() && isMediaSlide()) { startMedia(items[i]); paintMedia(); } }
       function go() {
         var c = items[i], b = bbox(c);
         stopMedia();

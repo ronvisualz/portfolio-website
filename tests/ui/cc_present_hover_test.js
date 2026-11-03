@@ -176,6 +176,13 @@ const touch = () => php(`cc_board_touch($pdo, ${S.bid});`);
   check(hv.length === 1 && hv[0].muted && !hv[0].paused && !/pres-media/.test(hv[0].cls), 'fora de Apresentar passar o cursor pré-visualiza sem som (' + JSON.stringify(s.media) + ')');
   await p.mouse.move(5, 880, { steps: 4 }); await p.waitForTimeout(400);
   check((await st()).media.length === 0, 'fora de Apresentar a pré-visualização pára ao sair');
+  // entrar em Apresentar (pelo teclado) com a pré-visualização a correr debaixo do cursor: pára logo, sem esperar pelo cursor
+  const cv2 = await centre(S.ids.v);
+  await p.mouse.move(cv2.x, cv2.y, { steps: 6 }); await p.waitForTimeout(900);
+  const before = (await st()).media.filter(m => m.card === S.ids.v && m.muted && !m.paused).length;
+  const left = await p.evaluate(() => { document.querySelector('[data-a="present"]').click(); return document.querySelectorAll('.ccc video:not(.pres-media)').length; });
+  check(before === 1 && left === 0, 'ao entrar em Apresentar a pré-visualização que estava a correr pára (' + before + ' → ' + left + ')');
+  await p.waitForTimeout(500); await p.keyboard.press('Escape'); await p.waitForTimeout(400);
 
   releaseMeta();
   await b.close();
