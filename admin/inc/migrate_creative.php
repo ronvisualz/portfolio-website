@@ -286,7 +286,12 @@ function migrate_cc_42(PDO $pdo): void {
  * Os apagados e quem mudou cada cartão ficam como estão. Nada lê o documento do tempo real nem o R2.
  */
 function migrate_cc_42_rt_heal(PDO $pdo): void {
-    if (!db_has_table($pdo, 'cc_cards')) return;
+    if (!db_has_table($pdo, 'cc_cards') || !db_has_table($pdo, 'settings')) return;
+    // uma só vez por base: os passos depois do 05 voltam a correr a cada SCHEMA_VERSION novo, e a cura não pode
+    // reescrever a hora de todos os cartões vivos em cada publicação
+    if ((string)$pdo->query("SELECT svalue FROM settings WHERE skey = 'cc_rt_heal_42'")->fetchColumn() !== '') return;
     $now = date('Y-m-d H:i:s');
     $pdo->prepare('UPDATE cc_cards SET updated_at = ? WHERE deleted_at IS NULL AND (updated_at IS NULL OR updated_at < ?)')->execute([$now, $now]);
+    $pdo->prepare(db_is_sqlite($pdo) ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+        : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)')->execute(['cc_rt_heal_42', $now]);
 }
