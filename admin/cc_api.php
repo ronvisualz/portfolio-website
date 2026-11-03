@@ -477,20 +477,26 @@ case 'cards_restore': {
     $del = $a === 'cards_delete';
     if ($del && count($ids) >= 5) cc_board_version_save($pdo, $b, 'before', 'Antes de apagar ' . count($ids) . ' cartões', $by);
     // apagar uma coluna solta os cartões dela (ficam onde estavam); repor volta a pô-los
-    $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')')
-        ->execute($del ? [cc_now(), (int)$b['id']] : [(int)$b['id']]);
+    // a hora e quem o fez (updated_at/by): o tempo real guarda um marcador de apagado e fica com o mais recente —
+    // sem isto, um cartão reposto (Anular) continuava «mais antigo» do que o marcador e voltava a esconder-se
+    $now = cc_now();
+    $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($del ? '?' : 'NULL') . ', updated_by = ?, updated_at = ? WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')')
+        ->execute($del ? [$now, $by, $now, (int)$b['id']] : [$by, $now, (int)$b['id']]);
     // setas presas a cartões apagados também saem
     if ($del) {
         foreach ($pdo->query("SELECT id, content FROM cc_cards WHERE type = 'arrow' AND deleted_at IS NULL AND board_id = " . (int)$b['id'])->fetchAll() as $ar) {
             $c = cc_card_content('arrow', $ar['content']);
             if (in_array($c['from'], $ids, true) || in_array($c['to'], $ids, true)) {
-                $pdo->prepare('UPDATE cc_cards SET deleted_at = ? WHERE id = ?')->execute([cc_now(), (int)$ar['id']]);
+                $pdo->prepare('UPDATE cc_cards SET deleted_at = ?, updated_by = ?, updated_at = ? WHERE id = ?')->execute([$now, $by, $now, (int)$ar['id']]);
                 $ids[] = (int)$ar['id'];
             }
         }
     }
-    cout(200, ['ok' => true, 'ids' => $ids, 'rev' => cc_board_touch($pdo, (int)$b['id']),
-               'msg' => $del ? (count($ids) === 1 ? 'Cartão apagado.' : count($ids) . ' cartões apagados.') : 'Reposto.']);
+    $out = ['ok' => true, 'ids' => $ids, 'rev' => cc_board_touch($pdo, (int)$b['id']),
+            'msg' => $del ? (count($ids) === 1 ? 'Cartão apagado.' : count($ids) . ' cartões apagados.') : 'Reposto.'];
+    // os repostos como o Topperboard os mostra (o browser publica-os no tempo real): sem referências apagadas, «sem acesso» à Faturação
+    if (!$del) $out['cards'] = cc_board_cards_public($pdo, (int)$b['id'], $ids);
+    cout(200, $out);
 }
 
 case 'cards_dup': {

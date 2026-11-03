@@ -1604,9 +1604,16 @@ function cc_card_type_for(array $a): string {
     return in_array($a['kind'], ['image', 'video'], true) ? (string)$a['kind'] : 'file';
 }
 
-/** Os cartões de um Topperboard, com as referências e o número de comentários, de uma só vez. */
-function cc_board_cards_public(PDO $pdo, int $boardId): array {
-    $cards = cc_cards($pdo, $boardId);
+/** Os cartões de um Topperboard, com as referências e o número de comentários, de uma só vez. $only: só estes ids. */
+function cc_board_cards_public(PDO $pdo, int $boardId, ?array $only = null): array {
+    if ($only === null) $cards = cc_cards($pdo, $boardId);
+    else {
+        $only = array_values(array_unique(array_filter(array_map('intval', $only))));
+        if (!$only) return [];
+        $st = $pdo->prepare('SELECT * FROM cc_cards WHERE board_id = ? AND deleted_at IS NULL AND id IN (' . implode(',', $only) . ') ORDER BY z, id');
+        $st->execute([$boardId]);
+        $cards = $st->fetchAll();
+    }
     $ids = array_values(array_unique(array_filter(array_map(fn($c) => (int)$c['asset_id'], $cards))));
     $assets = [];
     if ($ids) {
