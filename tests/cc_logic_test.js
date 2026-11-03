@@ -195,7 +195,7 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   const mp3 = B(frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417));
   const id3 = B('ID3\x04\0\0', '\0\0\0\x16', 'TSSE', '\0\0\0\x0C\0\0', '\x03Lavf60.3.10');
   eq(K(S(B(id3, mp3))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 + frames MPEG (o MP3 do WhatsApp) → áudio audio/mpeg');
-  eq(K(S(B('ID3\x03\0\0\0\x01\0\0', Z(128))))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 maior do que o que se leu → áudio');
+  eq(K(S(B('ID3\x03\0\0\0\x01\0\0', Z(128)))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 maior do que o que se leu → áudio');
   eq(K(S(mp3)), ['audio', 'audio/mpeg'], 'sniffMedia: frames MPEG (FF FB) → áudio');
   eq(K(S(B(frame('\xFF\xF3\x80\x40', 208), frame('\xFF\xF3\x80\x40', 208)))), ['audio', 'audio/mpeg'], 'sniffMedia: MPEG-2 Layer III (FF F3) → áudio');
   eq(K(S(B(frame('\xFF\xFA\x90\x64', 417), frame('\xFF\xFA\x90\x64', 417)))), ['audio', 'audio/mpeg'], 'sniffMedia: frames com CRC (FF FA) → áudio');
@@ -236,7 +236,7 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(S(B('\0\0\x01\xBA', Z(2000))), null, 'sniffMedia: MPEG-PS → desconhecido');
   eq(S(B('%PDF-1.7', Z(200))), null, 'sniffMedia: PDF → desconhecido');
   eq(S(Z(0)), null, 'sniffMedia: vazio → desconhecido');
-  eq(typeof CCL.sniffMore === 'function' && CCL.sniffMore(m4a) && CCL.sniffMore(B(ebml('webm'))) && !CCL.sniffMore(mp3), true, 'sniffMore: só MP4/MOV e WebM/Matroska pedem mais bytes'); }
+  eq(typeof CCL.sniffMore === 'function' && CCL.sniffMore(m4a) && CCL.sniffMore(qt) && !CCL.sniffMore(B(ebml('webm'))) && !CCL.sniffMore(mp3), true, 'sniffMore: só MP4/MOV (o moov pode estar mais à frente ou no fim) pedem mais bytes'); }
 
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);
