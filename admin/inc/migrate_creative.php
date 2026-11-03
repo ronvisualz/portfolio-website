@@ -270,7 +270,7 @@ function migrate_cc_42(PDO $pdo): void {
     }
     foreach ($now as $a) {
         $mime = (string)$a['mime'];
-        if (!str_starts_with($mime, 'audio/')) $mime = str_starts_with($m = r2_mime((string)$a['file_name']), 'audio/') ? $m : 'audio/mpeg';
+        if (!str_starts_with($mime, 'audio/')) $mime = cc_audio_mime((string)$a['file_name']) ?: 'audio/mpeg';
         $pdo->prepare("UPDATE cc_assets SET kind = 'audio', mime = ? WHERE id = ?")->execute([$mime, (int)$a['id']]);
     }
     if ($now) cc_media_audio_cards($pdo, array_map(fn($a) => (int)$a['id'], $now));

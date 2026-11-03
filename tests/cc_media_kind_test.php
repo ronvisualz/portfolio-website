@@ -54,6 +54,10 @@ $k = cc_media_kind('video/mpeg', 'filme.mpeg', "\0\0\x01\xBA" . str_repeat("\0",
 t_eq($k['kind'], 'video', 'MPEG-PS (não se sabe) chamado .mpeg com video/mpeg → continua vídeo');
 $k = cc_media_kind('audio/x-m4a', 'voz.m4a', $aud($TAG), '', 0);
 t_eq([$k['kind'], $k['mime']], ['audio', 'audio/x-m4a'], 'um áudio já com tipo audio/* guarda o tipo que tinha');
+$k = cc_media_kind('application/octet-stream', 'som.flac', random_bytes(300), '', 0);
+t_eq([$k['kind'], $k['mime']], ['audio', 'audio/flac'], 'áudio pelo nome sem bytes conhecidos: o tipo MIME pela extensão (.flac → audio/flac, não octet-stream)');
+$k = cc_media_kind('video/ogg', 'x.oga', '', '', 0);
+t_eq($k['kind'], 'video', 'sem bytes e sem extensão de áudio: fica pelo tipo MIME');
 $k = cc_media_kind('application/pdf', 'x.pdf', '%PDF-1.7' . str_repeat("\0", 100), '', 0);
 t_eq([$k['kind'], $k['mime']], ['file', 'application/pdf'], 'PDF → ficheiro');
 $k = cc_media_kind('application/octet-stream', 'nota.mpga', $mp3($TAG), '', 0);
@@ -106,10 +110,8 @@ t_eq($asset((int)($r['json']['cards'][0]['asset']['id'] ?? 0))['kind'] ?? null, 
 
 // ── 5. captura (extensão, Partilhar, Atalho) e importação: os bytes chegam ao servidor ──
 $u1 = $pdo->query('SELECT * FROM users WHERE id = 1')->fetch();
-$cap = cap_save($pdo, $u1, ['kind' => 'file', 'board' => $BID, 'via' => 'ios'], ['bytes' => $mp3($TAG . 'cap'), 'name' => "WhatsApp Audio $TAG.mpeg", 'mime' => 'video/mpeg']);
-t_eq([$cap['asset']['kind'], $cap['asset']['mime']], ['audio', 'audio/mpeg'], 'Captura: o MP3 .mpeg → áudio audio/mpeg');
-$c = $card((int)$cap['card']);
-t_eq([$c['type'] ?? null, (float)($c['h'] ?? -1)], ['audio', 0.0], 'Captura: cartão de áudio com h=0');
+$cap = cap_save($pdo, $u1, ['kind' => 'file', 'board' => 0, 'via' => 'ios'], ['bytes' => $mp3($TAG . 'cap'), 'name' => "WhatsApp Audio $TAG.mpeg", 'mime' => 'video/mpeg']);
+t_eq([$cap['asset']['kind'], $cap['asset']['mime']], ['audio', 'audio/mpeg'], 'Captura: o MP3 .mpeg → áudio audio/mpeg (o cartão usa cc_card_type_for)');
 $cell = 0;
 cc_import_asset($pdo, $BID, $mp3($TAG . 'imp'), "importado $TAG.mp3", $cell, 1);
 $ic = $pdo->query("SELECT c.type, c.h FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id WHERE c.board_id = $BID AND a.file_name = 'importado $TAG.mp3'")->fetch();
@@ -141,6 +143,7 @@ $k3 = tests_put("Empresa/Teste33/$TAG/v $TAG.mp4", $vid($TAG . 'm3'), 'video/mp4
 $k5 = tests_put("Empresa/Teste33/$TAG/r $TAG.mpeg", random_bytes(3000), 'video/mpeg');
 [$m5, $c5] = $old("r $TAG.mpeg", 'video/mpeg', $k5);                          // conteúdo desconhecido
 [$m6, $c6] = $old("g $TAG.mpeg", 'video/mpeg', "Empresa/Teste33/$TAG/nao-existe.mpeg");   // o objeto já não existe
+[$m7, $c7] = $old("voz $TAG.aac", 'video/mp4', "Empresa/Teste33/$TAG/voz.aac");                // extensão de áudio óbvia (AAC)
 $rev0 = $rev($BID);
 $jobs = fn(int $id) => (int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id = $id")->fetchColumn();
 if (!function_exists('migrate_cc_42')) { t_true(false, 'falta migrate_cc_42()'); t_done(); }
@@ -148,6 +151,7 @@ migrate_cc_42($pdo);
 migrate_cc_42($pdo);   // idempotente
 t_eq([$asset($m1)['kind'], $asset($m1)['mime']], ['audio', 'audio/mpeg'], 'migração: .mp3 gravado como vídeo → áudio audio/mpeg já');
 t_eq([$card($c1)['type'], (float)$card($c1)['h']], ['audio', 0.0], 'migração: o cartão dele → áudio h=0');
+t_eq([$asset($m7)['kind'], $asset($m7)['mime']], ['audio', 'audio/aac'], 'migração: .aac gravado como video/mp4 → áudio audio/aac (o tipo pela extensão)');
 t_eq($asset($m2)['kind'], 'video', 'migração: o .mpeg (só o conteúdo o diz) não muda dentro da migração (nada de ler o R2)');
 t_eq($jobs($m2), 1, 'migração: um trabalho media_sniff para o .mpeg (uma só vez, mesmo a correr duas)');
 t_eq($jobs($m3), 1, 'migração: e para o vídeo sem miniaturas');

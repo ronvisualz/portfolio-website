@@ -605,8 +605,14 @@ function cc_media_kind(string $mime, string $name, string $head, string $tail = 
     if (!in_array($kind, ['video', 'file', 'audio'], true)) return $out;
     $s = $head !== '' ? cc_media_sniff($head, $tail, $size) : null;
     if ($s && $s['kind'] === 'audio') return ['kind' => 'audio', 'mime' => str_starts_with($mime, 'audio/') ? $mime : $s['mime'], 'dur' => $s['dur']];
-    if ($kind === 'audio' && !str_starts_with($mime, 'audio/') && str_starts_with($m = r2_mime($name), 'audio/')) $out['mime'] = $m;   // .mp3 dado como video/mpeg
+    if ($kind === 'audio' && !str_starts_with($mime, 'audio/') && ($m = cc_audio_mime($name)) !== '') $out['mime'] = $m;   // .mp3 dado como video/mpeg
     return $out;
+}
+
+/** O tipo MIME de áudio pela extensão (as de CC_AUDIO_EXT), ou ''. */
+function cc_audio_mime(string $name): string {
+    return ['mp3' => 'audio/mpeg', 'wav' => 'audio/wav', 'm4a' => 'audio/mp4', 'aac' => 'audio/aac', 'flac' => 'audio/flac', 'ogg' => 'audio/ogg',
+            'aif' => 'audio/aiff', 'aiff' => 'audio/aiff'][strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? '';
 }
 
 /** O mesmo a partir dos bytes todos (captura, importação, envio sem R2): só o princípio e o fim contam. */
