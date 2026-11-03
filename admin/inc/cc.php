@@ -545,6 +545,234 @@ function cc_kind_for(string $mime, string $name): string {
     return 'file';
 }
 
+// ── o tipo pelo conteúdo: áudio num contentor de vídeo ou com extensão estranha (o MP3 «WhatsApp Audio … .mpeg», que o
+//    browser dá como video/mpeg). A mesma regra que CCL.sniffMedia (assets/cc_logic.js). Nunca se decide por o browser
+//    não conseguir mostrar a imagem: um H.264+Opus, HEVC ou ProRes que o Chromium não descodifica continua vídeo. ──
+
+/**
+ * O que um ficheiro de media é, pelos bytes. $head: o princípio (64 KB chegam quase sempre); $tail: o fim (o moov no fim
+ * dos MP4/MOV); $size: o tamanho do ficheiro (0: $head é tudo). Devolve ['kind' => 'audio', 'mime', 'dur' => s|null],
+ * ['kind' => 'video', 'mime' => '', 'dur' => null] ou null quando não se sabe (fica como estava).
+ */
+function cc_media_sniff(string $head, string $tail = '', int $size = 0): ?array {
+    $n = strlen($head);
+    $size = max($size, $n);
+    if ($n < 4) return null;
+    $s4 = substr($head, 0, 4);
+    if (str_starts_with($head, 'ID3') && $n >= 10) {   // ID3v2: o que vem a seguir à etiqueta diz o formato (por omissão MP3)
+        $p = 10 + ((ord($head[6]) & 0x7F) << 21) + ((ord($head[7]) & 0x7F) << 14) + ((ord($head[8]) & 0x7F) << 7) + (ord($head[9]) & 0x7F) + ((ord($head[5]) & 0x10) ? 10 : 0);
+        if (substr($head, $p, 4) === 'fLaC') return cc_sniff_audio('audio/flac');
+        if (cc_sniff_adts($head, $p)) return cc_sniff_audio('audio/aac');
+        $f = cc_sniff_mpa($head, $p);
+        return cc_sniff_audio('audio/mpeg', $f ? cc_sniff_xing($head, $p, $f) : null);
+    }
+    if ($s4 === 'fLaC') return cc_sniff_audio('audio/flac');
+    if ($s4 === 'OggS') return cc_sniff_ogg($head);
+    if ($s4 === 'RIFF' && $n >= 12) { $r = substr($head, 8, 4); return $r === 'WAVE' ? cc_sniff_audio('audio/wav') : ($r === 'AVI ' ? cc_sniff_video() : null); }
+    if ($s4 === 'FORM' && $n >= 12 && in_array(substr($head, 8, 4), ['AIFF', 'AIFC'], true)) return cc_sniff_audio('audio/aiff');
+    if (cc_media_sniff_more($head)) return cc_sniff_iso($head, $tail, $size);
+    if ($s4 === "\x1A\x45\xDF\xA3") return cc_sniff_ebml($head);
+    if ($f0 = cc_sniff_mpa($head, 0)) {   // frames MPEG sem etiqueta: o seguinte tem de estar onde o primeiro diz (se couber)
+        $g = $f0['len'] + 4 <= $n ? cc_sniff_mpa($head, $f0['len']) : $f0;
+        return $g && $g['v1'] === $f0['v1'] && $g['L'] === $f0['L'] && $g['sr'] === $f0['sr'] ? cc_sniff_audio('audio/mpeg', cc_sniff_xing($head, 0, $f0)) : null;
+    }
+    return cc_sniff_adts($head, 0) ? cc_sniff_audio('audio/aac') : null;
+}
+
+/** MP4/MOV: o moov pode estar mais à frente (grande) ou no fim — vale a pena ler mais (até 2 MB do início e do fim). */
+function cc_media_sniff_more(string $head): bool {
+    return strlen($head) >= 8 && in_array(substr($head, 4, 4), ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide', 'pnot', 'uuid'], true);
+}
+
+function cc_sniff_audio(string $mime, ?float $dur = null): array { return ['kind' => 'audio', 'mime' => $mime, 'dur' => $dur]; }
+function cc_sniff_video(): array { return ['kind' => 'video', 'mime' => '', 'dur' => null]; }
+function cc_sniff_u32(string $b, int $p): int { return unpack('N', substr($b, $p, 4))[1]; }
+
+/** Um cabeçalho de frame MPEG áudio (camadas I–III) em $p, ou null. */
+function cc_sniff_mpa(string $b, int $p): ?array {
+    static $BR = [[0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448], [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
+                  [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
+                  [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]];
+    static $SR = [3 => [44100, 48000, 32000], 2 => [22050, 24000, 16000], 0 => [11025, 12000, 8000]];
+    if ($p < 0 || $p + 4 > strlen($b) || ord($b[$p]) !== 0xFF || (ord($b[$p + 1]) & 0xE0) !== 0xE0) return null;
+    $b1 = ord($b[$p + 1]); $b2 = ord($b[$p + 2]);
+    $ver = ($b1 >> 3) & 3; $layer = ($b1 >> 1) & 3; $bri = $b2 >> 4; $sri = ($b2 >> 2) & 3;
+    if ($ver === 1 || $layer === 0 || $bri === 0 || $bri === 15 || $sri === 3) return null;
+    $L = 4 - $layer;
+    $br = $BR[$ver === 3 ? $L - 1 : ($L === 1 ? 3 : 4)][$bri] * 1000;
+    $sr = $SR[$ver][$sri];
+    $pad = ($b2 >> 1) & 1;
+    $len = $L === 1 ? (intdiv(12 * $br, $sr) + $pad) * 4 : intdiv(($L === 3 && $ver !== 3 ? 72 : 144) * $br, $sr) + $pad;
+    return ['v1' => $ver === 3, 'L' => $L, 'sr' => $sr, 'len' => $len, 'mono' => (ord($b[$p + 3]) >> 6) === 3];
+}
+
+/** A duração pelo cabeçalho Xing/Info do primeiro frame (o que o ffmpeg/Lavf escreve), ou null. */
+function cc_sniff_xing(string $b, int $p, array $f): ?float {
+    $o = $p + 4 + ($f['v1'] ? ($f['mono'] ? 17 : 32) : ($f['mono'] ? 9 : 17));
+    $t = substr($b, $o, 4);
+    if (($t !== 'Xing' && $t !== 'Info') || $o + 12 > strlen($b) || !(cc_sniff_u32($b, $o + 4) & 1)) return null;
+    return round(cc_sniff_u32($b, $o + 8) * ($f['L'] === 1 ? 384 : ($f['L'] === 2 || $f['v1'] ? 1152 : 576)) / $f['sr'], 3);
+}
+
+/** Um frame AAC em ADTS em $p (com o seguinte, se couber): o comprimento, ou 0. */
+function cc_sniff_adts(string $b, int $p): int {
+    $n = strlen($b);
+    if ($p < 0 || $p + 7 > $n || ord($b[$p]) !== 0xFF || (ord($b[$p + 1]) & 0xF6) !== 0xF0 || ((ord($b[$p + 2]) >> 2) & 15) > 12) return 0;
+    $len = ((ord($b[$p + 3]) & 3) << 11) | (ord($b[$p + 4]) << 3) | (ord($b[$p + 5]) >> 5);
+    if ($len < 7 || ($p + $len + 2 <= $n && (ord($b[$p + $len]) !== 0xFF || (ord($b[$p + $len + 1]) & 0xF6) !== 0xF0))) return 0;
+    return $len;
+}
+
+/** Uma caixa MP4/MOV em $p: [comprimento, tipo, cabeçalho], ou null ($max: até onde pode ir). */
+function cc_sniff_box(string $b, int $p, int $max): ?array {
+    if ($p + 8 > strlen($b)) return null;
+    $len = cc_sniff_u32($b, $p); $type = substr($b, $p + 4, 4); $hl = 8;
+    if ($len === 1) { if ($p + 16 > strlen($b)) return null; $len = cc_sniff_u32($b, $p + 8) * 4294967296 + cc_sniff_u32($b, $p + 12); $hl = 16; }
+    elseif ($len === 0) $len = $max;
+    return $len < $hl || $len > $max ? null : [$len, $type, $hl];
+}
+
+/** A primeira caixa $want entre $s e $e (o fim lógico da caixa mãe): [início do corpo, fim], ou null. */
+function cc_sniff_child(string $b, int $s, int $e, string $want): ?array {
+    while ($s + 8 <= min($e, strlen($b))) {
+        $x = cc_sniff_box($b, $s, $e - $s);
+        if (!$x) return null;
+        if ($x[1] === $want) return [$s + $x[2], $s + $x[0]];
+        $s += $x[0];
+    }
+    return null;
+}
+
+/** O moov ($m: a partir do cabeçalho; todo, ou só o princípio): uma pista vide → vídeo; só soun, todas vistas → áudio. */
+function cc_sniff_moov(string $m, int $end, int $hl): ?array {
+    $p = $hl; $video = $sound = $unknown = false; $dur = null; $have = strlen($m);
+    while ($p + 8 <= $have && $p < $end) {
+        $x = cc_sniff_box($m, $p, $end - $p);
+        if (!$x) break;
+        if ($x[1] === 'trak') {
+            $md = cc_sniff_child($m, $p + $x[2], $p + $x[0], 'mdia');
+            $h = $md ? cc_sniff_child($m, $md[0], $md[1], 'hdlr') : null;
+            $t = $h && $h[0] + 12 <= $have ? substr($m, $h[0] + 8, 4) : null;
+            if (in_array($t, ['vide', 'pict', 'auxv'], true)) $video = true;
+            elseif ($t === 'soun') $sound = true;
+            elseif ($t === null) $unknown = true;
+        } elseif ($x[1] === 'mvhd' && $p + $x[2] + 32 <= $have) {
+            $q = $p + $x[2]; $v1 = ord($m[$q]) === 1;
+            $ts = cc_sniff_u32($m, $q + ($v1 ? 20 : 12));
+            $d = $v1 ? cc_sniff_u32($m, $q + 24) * 4294967296 + cc_sniff_u32($m, $q + 28) : cc_sniff_u32($m, $q + 16);
+            if ($ts > 0) $dur = round($d / $ts, 3);
+        }
+        $p += $x[0];
+    }
+    if ($video) return cc_sniff_video();
+    return $sound && !$unknown && $p >= $end ? cc_sniff_audio('audio/mp4', $dur) : null;   // uma parte por ver: não se sabe
+}
+
+function cc_sniff_iso(string $head, string $tail, int $size): ?array {
+    $t0 = $size - strlen($tail);
+    $at = function (int $p, int $len) use ($head, $tail, $t0, $size): ?string {
+        if ($p >= 0 && $p + $len <= strlen($head)) return substr($head, $p, $len);
+        if ($tail !== '' && $p >= $t0 && $p + $len <= $size) return substr($tail, $p - $t0, $len);
+        return null;
+    };
+    for ($p = 0, $i = 0; $i < 64 && $p + 8 <= $size; $i++) {
+        $h = $at($p, 16) ?? $at($p, 8);
+        $x = $h !== null ? cc_sniff_box($h, 0, $size - $p) : null;
+        if (!$x) return null;
+        if ($x[1] === 'moov') {
+            $m = $at($p, $x[0]);
+            if ($m !== null) return cc_sniff_moov($m, $x[0], $x[2]);
+            return $p < strlen($head) ? cc_sniff_moov(substr($head, $p), $x[0], $x[2]) : null;   // só o princípio do moov: diz «vídeo», nunca «áudio»
+        }
+        $p += $x[0];
+    }
+    return null;
+}
+
+/** Um número EBML (WebM/Matroska) em $p: [valor, bytes, tamanho desconhecido]; $id: os IDs guardam o marcador. */
+function cc_sniff_vint(string $b, int $p, bool $id): ?array {
+    $n = strlen($b);
+    if ($p >= $n) return null;
+    $c = ord($b[$p]); $len = 1; $mask = 0x80;
+    while ($len <= 8 && !($c & $mask)) { $len++; $mask >>= 1; }
+    if ($len > ($id ? 4 : 8) || $p + $len > $n) return null;
+    $v = $id ? $c : $c & ($mask - 1);
+    $all = ($c & ($mask - 1)) === $mask - 1;
+    for ($i = 1; $i < $len; $i++) { $x = ord($b[$p + $i]); $v = $v * 256 + $x; if ($x !== 0xFF) $all = false; }
+    return [$v, $len, !$id && $all];
+}
+
+function cc_sniff_el(string $b, int $p): ?array {
+    $i = cc_sniff_vint($b, $p, true);
+    $s = $i ? cc_sniff_vint($b, $p + $i[1], false) : null;
+    return $s ? ['id' => $i[0], 'at' => $p + $i[1] + $s[1], 'size' => $s[2] ? -1 : $s[0]] : null;
+}
+
+function cc_sniff_ebml(string $b): ?array {
+    $n = strlen($b); $doc = '';
+    $e = cc_sniff_el($b, 0);
+    if (!$e || $e['id'] !== 0x1A45DFA3 || $e['size'] < 0) return null;
+    for ($p = $e['at']; $p < min($n, $e['at'] + $e['size']);) {
+        $c = cc_sniff_el($b, $p);
+        if (!$c || $c['size'] < 0) break;
+        if ($c['id'] === 0x4282) $doc = substr($b, $c['at'], $c['size']);
+        $p = $c['at'] + $c['size'];
+    }
+    $s = cc_sniff_el($b, $e['at'] + $e['size']);
+    if (!$s || $s['id'] !== 0x18538067) return null;
+    $end = $s['size'] < 0 ? PHP_INT_MAX : $s['at'] + $s['size'];
+    for ($q = $s['at'], $k = 0; $q < $end && $k < 256; $k++) {
+        $c = cc_sniff_el($b, $q);
+        if (!$c || $c['size'] < 0 || $c['id'] === 0x1F43B675) return null;   // os dados (Cluster) antes das pistas: não se sabe
+        if ($c['id'] === 0x1654AE6B) return cc_sniff_tracks($b, $c['at'], $c['at'] + $c['size'], $doc);
+        $q = $c['at'] + $c['size'];
+    }
+    return null;
+}
+
+/** As pistas (Tracks): TrackType 1 ou CodecID V_… → vídeo; só 2/A_…, todas vistas → áudio. */
+function cc_sniff_tracks(string $b, int $s, int $e, string $doc): ?array {
+    $n = strlen($b); $video = $audio = false;
+    for ($p = $s; $p < min($e, $n);) {
+        $t = cc_sniff_el($b, $p);
+        if (!$t || $t['size'] < 0) break;
+        if ($t['id'] === 0xAE) {
+            for ($r = $t['at']; $r < min($t['at'] + $t['size'], $n);) {
+                $f = cc_sniff_el($b, $r);
+                if (!$f || $f['size'] < 0) break;
+                if ($f['id'] === 0x83) {
+                    $tt = 0;
+                    for ($i = 0; $i < $f['size'] && $f['at'] + $i < $n; $i++) $tt = $tt * 256 + ord($b[$f['at'] + $i]);
+                    if ($tt === 1) $video = true; elseif ($tt === 2) $audio = true;
+                }
+                if ($f['id'] === 0x86) {
+                    $cid = substr($b, $f['at'], 2);
+                    if ($cid === 'V_') $video = true; elseif ($cid === 'A_') $audio = true;
+                }
+                $r = $f['at'] + $f['size'];
+            }
+        }
+        $p = $t['at'] + $t['size'];
+    }
+    if ($video) return cc_sniff_video();
+    return $audio && $e <= $n && $p >= $e ? cc_sniff_audio($doc === 'webm' ? 'audio/webm' : 'audio/x-matroska') : null;
+}
+
+/** Ogg: as primeiras páginas (BOS) dizem o codec de cada fluxo. */
+function cc_sniff_ogg(string $b): ?array {
+    $n = strlen($b); $p = 0; $audio = false;
+    while ($p + 27 <= $n && substr($b, $p, 4) === 'OggS' && (ord($b[$p + 5]) & 2)) {
+        $segs = ord($b[$p + 26]); $len = 0;
+        if ($p + 27 + $segs > $n) break;
+        for ($i = 0; $i < $segs; $i++) $len += ord($b[$p + 27 + $i]);
+        $pk = substr($b, $p + 27 + $segs, min($len, 16));
+        if (preg_match('/^(\x80theora|\x01video|BBCD)/', $pk)) return cc_sniff_video();
+        if (preg_match('/^(OpusHead|\x01vorbis|\x7fFLAC|Speex)/', $pk)) $audio = true;
+        $p += 27 + $segs + $len;
+    }
+    return $audio ? cc_sniff_audio('audio/ogg') : null;
+}
+
 /** O texto de pesquisa de uma referência (minúsculas e sem acentos). */
 function cc_search_text(array $a): string {
     $an = json_decode((string)($a['analysis'] ?? ''), true);

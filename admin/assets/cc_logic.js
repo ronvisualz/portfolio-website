@@ -265,5 +265,189 @@
     return stored && stored.pack && text && text === stored.txt ? stored.pack : null;
   }
 
-  return { version: 1, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  // ── o tipo pelo conteúdo: áudio num contentor de vídeo ou com extensão estranha (o MP3 «WhatsApp Audio … .mpeg», que o
+  //    browser dá como video/mpeg). A mesma regra que cc_media_sniff (admin/inc/cc.php). Nunca se decide por o browser
+  //    não conseguir mostrar a imagem: um H.264+Opus, HEVC ou ProRes que o Chromium não descodifica continua vídeo. ──
+  var ISO_TOP = ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide', 'pnot', 'uuid'];
+  var MPA_BR = [[0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448], [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
+                [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
+                [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]];
+  var MPA_SR = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+  function bstr(b, p, n) { var s = ''; for (var i = p; i < p + n && i < b.length; i++) s += String.fromCharCode(b[i]); return s; }
+  function u32(b, p) { return b[p] * 16777216 + (b[p + 1] << 16) + (b[p + 2] << 8) + b[p + 3]; }
+  function asVideo() { return { kind: 'video', mime: '', dur: null }; }
+  function asAudio(mime, dur) { return { kind: 'audio', mime: mime, dur: dur == null ? null : dur }; }
+  /** Um cabeçalho de frame MPEG áudio (camadas I–III) em p, ou null. */
+  function mpa(b, p) {
+    if (p + 4 > b.length || b[p] !== 0xFF || (b[p + 1] & 0xE0) !== 0xE0) return null;
+    var ver = (b[p + 1] >> 3) & 3, layer = (b[p + 1] >> 1) & 3, bri = b[p + 2] >> 4, sri = (b[p + 2] >> 2) & 3;
+    if (ver === 1 || layer === 0 || bri === 0 || bri === 15 || sri === 3) return null;
+    var L = 4 - layer, br = MPA_BR[ver === 3 ? L - 1 : (L === 1 ? 3 : 4)][bri] * 1000, sr = MPA_SR[ver][sri], pad = (b[p + 2] >> 1) & 1;
+    var len = L === 1 ? (Math.floor(12 * br / sr) + pad) * 4 : Math.floor((L === 3 && ver !== 3 ? 72 : 144) * br / sr) + pad;
+    return { v1: ver === 3, L: L, sr: sr, len: len, mono: (b[p + 3] >> 6) === 3 };
+  }
+  /** A duração pelo cabeçalho Xing/Info do primeiro frame (o que o ffmpeg/Lavf escreve), ou null. */
+  function xingDur(b, p, f) {
+    var o = p + 4 + (f.v1 ? (f.mono ? 17 : 32) : (f.mono ? 9 : 17)), t = bstr(b, o, 4);
+    if ((t !== 'Xing' && t !== 'Info') || o + 12 > b.length || !(u32(b, o + 4) & 1)) return null;
+    return Math.round(u32(b, o + 8) * (f.L === 1 ? 384 : f.L === 2 || f.v1 ? 1152 : 576) / f.sr * 1000) / 1000;
+  }
+  /** Um frame AAC em ADTS em p (com o seguinte, se couber): o comprimento, ou 0. */
+  function adts(b, p) {
+    if (p + 7 > b.length || b[p] !== 0xFF || (b[p + 1] & 0xF6) !== 0xF0 || ((b[p + 2] >> 2) & 15) > 12) return 0;
+    var len = ((b[p + 3] & 3) << 11) | (b[p + 4] << 3) | (b[p + 5] >> 5);
+    if (len < 7 || (p + len + 2 <= b.length && (b[p + len] !== 0xFF || (b[p + len + 1] & 0xF6) !== 0xF0))) return 0;
+    return len;
+  }
+  /** Uma caixa MP4/MOV em p: [comprimento, tipo, cabeçalho], ou null (max: até onde pode ir). */
+  function isoBox(b, p, max) {
+    if (p + 8 > b.length) return null;
+    var len = u32(b, p), type = bstr(b, p + 4, 4), hl = 8;
+    if (len === 1) { if (p + 16 > b.length) return null; len = u32(b, p + 8) * 4294967296 + u32(b, p + 12); hl = 16; }
+    else if (len === 0) len = max;
+    return len < hl || len > max ? null : [len, type, hl];
+  }
+  /** A primeira caixa `want` entre s e e (e: o fim lógico da caixa mãe): [início do corpo, fim], ou null. */
+  function isoChild(b, s, e, want) {
+    while (s + 8 <= Math.min(e, b.length)) {
+      var x = isoBox(b, s, e - s);
+      if (!x) return null;
+      if (x[1] === want) return [s + x[2], s + x[0]];
+      s += x[0];
+    }
+    return null;
+  }
+  /** O moov (m: a partir do cabeçalho; todo, ou só o princípio): uma pista vide → vídeo; só soun, todas vistas → áudio. */
+  function moovKind(m, end, hl) {
+    var p = hl, video = false, sound = false, unknown = false, dur = null;
+    while (p + 8 <= m.length && p < end) {
+      var x = isoBox(m, p, end - p);
+      if (!x) break;
+      if (x[1] === 'trak') {
+        var md = isoChild(m, p + x[2], p + x[0], 'mdia'), h = md && isoChild(m, md[0], md[1], 'hdlr');
+        var t = h && h[0] + 12 <= m.length ? bstr(m, h[0] + 8, 4) : null;
+        if (t === 'vide' || t === 'pict' || t === 'auxv') video = true; else if (t === 'soun') sound = true; else if (t === null) unknown = true;
+      } else if (x[1] === 'mvhd' && p + x[2] + 32 <= m.length) {
+        var q = p + x[2], v1 = m[q] === 1, ts = u32(m, q + (v1 ? 20 : 12)), d = v1 ? u32(m, q + 24) * 4294967296 + u32(m, q + 28) : u32(m, q + 16);
+        if (ts > 0) dur = Math.round(d / ts * 1000) / 1000;
+      }
+      p += x[0];
+    }
+    if (video) return asVideo();
+    return sound && !unknown && p >= end ? asAudio('audio/mp4', dur) : null;   // uma parte por ver: não se sabe
+  }
+  function isoKind(head, tail, size) {
+    var t0 = size - (tail ? tail.length : 0);
+    function at(p, n) {
+      if (p >= 0 && p + n <= head.length) return head.subarray(p, p + n);
+      if (tail && p >= t0 && p + n <= size) return tail.subarray(p - t0, p - t0 + n);
+      return null;
+    }
+    for (var p = 0, i = 0; i < 64 && p + 8 <= size; i++) {
+      var h = at(p, 16) || at(p, 8), x = h && isoBox(h, 0, size - p);
+      if (!x) return null;
+      if (x[1] === 'moov') {
+        var m = at(p, x[0]);
+        if (m) return moovKind(m, x[0], x[2]);
+        return p < head.length ? moovKind(head.subarray(p), x[0], x[2]) : null;   // só o princípio do moov: diz «vídeo», nunca «áudio»
+      }
+      p += x[0];
+    }
+    return null;
+  }
+  /** Um número EBML (WebM/Matroska) em p: [valor, bytes, tamanho desconhecido]; id: os IDs guardam o marcador. */
+  function vint(b, p, id) {
+    if (p >= b.length) return null;
+    var c = b[p], len = 1, mask = 0x80;
+    while (len <= 8 && !(c & mask)) { len++; mask >>= 1; }
+    if (len > (id ? 4 : 8) || p + len > b.length) return null;
+    var v = id ? c : c & (mask - 1), all = (c & (mask - 1)) === mask - 1;
+    for (var i = 1; i < len; i++) { v = v * 256 + b[p + i]; if (b[p + i] !== 0xFF) all = false; }
+    return [v, len, !id && all];
+  }
+  function ebmlEl(b, p) { var i = vint(b, p, true), s = i && vint(b, p + i[1], false); return s ? { id: i[0], at: p + i[1] + s[1], size: s[2] ? -1 : s[0] } : null; }
+  function ebmlKind(b) {
+    var e = ebmlEl(b, 0), doc = '';
+    if (!e || e.id !== 0x1A45DFA3 || e.size < 0) return null;
+    for (var p = e.at; p < Math.min(b.length, e.at + e.size);) { var c = ebmlEl(b, p); if (!c || c.size < 0) break; if (c.id === 0x4282) doc = bstr(b, c.at, c.size); p = c.at + c.size; }
+    var s = ebmlEl(b, e.at + e.size);
+    if (!s || s.id !== 0x18538067) return null;
+    var end = s.size < 0 ? Infinity : s.at + s.size;
+    for (var q = s.at, k = 0; q < end && k < 256; k++) {
+      var c2 = ebmlEl(b, q);
+      if (!c2 || c2.size < 0 || c2.id === 0x1F43B675) return null;   // os dados (Cluster) antes das pistas: não se sabe
+      if (c2.id === 0x1654AE6B) return tracksKind(b, c2.at, c2.at + c2.size, doc);
+      q = c2.at + c2.size;
+    }
+    return null;
+  }
+  /** As pistas (Tracks): TrackType 1 ou CodecID V_… → vídeo; só 2/A_…, todas vistas → áudio. */
+  function tracksKind(b, s, e, doc) {
+    var video = false, audio = false;
+    for (var p = s; p < Math.min(e, b.length);) {
+      var t = ebmlEl(b, p);
+      if (!t || t.size < 0) break;
+      if (t.id === 0xAE) {
+        for (var r = t.at; r < Math.min(t.at + t.size, b.length);) {
+          var f = ebmlEl(b, r);
+          if (!f || f.size < 0) break;
+          if (f.id === 0x83) { var tt = 0; for (var i = 0; i < f.size && f.at + i < b.length; i++) tt = tt * 256 + b[f.at + i]; if (tt === 1) video = true; else if (tt === 2) audio = true; }
+          if (f.id === 0x86) { var cid = bstr(b, f.at, Math.min(f.size, 64)).slice(0, 2); if (cid === 'V_') video = true; else if (cid === 'A_') audio = true; }
+          r = f.at + f.size;
+        }
+      }
+      p = t.at + t.size;
+    }
+    if (video) return asVideo();
+    return audio && e <= b.length && p >= e ? asAudio(doc === 'webm' ? 'audio/webm' : 'audio/x-matroska') : null;
+  }
+  /** Ogg: as primeiras páginas (BOS) dizem o codec de cada fluxo. */
+  function oggKind(b) {
+    var p = 0, audio = false;
+    while (p + 27 <= b.length && bstr(b, p, 4) === 'OggS' && (b[p + 5] & 2)) {
+      var n = b[p + 26], len = 0;
+      if (p + 27 + n > b.length) break;
+      for (var i = 0; i < n; i++) len += b[p + 27 + i];
+      var pk = bstr(b, p + 27 + n, Math.min(len, 16));
+      if (/^(\x80theora|\x01video|BBCD)/.test(pk)) return asVideo();
+      if (/^(OpusHead|\x01vorbis|\x7fFLAC|Speex)/.test(pk)) audio = true;
+      p += 27 + n + len;
+    }
+    return audio ? asAudio('audio/ogg') : null;
+  }
+  /** MP4/MOV: o moov pode estar mais à frente (grande) ou no fim — vale a pena ler mais (até 2 MB do início e do fim). */
+  function sniffMore(head) { return !!head && head.length >= 8 && ISO_TOP.indexOf(bstr(head, 4, 4)) >= 0; }
+  /**
+   * O que um ficheiro de media é, pelos bytes. head: o princípio (Uint8Array, 64 KB chegam quase sempre); tail: o fim
+   * (para o moov no fim dos MP4/MOV; ou null); size: o tamanho do ficheiro. Devolve { kind: 'audio', mime, dur }
+   * (dur em segundos, ou null), { kind: 'video', mime: '' } ou null quando não se sabe (fica como estava).
+   */
+  function sniffMedia(head, tail, size) {
+    head = head || new Uint8Array(0);
+    var n = head.length;
+    size = Math.max(+size || 0, n);
+    if (n < 4) return null;
+    var s4 = bstr(head, 0, 4);
+    if (bstr(head, 0, 3) === 'ID3' && n >= 10) {   // ID3v2: o que vem a seguir à etiqueta diz o formato (por omissão MP3)
+      var p = 10 + (head[6] & 0x7F) * 2097152 + (head[7] & 0x7F) * 16384 + (head[8] & 0x7F) * 128 + (head[9] & 0x7F) + (head[5] & 0x10 ? 10 : 0);
+      if (bstr(head, p, 4) === 'fLaC') return asAudio('audio/flac');
+      if (adts(head, p)) return asAudio('audio/aac');
+      var f = mpa(head, p);
+      return asAudio('audio/mpeg', f ? xingDur(head, p, f) : null);
+    }
+    if (s4 === 'fLaC') return asAudio('audio/flac');
+    if (s4 === 'OggS') return oggKind(head);
+    if (s4 === 'RIFF' && n >= 12) { var r = bstr(head, 8, 4); return r === 'WAVE' ? asAudio('audio/wav') : r === 'AVI ' ? asVideo() : null; }
+    if (s4 === 'FORM' && n >= 12 && /^AIF[FC]$/.test(bstr(head, 8, 4))) return asAudio('audio/aiff');
+    if (sniffMore(head)) return isoKind(head, tail || null, size);
+    if (head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3) return ebmlKind(head);
+    var f0 = mpa(head, 0);
+    if (f0) {   // frames MPEG sem etiqueta: o seguinte tem de estar onde o primeiro diz (se couber no que se leu)
+      var g = f0.len + 4 <= n ? mpa(head, f0.len) : f0;
+      return g && g.v1 === f0.v1 && g.L === f0.L && g.sr === f0.sr ? asAudio('audio/mpeg', xingDur(head, 0, f0)) : null;
+    }
+    return adts(head, 0) ? asAudio('audio/aac') : null;
+  }
+
+  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });
