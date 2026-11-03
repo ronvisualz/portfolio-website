@@ -24,4 +24,22 @@ t_true(!($s['code'] === 200 && str_contains($ct, 'svg')), 'px=1 não serve SVG i
 $p = tests_http('GET', '/admin/cc_file.php?a=' . ($aid['png'] ?? 0) . '&s=0&px=1', [], 1);
 t_eq($p['code'], 200, 'px=1 continua a servir o PNG');
 t_true(str_contains(strtolower((string)($p['headers']['content-type'] ?? '')), 'image/png'), 'com o tipo image/png');
+
+// §33.14: o fotograma de um vídeo lê-se por um clone com crossorigin; o pedido CORS tem o seu próprio endereço assinado
+// (o R2 real pode reaproveitar a resposta sem cabeçalhos CORS que o leitor do detalhe já guardou para o mesmo URL)
+$vk = tests_put($base . 'cor.webm', (string)file_get_contents(__DIR__ . '/fixtures/pick_red_blue.webm'), 'video/webm');
+$r = tests_http('POST', '/admin/cc_api.php?a=drive_add', ['board' => $BID, 'keys' => json_encode([$vk]), 'x' => 400, 'y' => 1200], 1, true);
+$vid = (int)($r['json']['cards'][0]['asset']['id'] ?? 0);
+t_true($vid > 0 && ($r['json']['cards'][0]['type'] ?? '') === 'video', 'juntar um vídeo da Drive (' . substr($r['body'], 0, 120) . ')');
+$plain = tests_http('GET', "/admin/cc_file.php?a=$vid&s=0", [], 1);
+$cors = tests_http('GET', "/admin/cc_file.php?a=$vid&s=0&cors=1", [], 1);
+$cors2 = tests_http('GET', "/admin/cc_file.php?a=$vid&s=0&cors=1", [], 1);
+$L1 = (string)($plain['headers']['location'] ?? ''); $L2 = (string)($cors['headers']['location'] ?? '');
+t_eq([$plain['code'], $cors['code']], [302, 302], 'o original e o pedido CORS redirecionam para o R2');
+t_true($L1 !== '' && $L2 !== '' && $L1 !== $L2, 'o pedido CORS tem outro endereço assinado (' . substr($L2, 0, 90) . ')');
+t_eq(parse_url($L1, PHP_URL_PATH), parse_url($L2, PHP_URL_PATH), 'do mesmo objeto');
+t_eq((string)($cors2['headers']['location'] ?? ''), $L2, 'e estável (a cache do browser serve)');
+$g = tests_http('GET', $L2, [], 0, false, ['Origin: ' . TESTS_BASE]);
+t_eq($g['code'], 200, 'o endereço CORS abre');
+t_true(str_starts_with($g['body'], "\x1A\x45\xDF\xA3"), 'e traz o vídeo');
 t_done();

@@ -37,6 +37,9 @@ foreach ([0, 256, 640, 1600] as $s) {
 }
 t_eq($code("/admin/cc_file.php?a=$aid", 3), 404, 'nem a miniatura por omissão');
 t_eq($code("/admin/cc_file.php?a=$aid&s=256&px=1", 3), 404, 'nem os píxeis do conta-gotas');
+t_eq($code("/admin/cc_file.php?a=$aid&s=0&px=1", 3), 404, 'nem os píxeis do original');
+t_eq($code("/admin/cc_file.php?a=$aid&s=0&cors=1", 3), 404, 'nem o endereço CORS do conta-gotas (fotograma de vídeo)');
+t_true(in_array($code("/admin/cc_file.php?a=$aid&s=0&cors=1", 1), [200, 302], true), 'quem tem o Financeiro abre o endereço CORS');
 // um frame-chave do recibo (as miniaturas do frame são do mesmo ficheiro)
 $pdo->prepare('INSERT INTO cc_frames (asset_id, t, file_key, thumbs) VALUES (?, 1, ?, ?)')->execute([$aid, '', $thumbs]);
 $fid = (int)$pdo->lastInsertId();

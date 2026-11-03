@@ -5,6 +5,7 @@
  *   GET cc_file.php?a=<referência>&s=256|768|1600   a miniatura mais próxima (por cima) da largura
  *   GET cc_file.php?a=<referência>&s=0              o original (vídeo com pedidos parciais)
  *   GET cc_file.php?a=<referência>&s=…&px=1         a imagem servida daqui (não redireciona): o conta-gotas lê os píxeis
+ *   GET cc_file.php?a=<referência>&s=0&cors=1        o original por outro endereço assinado (o clone do vídeo com crossorigin)
  *   GET cc_file.php?f=<frame>&s=…                   um frame-chave de um vídeo
  *   GET cc_file.php?pt=<token da proposta>&a=…      as imagens do pré-criativo na página do cliente
  *                                                   (só as referências das páginas dessa proposta)
@@ -107,7 +108,9 @@ if (strncmp($key, 'r2:', 3) === 0 && !$public && !empty($_GET['px'])) {
 if (strncmp($key, 'r2:', 3) === 0) {
     // endereço assinado com a hora arredondada: o mesmo URL durante uma hora (cache do browser)
     $now = intdiv(time(), 3600) * 3600;
-    $url = r2_get_url(substr($key, 3), true, $mime, 7200, $now);
+    // &cors=1 (§33.14, o fotograma do conta-gotas lido por um clone com crossorigin): outro endereço assinado (outra
+    // validade), porque o R2 pode reaproveitar a resposta sem cabeçalhos CORS que o leitor do detalhe já guardou
+    $url = r2_get_url(substr($key, 3), true, $mime, empty($_GET['cors']) ? 7200 : 7260, $now);
     header('Cache-Control: private, max-age=' . max(60, $now + 3600 - time()));
     header('Location: ' . $url, true, 302);
     exit;
