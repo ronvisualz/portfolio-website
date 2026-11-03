@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 41;
+const SCHEMA_VERSION = 42;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -349,6 +349,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 41 · Toppernote (§33.9): ficheiros da Drive no Topperboard que foram para o Lixo ──
     require_once __DIR__ . '/migrate_creative.php';
     migrate_cc_41($pdo);
+    // ── 42 · Toppernote (§33.14): áudio gravado como vídeo (o MP3 .mpeg) passa a áudio; os casos que só o conteúdo
+    //        diz vão para a fila (trabalho media_sniff, que lê o R2) ──
+    migrate_cc_42($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -535,11 +535,17 @@ function cc_asset_by_fp(PDO $pdo, string $fp): ?array {
     return $st->fetch() ?: null;
 }
 
+/**
+ * O tipo de uma referência pelo tipo MIME e pelo nome. Uma extensão de áudio passa à frente de um video/* (um .mp3
+ * dado como video/mpeg é áudio), menos o .ogg com video/ogg (pode ter imagem Theora). O conteúdo decide depois
+ * (cc_media_kind): um MP3 chamado .mpeg só pelos bytes se sabe que é áudio.
+ */
 function cc_kind_for(string $mime, string $name): string {
     if (str_starts_with($mime, 'image/') && $mime !== 'image/vnd.adobe.photoshop') return 'image';
-    if (str_starts_with($mime, 'video/')) return 'video';
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-    if (str_starts_with($mime, 'audio/') || in_array($ext, CC_AUDIO_EXT, true)) return 'audio';
+    if (in_array($ext, CC_AUDIO_EXT, true) && !($ext === 'ogg' && $mime === 'video/ogg')) return 'audio';
+    if (str_starts_with($mime, 'video/')) return 'video';
+    if (str_starts_with($mime, 'audio/')) return 'audio';
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'bmp'], true)) return 'image';
     if (in_array($ext, ['mp4', 'mov', 'm4v', 'webm', 'mkv'], true)) return 'video';
     return 'file';
@@ -582,6 +588,53 @@ function cc_media_sniff(string $head, string $tail = '', int $size = 0): ?array 
 /** MP4/MOV: o moov pode estar mais à frente (grande) ou no fim — vale a pena ler mais (até 2 MB do início e do fim). */
 function cc_media_sniff_more(string $head): bool {
     return strlen($head) >= 8 && in_array(substr($head, 4, 4), ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide', 'pnot', 'uuid'], true);
+}
+
+const CC_SNIFF_MORE = 2097152;   // MP4/MOV: até 2 MB do início e 2 MB do fim (o moov pode estar no fim)
+
+/**
+ * O tipo de um ficheiro de media, decidido no servidor pelo conteúdo (o que o browser diz não conta). O nome e o tipo
+ * MIME dão o ponto de partida (cc_kind_for); um vídeo — ou um ficheiro sem tipo conhecido — cujos bytes são só som
+ * passa a áudio, com o tipo MIME certo (o MP3 «WhatsApp Audio … .mpeg», dado como video/mpeg → audio/mpeg) e a duração
+ * quando é barata. Nunca ao contrário: o que não se sabe fica como o nome diz (um vídeo que o browser não descodifica
+ * continua vídeo). $head/$tail/$size como em cc_media_sniff. Devolve ['kind', 'mime', 'dur' => s|null].
+ */
+function cc_media_kind(string $mime, string $name, string $head, string $tail = '', int $size = 0): array {
+    $kind = cc_kind_for($mime, $name);
+    $out = ['kind' => $kind, 'mime' => $mime, 'dur' => null];
+    if (!in_array($kind, ['video', 'file', 'audio'], true)) return $out;
+    $s = $head !== '' ? cc_media_sniff($head, $tail, $size) : null;
+    if ($s && $s['kind'] === 'audio') return ['kind' => 'audio', 'mime' => str_starts_with($mime, 'audio/') ? $mime : $s['mime'], 'dur' => $s['dur']];
+    if ($kind === 'audio' && !str_starts_with($mime, 'audio/') && str_starts_with($m = r2_mime($name), 'audio/')) $out['mime'] = $m;   // .mp3 dado como video/mpeg
+    return $out;
+}
+
+/** O mesmo a partir dos bytes todos (captura, importação, envio sem R2): só o princípio e o fim contam. */
+function cc_media_kind_bytes(string $mime, string $name, string $bytes): array {
+    $n = strlen($bytes);
+    return cc_media_kind($mime, $name, $n > CC_SNIFF_MORE ? substr($bytes, 0, CC_SNIFF_MORE) : $bytes, $n > CC_SNIFF_MORE ? substr($bytes, -CC_SNIFF_MORE) : '', $n);
+}
+
+/**
+ * O mesmo para um objeto no R2 (envio direto do browser, «Da Drive», o trabalho media_sniff), com leituras por
+ * intervalo: os primeiros 64 KB; num MP4/MOV que ainda não se sabe, 2 MB do início e 2 MB do fim. Se a leitura falhar
+ * (o objeto já não existe…), fica como o nome diz; com $strict, só o objeto que já não existe (404) — o resto lança.
+ */
+function cc_media_kind_key(string $mime, string $name, string $key, int $size, bool $strict = false): array {
+    $head = $tail = '';
+    if ($size > 0 && in_array(cc_kind_for($mime, $name), ['video', 'file', 'audio'], true)) {
+        try {
+            $head = r2_get($key, [0, min($size, 65536) - 1], 65536 + 4096);
+            if ($size > strlen($head) && cc_media_sniff_more($head) && cc_media_sniff($head, '', $size) === null) {
+                $head = r2_get($key, [0, min($size, CC_SNIFF_MORE) - 1], CC_SNIFF_MORE + 4096);
+                if ($size > CC_SNIFF_MORE) $tail = r2_get($key, [max(0, $size - CC_SNIFF_MORE), $size - 1], CC_SNIFF_MORE + 4096);
+            }
+        } catch (Throwable $e) {
+            if ($strict && $e->getCode() !== 404) throw $e;   // $strict (o trabalho): uma falha de rede tenta outra vez
+            $head = $tail = '';
+        }
+    }
+    return cc_media_kind($mime, $name, $head, $tail, $size);
 }
 
 function cc_sniff_audio(string $mime, ?float $dur = null): array { return ['kind' => 'audio', 'mime' => $mime, 'dur' => $dur]; }
@@ -816,7 +869,12 @@ function cc_asset_create(PDO $pdo, ?string $bytes, array $o): array {
     $fp = (string)($o['fp'] ?? '');
     if ($bytes !== null) $fp = cc_fingerprint($bytes);
     if ($fp !== '' && ($dup = cc_asset_by_fp($pdo, $fp))) return [$dup, false];
-    $kind = (string)($o['kind'] ?? '') ?: cc_kind_for($mime, $name);
+    $kind = (string)($o['kind'] ?? '');
+    if ($kind === '') {   // sem tipo dado pelo servidor: o conteúdo decide (um MP3 chamado .mpeg é áudio)
+        $mk = $bytes !== null ? cc_media_kind_bytes($mime, $name, $bytes) : ['kind' => cc_kind_for($mime, $name), 'mime' => $mime, 'dur' => null];
+        [$kind, $mime] = [$mk['kind'], $mk['mime']];
+        if ($mk['dur'] && (!isset($o['duration']) || $o['duration'] === '' || $o['duration'] === null)) $o['duration'] = $mk['dur'];
+    }
     if (!in_array($kind, ['image', 'video', 'audio', 'link', 'file'], true)) $kind = 'file';
     if ($fp === '') $fp = sha1(($o['source_url'] ?? '') . '|' . microtime(true) . '|' . random_int(0, PHP_INT_MAX));
 
@@ -1298,7 +1356,7 @@ function cc_jobs_run(PDO $pdo, float $seconds = 20.0): int {
             $msg = mb_substr($e->getMessage(), 0, 250);
             $retry = $e instanceof CcAiException && in_array($e->kind, ['rate', 'overloaded', 'server', 'network', 'timeout'], true) && (int)$job['attempts'] < 3;
             $pdo->prepare('UPDATE cc_jobs SET status = ?, error = ?, done_at = ? WHERE id = ?')->execute([$retry ? 'queued' : 'error', $msg, cc_now(), $id]);
-            if (!$retry && $job['asset_id'] && $job['kind'] !== 'au_peaks') {   // a forma de onda não é a IA
+            if (!$retry && $job['asset_id'] && !in_array($job['kind'], ['au_peaks', 'media_sniff'], true)) {   // a forma de onda e o tipo não são a IA
                 $pdo->prepare("UPDATE cc_assets SET ai_status = ?, ai_error = ? WHERE id = ?")
                     ->execute([$e instanceof CcAiException && in_array($e->kind, ['not_configured', 'budget'], true) ? 'off' : 'error', $msg, (int)$job['asset_id']]);
             }
@@ -1331,6 +1389,10 @@ function cc_job_exec(PDO $pdo, array $job): void {
             require_once __DIR__ . '/cc_import.php';
             cc_import_run($pdo, $job);
             break;
+        case 'media_sniff':
+            // um «vídeo» sem imagem gravado antes de o tipo se decidir pelo conteúdo (migração 42): é áudio?
+            cc_media_sniff_run($pdo, (int)$job['asset_id']);
+            break;
         case 'rv_proc':
         case 'rv_wm':
             // Review (§24): o ffmpeg corre só pela linha de comandos (cron)
@@ -1340,6 +1402,54 @@ function cc_job_exec(PDO $pdo, array $job): void {
         default:
             throw new RuntimeException('Trabalho desconhecido.');
     }
+}
+
+/**
+ * O trabalho «media_sniff»: uma referência gravada como vídeo, sem imagem (sem largura nem miniaturas nem frames), cujo
+ * ficheiro é só som (o MP3 «WhatsApp Audio … .mpeg», um MP4/WebM só com som) passa a áudio: o tipo MIME certo, a
+ * duração se for barata, os cartões passam a áudio com a altura do conteúdo e os Topperboards abertos recarregam.
+ * Um vídeo verdadeiro (mesmo que o browser não o descodifique) ou um conteúdo que não se conhece fica como estava.
+ * Lê o R2 por intervalos (64 KB; 2 MB do início e do fim num MP4/MOV). Devolve true se mudou.
+ */
+function cc_media_sniff_run(PDO $pdo, int $assetId): bool {
+    $a = cc_asset_get($pdo, $assetId);
+    if (!$a || $a['deleted_at'] || $a['kind'] !== 'video' || (int)$a['width'] > 0 || (string)$a['thumbs'] !== '') return false;
+    $st = $pdo->prepare('SELECT COUNT(*) FROM cc_frames WHERE asset_id = ?');
+    $st->execute([$assetId]);
+    if ((int)$st->fetchColumn() > 0) return false;
+    $key = (string)$a['file_key'];
+    if (strncmp($key, 'r2:', 3) === 0) {
+        $k = substr($key, 3);
+        if (!drive_hidden($k)) { require_once __DIR__ . '/drive_moves.php'; $k = drive_resolve($pdo, $k); }   // um mover instantâneo na fila
+        $h = r2_head($k);
+        if (!$h) return false;   // o ficheiro já não existe: fica como estava
+        $mk = cc_media_kind_key((string)$a['mime'], (string)$a['file_name'], $k, (int)($h['size'] ?? 0), true);
+    } elseif (strncmp($key, 'local:', 6) === 0 && ($p = cc_local_path($key)) !== null) {
+        $n = (int)filesize($p);
+        $f = fopen($p, 'rb');
+        $head = (string)fread($f, CC_SNIFF_MORE);
+        $tail = '';
+        if ($n > CC_SNIFF_MORE) { fseek($f, -CC_SNIFF_MORE, SEEK_END); $tail = (string)fread($f, CC_SNIFF_MORE); }
+        fclose($f);
+        $mk = cc_media_kind((string)$a['mime'], (string)$a['file_name'], $head, $tail, $n);
+    } else {
+        return false;
+    }
+    if ($mk['kind'] !== 'audio') return false;
+    $pdo->prepare("UPDATE cc_assets SET kind = 'audio', mime = ?, duration = COALESCE(NULLIF(duration, 0), ?) WHERE id = ? AND kind = 'video'")
+        ->execute([mb_substr($mk['mime'], 0, 100), $mk['dur'], $assetId]);
+    cc_media_audio_cards($pdo, [$assetId]);
+    cc_asset_reindex($pdo, $assetId);
+    return true;
+}
+
+/** Os cartões de referências que passaram a áudio: tipo áudio, altura do conteúdo; os Topperboards recarregam. */
+function cc_media_audio_cards(PDO $pdo, array $assetIds): void {
+    $ids = implode(',', array_map('intval', $assetIds));
+    if ($ids === '') return;
+    $boards = $pdo->query("SELECT DISTINCT board_id FROM cc_cards WHERE asset_id IN ($ids) AND type IN ('video', 'image', 'file')")->fetchAll(PDO::FETCH_COLUMN);
+    $pdo->exec("UPDATE cc_cards SET type = 'audio', h = 0 WHERE asset_id IN ($ids) AND type IN ('video', 'image', 'file')");
+    foreach ($boards as $bid) cc_board_touch($pdo, (int)$bid);
 }
 
 // ── Topperboards ─────────────────────────────────────────────────
@@ -1512,6 +1622,11 @@ function cc_board_cards_public(PDO $pdo, int $boardId): array {
 /** Um cartão novo. $d: type, x, y, w, h, asset_id, ref_board_id, column_id, lane, content. */
 function cc_card_add(PDO $pdo, int $boardId, array $d, ?int $by): int {
     $type = in_array($d['type'] ?? '', CC_CARD_TYPES, true) ? $d['type'] : 'note';
+    // com uma referência, o tipo do cartão é o dela (um «vídeo» de um áudio nasce áudio, com a altura do conteúdo)
+    if (!empty($d['asset_id']) && in_array($type, ['image', 'video', 'audio', 'file', 'link'], true) && ($ax = cc_asset_get($pdo, (int)$d['asset_id']))) {
+        $type = cc_card_type_for($ax);
+        if (in_array($type, ['audio', 'file'], true)) $d['h'] = 0;
+    }
     $z = (int)$pdo->query('SELECT COALESCE(MAX(z), 0) + 1 FROM cc_cards WHERE board_id = ' . $boardId)->fetchColumn();
     $now = cc_now();
     $defW = ['column' => 300, 'note' => 240, 'list' => 260, 'swatch' => 140, 'board' => 240, 'drawing' => 320, 'arrow' => 0, 'link' => 280, 'file' => 240, 'audio' => 300][$type] ?? 260;

@@ -608,7 +608,8 @@ case 'upload_done': {
     if ($b) board_editable($b);
     release_session();
     $name = r2_clean_name((string)rq('name')) ?: 'ficheiro';
-    $o = ['name' => $name, 'mime' => (string)rq('mime'), 'kind' => (string)rq('kind'), 'by' => $by, 'inbox' => !$b && rq('inbox') === '1',
+    // o tipo (imagem, vídeo, áudio…) decide-o o servidor pelo conteúdo, não o browser (cc_media_kind)
+    $o = ['name' => $name, 'mime' => (string)rq('mime'), 'by' => $by, 'inbox' => !$b && rq('inbox') === '1',
           'w' => rint('w'), 'h' => rint('h'), 'duration' => rq('dur'), 'size' => rint('size'), 'fp' => (string)rq('fp'),
           'origin' => rq('origin') === 'topper' ? 'topper' : 'external'];
     if (!empty($_FILES['prev']['tmp_name']) && is_uploaded_file($_FILES['prev']['tmp_name']) && $_FILES['prev']['size'] < 12582912) {
@@ -623,13 +624,22 @@ case 'upload_done': {
         if (!$head) cfail('O envio não chegou ao armazenamento. Tente outra vez.');
         $o['file_key'] = 'r2:' . $key;
         $o['size'] = (int)($head['size'] ?? $o['size']);
+        // o princípio (e, num MP4/MOV, o fim) do ficheiro diz o que é: um MP3 chamado .mpeg é áudio
+        $mk = cc_media_kind_key($o['mime'], $name, $key, $o['size']);
+        $o['kind'] = $mk['kind']; $o['mime'] = $mk['mime'];
+        if ($mk['dur'] && !is_numeric($o['duration'])) $o['duration'] = $mk['dur'];
         // uma imagem sem pré-visualização: o servidor lê-a (até 40 MB) para fazer as miniaturas
-        if (empty($o['preview']) && cc_kind_for($o['mime'], $name) === 'image' && $o['size'] <= 41943040) $o['preview'] = r2_get($key, null, 41943040);
+        if (empty($o['preview']) && $o['kind'] === 'image' && $o['size'] <= 41943040) $o['preview'] = r2_get($key, null, 41943040);
     } else {
         cfail('Falta o ficheiro.');
     }
     if ($bytes !== null && strlen($bytes) === 0) cfail('O ficheiro está vazio.');
-    if (cc_kind_for($o['mime'], $name) === 'audio' || $o['kind'] === 'audio') {
+    if ($bytes !== null) {
+        $mk = cc_media_kind_bytes($o['mime'], $name, $bytes);
+        $o['kind'] = $mk['kind']; $o['mime'] = $mk['mime'];
+        if ($mk['dur'] && !is_numeric($o['duration'])) $o['duration'] = $mk['dur'];
+    }
+    if ($o['kind'] === 'audio') {
         // áudio (§27): a forma de onda e as medidas calculadas no browser
         if (($pk = audio_peaks_in((string)rq('peaks'))) !== null) $o['peaks'] = $pk;
         $o['feats'] = audio_feats_in((string)rq('feats'));
@@ -712,10 +722,11 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
         $phys = drive_resolve($pdo, $k);
         if (!($h = r2_head($phys))) { $skipped++; continue; }
         $name = drive_base($k);
-        $mime = r2_mime($name);
-        $kind = cc_kind_for($mime, $name);
-        $o = ['name' => $name, 'mime' => $mime, 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
-              'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'];
+        // o tipo pelo conteúdo (leituras por intervalo): um MP3 chamado .mpeg é áudio
+        $mk = cc_media_kind_key(r2_mime($name), $name, $phys, (int)$h['size']);
+        $kind = $mk['kind'];
+        $o = ['name' => $name, 'mime' => $mk['mime'], 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
+              'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'] + ($mk['dur'] ? ['duration' => $mk['dur']] : []);
         if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($phys, null, 41943040);
         [$x] = cc_asset_create($pdo, null, $o);
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;

@@ -251,3 +251,28 @@ function migrate_cc_41(PDO $pdo): void {
     db_add_column($pdo, 'cc_assets', 'drive_gone', 'DATETIME NULL', 'TEXT NULL');
     db_add_column($pdo, 'cc_assets', 'drive_trash_id', 'INT UNSIGNED NULL', 'INTEGER NULL');
 }
+
+/**
+ * 42 · Toppernote (§33.14): áudio gravado como vídeo (o MP3 «WhatsApp Audio … .mpeg», dado pelo browser como
+ * video/mpeg, ficou um retângulo de vídeo sem imagem). Só as referências «vídeo» sem imagem (sem largura nem
+ * miniaturas) são candidatas. As que o nome ou o tipo MIME já dizem áudio mudam já (com os cartões); as outras vão
+ * para a fila (trabalho media_sniff), que lê o princípio do ficheiro no R2 — aqui nada lê o R2.
+ * Idempotente: uma referência que já teve o trabalho não volta à fila.
+ */
+function migrate_cc_42(PDO $pdo): void {
+    if (!db_has_table($pdo, 'cc_assets') || !db_has_table($pdo, 'cc_jobs')) return;
+    require_once __DIR__ . '/cc.php';
+    $done = array_flip(array_map('intval', $pdo->query("SELECT DISTINCT asset_id FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN)));
+    $now = []; $queue = [];
+    foreach ($pdo->query("SELECT id, mime, file_name, file_key FROM cc_assets WHERE kind = 'video' AND (width IS NULL OR width = 0) AND thumbs IS NULL AND deleted_at IS NULL")->fetchAll() as $a) {
+        if (cc_kind_for((string)$a['mime'], (string)$a['file_name']) === 'audio' || str_starts_with((string)$a['mime'], 'audio/')) $now[] = $a;
+        elseif ((string)$a['file_key'] !== '' && !isset($done[(int)$a['id']])) $queue[] = (int)$a['id'];
+    }
+    foreach ($now as $a) {
+        $mime = (string)$a['mime'];
+        if (!str_starts_with($mime, 'audio/')) $mime = str_starts_with($m = r2_mime((string)$a['file_name']), 'audio/') ? $m : 'audio/mpeg';
+        $pdo->prepare("UPDATE cc_assets SET kind = 'audio', mime = ? WHERE id = ?")->execute([$mime, (int)$a['id']]);
+    }
+    if ($now) cc_media_audio_cards($pdo, array_map(fn($a) => (int)$a['id'], $now));
+    foreach ($queue as $id) cc_job_add($pdo, 'media_sniff', $id, null, null, null);
+}
