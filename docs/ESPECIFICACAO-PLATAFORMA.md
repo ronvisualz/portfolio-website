@@ -2461,8 +2461,8 @@ cada correção tem um teste que falhava antes dela.
 - **MP3 como cartão de áudio:**
   - Causa: o tipo `video/*` dado pelo browser vinha antes da extensão de áudio (no browser e no servidor), e o servidor
     confiava no tipo do cliente. O caso real em produção: «WhatsApp Audio … .mpeg», `video/mpeg`, a começar por `ID3`.
-  - Agora: o servidor decide pelos primeiros bytes (`cc_media_sniff`, leituras parciais no R2): MP3/ID3, ADTS, Ogg,
-    FLAC, WAV e MP4/MOV/WebM sem pista de vídeo são áudio; um vídeo verdadeiro que o browser não descodifica (H.264 +
+  - Agora: o servidor decide pelos primeiros bytes (`cc_media_sniff`, leituras parciais no R2): MP3/ID3, AAC (ADTS), Ogg,
+    FLAC, WAV, AIFF e MP4/MOV/WebM sem pista de vídeo são áudio; um vídeo verdadeiro que o browser não descodifica (H.264 +
     Opus, ProRes, HEVC) continua vídeo. Vale para envios, «Da Drive» e os já gravados (trabalho `media_sniff`).
 - **Anular depois da borracha (com tempo real):**
   - Causa: repor um cartão não limpava o marcador de apagado do tempo real — o marcador era mais recente do que o
