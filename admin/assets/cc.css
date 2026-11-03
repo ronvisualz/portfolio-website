@@ -156,13 +156,31 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-lanebar .cclb button:hover { background: var(--line); }
 .ccb-lanebar .cclb button.on { background: var(--hi); color: #000; }
 .ccb-main { flex: 1; min-height: 0; display: flex; position: relative; }
-.ccb-tools { flex: none; width: 48px; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; overflow: auto; }
+.ccb-tools { flex: none; width: auto; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
 .ccb-tools button, .ccb-tools label { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; position: relative; flex: none; }
 .ccb-tools button:hover, .ccb-tools label:hover { background: var(--chip); color: var(--fg); }
 .ccb-tools button.on { background: var(--fg); color: var(--bg); }
 .ccb-tools button:disabled { opacity: .35; cursor: default; background: none; }
 .ccb-tools hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; width: auto; }
 .ccb-tools .sw { position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px var(--panel); }
+/* §33.14: estática — a largura é a dos botões (com a barra vertical, se faltar altura), nunca desliza para o lado;
+   a seta na borda direita (como a do menu, §12.0) expande-a com o nome de cada ferramenta */
+.ccb-toolsw { flex: none; position: relative; z-index: 6; display: flex; }
+.ccb-tools .tl { display: none; }
+.ccb-tools.wide button { width: auto; display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 14px 0 9px; white-space: nowrap; text-align: left; }
+.ccb-tools.wide .tl { display: inline; font: 500 13px/1 var(--body); color: inherit; }
+.ccb-tools.wide .sw { right: auto; left: 23px; }
+.ccb-tools-edge {
+  position: absolute; top: calc(50% - 12px); right: -12px; margin: 0; width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-2); background: var(--raise); color: var(--fg);
+  box-shadow: var(--shadow); cursor: pointer; opacity: 0; transition: opacity var(--t), background var(--t), color var(--t);
+}
+.ccb-tools-edge .ico { width: 14px; height: 14px; transform: scaleX(-1); transition: transform var(--t); }
+.ccb-tools.wide + .ccb-tools-edge .ico { transform: none; }
+.ccb-toolsw:hover .ccb-tools-edge, .ccb-tools-edge:hover, .ccb-tools-edge:focus-visible { opacity: 1; }
+.ccb-tools-edge:hover { background: var(--hi); border-color: var(--hi); color: var(--on-hi); }
+.ccb-tools-edge:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.touch .ccb-tools-edge { opacity: .6; }
 
 .ccb-vp { flex: 1; min-width: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: default; outline: none;
   background-color: var(--cc-board); background-image: radial-gradient(var(--cc-grid) 1.1px, transparent 1.2px); background-size: 24px 24px; }
@@ -420,7 +438,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-page .pal { display: flex; gap: 4px; } .cc-page .pal i { width: 28px; height: 28px; border-radius: 7px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
 
 /* apresentação */
-.cc-boardview.present .ccb-top, .cc-boardview.present .ccb-lanebar, .cc-boardview.present .ccb-tools, .cc-boardview.present .ccb-side, .cc-boardview.present .ccb-zoom, .cc-boardview.present .ccb-hint { display: none !important; }
+.cc-boardview.present .ccb-top, .cc-boardview.present .ccb-lanebar, .cc-boardview.present .ccb-toolsw, .cc-boardview.present .ccb-tools, .cc-boardview.present .ccb-side, .cc-boardview.present .ccb-zoom, .cc-boardview.present .ccb-hint { display: none !important; }
 .cc-boardview.present { position: fixed; inset: 0; z-index: 95; background: var(--cc-board); }
 .cc-boardview.present .ccc-hov, .cc-boardview.present .ccc-res { display: none !important; }
 .cc-pres { position: fixed; z-index: 96; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; background: rgba(17,17,17,.78); color: #fff; padding: 6px 8px; border-radius: 100px; font: 500 12px var(--mono); }
@@ -444,6 +462,11 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 @media (max-width: 640px) {
   .ccb-tools { position: absolute; left: 8px; top: 8px; bottom: auto; z-index: 6; width: auto; flex-direction: row; flex-wrap: wrap; max-width: calc(100% - 16px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-card); padding: 4px; }
   .ccb-tools hr { display: none; }
+  /* barra flutuante do telemóvel: só ícones, sem seta (a barra posiciona-se na área do Topperboard) */
+  .ccb-toolsw { position: static; z-index: auto; }
+  .ccb-tools-edge, .ccb-tools .tl, .ccb-tools.wide .tl { display: none; }
+  .ccb-tools.wide button { width: 36px; padding: 0; justify-content: center; }
+  .ccb-tools.wide .sw { left: auto; right: 5px; }
   .ccb-hint { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -647,6 +670,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 /* §33 acessibilidade: alvos de toque de 44 px no iPad/telemóvel; foco visível nos controlos novos */
 @media (pointer: coarse) {
   .ccb-tools button, .ccb-tools label { width: 44px; height: 44px; }
+  .ccb-tools-edge::before { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
   .ccb-gone .btn, .ccd-palh .btn, .ccd-palh .lnk, .cc-dpick .dp-f-bar .btn, .cc-pres button { min-height: 44px; min-width: 44px; }
   .cc-cpop { width: 268px; }
   .cc-cpop .cp-sw { width: 44px; height: 44px; }
@@ -655,5 +679,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .ccd-pal .ccd-pm { min-width: 44px; }
   .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
 }
+@media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }
+@media (pointer: coarse) and (max-width: 640px) { .ccb-tools.wide button { width: 44px; } }
 .ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
 .ccb-side-grip:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }

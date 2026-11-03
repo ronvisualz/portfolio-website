@@ -217,6 +217,7 @@
     tipFor = el;
   }
   function hideTip() { clearTimeout(tipTimer); clearTimeout(touchTimer); if (tip) tip.classList.remove('on'); tipFor = null; }
+  window.topper.hideTip = hideTip;
   // Botões só com ícone que ainda não tenham a marca ganham-na: o nome acessível é a dica.
   $$('.ibtn[aria-label]:not([data-tip])').forEach(function (b) { b.setAttribute('data-tip', ''); });
   document.addEventListener('pointerover', function (e) {

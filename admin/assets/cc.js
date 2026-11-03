@@ -52,7 +52,8 @@
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     side: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>', ext: '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
-    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    chev: '<path d="m15 18-6-6 6-6"/>'
   };
   function ico(n, cls) { return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (IC[n] || IC.file) + '</svg>'; }
 
@@ -1109,21 +1110,50 @@
             + (MANAGE ? '<button type="button" class="ibtn" data-a="more" aria-label="Mais" data-tip>⋯</button>' : '');
       return '<nav class="ccb-crumb" aria-label="Caminho">' + crumbs + '</nav>' + stages + '<div class="ccb-acts">' + acts + '</div>';
     }
+    // §33.14: a barra de ferramentas é estática (nunca desliza para o lado); a seta na borda direita expande-a com o nome
+    // de cada ferramenta, como o menu da aplicação (§12.0). O estado é da pessoa (pref k=tools) e lê-se só no arranque:
+    // a resposta de um sub-Topperboard pode vir pré-carregada (até 60 s) com a preferência antiga.
+    var toolsWide = false;
     function toolsHtml() {
-      return '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
-        + tb('select', 'cursor', 'Selecionar e mover ( V )')
-        + (EDIT ? '<button type="button" data-undo="0" aria-label="Anular (' + MODK + ' Z)" data-tip disabled>' + ico('undo') + '</button><button type="button" data-undo="1" aria-label="Refazer (' + MODK + ' Shift Z)" data-tip disabled>' + ico('redo') + '</button><hr>' : '')
-        + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
-          + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
-          + '<hr>' + '<button type="button" data-upmenu aria-haspopup="menu" aria-label="Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)" data-tip>' + ico('upload') + '</button><input type="file" multiple hidden data-up>'
-          + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
-        + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>';
+      return '<div class="ccb-tools' + (toolsWide ? ' wide' : '') + '" id="ccb-tools" role="toolbar" aria-label="Ferramentas">'
+        + tb('select', 'cursor', 'Selecionar e mover ( V )', '', 'Selecionar')
+        + (EDIT ? toolBtn('data-undo="0" disabled', 'undo', 'Anular (' + MODK + ' Z)', 'Anular') + toolBtn('data-undo="1" disabled', 'redo', 'Refazer (' + MODK + ' Shift Z)', 'Refazer') + '<hr>' : '')
+        + (EDIT ? tb('note', 'note', 'Nota ( N )', '', 'Nota') + tb('column', 'column', 'Coluna ( C )', '', 'Coluna') + tb('list', 'list', 'Lista ( L )', '', 'Lista')
+          + tb('swatch', 'swatch', 'Amostra de cor', '', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>', 'Desenhar') + tb('arrow', 'arrow', 'Seta entre cartões ( A )', '', 'Seta')
+          + '<hr>' + toolBtn('data-upmenu aria-haspopup="menu"', 'upload', 'Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)', 'Enviar') + '<input type="file" multiple hidden data-up>'
+          + tb('link', 'link', 'Link (ou cole com Ctrl V)', '', 'Link') + tb('board', 'board', 'Sub-Topperboard', '', 'Sub-Topperboard') : '')
+        + '<hr>' + tb('ai', 'spark', 'IA ( / )', '', 'IA') + '</div>';
+    }
+    // o nome fica à vista com a barra expandida; aí não há dicas (diriam o mesmo)
+    function toolBtn(attrs, icon, label, short, extra) {
+      return '<button type="button" ' + attrs + ' aria-label="' + esc(label) + '"' + (toolsWide ? '' : ' data-tip') + '>' + ico(icon) + (extra || '') + '<span class="tl">' + esc(short) + '</span></button>';
+    }
+    function toolsEdgeHtml() {
+      return '<button type="button" class="ccb-tools-edge" data-a="tools" aria-controls="ccb-tools" aria-keyshortcuts="]">' + ico('chev') + '</button>';
+    }
+    function toolsSync() {
+      var t = $('.ccb-tools', root), e = $('.ccb-tools-edge', root), l = toolsWide ? 'Recolher ferramentas' : 'Expandir ferramentas';
+      if (t) {
+        t.classList.toggle('wide', toolsWide);
+        $$('button', t).forEach(function (b) { if (toolsWide) b.removeAttribute('data-tip'); else b.setAttribute('data-tip', ''); });
+      }
+      if (e) { e.setAttribute('aria-expanded', toolsWide ? 'true' : 'false'); e.setAttribute('aria-label', l + ' ( ] )'); e.setAttribute('data-tip', l + '  ·  ] '); }
+    }
+    function toggleTools() {
+      var x0 = vp.getBoundingClientRect().left;
+      toolsWide = !toolsWide;
+      toolsSync();
+      if (T.hideTip) T.hideTip();
+      // a tela estreita (ou alarga) pela esquerda: os cartões ficam no mesmo sítio do ecrã
+      var dx = vp.getBoundingClientRect().left - x0;
+      if (dx) { B.view.x -= dx; applyView(); }
+      api('pref', { k: 'tools', v: toolsWide ? 1 : 0 }).catch(function () {});
     }
     function frame() {
       root.innerHTML = '<header class="ccb-top">' + topHtml() + '</header>'
         + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
         + '<div class="ccb-main">'
-        + toolsHtml()
+        + '<div class="ccb-toolsw">' + toolsHtml() + toolsEdgeHtml() + '</div>'
         + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
         + '<div class="ccb-world"><div data-lanes></div><svg class="ccb-arrows" width="1" height="1"><defs><marker id="cc-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g data-ar></g></svg><div data-layer></div></div>'
         + '<div class="ccb-empty" hidden><div><b>Topperboard vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
@@ -1137,11 +1167,12 @@
       vp = $('[data-vp]', root); world = $('.ccb-world', root); layer = $('[data-layer]', root); svg = $('.ccb-arrows', root); lanesEl = $('[data-lanes]', root);
       zoomOut = $('[data-zo]', root); sideEl = $('[data-side]', root); sideBody = $('[data-side-b]', root); emptyEl = $('.ccb-empty', root);
       sideGrip();
+      toolsSync();
       if (window.innerWidth < 1100) sideEl.hidden = true;
       setTool('select');
       bindBoard();
     }
-    function tb(tool, icon, label, extra) { return '<button type="button" data-tool="' + tool + '" aria-label="' + esc(label) + '" data-tip>' + ico(icon) + (extra || '') + '</button>'; }
+    function tb(tool, icon, label, extra, short) { return toolBtn('data-tool="' + tool + '"', icon, label, short, extra); }
 
     function lanebar() {
       var el = $('[data-lanebar]', root);
@@ -2936,6 +2967,8 @@
       else if (!mod && (k === 'a' || k === 'A') && EDIT) runTool('arrow');
       else if (k === '/' && !mod) openSlash();
       else if ((k === 'Delete' || k === 'Backspace') && B.sel.size) delSel();
+      // §33.14: ] expande/recolhe a barra de ferramentas ([ é do menu); aceita AltGr (Ctrl+Alt no Windows) e Option no Mac
+      else if (k === ']' && !e.metaKey && (!e.ctrlKey || e.altKey)) toggleTools();
       else if (k === 'Escape') { if (slash) closeSlash(); else if (RT && RT.escape()) { /* deixou de seguir */ } else if (B.tool !== 'select') setTool('select'); else if (B.sel.size) select([]); else handled = false; }
       else if (mod && (k === 'z' || k === 'Z')) undo(e.shiftKey);
       else if (mod && (k === 'y' || k === 'Y')) undo(true);
@@ -3292,6 +3325,7 @@
     // ── ações do topo ──
     function topAction(k, btn) {
       if (k === 'side') { sideEl.hidden = !sideEl.hidden; sideSync(); return; }
+      if (k === 'tools') { toggleTools(); return; }
       if (k === 'present') { present(); return; }
       if (k === 'prepare') {
         if (btn) btn.disabled = true;
@@ -3607,6 +3641,7 @@
 
     // ── arranque ──
     load().then(function () {
+      toolsWide = !!(B.data.prefs && B.data.prefs.tools);
       frame();
       startRT();
       renderAll();

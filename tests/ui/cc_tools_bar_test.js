@@ -265,11 +265,14 @@ const ctx = async (b, o) => { const c = await b.newContext(o); c.setDefaultTimeo
     const [c4, d] = await ctx(b, { viewport: { width: 1600, height: 900 }, colorScheme: 'dark' });
     try {
     await openBoard(d);
+    // o tema escolhido na conta prevalece sobre o do sistema: força-se o escuro como o botão do tema faz
+    await d.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark')); await d.waitForTimeout(300);
     const dk = await d.evaluate(() => {
       const lum = c => { const m = c.match(/[\d.]+/g).map(Number); const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
       const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
       const t = document.querySelector('.ccb-tools'), l = t.querySelector('[data-tool="note"] .tl'), on = t.querySelector('button.on .tl'), e = document.querySelector('.ccb-tools-edge');
-      return { dark: matchMedia('(prefers-color-scheme: dark)').matches, label: ratio(getComputedStyle(l).color, getComputedStyle(t).backgroundColor), on: ratio(getComputedStyle(on).color, getComputedStyle(on.parentNode).backgroundColor), edge: ratio(getComputedStyle(e).color, getComputedStyle(e).backgroundColor) };
+      const bgL = lum(getComputedStyle(t).backgroundColor);
+      return { dark: bgL < 0.05, label: ratio(getComputedStyle(l).color, getComputedStyle(t).backgroundColor), on: ratio(getComputedStyle(on).color, getComputedStyle(on.parentNode).backgroundColor), edge: ratio(getComputedStyle(e).color, getComputedStyle(e).backgroundColor) };
     });
     check(dk.dark && dk.label >= 4.5 && dk.on >= 4.5 && dk.edge >= 3, 'contraste no modo escuro (' + JSON.stringify(dk) + ')');
     const td = await d.evaluate(() => getComputedStyle(document.querySelector('.ccb-tools-edge')).transitionDuration);
