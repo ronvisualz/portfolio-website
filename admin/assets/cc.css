@@ -108,13 +108,11 @@
 .cc-pmenu button:hover, .cc-pmenu button:focus-visible { background: var(--chip); outline: none; }
 .cc-pmenu code { font: 500 11.5px var(--mono); color: var(--mute); }
 .ccd-media { position: relative; }
-.ccd-pickov { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
-.ccd-media.picking { outline: 2px solid var(--hi); outline-offset: 2px; }
-.ccd-pickhint { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; pointer-events: none; padding: 5px 8px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: 11.5px; text-align: center; }
-.cc-loupe { position: fixed; z-index: 130; pointer-events: none; width: 120px; background: #111; border-radius: 12px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
-.cc-loupe canvas { display: block; width: 120px; height: 120px; border-radius: 8px; image-rendering: pixelated; }
-.cc-loupe b { display: flex; align-items: center; gap: 6px; justify-content: center; font: 600 12px var(--mono); color: #fff; padding: 5px 0 2px; }
-.cc-loupe b::before { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
+/* §33.14: a lupa do conta-gotas (por cima do ecrã inteiro): 21 × 21 píxeis × 8 e a cor num retângulo grande com o #HEX */
+.cc-loupe { position: fixed; z-index: 130; pointer-events: none; width: 176px; box-sizing: border-box; background: #111; border-radius: 12px; padding: 4px; box-shadow: 0 10px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 4px; }
+.cc-loupe[hidden] { display: none; }
+.cc-loupe canvas { display: block; width: 168px; height: 168px; border-radius: 8px; image-rendering: pixelated; }
+.cc-loupe .sw { width: auto; height: 56px; margin: 0; border: 0; vertical-align: baseline; border-radius: 8px; display: grid; place-items: center; font: 700 20px var(--mono); letter-spacing: .02em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
 .ccd-pal { display: flex; flex-wrap: wrap; gap: 6px; }
 .ccd-pal button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 100px; padding: 3px 9px 3px 3px; font: 500 11.5px var(--mono); color: var(--fg); cursor: pointer; }
 .ccd-pal i { width: 18px; height: 18px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.1); }
@@ -616,6 +614,30 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-viewer .ibtn:focus-visible { outline: 2px solid #81CFE3; outline-offset: 2px; }
 .cc-viewer output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
 @media (pointer: coarse) { .cc-viewer .ibtn { width: 44px; height: 44px; } }
+
+/* §33.14: conta-gotas em ecrã inteiro (sempre escuro, nos dois modos; por cima do visualizador, por baixo da lupa) */
+.cc-pickfs { position: fixed; inset: 0; z-index: 125; background: rgba(10,10,12,.96); color: #f4f4f5; display: flex; flex-direction: column; animation: pop-in .14s ease-out; }
+.cc-pickfs .pf-stage { flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.cc-pickfs.panning .pf-stage { cursor: grabbing; }
+.cc-pickfs .pf-img { display: block; max-width: none; max-height: none; transform-origin: center; background: #000; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+.cc-pickfs .pf-img.px { image-rendering: pixelated; }
+.cc-pickfs .pf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,.08); }
+.cc-pickfs .pf-sw { flex: none; width: 56px; height: 56px; border-radius: 10px; background: transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+.cc-pickfs .pf-val { display: flex; flex-direction: column; gap: 2px; min-width: 128px; }
+.cc-pickfs .pf-hex { font: 700 20px var(--mono); letter-spacing: .02em; }
+.cc-pickfs .pf-val small { font: 500 13px var(--mono); color: #c9c9cf; }
+.cc-pickfs .pf-txt { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 3px; }
+.cc-pickfs .pf-hint { font-size: 13px; color: #c9c9cf; }
+.cc-pickfs .pf-msg { font-size: 13px; font-weight: 600; color: #f4f4f5; }
+.cc-pickfs .pf-msg:empty { display: none; }
+.cc-pickfs .pf-zoom { display: flex; align-items: center; gap: 4px; }
+.cc-pickfs .ibtn { color: #f4f4f5; background: rgba(255,255,255,.08); width: 40px; height: 40px; border-radius: 10px; font-size: 20px; }
+.cc-pickfs .ibtn:hover { background: rgba(255,255,255,.18); }
+.cc-pickfs button:focus-visible { outline: 2px solid #81CFE3; outline-offset: 2px; }
+.cc-pickfs output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
+@media (pointer: coarse) { .cc-pickfs .ibtn { width: 44px; height: 44px; } .cc-pickfs .btn { min-height: 44px; min-width: 44px; } }
+@media (max-width: 640px) { .cc-pickfs .pf-bar { padding: 8px 16px 12px; } .cc-pickfs .pf-txt { order: 5; flex-basis: 100%; min-width: 0; } }
+@media (prefers-reduced-motion: reduce) { .cc-pickfs { animation: none; } }
 
 /* §33.13: som em Apresentar */
 .ccc .pres-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 2; }

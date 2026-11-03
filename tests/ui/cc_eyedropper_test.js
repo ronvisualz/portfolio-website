@@ -88,7 +88,11 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   check(rz && rz.width >= 2 * w0, 'a roda aproxima (' + Math.round(w0) + ' → ' + Math.round(rz && rz.width) + ')');
   const hz = await hexAt(cx, cy);
   check(hz === '#DC2828', 'com zoom a cor debaixo do cursor continua certa (' + hz + ')');
-  check(await p.evaluate(() => { const e = document.querySelector('.cc-pickfs .pf-img'); return !!e && e.classList.contains('px'); }), 'com zoom os píxeis ficam nítidos (sem suavizar)');
+  // mais perto: um píxel do original com 2 ou mais píxeis no ecrã fica nítido (sem suavizar)
+  await p.mouse.wheel(0, -300); await p.waitForTimeout(200);
+  check(await p.evaluate(() => { const e = document.querySelector('.cc-pickfs .pf-img'); return !!e && e.classList.contains('px'); }), 'com muito zoom os píxeis ficam nítidos (sem suavizar)');
+  const hz2 = await hexAt(cx, cy);
+  check(hz2 === '#DC2828', 'e a cor debaixo do cursor continua certa (' + hz2 + ')');
   await p.keyboard.press('0'); await p.waitForTimeout(150);
   rz = await img();
   check(rz && Math.abs(rz.width - w0) < 2, '0 volta ao ajustado (' + Math.round(rz && rz.width) + ')');
@@ -139,7 +143,8 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   const fsOpen = await p.locator('.cc-pickfs').count() === 1;
   if (fsOpen) { await p.mouse.click(8, 300); await p.waitForTimeout(200); }
   check(fsOpen && await p.locator('.cc-pickfs').count() === 0, 'clicar fora da imagem sai');
-  await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  if (await p.locator('.cc-pickfs').count()) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+  check(await p.locator('.ccc.t-image.sel').count() === 1, 'clicar fora também não mexe na seleção do Topperboard');
   await soft(p.waitForSelector('.ccb-side [data-pal-hex="#DC2828"]', { timeout: 4000 }));
 
   // clicar numa cor copia o #HEX
@@ -220,7 +225,7 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   await ctx.close();
 
   // 12) iPad: um toque acrescenta uma vez só (pointerup + click davam duas vezes)
-  const tctx = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true, isMobile: true });
+  const tctx = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
   const t = await tctx.newPage();
   const adds = []; t.on('request', q => { if (/a=palette_add/.test(q.url())) adds.push(q.url()); });
   await t.goto(BASE + '/admin/__as/1');
@@ -231,6 +236,7 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   await t.keyboard.press('i'); await t.waitForSelector('.cc-pickfs', { timeout: 8000 }).catch(() => {});
   await t.waitForFunction(() => /Toque e arraste/.test((document.querySelector('.cc-pickfs .pf-hint') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
   check(/Toque e arraste para apontar; levante o dedo para escolher/.test(await t.locator('.cc-pickfs .pf-hint').textContent({ timeout: 3000 }).catch(() => '')), 'iPad: a dica de toque');
+  await t.waitForTimeout(300);   // o fim da animação de abertura (escala)
   const tr = await t.evaluate(() => { const e = document.querySelector('.cc-pickfs .pf-img'); return e ? e.getBoundingClientRect().toJSON() : null; });
   check(tr && (tr.width >= 0.7 * 1180 || tr.height >= 0.7 * 820), 'iPad: a imagem em ecrã inteiro');
   const bb = await t.evaluate(() => [...document.querySelectorAll('.cc-pickfs .pf-bar button')].map(x => Math.min(x.getBoundingClientRect().width, x.getBoundingClientRect().height)));

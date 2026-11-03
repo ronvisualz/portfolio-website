@@ -498,7 +498,7 @@
     if (a.orig && a.kind !== 'video') links.push('<a class="lnk" href="' + esc(a.orig) + '" target="_blank" rel="noopener"' + (a.kind === 'audio' ? ' download="' + esc(a.file || '') + '"' : '') + '>' + ico('ext') + ' Original</a>');
     if (a.drive) links.push('<a class="lnk" href="' + esc(a.drive) + '" data-tip="' + esc(a.drive_path) + '">' + ico('drive') + ' Mostrar no Drive</a>');
     if (links.length) h += '<div>' + links.join(' ') + '</div>';
-    if (!isAudio(a) && (a.kind === 'image' || a.kind === 'video' || (a.palette && a.palette.length))) h += '<div class="ccd-palw">' + palSection(a) + '</div>';
+    if (!isAudio(a) && (a.kind === 'image' || a.kind === 'video' || (a.palette && a.palette.length))) h += '<div class="ccd-palw" data-aid="' + a.id + '">' + palSection(a) + '</div>';
     var an = a.analysis || {};
     var st = a.ai === 'queued' || a.ai === 'running' ? '<p class="muted small"><span class="spin"></span> A IA está a analisar…</p>'
            : a.ai === 'error' ? '<p class="small" style="color:var(--bad-fg)">A análise falhou: ' + esc(a.ai_error) + '</p>'
@@ -607,7 +607,21 @@
       else palEdit(box, a, hex, k);
     });
   }
-  function palRefresh(box, a, pal) { a.palette = pal; var w = $('.ccd-palw', box); if (w) w.innerHTML = palSection(a); }
+  /** Atualiza a paleta no detalhe — no box e em qualquer painel vivo com a mesma referência (§33.14: o painel pode ter sido
+   *  redesenhado por baixo do conta-gotas pelo tempo real, pela sondagem ou por uma seleção). msg: a confirmação. */
+  function palRefresh(box, a, pal, msg) {
+    a.palette = pal;
+    var ws = $$('.ccd-palw[data-aid="' + a.id + '"]'), own = box && $('.ccd-palw', box);
+    if (own && ws.indexOf(own) < 0) ws.push(own);
+    ws.forEach(function (w) {
+      var h = w; while (h && !h.__ccA) h = h.parentNode;   // a referência do painel (bindAssetDetail)
+      var aa = h && h.__ccA ? h.__ccA : a; aa.palette = pal;
+      var ae = document.activeElement, back = ae && w.contains(ae) && ae.hasAttribute('data-pick');
+      w.innerHTML = palSection(aa);
+      if (back) { var pb = $('[data-pick]', w); if (pb) pb.focus({ preventScroll: true }); }
+      if (msg) { var m = $('.ccd-palmsg', w); if (m) m.textContent = msg; }
+    });
+  }
   function palEdit(box, a, hex, op, name) {
     api('palette_edit', { asset: a.id, hex: hex, op: op, name: name || '' }).then(function (j) {
       palRefresh(box, a, j.palette);
@@ -616,79 +630,259 @@
       } });
     }).catch(fail);
   }
-  // conta-gotas: lê os píxeis do original (mesmo domínio, px=1) em resolução total; lupa ×8; média 3×3, Alt = 1 píxel
+  // ── conta-gotas (§33.11, §33.14): a imagem — ou o fotograma em pausa do vídeo — em ecrã inteiro, com zoom (roda, + − 0) e
+  // deslocação com zoom; lê os píxeis do original (mesmo domínio, px=1) ou de um clone do vídeo com crossorigin e endereço
+  // próprio (&cors=1); lupa ×8 com a cor num retângulo grande; média 3×3, Alt = 1 píxel; Shift = várias; Esc, «Concluir» ou
+  // clique fora saem. As teclas são todas do conta-gotas enquanto está aberto (o Topperboard não as recebe).
   var pickState = null;
-  function stopPick() {
+  var PICK_HINT = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Esc: sair',
+      PICK_HINT_TOUCH = 'Toque e arraste para apontar; levante o dedo para escolher',
+      PICK_ERR_FRAME = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.';
+  /** O botão «+ Escolher da imagem» do painel vivo desta referência (o do box, ou o de um painel redesenhado). */
+  function pickBtn(p) {
+    var b = p.box && p.box.isConnected ? $('[data-pick]', p.box) : null;
+    if (!b) { var w = $$('.ccd-palw[data-aid="' + p.a.id + '"]')[0]; b = w ? $('[data-pick]', w) : null; }
+    return b;
+  }
+  function stopPick(noFocus) {
     if (!pickState) return;
     var p = pickState; pickState = null;
-    p.wrap.classList.remove('picking'); if (p.ov) p.ov.remove(); if (p.hint) p.hint.remove(); if (p.loupe) p.loupe.remove();
+    clearTimeout(p.closeT);
+    document.removeEventListener('keydown', p.key, true);
+    window.removeEventListener('resize', p.resize);
+    if (p.el) p.el.remove();
+    if (p.loupe) p.loupe.remove();
+    if (p.vid) { p.vid.pause(); p.vid.removeAttribute('src'); try { p.vid.load(); } catch (e) {} p.vid = null; }
+    if (p.url) URL.revokeObjectURL(p.url);
     if (p.src && p.src.close) p.src.close();
+    p.src = p.blob = null;
+    if (!noFocus) { var b = pickBtn(p); if (b) b.focus({ preventScroll: true }); }
   }
   function startPick(box, a) {
-    stopPick();
-    var wrap = $('.ccd-media', box), m = wrap && $('img, video', wrap);
-    if (!m || !window.CCL) return;
-    if (m.tagName === 'VIDEO') m.pause();
-    var p = pickState = { box: box, a: a, wrap: wrap, m: m, src: null, w: 0, h: 0 };
-    wrap.classList.add('picking');
-    p.ov = document.createElement('div'); p.ov.className = 'ccd-pickov'; wrap.appendChild(p.ov);
-    p.hint = document.createElement('div'); p.hint.className = 'ccd-pickhint'; p.hint.textContent = 'A carregar a imagem original…'; wrap.appendChild(p.hint);
+    stopPick(true);
+    if (!a || !window.CCL) return;
+    var dv = box && $('.ccd-media video', box);
+    if (dv) dv.pause();   // o fotograma em pausa é o do tempo onde o leitor do detalhe está
+    var isVid = a.kind === 'video' && !!a.orig;
+    var el = document.createElement('div');
+    el.className = 'cc-pickfs';
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Escolher uma cor da imagem');
+    el.innerHTML = '<div class="pf-stage" data-pf-stage></div>'
+      + '<div class="pf-bar"><span class="pf-sw" data-pf-sw aria-hidden="true"></span>'
+      + '<span class="pf-val"><b class="pf-hex" data-pf-hex>#——————</b><small data-pf-rgb></small></span>'
+      + '<span class="pf-txt"><span class="pf-hint"></span><span class="pf-msg" role="status" aria-live="polite"></span></span>'
+      + '<span class="pf-zoom"><button type="button" class="ibtn" data-pf="out" aria-label="Afastar ( - )">' + ico('minus') + '</button><output aria-label="Zoom">100%</output>'
+      + '<button type="button" class="ibtn" data-pf="in" aria-label="Aproximar ( + )">' + ico('plus') + '</button></span>'
+      + '<button type="button" class="btn" data-pf="done" aria-label="Concluir ( Esc )">Concluir</button></div>';
+    document.body.appendChild(el);
+    var p = pickState = { box: box, a: a, el: el, stage: $('[data-pf-stage]', el), src: null, w: 0, h: 0, nw: 0, nh: 0, z: 1, px: 0, py: 0, fit: { w: 0, h: 0 },
+      disp: null, last: null, touch: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches), closing: false };
+    var hint = $('.pf-hint', el), msg = $('.pf-msg', el);
+    var say = function (t) { hint.textContent = t; };
     p.loupe = document.createElement('div'); p.loupe.className = 'cc-loupe'; p.loupe.hidden = true; p.loupe.setAttribute('aria-hidden', 'true');
-    p.loupe.innerHTML = '<canvas width="120" height="120"></canvas><b></b>'; document.body.appendChild(p.loupe);
-    p.cv = document.createElement('canvas'); p.cv.width = p.cv.height = 15;
-    var ready = function (src, w, h) { if (pickState !== p) return; p.src = src; p.w = w; p.h = h; p.hint.textContent = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Esc: sair'; };
-    if (m.tagName === 'VIDEO') {
-      // o fotograma em pausa
-      try {
-        var fc = document.createElement('canvas'); fc.width = m.videoWidth; fc.height = m.videoHeight;
-        fc.getContext('2d').drawImage(m, 0, 0); fc.getContext('2d').getImageData(0, 0, 1, 1);
-        ready(fc, fc.width, fc.height);
-      } catch (e) { p.hint.textContent = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.'; }
-    } else {
+    p.loupe.innerHTML = '<canvas width="168" height="168"></canvas><div class="sw"></div>'; document.body.appendChild(p.loupe);
+    p.cv = document.createElement('canvas'); p.cv.width = p.cv.height = 21;   // 21 × 21 píxeis do original à volta do ponto (centro em 10)
+
+    // o tamanho: a imagem inteira no palco (medido no próprio palco, não na janela: a Biblioteca tem barra de deslocação)
+    var layout = function (w, h) {
+      if (!w || !h) return;
+      p.nw = w; p.nh = h;
+      p.fit = CCL.fitRect(w, h, p.stage.clientWidth - 32, p.stage.clientHeight - 32, 8);
+      p.disp.style.width = p.fit.w + 'px'; p.disp.style.height = p.fit.h + 'px';
+      clampPan(); apply();
+    };
+    var clampPan = function () { var mx = p.fit.w * p.z / 2, my = p.fit.h * p.z / 2; p.px = clamp(p.px, -mx, mx); p.py = clamp(p.py, -my, my); };
+    var apply = function () {
+      if (!p.disp) return;
+      p.disp.style.transform = 'translate(' + p.px + 'px,' + p.py + 'px) scale(' + p.z + ')';
+      $('output', el).textContent = Math.round(p.z * 100) + '%';
+      el.classList.toggle('zoomed', p.z > 1);
+      var dpr = window.devicePixelRatio || 1;
+      // um píxel do original com 2 ou mais píxeis no ecrã: vê-se cada píxel, sem suavizar
+      p.disp.classList.toggle('px', p.w > 0 && p.fit.w * p.z * dpr / p.w >= 2);
+      // com zoom, o original em vez da miniatura (só quando é preciso: memória e rede)
+      var im = p.disp;
+      if (p.blob && !p.url && im.tagName === 'IMG' && im.naturalWidth && p.w > im.naturalWidth && p.fit.w * p.z * dpr > im.naturalWidth * 1.25) {
+        p.url = URL.createObjectURL(p.blob); im.src = p.url;
+      }
+    };
+    var ready = function (src, w, h) {
+      if (pickState !== p) { if (src && src.close) src.close(); return; }
+      p.src = src; p.w = w; p.h = h;
+      layout(w, h);
+      say(p.touch ? PICK_HINT_TOUCH : PICK_HINT);
+    };
+    p.resize = function () { if (pickState === p && p.nw) layout(p.nw, p.nh); };
+    window.addEventListener('resize', p.resize);
+
+    if (!isVid) {
+      // a maior miniatura logo; os píxeis vêm do original (ImageBitmap); o original só é desenhado com zoom
+      var im = document.createElement('img');
+      im.className = 'pf-img'; im.alt = a.title || ''; im.draggable = false;
+      p.disp = im; p.stage.appendChild(im);
+      im.addEventListener('load', function () { if (pickState === p && !p.w) layout(im.naturalWidth, im.naturalHeight); });
+      im.src = (a.tw || []).length && a.thumb ? a.thumb + '&s=' + Math.max.apply(null, a.tw) : (a.orig || a.thumb);
+      say('A carregar a imagem original…');
       var url = (a.kind === 'image' && a.orig ? a.orig : a.thumb + '&s=' + Math.max.apply(null, (a.tw || []).concat([768]))) + '&px=1';
       fetch(url, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
-        .then(function (b) { return createImageBitmap(b); })
-        .then(function (bmp) { ready(bmp, bmp.width, bmp.height); })
-        .catch(function () { if (pickState === p) p.hint.textContent = 'Não foi possível ler a imagem.'; });
+        .then(function (b) {
+          if (pickState !== p) return null;
+          p.blob = b;
+          return createImageBitmap(b, { imageOrientation: 'from-image' }).catch(function () { return createImageBitmap(b); });
+        })
+        .then(function (bmp) { if (bmp) ready(bmp, bmp.width, bmp.height); })
+        .catch(function () { if (pickState === p) say('Não foi possível ler a imagem.'); });
+    } else {
+      // o fotograma: um clone com crossorigin (o leitor do detalhe fica como está e não depende de CORS), no tempo do leitor
+      var cvs = document.createElement('canvas');
+      cvs.className = 'pf-img'; cvs.width = cvs.height = 1; cvs.setAttribute('role', 'img'); cvs.setAttribute('aria-label', a.title || 'Fotograma');
+      p.disp = cvs; p.stage.appendChild(cvs);
+      say('A carregar o fotograma…');
+      var v = p.vid = document.createElement('video'), want = dv && isFinite(dv.currentTime) ? dv.currentTime : 0, got = false;
+      v.crossOrigin = 'anonymous'; v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      var give = function (ok) {
+        if (got) return; got = true; clearTimeout(tm);
+        if (pickState !== p) return;
+        if (!ok) { say(PICK_ERR_FRAME); return; }
+        try {
+          cvs.width = v.videoWidth; cvs.height = v.videoHeight;
+          var cx = cvs.getContext('2d', { willReadFrequently: true });
+          cx.drawImage(v, 0, 0); cx.getImageData(0, 0, 1, 1);   // um canvas «sujo» (outro domínio sem CORS) falha aqui
+          ready(cvs, cvs.width, cvs.height);
+        } catch (e) { say(PICK_ERR_FRAME); }
+        if (p.vid === v) { v.pause(); v.removeAttribute('src'); try { v.load(); } catch (e2) {} p.vid = null; }
+      };
+      var grab = function () { if (v.readyState >= 2 && v.videoWidth > 0 && !v.seeking && (want <= 0.001 || Math.abs(v.currentTime - want) < 0.05)) give(true); };
+      var tm = setTimeout(function () { give(false); }, 10000);
+      v.addEventListener('loadedmetadata', function () { if (want > 0.001) { try { v.currentTime = want; } catch (e) {} } });
+      v.addEventListener('loadeddata', grab); v.addEventListener('seeked', grab); v.addEventListener('canplay', grab);
+      v.addEventListener('error', function () { give(false); });
+      v.src = a.orig + '&cors=1';
+      // iPad (Safari): sem um play, o clone pode não chegar a ter o fotograma
+      setTimeout(function () { if (!got && pickState === p && v.readyState < 2) { var pr = v.play(); if (pr && pr.then) pr.then(function () { v.pause(); grab(); }).catch(function () {}); } }, 1500);
     }
-    var at = function (e) {
+
+    // a cor em (cx, cy): 21 × 21 píxeis à volta (a caixa só com os que existem, nas bordas), média 3×3 ou o píxel com Alt
+    var at = function (cx, cy, alt) {
       if (!p.src) return null;
-      var r = m.getBoundingClientRect();
-      var sx = clamp(Math.floor((e.clientX - r.left) / r.width * p.w), 0, p.w - 1), sy = clamp(Math.floor((e.clientY - r.top) / r.height * p.h), 0, p.h - 1);
-      var ctx = p.cv.getContext('2d'); ctx.clearRect(0, 0, 15, 15);
-      ctx.drawImage(p.src, sx - 7, sy - 7, 15, 15, 0, 0, 15, 15);
-      // nas bordas, a média só conta os píxeis que existem
-      var d = ctx.getImageData(0, 0, 15, 15).data, cx = 7, cy = 7;
-      if (sx < 7) cx = sx; if (sy < 7) cy = sy;
-      return CCL.avg3(d, 15, cx, cy, e.altKey);
+      var q = CCL.pickPx(p.disp.getBoundingClientRect(), p.w, p.h, cx, cy);
+      if (!q) return null;
+      var x0 = Math.max(0, q.x - 10), y0 = Math.max(0, q.y - 10), x1 = Math.min(p.w, q.x + 11), y1 = Math.min(p.h, q.y + 11);
+      var ctx = p.cv.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, 21, 21);
+      ctx.drawImage(p.src, x0, y0, x1 - x0, y1 - y0, x0 - q.x + 10, y0 - q.y + 10, x1 - x0, y1 - y0);
+      return CCL.avg3(ctx.getImageData(0, 0, 21, 21).data, 21, 10, 10, alt, [x0 - q.x + 10, y0 - q.y + 10, x1 - q.x + 10, y1 - q.y + 10]);
     };
-    p.ov.addEventListener('pointermove', function (e) {
-      var hex = at(e); if (!hex) return;
+    var show = function (hex, alt, x, y, touch) {
       var lc = $('canvas', p.loupe).getContext('2d');
-      lc.imageSmoothingEnabled = false; lc.clearRect(0, 0, 120, 120); lc.drawImage(p.cv, 0, 0, 15, 15, 0, 0, 120, 120);
-      lc.strokeStyle = '#fff'; lc.lineWidth = 2; lc.strokeRect(e.altKey ? 56 : 48, e.altKey ? 56 : 48, e.altKey ? 8 : 24, e.altKey ? 8 : 24);
-      lc.strokeStyle = '#000'; lc.lineWidth = 1; lc.strokeRect(e.altKey ? 55 : 47, e.altKey ? 55 : 47, e.altKey ? 10 : 26, e.altKey ? 10 : 26);
-      $('b', p.loupe).textContent = hex;
-      $('b', p.loupe).style.setProperty('--c', hex);
+      lc.imageSmoothingEnabled = false; lc.clearRect(0, 0, 168, 168); lc.drawImage(p.cv, 0, 0, 21, 21, 0, 0, 168, 168);
+      var o = alt ? 80 : 72, s = alt ? 8 : 24;
+      lc.strokeStyle = '#fff'; lc.lineWidth = 2; lc.strokeRect(o, o, s, s);
+      lc.strokeStyle = '#000'; lc.lineWidth = 1; lc.strokeRect(o - 1.5, o - 1.5, s + 3, s + 3);
+      var sw = $('.sw', p.loupe), ink = CCL.ink(hex);
+      sw.textContent = hex; sw.style.background = hex; sw.style.color = ink;
+      $('[data-pf-sw]', el).style.background = hex;
+      $('[data-pf-hex]', el).textContent = hex;
+      $('[data-pf-rgb]', el).textContent = CCL.hexTo(hex, 'rgb');
       p.loupe.hidden = false;
-      var x = e.clientX + 18, y = e.clientY + 18;
-      if (x + 140 > innerWidth) x = e.clientX - 158; if (y + 160 > innerHeight) y = e.clientY - 178;
-      p.loupe.style.left = x + 'px'; p.loupe.style.top = y + 'px';
+      var lw = p.loupe.offsetWidth || 176, lh = p.loupe.offsetHeight || 236, lx, ly;
+      if (touch) { lx = x - lw / 2; ly = y - 120 - lh; if (ly < 8) ly = y + 60; }   // acima do dedo, para se ver
+      else { lx = x + 22; ly = y + 22; if (lx + lw > innerWidth - 8) lx = x - 22 - lw; if (ly + lh > innerHeight - 8) ly = y - 22 - lh; }
+      p.loupe.style.left = Math.round(clamp(lx, 8, Math.max(8, innerWidth - lw - 8))) + 'px';
+      p.loupe.style.top = Math.round(clamp(ly, 8, Math.max(8, innerHeight - lh - 8))) + 'px';
+    };
+    var aim = function (e) {
+      var hex = at(e.clientX, e.clientY, e.altKey);
+      if (!hex) { p.loupe.hidden = true; return null; }
+      show(hex, e.altKey, e.clientX, e.clientY, e.pointerType === 'touch');
+      return hex;
+    };
+    var zoom = function (f, cx, cy) {
+      if (!p.fit.w) return;
+      var sr = p.stage.getBoundingClientRect(), pt = cx != null ? { x: cx, y: cy } : p.last;
+      var v2 = CCL.zoomAbout({ z: p.z, px: p.px, py: p.py }, f, pt ? pt.x - (sr.left + sr.width / 2) : 0, pt ? pt.y - (sr.top + sr.height / 2) : 0, 16);
+      p.z = v2.z; p.px = v2.px; p.py = v2.py; clampPan(); apply();
+    };
+    var add = function (hex) {
+      var done = hex + ' adicionada à paleta.';
+      api('palette_add', { asset: a.id, hex: hex }).then(function (j) {
+        palRefresh(p.box, a, j.palette, done);
+        if (pickState === p) msg.textContent = done;
+      }).catch(function (e2) { if (pickState === p) msg.textContent = (e2 && e2.message) || 'Não foi possível acrescentar a cor.'; else fail(e2); });
+    };
+    // sair depois do clique que vem a seguir ao pointerup (senão o clique — ou o do toque — cai no que está por baixo)
+    var closeSoon = function () { p.closing = true; clearTimeout(p.closeT); p.closeT = setTimeout(function () { if (pickState === p) stopPick(); }, 450); };
+
+    // apontar, escolher, deslocar com zoom (rato: arrastar ≥ 4 px; toque: arrastar aponta, levantar o dedo escolhe)
+    var drag = null;
+    p.stage.addEventListener('pointerdown', function (e) {
+      if (p.closing || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (e.pointerType === 'touch' && !p.touch) { p.touch = true; if (p.src) say(PICK_HINT_TOUCH); }
+      e.preventDefault();
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch' };
+      try { p.stage.setPointerCapture(e.pointerId); } catch (err) {}
+      p.last = { x: e.clientX, y: e.clientY };
+      if (drag.touch) aim(e);
     });
-    p.ov.addEventListener('pointerleave', function () { p.loupe.hidden = true; });
-    p.ov.addEventListener('click', function (e) {
-      e.preventDefault(); e.stopPropagation();
-      var hex = at(e); if (!hex) return;
-      var keep = e.shiftKey;
-      api('palette_add', { asset: a.id, hex: hex }).then(function (j) { palRefresh(box, a, j.palette); var mm = $('.ccd-palmsg', box); if (mm) mm.textContent = hex + ' adicionada à paleta.'; }).catch(fail);
-      if (!keep) stopPick();
+    p.stage.addEventListener('pointermove', function (e) {
+      if (p.closing) return;
+      p.last = { x: e.clientX, y: e.clientY };
+      if (drag && drag.id === e.pointerId && !drag.touch && p.z > 1) {
+        var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        if (!drag.pan && Math.hypot(dx, dy) >= 4) { drag.pan = true; el.classList.add('panning'); }
+        if (drag.pan) { p.px = drag.px + dx; p.py = drag.py + dy; clampPan(); apply(); p.loupe.hidden = true; return; }
+      }
+      aim(e);
     });
+    p.stage.addEventListener('pointerup', function (e) {
+      if (!drag || drag.id !== e.pointerId) return;
+      var d = drag; drag = null; el.classList.remove('panning');
+      if (d.pan || p.closing) return;
+      if (!CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY)) { p.loupe.hidden = true; closeSoon(); return; }   // clique fora sai
+      var hex = aim(e);
+      if (!hex) return;   // ainda a carregar
+      add(hex);
+      if (!e.shiftKey) { p.loupe.hidden = true; closeSoon(); }
+    });
+    p.stage.addEventListener('pointercancel', function () { drag = null; el.classList.remove('panning'); p.loupe.hidden = true; });
+    p.stage.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch' && !drag) p.loupe.hidden = true; });
+    el.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      if (p.closing || !p.stage.contains(e.target)) return;
+      zoom(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)), e.clientX, e.clientY);
+      aim(e);
+    }, { passive: false });
+    el.addEventListener('click', function (e) {
+      if (p.closing) { e.preventDefault(); e.stopPropagation(); stopPick(); return; }
+      var b = e.target.closest('[data-pf]');
+      if (!b) return;
+      var k = b.getAttribute('data-pf');
+      if (k === 'done') stopPick(); else zoom(k === 'in' ? 1.25 : 0.8);
+    });
+    el.addEventListener('contextmenu', function (e) { if (p.stage.contains(e.target)) e.preventDefault(); });
+
+    // teclado: Esc sai; + − 0 zoom; Tab fica na barra; o resto não chega ao Topperboard nem à página
+    p.key = function (e) {
+      if (pickState !== p) return;
+      var k = e.key, ae = document.activeElement, onBtn = ae && el.contains(ae) && ae.tagName === 'BUTTON', mod = e.ctrlKey || e.metaKey;
+      e.stopImmediatePropagation();
+      if (k === 'Escape') { e.preventDefault(); stopPick(); }
+      else if (!mod && (k === '+' || k === '=')) { e.preventDefault(); zoom(1.25); }
+      else if (!mod && k === '-') { e.preventDefault(); zoom(0.8); }
+      else if (!mod && k === '0') { e.preventDefault(); p.z = 1; p.px = p.py = 0; apply(); }
+      else if (k === 'Tab') { e.preventDefault(); var f = $$('.pf-bar button', el), i = f.indexOf(ae); f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus(); }
+      else if ((k === 'Enter' || k === ' ') && onBtn) { /* carrega no botão */ }
+      else if (/^(Arrow|Page|Home|End| )/.test(k) || k === ' ') e.preventDefault();   // nada de deslocar a página por trás
+    };
+    document.addEventListener('keydown', p.key, true);
+    $('[data-pf="done"]', el).focus({ preventScroll: true });
   }
 
   /** Liga os botões do detalhe. o: onColor(hex), onAdd(asset), onChange(asset), onDelete(id), onOpen(id). */
   function bindAssetDetail(box, a, o) {
     if (a.noaccess) return;
     o = o || {};
+    box.__ccA = a;   // para a paleta deste painel se atualizar quando as cores chegam de outro sítio (palRefresh)
     if (isAudio(a)) bindAuPlayer(box, a);
     box.addEventListener('click', function (e) {
       var s = e.target.closest('[data-seek]');
@@ -999,7 +1193,10 @@
 
     // detalhe (gaveta)
     var drawer = null;
-    function closeDetail() { if (drawer) { drawer.remove(); drawer = null; } }
+    function closeDetail() {
+      if (pickState && drawer && pickState.box && drawer.contains(pickState.box)) stopPick(true);   // a lupa não fica a flutuar sobre a grelha
+      if (drawer) { drawer.remove(); drawer = null; }
+    }
     function openDetail(id) {
       closeDetail();
       drawer = document.createElement('aside');
@@ -1024,7 +1221,8 @@
         $('[data-x]', drawer).focus();
       }).catch(function (e) { fail(e); closeDetail(); });
     }
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer && !(T.topMdl && T.topMdl())) { e.preventDefault(); closeDetail(); } });
+    // Esc fecha a gaveta — mas, com o conta-gotas aberto, o Esc é dele (fecha-o primeiro e a gaveta fica)
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer && !pickState && !(T.topMdl && T.topMdl())) { e.preventDefault(); closeDetail(); } });
 
     // capturar: carregar, colar, arrastar
     function addFiles(files) {
@@ -2937,9 +3135,10 @@
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
       if (viewer) { viewerKey(e); return; }
+      if (pickState) return;   // §33.14: o conta-gotas em ecrã inteiro tem as teclas todas (Esc, + − 0, Tab); nada chega ao Topperboard
       if (document.querySelector('.cc-dpick')) return;   // seletor da Drive aberto: as teclas (Esc, Tab) são dele, mesmo com o foco no corpo
       if (root.classList.contains('present')) return;   // em Apresentar, as teclas são da apresentação
-      if ((pickState || pmenu) && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (pmenu) closePalMenu(); else stopPick(); return; }
+      if (pmenu && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closePalMenu(); return; }
       if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
       if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
       var ae = document.activeElement;
