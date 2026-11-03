@@ -220,7 +220,7 @@ function fakeRealtime() {
     const h = await open(bid);
     check(same(alive(bid), ids) && same(await dom(h), [ids[1]]), 'antes da cura: vivo na base, escondido pelo tempo real (ecrã ' + await dom(h) + ', base ' + alive(bid) + ')');
     await h.close();
-    php('require_once "admin/inc/migrate_creative.php"; migrate_cc_42_rt_heal($pdo);');
+    php('require_once "admin/inc/migrate_creative.php"; $pdo->exec("DELETE FROM settings WHERE skey = \'cc_rt_heal_42\'"); migrate_cc_42_rt_heal($pdo);');   // a cura corre uma vez por base: aqui recomeça
     const c = await open(bid);
     check(same(await dom(c), ids), 'depois da migração aparece (ecrã ' + await dom(c) + ')');
     check(await marker(c, ids[0]) === false, 'e o marcador de apagado do documento é limpo');
