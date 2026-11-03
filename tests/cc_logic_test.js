@@ -178,5 +178,65 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(rtPub({ id: 9, type: 'image', noaccess: true, asset: { id: 4, title: '', noaccess: true } }), '', 'rtPub: cartão «sem acesso» → também não (quem o vê teria o vazio)');
   eq(parse(rtPub({ id: 10, type: 'note', c: { text: 'olá' } })), { id: 10, type: 'note', c: { text: 'olá' } }, 'rtPub: nota sem referência vai inteira'); }
 
+// Áudio num contentor de vídeo ou com extensão estranha (o «WhatsApp Audio … .mpeg», MP3 com ID3 dado como video/mpeg):
+// o tipo decide-se pelos bytes (a mesma regra que cc_media_sniff no servidor), nunca por o browser não mostrar a imagem
+{ const sniff = typeof CCL.sniffMedia === 'function' ? CCL.sniffMedia : () => 'sem sniffMedia';
+  const B = (...a) => Buffer.concat(a.map(x => typeof x === 'string' ? Buffer.from(x, 'latin1') : Buffer.from(x)));
+  const N = n => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const Z = n => Buffer.alloc(n);
+  const box = (t, ...body) => { const b = B(...body); return B(N(8 + b.length), t, b); };
+  const hdlr = (h, pre = Z(4)) => box('hdlr', Z(4), pre, h, Z(13));
+  const trak = (h, stbl = 64, pre = Z(4)) => box('trak', box('tkhd', Z(84)), box('mdia', box('mdhd', Z(24)), hdlr(h, pre), box('minf', hdlr('alis', 'dhlr'), box('stbl', Z(stbl)))));
+  const ftyp = (brand = 'isom') => box('ftyp', brand, '\0\0\x02\0', brand, 'mp41');
+  const moov = (...t) => box('moov', box('mvhd', Z(4), N(0), N(0), N(1000), N(5000), Z(80)), ...t);
+  const S = (file, headLen = 65536, tailLen = 0) => sniff(file.subarray(0, headLen == null ? file.length : headLen), tailLen ? file.subarray(file.length - tailLen) : null, file.length);
+  const K = r => r && typeof r === 'object' ? [r.kind, r.mime] : r;
+  const frame = (h, len) => B(h, Z(len - 4));
+  const mp3 = B(frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417));
+  const id3 = B('ID3\x04\0\0', '\0\0\0\x16', 'TSSE', '\0\0\0\x0C\0\0', '\x03Lavf60.3.10');
+  eq(K(S(B(id3, mp3))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 + frames MPEG (o MP3 do WhatsApp) → áudio audio/mpeg');
+  eq(K(S(B('ID3\x03\0\0\0\x01\0\0', Z(128))))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 maior do que o que se leu → áudio');
+  eq(K(S(mp3)), ['audio', 'audio/mpeg'], 'sniffMedia: frames MPEG (FF FB) → áudio');
+  eq(K(S(B(frame('\xFF\xF3\x80\x40', 208), frame('\xFF\xF3\x80\x40', 208)))), ['audio', 'audio/mpeg'], 'sniffMedia: MPEG-2 Layer III (FF F3) → áudio');
+  eq(K(S(B(frame('\xFF\xFA\x90\x64', 417), frame('\xFF\xFA\x90\x64', 417)))), ['audio', 'audio/mpeg'], 'sniffMedia: frames com CRC (FF FA) → áudio');
+  eq(S(B('\xFF\xFB\x90\x64', Buffer.alloc(413, 0x11), '\x12\x34\x56\x78', Z(400))), null, 'sniffMedia: FF FB sem o frame seguinte → desconhecido');
+  eq(S(B('\xFF\xFB\xF0\x64', Z(1000))), null, 'sniffMedia: débito inválido → desconhecido');
+  const info = B('\xFF\xFB\x90\x64', Z(32), 'Info', N(1), N(192), Z(417 - 4 - 32 - 12));
+  const ri = S(B(id3, info, mp3));
+  eq(!!ri && Math.abs(ri.dur - 192 * 1152 / 44100) < 0.01, true, 'sniffMedia: MP3 com Info → duração dos frames');
+  const m4a = B(ftyp('M4A '), moov(trak('soun')), box('mdat', Z(2000)));
+  eq(K(S(m4a)), ['audio', 'audio/mp4'], 'sniffMedia: MP4 só com som → áudio audio/mp4');
+  eq(Math.abs(S(m4a).dur - 5) < 0.001, true, 'sniffMedia: MP4 de áudio → duração do mvhd');
+  eq(K(S(B(ftyp(), moov(trak('vide'), trak('soun')), box('mdat', Z(2000))))), ['video', ''], 'sniffMedia: MP4 com vídeo → vídeo');
+  eq(K(S(B(ftyp(), moov(trak('soun'), trak('vide')), box('mdat', Z(2000))))), ['video', ''], 'sniffMedia: vídeo depois do som → vídeo');
+  const qt = B(ftyp('qt  '), box('wide'), box('mdat', Z(3000000)), moov(trak('vide', 64, 'mhlr'), trak('soun', 64, 'mhlr')));
+  eq(K(S(qt, 65536, 2097152)), ['video', ''], 'sniffMedia: MOV com o moov no fim → vídeo');
+  eq(S(qt, 65536, 0), null, 'sniffMedia: MOV com o moov no fim, sem o fim → desconhecido');
+  eq(K(S(B(ftyp('M4A '), box('mdat', Z(3000000)), moov(trak('soun'))), 65536, 2097152)), ['audio', 'audio/mp4'], 'sniffMedia: só som com o moov no fim → áudio');
+  const big = B(ftyp(), moov(trak('soun', 90000), trak('vide')), box('mdat', Z(1000)));
+  eq(S(big, 65536, 0), null, 'sniffMedia: moov maior do que o lido, só o som à vista → desconhecido (um vídeo nunca vira áudio)');
+  eq(K(S(big, null, 0)), ['video', ''], 'sniffMedia: o mesmo lido todo → vídeo');
+  eq(K(S(B(ftyp(), moov(trak('soun', 90000)), box('mdat', Z(1000))), null, 0)), ['audio', 'audio/mp4'], 'sniffMedia: moov grande só de som, lido todo → áudio');
+  const vint = n => n < 0x7F ? B([0x80 | n]) : n < 0x3FFF ? B([0x40 | (n >> 8), n & 0xFF]) : B([0x10, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF]);
+  const el = (id, ...body) => { const b = B(...body); return B(id, vint(b.length), b); };
+  const ebml = doc => el('\x1A\x45\xDF\xA3', el('\x42\x82', doc));
+  const entry = (t, codec) => el('\xAE', el('\xD7', '\x01'), el('\x83', B([t])), el('\x86', codec));
+  const seg = tracks => B('\x18\x53\x80\x67\x01\xFF\xFF\xFF\xFF\xFF\xFF\xFF', el('\x15\x49\xA9\x66', el('\x2A\xD7\xB1', '\x0F\x42\x40')), el('\x16\x54\xAE\x6B', tracks), el('\x1F\x43\xB6\x75', Z(200)));
+  eq(K(S(B(ebml('webm'), seg(entry(2, 'A_OPUS'))))), ['audio', 'audio/webm'], 'sniffMedia: WebM só com áudio → áudio audio/webm');
+  eq(K(S(B(ebml('webm'), seg(B(entry(1, 'V_VP9'), entry(2, 'A_OPUS')))))), ['video', ''], 'sniffMedia: WebM com vídeo → vídeo');
+  eq(K(S(B(ebml('matroska'), seg(entry(2, 'A_FLAC'))))), ['audio', 'audio/x-matroska'], 'sniffMedia: Matroska só com áudio → áudio');
+  const ogg = p => B('OggS\0\x02', Z(8), '\x01\0\0\0', Z(8), B([1, p.length]), p);
+  eq(K(S(ogg(B('OpusHead\x01\x02', Z(9))))), ['audio', 'audio/ogg'], 'sniffMedia: Ogg Opus → áudio');
+  eq(K(S(ogg(B('\x80theora', Z(30))))), ['video', ''], 'sniffMedia: Ogg Theora → vídeo');
+  const le = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
+  eq(K(S(B('RIFF', le(1000), 'WAVEfmt ', Z(100)))), ['audio', 'audio/wav'], 'sniffMedia: WAVE → áudio');
+  eq(K(S(B('RIFF', le(1000), 'AVI LIST', Z(100)))), ['video', ''], 'sniffMedia: AVI → vídeo');
+  eq(K(S(B('fLaC', Z(100)))), ['audio', 'audio/flac'], 'sniffMedia: FLAC → áudio');
+  eq(K(S(B('\xFF\xF1\x50\x80\x02\x1F\xFC', Z(9), '\xFF\xF1\x50\x80\x02\x1F\xFC', Z(9)))), ['audio', 'audio/aac'], 'sniffMedia: AAC ADTS → áudio');
+  eq(S(B('\0\0\x01\xBA', Z(2000))), null, 'sniffMedia: MPEG-PS → desconhecido');
+  eq(S(B('%PDF-1.7', Z(200))), null, 'sniffMedia: PDF → desconhecido');
+  eq(S(Z(0)), null, 'sniffMedia: vazio → desconhecido');
+  eq(typeof CCL.sniffMore === 'function' && CCL.sniffMore(m4a) && CCL.sniffMore(B(ebml('webm'))) && !CCL.sniffMore(mp3), true, 'sniffMore: só MP4/MOV e WebM/Matroska pedem mais bytes'); }
+
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);
