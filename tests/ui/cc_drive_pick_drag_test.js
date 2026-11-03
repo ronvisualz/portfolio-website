@@ -161,6 +161,14 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   check(pdfCards === '1', 'com 31 chaves a 31.ª também entra (pedidos de 30) (' + pdfCards + ')');
   check(/1 ficheiro da Drive no Topperboard\. 30 sem acesso ou já não existem\./.test(tst) && !/ficaram de fora/.test(tst), 'uma só mensagem com as contas somadas (' + tst + ')');
 
+  // um arrasto com a lista vazia (outra página pode pôr qualquer coisa): o servidor responde, nada de aviso em branco
+  await noToasts();
+  await dropKeys([], to2.x, to2.y);
+  await p.waitForFunction(() => /Nada para juntar/.test((document.querySelector('.cc-up') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  const up = await p.evaluate(() => ((document.querySelector('.cc-up .err') || {}).textContent || ''));
+  const blank = await p.evaluate(() => Array.from(document.querySelectorAll('.tst')).filter(t => !t.textContent.trim()).length);
+  check(/Nada para juntar\./.test(up) && blank === 0, 'lista vazia: «Nada para juntar.» na barra de envios, sem aviso em branco (' + JSON.stringify(up) + ', ' + blank + ')');
+
   check(errs.length === 0, 'sem erros na página (' + errs.join(' | ') + ')');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);

@@ -2290,7 +2290,8 @@
     function addDrive(keys, at) {
       var p = at || spot(300), list = keys, row = Up.add('Da Drive');
       if (typeof keys === 'string') { try { list = JSON.parse(keys); } catch (e) { list = null; } }
-      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX) : [{ keys: keys, x: p.x, y: p.y }];
+      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX) : [];
+      if (!parts.length) parts = [{ keys: keys, x: p.x, y: p.y }];   // vazio ou ilegível: o servidor responde («Nada para juntar.»)
       var got = [], sum = { added: 0, folders: 0, skipped: 0, over: false }, msg = '';
       function done() {
         if (!got.length) return;
