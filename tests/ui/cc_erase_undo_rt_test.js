@@ -175,6 +175,25 @@ function fakeRealtime() {
     await p.close();
   }
 
+  // ── 6. cura (migração 42): um traço reposto antes da correção (vivo na base, mais antigo do que o marcador de
+  //       apagado) está escondido; depois da migração aparece e o marcador é limpo ──
+  {
+    const bid = newBoard('cura');
+    const p = await open(bid);
+    const { ids } = await twoThenErase(p, bid);
+    await resp(p, 'cards_delete'); await p.waitForTimeout(500);
+    await p.close();
+    php(`$pdo->exec("UPDATE cc_cards SET deleted_at = NULL, updated_at = '2020-01-01 00:00:00' WHERE id = ${ids[0]}");`);   // a reposição de antes
+    const h = await open(bid);
+    check(same(alive(bid), ids) && same(await dom(h), [ids[1]]), 'antes da cura: vivo na base, escondido pelo tempo real (ecrã ' + await dom(h) + ', base ' + alive(bid) + ')');
+    await h.close();
+    php('require_once "admin/inc/migrate_creative.php"; migrate_cc_42_rt_heal($pdo);');
+    const c = await open(bid);
+    check(same(await dom(c), ids), 'depois da migração aparece (ecrã ' + await dom(c) + ')');
+    check(await marker(c, ids[0]) === false, 'e o marcador de apagado do documento é limpo');
+    await c.close();
+  }
+
   check(!errs.length, 'sem erros na página (' + errs.join(' | ') + ')');
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
