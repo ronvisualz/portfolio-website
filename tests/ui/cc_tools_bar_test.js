@@ -102,9 +102,19 @@ const ctx = async (b, o) => { const c = await b.newContext(o); c.setDefaultTimeo
         if (cs.touch) {
           // no toque a seta fica sempre à vista (discreta) e o alvo tem 44 px
           check(+(await edge(p).evaluate(el => getComputedStyle(el).opacity)) >= 0.6, `${cs.name} ${st}: no toque a seta fica à vista`);
-          const hit = await p.evaluate(({ x, y }) => [[x + 19, y], [x - 19, y], [x, y + 19], [x, y - 19]].every(([a, b]) => { const h = document.elementFromPoint(a, b); return !!(h && h.closest('.ccb-tools-edge')); }), { x: e.x + e.width / 2, y: e.y + e.height / 2 });
+          // 44 px de alvo, a crescer para fora da barra (sobre a tela), nunca por cima dos botões
+          const hit = await p.evaluate(({ x, y }) => [[x + 29, y], [x - 11, y], [x, y + 19], [x, y - 19]].every(([a, b]) => { const h = document.elementFromPoint(a, b); return !!(h && h.closest('.ccb-tools-edge')); }), { x: e.x + e.width / 2, y: e.y + e.height / 2 });
           check(hit, `${cs.name} ${st}: o alvo de toque da seta tem 44 px`);
         }
+        // nenhum botão da barra fica debaixo da seta (nem do seu alvo): tocar ou clicar no lado direito de um botão
+        // escolhe a ferramenta, não expande a barra — também com o rato por cima da barra (a seta aparece)
+        await p.locator('.ccb-tools').hover().catch(() => {});
+        const under = await p.evaluate(() => [...document.querySelectorAll('.ccb-tools button, .ccb-tools label')].filter(b => b.offsetParent).filter(b => {
+          const r = b.getBoundingClientRect(), y = r.top + r.height / 2, t = document.querySelector('.ccb-tools').getBoundingClientRect();
+          if (y < t.top || y > Math.min(t.bottom, innerHeight)) return false;   // só os botões à vista (com pouca altura a barra desloca-se na vertical)
+          return [r.right - 2, r.right - 6].some(x => { const h = document.elementFromPoint(x, y); return !(h && b.contains(h)); });
+        }).map(b => b.getAttribute('aria-label') || b.textContent.trim()));
+        check(under.length === 0, `${cs.name} ${st}: nenhum botão fica debaixo da seta (${JSON.stringify(under)})`);
       }
       // volta a recolher (fica guardado na conta)
       if (cs.touch) await edge(p).tap(); else await edge(p).click();
