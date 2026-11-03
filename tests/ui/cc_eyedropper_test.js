@@ -45,6 +45,17 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   await p.waitForSelector('.cc-pickfs', { timeout: 8000 }).catch(() => {});
   const dlg = await p.evaluate(() => { const d = document.querySelector('.cc-pickfs'); return d && { role: d.getAttribute('role'), modal: d.getAttribute('aria-modal'), label: d.getAttribute('aria-label') }; });
   check(dlg && dlg.role === 'dialog' && dlg.modal === 'true' && dlg.label === 'Escolher uma cor da imagem', 'I abre o conta-gotas em ecrã inteiro (diálogo «Escolher uma cor da imagem») (' + JSON.stringify(dlg) + ')');
+  // a entrada não encolhe o ecrã inteiro: no primeiro instante da animação já cobre as bordas (antes: escala .97 deixava
+  // ~21 px à volta, e um clique rápido perto da borda caía no menu lateral ou no Topperboard por trás)
+  const cover = await p.evaluate(() => {
+    const d = document.querySelector('.cc-pickfs'); if (!d) return null;
+    const an = d.getAnimations(); an.forEach(a => { a.pause(); a.currentTime = 0; });
+    const r = d.getBoundingClientRect(), at = document.elementFromPoint(4, 450);
+    const res = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), at: at ? at.className || at.tagName : null, inside: !!(at && at.closest('.cc-pickfs')) };
+    an.forEach(a => a.finish());
+    return res;
+  });
+  check(cover && cover.inside && cover.x <= 0 && cover.y <= 0 && cover.w >= 1400 && cover.h >= 900, 'o ecrã inteiro cobre as bordas desde o primeiro instante da entrada (' + JSON.stringify(cover) + ')');
   await ready();
   let r = await img();
   check(r && (r.width >= 0.7 * 1400 || r.height >= 0.7 * 900), 'a imagem ocupa quase todo o ecrã (' + JSON.stringify(r && { w: Math.round(r.width), h: Math.round(r.height) }) + ')');

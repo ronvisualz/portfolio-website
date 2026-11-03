@@ -616,7 +616,9 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 @media (pointer: coarse) { .cc-viewer .ibtn { width: 44px; height: 44px; } }
 
 /* §33.14: conta-gotas em ecrã inteiro (sempre escuro, nos dois modos; por cima do visualizador, por baixo da lupa) */
-.cc-pickfs { position: fixed; inset: 0; z-index: 125; background: rgba(10,10,12,.96); color: #f4f4f5; display: flex; flex-direction: column; animation: pop-in .14s ease-out; }
+/* entra só com opacidade: com escala, nos primeiros 140 ms as bordas ficavam a descoberto e o clique caía no que está por trás */
+.cc-pickfs { position: fixed; inset: 0; z-index: 125; background: rgba(10,10,12,.96); color: #f4f4f5; display: flex; flex-direction: column; animation: cc-pickfs-in .14s ease-out; }
+@keyframes cc-pickfs-in { from { opacity: 0; } }
 .cc-pickfs .pf-stage { flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
 .cc-pickfs.panning .pf-stage { cursor: grabbing; }
 .cc-pickfs .pf-img { display: block; max-width: none; max-height: none; transform-origin: center; background: #000; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
