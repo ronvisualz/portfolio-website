@@ -1734,7 +1734,7 @@
     function pasteClip(pack, at) {
       if (!EDIT) { toast('Pode ver este Topperboard, mas não editá-lo.'); return Promise.resolve(); }
       var items = CCL.clipPlace(pack, at, pack.board === B.id);
-      return api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
+      return writes(api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
         if (RT) RT.added(j.cards);
@@ -1744,7 +1744,7 @@
         select(ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }));
         var n = ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }).length;
         if (n < pack.items.filter(function (i) { return !i.col; }).length) toast('Alguns cartões não foram colados: a referência já não existe ou não tem acesso.');
-      }).catch(fail);
+      }).catch(fail));
     }
     function ptrWorld() { return ptr.inside ? (function (w) { return { x: Math.round(w.x), y: Math.round(w.y) }; })(toWorld(ptr.x, ptr.y)) : null; }
     function select(ids, add) {
@@ -1779,24 +1779,49 @@
       renderAll();
       return save(states.map(function (s) { return Object.assign({}, s); }));
     }
+    // o que só entra na pilha de «Anular» quando o servidor responde (traço, borracha, apagar, colar, duplicar): um
+    // Anular carregado entretanto espera por essa resposta — senão anulava a ação anterior (e a nova ficava por anular)
+    var writing = 0, waiting = [];
+    function writes(p) {
+      writing++;
+      var done = function () { writing = Math.max(0, writing - 1); if (!writing) release(); };
+      p.then(done, done);
+      return p;
+    }
+    function release() { var w = waiting; waiting = []; w.forEach(function (f) { f(); }); }
     // §33.10: cada pessoa só anula o que ela própria fez — o que outra pessoa mudou entretanto fica (CCL.undoPlan)
-    function undo(redo) {
+    // only: anular essa entrada (o «Anular» de um aviso), esteja onde estiver na pilha
+    function undo(redo, only) {
+      if (writing) {
+        if (!waiting.length) setTimeout(function () { if (waiting.length) { writing = 0; release(); } }, 10000);   // um pedido pendurado não prende o Anular
+        waiting.push(function () { undo(redo, only); });
+        return;
+      }
       var st = redo ? B.redo : B.undo, other = redo ? B.undo : B.redo;
-      var e = st.pop();
+      var e;
+      if (only) { var at = st.lastIndexOf(only); if (at < 0) { undoSync(); return; } e = st.splice(at, 1)[0]; }
+      else e = st.pop();
       if (!e) { toast(redo ? 'Nada para refazer.' : 'Nada para anular.'); undoSync(); return; }
       var plan = CCL.undoPlan(e, B.cards, redo), n = planCount(plan);
-      if (n) { other.push(e); runPlan(e, plan, redo); }
+      if (n) { other.push(e); runPlan(e, plan, redo, !!only); }
       if (plan.skipped) toast(CCL.skippedMsg(plan.skipped));
       undoSync();
     }
     function planCount(p) { return p.apply.reduce(function (s, x) { return s + (x && x.apply ? planCount(x) : 1); }, 0); }
-    function runPlan(e, plan, redo) {
+    function runPlan(e, plan, redo, say) {
       if (e.t === 'multi') { plan.apply.forEach(function (p) { runPlan(p.entry, p, redo); }); return; }
       if (!plan.apply.length) return;
       if (e.t === 'move') applyStates(plan.apply.map(function (s) { return Object.assign({}, s); }));
       else if (e.t === 'add' || e.t === 'del') {
         var restore = (e.t === 'add') === !!redo;
-        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: plan.apply }).then(function () { if (RT) RT.signal(); reload(); }).catch(fail);
+        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: plan.apply }).then(function (j) {
+          if (j.rev) B.rev = j.rev;
+          // no tempo real, como ao criar e ao apagar: senão o marcador de apagado (ou a cópia do cartão novo) do documento
+          // voltava a esconder o cartão reposto (ou a mostrar o apagado) — aqui e a quem abre o Topperboard a seguir
+          if (RT) { if (restore) RT.added(j.cards || []); else RT.removed(j.ids || plan.apply); RT.signal(); }
+          reload();
+          if (say && j.msg) toast(j.msg);
+        }).catch(fail);
       } else if (e.t === 'content') {
         plan.apply.forEach(function (x) { var c = B.cards.get(x.id); if (c) { c.c = JSON.parse(JSON.stringify(x.c)); rerender(c); save([{ id: c.id, content: c.c }]); } });
       }
@@ -1819,7 +1844,7 @@
       var w = { column: 300, note: 240, list: 260, swatch: 140, board: 240 }[type] || 260;
       var p = at || spot(w);
       var d = Object.assign({ board: B.id, type: type, x: p.x, y: p.y, w: w, lane: laneAt(p.y), content: JSON.stringify(content || {}) }, extra || {});
-      return api('card_add', d).then(function (j) {
+      return writes(api('card_add', d).then(function (j) {
         B.rev = j.rev;
         var c = j.card;
         B.cards.set(c.id, c);
@@ -1831,7 +1856,7 @@
         push({ t: 'add', ids: [c.id] });
         if (!(opt && opt.keepSel)) select([c.id]);
         return c;
-      }).catch(fail);
+      }).catch(fail));
     }
     function addNote(text, at) { return addCard('note', { text: text || '' }, at).then(function (c) { if (c && !text) startEdit(c); return c; }); }
     function addColumn() { return addCard('column', { title: 'Coluna' }).then(function (c) { if (c) startEdit(c); }); }
@@ -2177,29 +2202,31 @@
       Array.from(B.sel).forEach(function (id) { var lc = B.cards.get(id); if (lc && lc.local && lc.local.state === 'fail') dropLocal(lc); });
       var ids = Array.from(B.sel).filter(function (id) { return id > 0; });
       if (!ids.length) return;
-      api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
+      writes(api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); });
         if (RT) RT.removed(j.ids);
         B.cards.forEach(function (c) { if (c.col && j.ids.indexOf(c.col) >= 0) { /* a coluna foi apagada: os cartões ficam onde a coluna estava */ } });
         B.sel.clear();
-        push({ t: 'del', ids: j.ids });
+        var ent = { t: 'del', ids: j.ids };
+        push(ent);
         reload();
-        toast(j.msg, { undo: function () { api('cards_restore', { board: B.id, ids: j.ids }).then(function () { if (RT) RT.signal(); reload(); toast('Reposto.'); }).catch(fail); } });
-      }).catch(fail);
+        // o «Anular» do aviso é o mesmo que o Ctrl Z (passa para o Refazer e publica no tempo real)
+        toast(j.msg, { undo: function () { undo(false, ent); } });
+      }).catch(fail));
     }
     function dupSel() {
       if (!EDIT || !B.sel.size) return;
       var pk = packSel();
       if (pk) { pasteClip(pk, null); return; }   // §33.6: o mesmo caminho do colar (+24 px, setas e colunas incluídas)
-      api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
+      writes(api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
         if (RT) RT.added(j.cards);
         push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
         renderAll();
         select(j.cards.map(function (c) { return c.id; }));
-      }).catch(fail);
+      }).catch(fail));
     }
 
     // ── ferramentas ──
@@ -2862,14 +2889,14 @@
       if (saves.length) save(saves);
       var done = function () { if (list.length) push(list.length === 1 ? list[0] : { t: 'multi', list: list }); };
       if (!dels.length) { done(); return; }
-      api('cards_delete', { board: B.id, ids: dels }).then(function (j) {
+      writes(api('cards_delete', { board: B.id, ids: dels }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); B.sel.delete(id); });
         if (RT) RT.removed(j.ids);
         list.push({ t: 'del', ids: j.ids });
         done();
         drawArrows();
-      }).catch(fail);
+      }).catch(fail));
     }
 
     // ── teclado ──
@@ -3541,7 +3568,7 @@
         if (EDIT !== wasEdit) editChrome();
         B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
         B.cards.clear(); j.cards.forEach(function (c) { B.cards.set(c.id, c); });
-        B.sel.clear(); B.undo = []; B.redo = []; pickMore = false; vp.classList.remove('pick-more'); B.editing = null; B.arrowFrom = null;
+        B.sel.clear(); B.undo = []; B.redo = []; waiting = []; pickMore = false; vp.classList.remove('pick-more'); B.editing = null; B.arrowFrom = null;
         B.els.forEach(function (el) { el.remove(); }); B.els.clear();
         $('.ccb-top', root).innerHTML = topHtml();
         var lb = $('[data-lanebar]', root);
