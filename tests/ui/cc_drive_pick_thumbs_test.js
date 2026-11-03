@@ -153,6 +153,31 @@ const spy = p => {
   check(errs3.length === 0, 'uid 3: sem erros (' + errs3.slice(0, 3).join(' | ') + ')');
   await p3.context().close();
 
+  // ── 4) iPad: tocar escolhe e «Adicionar» junta (o caminho principal no toque); alvos de 44 px ──
+  const I = seed('dpi' + Date.now().toString(36));
+  const ip = await (await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true })).newPage();
+  ip.setDefaultTimeout(6000);
+  const errs4 = []; ip.on('pageerror', e => errs4.push(e.message));
+  await ip.goto(BASE + '/admin/__as/1');
+  await ip.goto(BASE + '/admin/toppernote.php?b=' + I.b);
+  await ip.waitForSelector('.ccc[data-id]');
+  const n4 = await ip.locator('.ccc[data-id]').count();
+  await ip.locator('[data-upmenu]').tap();
+  await ip.locator('.cc-upmenu button', { hasText: 'Da Drive' }).tap();
+  const d4 = ip.locator('.cc-dpick'); await d4.waitFor();
+  await ip.waitForFunction(() => !document.querySelector('.cc-dpick .dp-list .spin'), null, { timeout: 10000 }).catch(() => {});
+  await d4.locator('input[type=search]').fill(I.tag); await ip.waitForTimeout(400);
+  const c4 = d4.locator('.dp-f', { hasText: I.tag + '-c.png' });
+  await c4.tap(); await ip.waitForTimeout(150);
+  check(await c4.getAttribute('aria-pressed') === 'true', 'iPad: tocar escolhe');
+  const add4 = d4.locator('[data-dp-add]');
+  const sz = { cell: await c4.boundingBox(), add: await add4.boundingBox() };
+  check(sz.cell.height >= 44 && sz.add.height >= 44 && sz.add.width >= 44, 'iPad: alvos de 44 px (' + Math.round(sz.cell.height) + ', ' + Math.round(sz.add.height) + ')');
+  await add4.tap();
+  for (let i = 0; i < 30 && await ip.locator('.ccc[data-id]').count() !== n4 + 1; i++) await ip.waitForTimeout(150);
+  check(await ip.locator('.ccc[data-id]').count() === n4 + 1 && await ip.locator('.cc-dpick').count() === 0, 'iPad: «Adicionar» junta o escolhido e fecha');
+  check(errs4.length === 0, 'iPad: sem erros (' + errs4.join(' | ') + ')');
+
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);
