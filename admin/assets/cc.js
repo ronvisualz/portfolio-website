@@ -1793,8 +1793,10 @@
     // only: anular essa entrada (o «Anular» de um aviso), esteja onde estiver na pilha
     function undo(redo, only) {
       if (writing) {
-        if (!waiting.length) setTimeout(function () { if (waiting.length) { writing = 0; release(); } }, 10000);   // um pedido pendurado não prende o Anular
-        waiting.push(function () { undo(redo, only); });
+        var go = function () { undo(redo, only); };
+        waiting.push(go);
+        // um pedido pendurado não prende o Anular: ao fim de 10 s esta espera (se ainda estiver na fila) solta-se
+        setTimeout(function () { if (waiting.indexOf(go) >= 0) { writing = 0; release(); } }, 10000);
         return;
       }
       var st = redo ? B.redo : B.undo, other = redo ? B.undo : B.redo;

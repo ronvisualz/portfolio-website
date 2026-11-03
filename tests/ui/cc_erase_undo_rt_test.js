@@ -175,6 +175,39 @@ function fakeRealtime() {
     await p.close();
   }
 
+  // ── 5b. duas esperas seguidas: a rede de segurança de 10 s da 1.ª não solta a 2.ª antes de a borracha responder ──
+  {
+    const bid = newBoard('duas esperas');
+    const p = await open(bid);
+    let delay = 700;
+    await p.route(/cc_api\.php\?a=cards_delete/, async route => { await new Promise(r => setTimeout(r, delay)); await route.continue(); });
+    const { X, Y } = await origin(p);
+    await p.keyboard.press('p'); await p.waitForTimeout(150);
+    await stroke(p, X, Y); await stroke(p, X, Y + 120); await stroke(p, X, Y + 240);
+    const ids = alive(bid);
+    check(ids.length === 3, 'três traços desenhados (' + ids + ')');
+    const erase = async y => {
+      if (!(await p.evaluate(() => document.querySelector('.ccb-vp').classList.contains('tool-erase')))) { await p.keyboard.press('e'); await p.waitForTimeout(150); }
+      await p.mouse.move(X + 75, y - 30); await p.mouse.down(); await p.mouse.move(X + 75, y + 30, { steps: 8 }); await p.mouse.up();
+      await p.waitForTimeout(150);
+      await p.keyboard.press('Control+z');
+    };
+    const del1 = resp(p, 'cards_delete');
+    await erase(Y + 240);   // 1.ª espera (700 ms)
+    check(!!(await del1.catch(() => null)), 'a 1.ª borracha apaga (pedido lento)');
+    const t1 = Date.now();
+    await p.waitForTimeout(2500);
+    check(same(alive(bid), ids), '1.ª borracha anulada (' + alive(bid) + ')');
+    delay = 3500;
+    await p.waitForTimeout(Math.max(0, 8500 - (Date.now() - t1)));
+    const del2 = resp(p, 'cards_delete');
+    await erase(Y + 120);   // 2.ª espera: a borracha só responde depois dos 10 s da 1.ª
+    check(!!(await del2.catch(() => null)), 'a 2.ª borracha apaga (pedido lento)');
+    await p.waitForTimeout(2000);
+    check(same(alive(bid), ids) && same(await dom(p), ids), 'a 2.ª borracha também é anulada, sem apagar outro traço (ecrã ' + await dom(p) + ', base ' + alive(bid) + ')');
+    await p.close();
+  }
+
   // ── 6. cura (migração 42): um traço reposto antes da correção (vivo na base, mais antigo do que o marcador de
   //       apagado) está escondido; depois da migração aparece e o marcador é limpo ──
   {
