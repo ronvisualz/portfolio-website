@@ -28,7 +28,8 @@ const ccObjs = () => +php(`echo $pdo->query("SELECT COUNT(*) FROM cc_assets WHER
   const dlg = p.locator('.cc-dpick');
   await dlg.waitFor({ timeout: 5000 }).catch(() => {});
   check(await dlg.getAttribute('role') === 'dialog', 'abre o seletor da Drive');
-  // pesquisa
+  // pesquisa, depois de o catálogo chegar (o drive_catalog_invalidate acima obriga a refazê-lo: na bancada já passa de 400 ms)
+  await p.waitForFunction(() => !document.querySelector('.cc-dpick .dp-list .spin'), null, { timeout: 10000 }).catch(() => {});
   await dlg.locator('input[type=search]').fill(TAG);
   await p.waitForTimeout(400);
   const rows = dlg.locator('.dp-f');
