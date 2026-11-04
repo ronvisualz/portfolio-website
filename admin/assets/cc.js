@@ -658,9 +658,11 @@
     if (p.url) URL.revokeObjectURL(p.url);
     if (p.src && p.src.close) p.src.close();
     p.src = p.blob = null;
-    if (!noFocus) { var b = pickBtn(p); if (b) b.focus({ preventScroll: true }); }
+    // o foco volta para onde estava (a tela, quando se abriu com I) ou, sem isso, para «+ Escolher da imagem»
+    if (!noFocus) { var b = p.back && p.back.isConnected && p.back.getClientRects().length ? p.back : pickBtn(p); if (b) b.focus({ preventScroll: true }); }
   }
   function startPick(box, a) {
+    var from = document.activeElement;
     stopPick(true);
     if (!a || !window.CCL) return;
     var dv = box && $('.ccd-media video', box);
@@ -669,16 +671,19 @@
     var el = document.createElement('div');
     el.className = 'cc-pickfs';
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Escolher uma cor da imagem');
-    el.innerHTML = '<div class="pf-stage" data-pf-stage></div>'
+    el.setAttribute('aria-describedby', 'cc-pf-hint');   // a dica e os estados (a carregar, erro) também são anunciados
+    el.innerHTML = '<div class="pf-stage" data-pf-stage tabindex="0" role="application" aria-label="Imagem: use as setas para apontar e Enter para escolher"><span class="pf-cross" hidden aria-hidden="true"></span></div>'
       + '<div class="pf-bar"><span class="pf-sw" data-pf-sw aria-hidden="true"></span>'
       + '<span class="pf-val"><b class="pf-hex" data-pf-hex>#——————</b><small data-pf-rgb></small></span>'
-      + '<span class="pf-txt"><span class="pf-hint"></span><span class="pf-msg" role="status" aria-live="polite"></span></span>'
+      + '<span class="pf-txt"><span class="pf-hint" id="cc-pf-hint" role="status" aria-live="polite"></span><span class="pf-msg" role="status" aria-live="polite"></span></span>'
       + '<span class="pf-zoom"><button type="button" class="ibtn" data-pf="out" aria-label="Afastar ( - )">' + ico('minus') + '</button><output aria-label="Zoom">100%</output>'
       + '<button type="button" class="ibtn" data-pf="in" aria-label="Aproximar ( + )">' + ico('plus') + '</button></span>'
       + '<button type="button" class="btn" data-pf="done" aria-label="Concluir ( Esc )">Concluir</button></div>';
     document.body.appendChild(el);
     var p = pickState = { box: box, a: a, el: el, stage: $('[data-pf-stage]', el), src: null, w: 0, h: 0, nw: 0, nh: 0, z: 1, px: 0, py: 0, fit: { w: 0, h: 0 },
-      disp: null, last: null, touch: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches), closing: false };
+      disp: null, last: null, touch: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches), closing: false,
+      back: from && from !== document.body && !el.contains(from) ? from : null, aim: null };
+    var cross = $('.pf-cross', el), aimDraw = null;
     var hint = $('.pf-hint', el), msg = $('.pf-msg', el);
     var say = function (t) { hint.textContent = t; };
     p.loupe = document.createElement('div'); p.loupe.className = 'cc-loupe'; p.loupe.hidden = true; p.loupe.setAttribute('aria-hidden', 'true');
@@ -707,12 +712,14 @@
       if (p.blob && !p.url && im.tagName === 'IMG' && im.naturalWidth && p.w > im.naturalWidth && p.fit.w * p.z * dpr > im.naturalWidth * 1.25) {
         p.url = URL.createObjectURL(p.blob); im.src = p.url;
       }
+      if (aimDraw && !cross.hidden) aimDraw(false);   // a mira do teclado acompanha o zoom e a deslocação
     };
     var ready = function (src, w, h) {
       if (pickState !== p) { if (src && src.close) src.close(); return; }
       p.src = src; p.w = w; p.h = h;
       layout(w, h);
       say(p.touch ? PICK_HINT_TOUCH : PICK_HINT);
+      if (document.activeElement === p.stage) aimDraw(true);   // o palco já tinha o foco enquanto carregava
     };
     p.resize = function () { if (pickState === p && p.nw) layout(p.nw, p.nh); };
     window.addEventListener('resize', p.resize);
@@ -760,8 +767,17 @@
       v.addEventListener('loadeddata', grab); v.addEventListener('seeked', grab); v.addEventListener('canplay', grab);
       v.addEventListener('error', function () { give(false); });
       v.src = a.orig + '&cors=1';
-      // iPad (Safari): sem um play, o clone pode não chegar a ter o fotograma
-      setTimeout(function () { if (!got && pickState === p && v.readyState < 2) { var pr = v.play(); if (pr && pr.then) pr.then(function () { v.pause(); grab(); }).catch(function () {}); } }, 1500);
+      // iPad (Safari): sem um play, o clone pode não chegar a ter o fotograma; a reprodução passa do tempo pedido antes do
+      // pause(), por isso volta-se ao tempo pedido e lê-se no «seeked» (antes: grab() recusava o tempo e esperava 10 s)
+      setTimeout(function () {
+        if (got || pickState !== p || v.readyState >= 2) return;
+        var pr = v.play();
+        if (pr && pr.then) pr.then(function () {
+          v.pause();
+          if (got || pickState !== p) return;
+          if (Math.abs(v.currentTime - want) >= 0.01) { try { v.currentTime = want; } catch (e) { grab(); } } else grab();
+        }).catch(function () {});
+      }, 1500);
     }
 
     // a cor em (cx, cy): 21 × 21 píxeis à volta (a caixa só com os que existem, nas bordas), média 3×3 ou o píxel com Alt
@@ -812,6 +828,34 @@
     };
     // sair depois do clique que vem a seguir ao pointerup (senão o clique — ou o do toque — cai no que está por baixo)
     var closeSoon = function () { p.closing = true; clearTimeout(p.closeT); p.closeT = setTimeout(function () { if (pickState === p) stopPick(); }, 450); };
+
+    // mira do teclado (WCAG 2.1.1): com o foco no palco, a mira aponta um píxel do original (CCL.aimMove: setas 1,
+    // Shift+setas 10); a lupa, o #HEX, o RGB e a mensagem seguem-na; Enter/Espaço escolhem (Shift: várias; Alt: 1 píxel)
+    var aimPt = function () { return p.aim && p.src ? CCL.aimScreen(p.aim, p.disp.getBoundingClientRect(), p.w, p.h) : null; };
+    aimDraw = function (announce) {
+      if (!p.src) { cross.hidden = true; return null; }
+      p.aim = CCL.aimAt(p.aim, p.w, p.h);
+      var s = aimPt(), sr = p.stage.getBoundingClientRect();
+      if (!s) { cross.hidden = true; return null; }
+      cross.hidden = false;
+      cross.style.transform = 'translate(' + (s.x - sr.left) + 'px,' + (s.y - sr.top) + 'px)';
+      var hex = at(s.x, s.y, false);
+      if (hex) {
+        show(hex, false, s.x, s.y, false);
+        if (announce) msg.textContent = hex + ' · ponto ' + (p.aim.x + 1) + ', ' + (p.aim.y + 1) + ' de ' + p.w + ' × ' + p.h;
+      }
+      return hex;
+    };
+    // com zoom, a imagem desloca-se para a mira ficar sempre no palco
+    var aimKeepIn = function () {
+      var s = aimPt(); if (!s) return;
+      var sr = p.stage.getBoundingClientRect(), m = 24, dx = 0, dy = 0;
+      if (s.x < sr.left + m) dx = sr.left + m - s.x; else if (s.x > sr.right - m) dx = sr.right - m - s.x;
+      if (s.y < sr.top + m) dy = sr.top + m - s.y; else if (s.y > sr.bottom - m) dy = sr.bottom - m - s.y;
+      if (dx || dy) { p.px += dx; p.py += dy; clampPan(); apply(); }
+    };
+    p.stage.addEventListener('focus', function () { aimDraw(true); });
+    p.stage.addEventListener('blur', function () { cross.hidden = true; p.loupe.hidden = true; });
 
     // apontar, escolher, deslocar com zoom (rato: arrastar ≥ 4 px; toque: arrastar aponta, levantar o dedo escolhe)
     var drag = null;
@@ -879,7 +923,7 @@
       if (!e.shiftKey) { p.loupe.hidden = true; closeSoon(); }
     });
     p.stage.addEventListener('pointercancel', function (e) { lift(e); drag = null; el.classList.remove('panning'); p.loupe.hidden = true; });
-    p.stage.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch' && !drag) p.loupe.hidden = true; });
+    p.stage.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch' && !drag) { if (!cross.hidden) aimDraw(false); else p.loupe.hidden = true; } });
     el.addEventListener('wheel', function (e) {
       e.preventDefault();
       if (p.closing || !p.stage.contains(e.target)) return;
@@ -895,16 +939,31 @@
     });
     el.addEventListener('contextmenu', function (e) { if (p.stage.contains(e.target)) e.preventDefault(); });
 
-    // teclado: Esc sai; + − 0 zoom; Tab fica na barra; o resto não chega ao Topperboard nem à página
+    // teclado: Esc sai; + − 0 zoom (à volta da mira, com o foco no palco); Tab fica no diálogo (palco e barra); no palco
+    // as setas mexem a mira e Enter/Espaço escolhem; o resto não chega ao Topperboard nem à página
     p.key = function (e) {
       if (pickState !== p) return;
       var k = e.key, ae = document.activeElement, onBtn = ae && el.contains(ae) && ae.tagName === 'BUTTON', mod = e.ctrlKey || e.metaKey;
+      var onStage = ae === p.stage, c = onStage ? aimPt() : null;
       e.stopImmediatePropagation();
       if (k === 'Escape') { e.preventDefault(); stopPick(); }
-      else if (!mod && (k === '+' || k === '=')) { e.preventDefault(); zoom(1.25); }
-      else if (!mod && k === '-') { e.preventDefault(); zoom(0.8); }
+      else if (!mod && (k === '+' || k === '=')) { e.preventDefault(); zoom(1.25, c && c.x, c && c.y); }
+      else if (!mod && k === '-') { e.preventDefault(); zoom(0.8, c && c.x, c && c.y); }
       else if (!mod && k === '0') { e.preventDefault(); p.z = 1; p.px = p.py = 0; apply(); }
-      else if (k === 'Tab') { e.preventDefault(); var f = $$('.pf-bar button', el), i = f.indexOf(ae); f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus(); }
+      else if (k === 'Tab') { e.preventDefault(); var f = [p.stage].concat($$('.pf-bar button', el)), i = f.indexOf(ae); f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus(); }
+      else if (onStage && !mod && /^Arrow(Left|Right|Up|Down)$/.test(k)) {
+        e.preventDefault();
+        var q = p.src && CCL.aimMove(p.aim, k, e.shiftKey, p.w, p.h);
+        if (q) { p.aim = q; aimKeepIn(); aimDraw(true); }
+      }
+      else if (onStage && !mod && (k === 'Enter' || k === ' ')) {
+        e.preventDefault();
+        if (e.repeat || !c) return;
+        var hex = at(c.x, c.y, e.altKey);
+        if (!hex) return;
+        add(hex);
+        if (!e.shiftKey) stopPick();
+      }
       else if ((k === 'Enter' || k === ' ') && onBtn) { /* carrega no botão */ }
       else if (/^(Arrow|Page|Home|End| )/.test(k) || k === ' ') e.preventDefault();   // nada de deslocar a página por trás
     };

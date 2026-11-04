@@ -140,7 +140,8 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   check(await p.locator('.ccb-side [data-pal-hex="#2F77B1"]').count() === 1 && await p.locator('.ccb-side [data-pal-hex="#DC2828"]').count() === 1, 'as duas cores aparecem na paleta do painel vivo');
   check(/#2F77B1 adicionada à paleta\./.test(await p.locator('.ccb-side .ccd-palmsg').textContent({ timeout: 3000 }).catch(() => '')), 'com a confirmação no painel');
   check(await p.locator('.ccb-side [data-tab="det"].on').count() === 1, 'o separador Detalhe continua aberto');
-  check(await focusPick(), 'o foco volta a «+ Escolher da imagem»');
+  // abriu-se com I na tela (passo 1): o foco volta à tela, não ao botão do painel (auditoria de acessibilidade)
+  check(await p.evaluate(() => !!(document.activeElement && document.activeElement.matches('.ccb-vp'))), 'aberto com I na tela, o foco volta à tela');
 
   // 8) «Concluir», Esc e clique fora saem e devolvem o foco
   await openPick();
@@ -247,7 +248,7 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   await t.keyboard.press('i'); await t.waitForSelector('.cc-pickfs', { timeout: 8000 }).catch(() => {});
   await t.waitForFunction(() => /Toque e arraste/.test((document.querySelector('.cc-pickfs .pf-hint') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
   check(/Toque e arraste para apontar; levante o dedo para escolher/.test(await t.locator('.cc-pickfs .pf-hint').textContent({ timeout: 3000 }).catch(() => '')), 'iPad: a dica de toque');
-  await t.waitForTimeout(300);   // o fim da animação de abertura (escala)
+  await t.waitForTimeout(300);   // o fim da animação de abertura (opacidade)
   const tr = await t.evaluate(() => { const e = document.querySelector('.cc-pickfs .pf-img'); return e ? e.getBoundingClientRect().toJSON() : null; });
   check(tr && (tr.width >= 0.7 * 1180 || tr.height >= 0.7 * 820), 'iPad: a imagem em ecrã inteiro');
   const bb = await t.evaluate(() => [...document.querySelectorAll('.cc-pickfs .pf-bar button')].map(x => Math.min(x.getBoundingClientRect().width, x.getBoundingClientRect().height)));
@@ -296,7 +297,7 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   await t.waitForTimeout(1000);
   check(adds.length === 1, 'iPad: um toque acrescenta uma vez só (' + adds.length + ' pedidos)');
   check(await t.locator('.cc-pickfs').count() === 0, 'iPad: sem Shift, o toque escolhe e sai');
-  check(manual().includes('#DC2828'), 'iPad: a cor tocada é a certa');
+  check(manual(SP.assets.image).includes('#DC2828'), 'iPad: a cor tocada é a certa');
 
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
