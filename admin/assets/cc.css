@@ -655,7 +655,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 /* telemóvel: a barra de Apresentar quebra em linhas e fica no ecrã (‹ › e «Sair» em cima, o título e os controlos de media por baixo) */
 @media (max-width: 640px) {
   .cc-pres { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 16px); border-radius: 16px; }
-  .cc-pres .pr-media { order: 5; flex: 1 0 100%; flex-wrap: wrap; justify-content: center; margin: 0; }
+  .cc-pres .pr-media { order: 5; flex: 1 0 100%; min-width: 0; flex-wrap: wrap; justify-content: center; margin: 0; }   /* min-width: 0 — senão um título longo (nowrap) alarga a linha para lá do ecrã */
   .cc-pres .pr-t { flex: 0 0 100%; max-width: none; text-align: center; }
 }
 

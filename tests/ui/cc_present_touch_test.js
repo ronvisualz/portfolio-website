@@ -13,12 +13,19 @@ const check = (c, msg) => { if (c) ok++; else { fail++; console.error('FALHA: ' 
 const BID = execFileSync('php', [path.join(__dirname, 'seed_board.php')]).toString().trim();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccpt-'));
 const WEBM = path.join(dir, 'v.webm'), MP3 = path.join(dir, 'a.mp3');
-execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '8', '-c:v', 'libvpx', '-b:v', '150k', '-c:a', 'libvorbis', WEBM]);
-execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=8', '-c:a', 'libmp3lame', '-b:a', '48k', MP3]);
+// sons próprios deste teste (outra frequência): os ficheiros iguais de outros testes dariam o mesmo asset, e o título longo
+// abaixo mudava o deles
+execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15', '-f', 'lavfi', '-i', 'sine=frequency=443', '-t', '8', '-c:v', 'libvpx', '-b:v', '150k', '-c:a', 'libvorbis', WEBM]);
+execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=333:duration=8', '-c:a', 'libmp3lame', '-b:a', '48k', MP3]);
+// títulos longos (> 60 caracteres): no telemóvel o título da barra fica numa linha com reticências, dentro da barra
+const VT = 'Campanha de inverno 2026 — versão longa para redes sociais, com legendas em PT e EN v4';
+const AT = '2026-10-28 Locução institucional anúncio rádio outubro v3 final';
 // 7 diapositivos: nota, lista, amostra, imagem, sub-Topperboard, vídeo, áudio (o último)
 execFileSync('php', ['-r', `require "tests/boot.php"; require_once "admin/inc/cc.php"; require "tests/fixtures.php";
   [$v] = tests_cc_asset($pdo, file_get_contents("${WEBM}"), ['name' => 'v.webm', 'mime' => 'video/webm', 'kind' => 'video', 'w' => 320, 'h' => 240]);
   [$a] = tests_cc_asset($pdo, file_get_contents("${MP3}"), ['name' => 'a.mp3', 'mime' => 'audio/mpeg', 'kind' => 'audio']);
+  $t = $pdo->prepare('UPDATE cc_assets SET title = ? WHERE id = ?');
+  $t->execute([${JSON.stringify(VT)}, $v['id']]); $t->execute([${JSON.stringify(AT)}, $a['id']]);
   cc_card_add($pdo, ${BID}, ['type' => 'video', 'x' => 1100, 'y' => 420, 'w' => 280, 'asset_id' => $v['id']], 1);
   cc_card_add($pdo, ${BID}, ['type' => 'audio', 'x' => 1450, 'y' => 420, 'w' => 300, 'asset_id' => $a['id']], 1);`], { cwd: ROOT });
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -60,6 +67,21 @@ async function toSlide(p, n) {
   const pr = await p.locator('[data-a="present"]').boundingBox();
   check(pr && pr.width >= 44 && pr.height >= 44, 'telemóvel: o botão «Apresentar» tem 44 × 44 px (' + JSON.stringify(pr) + ')');
   await p.tapEl(p.locator('[data-a="present"]')); await p.waitForSelector('.cc-pres'); await p.waitForTimeout(700);
+  // o título longo de um vídeo e de um áudio: numa linha, com reticências, dentro da barra e do ecrã, a começar no princípio
+  for (const [n, kind, tt] of [[6, 'Vídeo', VT], [7, 'Áudio', AT]]) {
+    await toSlide(p, n);
+    const tg = await p.evaluate(() => {
+      const R = e => { const q = e.getBoundingClientRect(); return [Math.round(q.left), Math.round(q.right)]; };
+      const bar = document.querySelector('.cc-pres'), pt = bar.querySelector('[data-pt]'), t = pt.firstChild;
+      const rg = document.createRange(); rg.setStart(t, 0); rg.setEnd(t, 1);
+      return { iw: innerWidth, bar: R(bar), media: R(bar.querySelector('.pr-media')), pt: R(pt), text: pt.textContent,
+        ellipsis: pt.scrollWidth > pt.clientWidth && getComputedStyle(pt).textOverflow === 'ellipsis', first: Math.round(rg.getBoundingClientRect().left) };
+    });
+    const inside = r => r[0] >= Math.max(0, tg.bar[0]) && r[1] <= Math.min(tg.iw, tg.bar[1]);
+    check(tg.text === kind + ' · ' + tt, 'telemóvel, diapositivo ' + n + ': o título da barra é o do ficheiro (prova do teste: ' + tg.text + ')');
+    check(inside(tg.media) && inside(tg.pt), 'telemóvel, diapositivo ' + n + ': o título longo fica dentro da barra e do ecrã (' + JSON.stringify(tg) + ')');
+    check(tg.ellipsis && tg.first >= tg.pt[0] && tg.first >= tg.bar[0], 'telemóvel, diapositivo ' + n + ': o título começa no princípio («' + kind + ' · …») e acaba em reticências (' + JSON.stringify(tg) + ')');
+  }
   await toSlide(p, 7);
   let pl = await p.playing();
   check((await p.pn()) === '7 / 7' && pl.length === 1 && pl[0] === 'pres:AUDIO', 'telemóvel: chega ao áudio (o último) e toca (prova do teste: ' + JSON.stringify(pl) + ')');
