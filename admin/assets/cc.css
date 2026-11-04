@@ -705,12 +705,18 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-play::after { content: ''; margin-left: 3px; border-style: solid; border-width: 7px 0 7px 11px; border-color: transparent transparent transparent #fff; }
 .cc-dpick .dp-grid .dp-nm { padding: 0 2px 2px; }
 .cc-dpick .dp-grid .dp-f { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-/* arrastar para o Topperboard: o diálogo some e deixa passar o rato até à tela; a dica fica à vista */
+/* arrastar para o Topperboard: o diálogo some e deixa passar o rato até à tela; a dica (dentro do diálogo aria-modal,
+   para os leitores de ecrã a anunciarem) fica à vista; fora do arrasto fica só para o leitor de ecrã (vazia) */
 .cc-dpick-back.is-dragging { background: transparent; pointer-events: none; }
-.cc-dpick-back.is-dragging .cc-dpick { opacity: 0; }
-.cc-dpick-back .dp-drag-hint { display: none; }
-.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; left: 50%; top: 128px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
+.cc-dpick-back.is-dragging .cc-dpick { background: transparent; border-color: transparent; box-shadow: none; }
+.cc-dpick-back.is-dragging .cc-dpick > :not(.dp-drag-hint) { opacity: 0; }
+.cc-dpick .dp-drag-hint { position: fixed; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; width: auto; height: auto; overflow: visible; clip: auto; left: 50%; top: 128px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
   background: var(--fg); color: var(--bg); font: 600 13.5px var(--body); box-shadow: var(--shadow-lg); white-space: nowrap; }
+.cc-dpick .dp-th:not(.has-img) .dp-play { display: none; }   /* o ▶ só por cima de uma miniatura, nunca do ícone do vídeo */
+.cc-dpick input[type=search] { border-color: var(--mute-2); }   /* ≥ 3:1 contra o campo e o diálogo (claro e escuro) */
+.cc-dpick input[type=search]:focus { border-color: var(--fg); }
+@media (pointer: coarse), (max-width: 640px) { .cc-dpick .dp-mouse { display: none; } }   /* sem rato: sem Shift/Ctrl nem arrastar */
 .dp-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 400; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 10px;
   background: var(--fg); color: var(--bg); font: 600 13px/1.2 var(--body); }
 .dp-ghost img, .dp-ghost svg { flex: none; width: 36px; height: 36px; border-radius: 6px; object-fit: cover; }
@@ -743,7 +749,8 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .cc-cpop .cp-act .btn { min-height: 44px; }
   .ccd-pal .ccd-pcb, .ccd-pal .ccd-pm { min-height: 44px; }
   .ccd-pal .ccd-pm { min-width: 44px; }
-  .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
+  .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button, .cc-dpick input[type=search] { min-height: 44px; }
+  .cc-dpick .dp-crumb button { min-width: 44px; }
   .cc-pres input[type=range] { height: 44px; }
   .ccb-acts [data-a="present"] { min-height: 44px; min-width: 44px; }
   .ccd-h [data-x] { width: 44px; height: 44px; }

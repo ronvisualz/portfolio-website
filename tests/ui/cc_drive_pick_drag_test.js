@@ -59,8 +59,10 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
     return mid;
   }
   const midState = () => p.evaluate(() => {
-    const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick'), h = document.querySelector('.cc-dpick-back [role="status"]');
-    return { pe: bk && getComputedStyle(bk).pointerEvents, op: d && getComputedStyle(d).opacity, hint: h ? h.textContent : '', hintShown: !!h && getComputedStyle(h).display !== 'none' && h.getBoundingClientRect().width > 0 };
+    // op: a opacidade do conteúdo do diálogo (a lista); a dica do arrasto fica dentro do diálogo aria-modal, à vista
+    const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick .dp-list'), h = document.querySelector('.cc-dpick-back .dp-drag-hint');
+    return { pe: bk && getComputedStyle(bk).pointerEvents, op: d && getComputedStyle(d).opacity, hint: h ? h.textContent : '', hintShown: !!h && getComputedStyle(h).display !== 'none' && h.getBoundingClientRect().width > 1,
+      live: !!h && (h.getAttribute('role') === 'status' || h.getAttribute('aria-live') === 'polite'), inModal: !!h && !!h.closest('[aria-modal="true"]') };
   });
 
   // C1: nada escolhido; arrastar a imagem para um sítio do Topperboard que fica por baixo do diálogo (passa através dele)
@@ -73,7 +75,8 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   const mid = await drag(cell(dlg, 'a.png'), to1, midState);
   check(mid.pe === 'none', 'durante o arrasto o fundo do diálogo deixa passar (pointer-events: ' + mid.pe + ')');
   check(mid.op === '0', 'durante o arrasto o diálogo fica transparente (' + mid.op + ')');
-  check(mid.hint === 'Largue no Topperboard para juntar.' && mid.hintShown, 'dica viva «Largue no Topperboard para juntar.» (' + JSON.stringify(mid.hint) + ')');
+  check(mid.hint === 'Largue no Topperboard para juntar.' && mid.hintShown && mid.live, 'dica viva «Largue no Topperboard para juntar.» (' + JSON.stringify(mid.hint) + ')');
+  check(mid.inModal, 'a dica viva fica dentro do diálogo aria-modal (os leitores de ecrã anunciam-na)');
   check(await p.evaluate(() => window.__ghost) === '1 ficheiro', 'o fantasma diz «1 ficheiro» (' + await p.evaluate(() => window.__ghost) + ')');
   check(await waitCards(n0 + 1) === n0 + 1, '1 cartão novo');
   const c1 = lastCards(1)[0];
@@ -108,7 +111,7 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   await drag(cell(dlg, 'a.png'), { x: Math.round(tb.x + tb.width / 2), y: Math.round(tb.y + tb.height - 30) });
   await p.waitForTimeout(800);
   check(await cards() === n0 + 3, 'largar fora do Topperboard não junta nada');
-  const st = await p.evaluate(() => { const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick'); return bk && d ? { drag: bk.classList.contains('is-dragging'), pe: getComputedStyle(bk).pointerEvents, op: getComputedStyle(d).opacity } : null; });
+  const st = await p.evaluate(() => { const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick .dp-list'); return bk && d ? { drag: bk.classList.contains('is-dragging'), pe: getComputedStyle(bk).pointerEvents, op: getComputedStyle(d).opacity } : null; });
   check(st && !st.drag && st.pe === 'auto' && st.op === '1', 'o diálogo volta como estava (' + JSON.stringify(st) + ')');
   check(/Adicionar 2/.test(await dlg.locator('[data-dp-add]').innerText().catch(() => '')) && await dlg.locator('.dp-f[aria-pressed="true"]').count() === 2, 'com a mesma escolha («Adicionar 2»)');
 
@@ -127,7 +130,7 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
     await p.mouse.up(); await p.waitForTimeout(700);
     check(m.op === '1' && m.pe !== 'none', tag + ': com o botão em baixo o diálogo continua à vista (' + JSON.stringify(m) + ')');
     check(await cards() === nB, tag + ': nada entra no Topperboard (' + (await cards() - nB) + ' cartões novos)');
-    const s7 = await p.evaluate(() => { const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick'); return bk && d ? { drag: bk.classList.contains('is-dragging'), pe: getComputedStyle(bk).pointerEvents, op: getComputedStyle(d).opacity } : null; });
+    const s7 = await p.evaluate(() => { const bk = document.querySelector('.cc-dpick-back'), d = document.querySelector('.cc-dpick .dp-list'); return bk && d ? { drag: bk.classList.contains('is-dragging'), pe: getComputedStyle(bk).pointerEvents, op: getComputedStyle(d).opacity } : null; });
     check(s7 && !s7.drag && s7.pe === 'auto' && s7.op === '1', tag + ': o diálogo fica aberto como estava (' + JSON.stringify(s7) + ')');
     check(s7 && /Adicionar 2/.test(await dlg.locator('[data-dp-add]').innerText().catch(() => '')) && await dlg.locator('.dp-f[aria-pressed="true"]').count() === 2, tag + ': com a mesma escolha («Adicionar 2»)');
   }
@@ -196,6 +199,17 @@ const lastCards = n => JSON.parse(php(`echo json_encode($pdo->query("SELECT id, 
   const pdfCards = php(`echo $pdo->query("SELECT COUNT(*) FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id WHERE c.board_id = ${S.b} AND c.deleted_at IS NULL AND a.file_key = 'r2:${S.k[T + '-x.pdf']}'")->fetchColumn();`);
   check(pdfCards === '1', 'com 31 chaves a 31.ª também entra (pedidos de 30) (' + pdfCards + ')');
   check(/1 ficheiro da Drive no Topperboard\. 30 sem acesso ou já não existem\./.test(tst) && !/ficaram de fora/.test(tst), 'uma só mensagem com as contas somadas (' + tst + ')');
+  // teto de 120 chaves num arrasto (centenas de chaves de outra página eram centenas de pedidos em série): 125 → só as
+  // primeiras 120, em 4 pedidos de 30, e a mensagem diz quantas ficaram de fora
+  await noToasts();
+  const addReqs = [], onReq = rq => { if (/[?&]a=drive_add\b/.test(rq.url())) addReqs.push(rq.url()); };
+  p.on('request', onReq);
+  await dropKeys([S.k[T + '-s.mp3']].concat(Array.from({ length: 124 }, (_, i) => S.dir + 'nada-' + i + '.txt')), to2.x, to2.y);
+  await p.waitForFunction(() => document.querySelectorAll('.tst').length > 0, null, { timeout: 20000 }).catch(() => {});
+  p.off('request', onReq);
+  tst = (await p.locator('.tst').allInnerTexts()).join(' | ');
+  check(addReqs.length === 4, '125 chaves: só as primeiras 120, em 4 pedidos (' + addReqs.length + ' pedidos)');
+  check(/1 ficheiro da Drive no Topperboard\. 119 sem acesso ou já não existem\. Entram até 120 ficheiros de cada vez: 5 ficaram de fora\./.test(tst), 'a mensagem diz quantas ficaram de fora (' + tst + ')');
 
   // um arrasto com a lista vazia (outra página pode pôr qualquer coisa): o servidor responde, nada de aviso em branco
   await noToasts();

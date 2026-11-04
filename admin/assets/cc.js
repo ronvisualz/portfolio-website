@@ -1921,36 +1921,40 @@
       el.addEventListener('click', function (e) {
         var b = e.target.closest('[data-um]'); if (!b) return;
         var k = b.getAttribute('data-um'); closeUpMenu();
-        if (k === 'dev') inp.click(); else drivePick();
+        if (k === 'dev') inp.click(); else drivePick(btn);   // ao fechar, o foco volta a «Enviar» (o item do menu já não existe)
       });
     }
     function fold(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
-    function drivePick() {
+    function drivePick(opener) {
       var at = ptrWorld();
       var el = document.createElement('div');
       el.className = 'cc-dpick-back';
+      // a região viva (.dp-sr) diz a pasta, os resultados e o carregar; a dica do arrasto (.dp-drag-hint, também viva)
+      // fica dentro do diálogo aria-modal (durante o arrasto só ela se vê); no toque e a ≤ 640 px o rodapé perde a parte
+      // do rato (.dp-mouse)
       el.innerHTML = '<div class="cc-dpick" role="dialog" aria-modal="true" aria-label="Juntar da Drive"><div class="dp-h"><h3>Juntar da Drive</h3>'
         + '<input type="search" placeholder="Procurar na Drive (nome ou pasta)" aria-label="Procurar na Drive"></div>'
         + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="group" aria-label="Ficheiros da Drive"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
-        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários. Também pode arrastá-los para o sítio certo do Topperboard.</span>'
-        + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
-      var hint = document.createElement('div');   // fora do diálogo (que fica transparente durante o arrasto)
-      hint.className = 'dp-drag-hint'; hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
-      el.appendChild(hint);
+        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia.<span class="dp-mouse"> Shift ou Ctrl para escolher vários. Também pode arrastá-los para o sítio certo do Topperboard.</span></span>'
+        + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div>'
+        + '<p class="sr dp-sr" role="status" aria-live="polite"></p><div class="dp-drag-hint" role="status" aria-live="polite"></div></div>';
       document.body.appendChild(el);
       var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
+      var hint = $('.dp-drag-hint', el), sr = $('.dp-sr', el), loading = true;
       var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
-      var back = document.activeElement;
+      var back = opener || document.activeElement;
+      setTimeout(function () { if (loading && el.isConnected) sr.textContent = 'A carregar a Drive…'; }, 100);
       // miniaturas como na Drive (TD.thumbs): as que existem (catalog.thumbs) pedem-se em lote, as que faltam fazem-se no
       // browser; só as que se veem. Só se pedem etags que vieram do catálogo (que já esconde a Faturação a quem não a vê).
       var TH = window.TD && TD.thumbs && TD.kind ? TD.thumbs : null, hasTh = new Set(), thumbUrl = new Map();
       var io = TH && 'IntersectionObserver' in window ? new IntersectionObserver(seen, { root: list, rootMargin: '200px' }) : null, seenQ = [], seenT = 0;
-      function close() {
+      function close(to) {
         endDrag(false);
         el.remove(); document.removeEventListener('keydown', escKey, true);
         if (io) io.disconnect();
         clearTimeout(seenT);
-        if (back && back.focus) back.focus();
+        to = to || back;
+        if (to && to.focus && to.isConnected) to.focus();
       }
       // Esc fecha sempre (antes dos atalhos da tela); Tab fica dentro do diálogo
       function escKey(e) {
@@ -2035,11 +2039,12 @@
       }
       function paint() {
         bar();
-        var term = fold(q.value.trim()), html = '';
+        var term = fold(q.value.trim()), html = '', said;
         shown = [];
         if (term) {
           shown = objs.filter(function (o) { return fold(o.k).indexOf(term) >= 0; }).slice(0, 200);
           crumb.textContent = shown.length ? shown.length + (shown.length === 1 ? ' resultado' : ' resultados') : '';
+          said = crumb.textContent || 'Nada encontrado com «' + q.value.trim() + '».';
         } else {
           var dirs = {};
           var pool = prefix ? objs.filter(function (o) { return o.k.indexOf(prefix) === 0; }) : [];
@@ -2052,6 +2057,8 @@
         if (shown.length) html += '<div class="dp-grid">' + shown.map(function (o, i) { return cellHtml(o, i, term || !prefix); }).join('') + '</div>';
         list.innerHTML = html || '<p class="muted">' + (term ? 'Nada encontrado com «' + esc(q.value.trim()) + '».' : 'Pasta vazia.') + '</p>';
         watchThumbs();
+        if (!term) { var n = $$('.dp-d, .dp-f', list).length; said = (prefix ? base(prefix) : 'Drive') + ' · ' + (n ? n + (n === 1 ? ' item' : ' itens') : 'pasta vazia'); }
+        if (!loading) sr.textContent = said;   // anunciado na região viva do diálogo
       }
       // escolher muda só o visto (as imagens ficam: nada se volta a desenhar)
       function mark() {
@@ -2066,7 +2073,13 @@
       }
       el.addEventListener('click', function (e) {
         if (e.target === el || e.target.closest('[data-dp-cancel]')) { close(); return; }
-        var g = e.target.closest('[data-dp-go]'); if (g) { prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint(); return; }
+        var g = e.target.closest('[data-dp-go]');
+        if (g) {
+          prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint();
+          // o botão carregado foi refeito: o foco vai para a 1.ª pasta/célula (pasta vazia: a migalha da pasta)
+          var f1 = $('.dp-d, .dp-f', list) || $$('button', crumb).pop(); if (f1) f1.focus();
+          return;
+        }
         var f = e.target.closest('.dp-f'); if (f) { toggle(+f.getAttribute('data-i'), e.shiftKey); return; }
         if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(keys, at); }
       });
@@ -2126,7 +2139,7 @@
         var fr = f.getBoundingClientRect(), hasXY = e.clientX || e.clientY;
         var d = drag = { cell: f, keys: keys, watch: 0, out: false,
           x0: hasXY ? e.clientX : fr.left + fr.width / 2, y0: hasXY ? e.clientY : fr.top + fr.height / 2 };
-        d.api = pickDrag = { close: close };
+        d.api = pickDrag = { close: function () { close(vp); } };   // largado na tela: o foco fica na tela (os cartões novos)
         // arrasto perdido: com o diálogo transparente, o próximo toque devolve-o (e não chega à tela nem fecha o diálogo);
         // ainda à vista, o toque segue normalmente
         d.down = function (ev) { if (d.out) { ev.stopPropagation(); ev.preventDefault(); endDrag(true); } else endDrag(false); };
@@ -2139,7 +2152,8 @@
       el.hidden = false; q.focus();
       driveApi({ do: 'catalog' }).then(function (j) {
         if (!el.isConnected) return;
-        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; return; }
+        loading = false;
+        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; sr.textContent = list.textContent; return; }
         objs = (j.objects || []).filter(function (o) { return o.k.slice(-1) !== '/'; });
         roots = j.roots || [];
         hasTh = new Set(j.thumbs || []);
@@ -2359,9 +2373,11 @@
     function addDrive(keys, at) {
       var p = at || spot(300), list = keys, row = Up.add('Da Drive');
       if (typeof keys === 'string') { try { list = JSON.parse(keys); } catch (e) { list = null; } }
-      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX) : [];
+      // teto (CCL.DRIVE_DROP_MAX = 120): centenas de chaves de outra página seriam centenas de pedidos em série
+      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX, CCL.DRIVE_DROP_MAX) : [];
       if (!parts.length) parts = [{ keys: keys, x: p.x, y: p.y }];   // vazio ou ilegível: o servidor responde («Nada para juntar.»)
-      var got = [], sum = { added: 0, folders: 0, skipped: 0, over: false }, msg = '';
+      var cut = Array.isArray(list) ? Math.max(0, list.length - CCL.DRIVE_DROP_MAX) : 0;
+      var got = [], sum = { added: 0, folders: 0, skipped: 0, over: false, cut: cut }, msg = '';
       function done() {
         if (!got.length) return;
         var ids = got.map(function (c) { return c.id; });
@@ -2386,7 +2402,7 @@
       }, Promise.resolve()).then(function () {
         row.done();
         done();
-        toast(parts.length > 1 ? CCL.driveMsg(sum) : msg, got.length ? {} : { err: true });
+        toast(parts.length > 1 || cut ? CCL.driveMsg(sum) : msg, got.length ? {} : { err: true });
       }).catch(function (e) { done(); row.fail(e.message); });
     }
     // §33.10: envio otimista — o cartão aparece logo (pré-visualização local e progresso) e troca pelo do servidor no fim
