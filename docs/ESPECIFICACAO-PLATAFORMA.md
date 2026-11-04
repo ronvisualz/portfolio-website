@@ -4578,6 +4578,10 @@ Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Cr
 - **Saúde por linha (ponto 11):** mostrar **o motivo** em texto curto («sem contacto há 21 dias», «proposta sem resposta há 9 dias»), como o «Em risco» do Pipeline; a pontuação só serve para ordenar, com explicação ao passar o rato/foco.
 - **Faixa de insight da IA (ponto 5):** só aparece quando há algo concreto e acionável; no máximo uma por página; traz o botão da ação; «Não voltar a mostrar este tipo»; nunca permanente.
 - **Movimento (ponto 12):** só com função (retorno de uma ação, mudança de vista, número que muda); nada anima indefinidamente fora do elemento que está a mudar (no máximo 2–3 repetições); tudo desligado com «reduzir movimento», também quando muda com a página aberta.
+- **Primeiro ecrã:** num portátil de 13" são ≈ 800 px de altura útil no navegador, **já com o topo comum** (`render_header`, ~60 px, que não muda nem se repete). O trabalho do dia acaba até ≈ 740 px abaixo desse topo.
+- **Ações que existem:** a ação amarela é sempre uma ação real da plataforma — no Dashboard «Nova lead», no Pipeline «Converter lead»; nunca «Novo negócio» (os negócios nascem da conversão de uma lead).
+- **Não perder o que existe:** a Equipa mantém o que o cartão da pessoa mostra hoje (contactos com «Ligar», competências, Sócio, cargo; €/h e h/mês só admins) e a carga continua só para admins (§17.10); os Contactos mantêm as colunas próprias de cada vista e acrescentam a coluna «Atenção».
+- **Barra de vistas:** um só aspeto (o da `.views` atual, contagem em mono, vista ativa sem amarelo); o amarelo fica para a ação principal e o cartão herói.
 - **Validação:** antes e depois, teste de 5 minutos com 3 pessoas da equipa e 3 tarefas cronometradas («que negócio precisa de ti hoje?», «quem está sobrecarregado esta semana?», «em que ponto está o One House Only?»).
 
 ## 36. Topperspace — execução externa e o espaço dos freelancers (3 nov 2026)
