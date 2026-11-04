@@ -60,7 +60,11 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   let r = await img();
   check(r && (r.width >= 0.7 * 1400 || r.height >= 0.7 * 900), 'a imagem ocupa quase todo o ecrã (' + JSON.stringify(r && { w: Math.round(r.width), h: Math.round(r.height) }) + ')');
   check(await p.evaluate(() => document.activeElement && document.activeElement.getAttribute('data-pf') === 'done'), 'o foco vai para «Concluir»');
-  check(/Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Esc: sair/.test(await p.locator('.cc-pickfs .pf-hint').textContent({ timeout: 3000 }).catch(() => '')), 'a dica com o rato');
+  // a dica (também a descrição do diálogo, aria-describedby) fala do rato e do teclado, numa linha onde cabe
+  const hint1 = await p.locator('.cc-pickfs .pf-hint').textContent({ timeout: 3000 }).catch(() => '');
+  check(hint1 === 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Tab e setas: apontar com o teclado · Esc: sair', 'a dica com o rato e o teclado (' + hint1 + ')');
+  const hintBox = await p.evaluate(() => { const h = document.querySelector('.cc-pickfs .pf-hint'), d = document.querySelector('.cc-pickfs'); return { h: h.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(h).fontSize), by: d.getAttribute('aria-describedby') === h.id }; });
+  check(hintBox.h < 2 * hintBox.fs && hintBox.by, 'a dica cabe numa linha a 1400 px e descreve o diálogo (' + JSON.stringify(hintBox) + ')');
   check(!/§/.test(await p.locator('.cc-pickfs').innerText({ timeout: 3000 }).catch(() => '')), 'sem «§» no conta-gotas');
 
   // 2) a cor em grande: retângulo na lupa e quadrado na barra, #HEX legível e RGB

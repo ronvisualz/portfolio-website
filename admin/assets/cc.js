@@ -637,7 +637,7 @@
   // próprio (&cors=1); lupa ×8 com a cor num retângulo grande; média 3×3, Alt = 1 píxel; Shift = várias; Esc, «Concluir» ou
   // clique fora saem. As teclas são todas do conta-gotas enquanto está aberto (o Topperboard não as recebe).
   var pickState = null;
-  var PICK_HINT = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Esc: sair',
+  var PICK_HINT = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Tab e setas: apontar com o teclado · Esc: sair',
       PICK_HINT_TOUCH = 'Toque e arraste para apontar; levante o dedo para escolher · Dois dedos: aproximar',
       PICK_ERR_FRAME = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.';
   /** O botão «+ Escolher da imagem» do painel vivo desta referência (o do box, ou o de um painel redesenhado). */
