@@ -732,5 +732,5 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 @media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 @media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }
 @media (pointer: coarse) and (max-width: 640px) { .ccb-tools.wide button { width: 44px; } }
-.ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .cc-pres input[type=range]:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
 .ccb-side-grip:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }

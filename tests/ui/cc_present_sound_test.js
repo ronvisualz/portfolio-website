@@ -50,7 +50,8 @@ execFileSync('php', ['-r', `require "tests/boot.php"; require_once "admin/inc/cc
   await bar.locator('input[type=range]').fill('0.3'); await p.waitForTimeout(150);
   pl = await playing();
   check(pl.length === 1 && Math.abs(pl[0].vol - 0.3) < 0.01, 'o volume da barra aplica-se (' + JSON.stringify(pl) + ')');
-  // avançar: o vídeo pausa e o áudio toca
+  // avançar: o vídeo pausa e o áudio toca (com o foco no volume as setas são dele; o foco volta à barra)
+  await bar.focus();
   await p.keyboard.press('ArrowRight'); await p.waitForTimeout(900);
   pl = await playing();
   check(pl.length === 1 && pl[0].tag === 'AUDIO' && !pl[0].muted, 'avançar pausa o vídeo e o áudio seguinte toca (' + JSON.stringify(pl) + ')');

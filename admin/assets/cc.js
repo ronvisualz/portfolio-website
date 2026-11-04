@@ -3802,11 +3802,15 @@
       root.classList.add('present');
       B.els.forEach(killHoverPrev);   // uma pré-visualização que já estava a correr não fica
       bar.className = 'cc-pres';
+      // teclado e leitor de ecrã: a barra é uma toolbar com nome, recebe o foco ao entrar (o botão «Apresentar» fica
+      // escondido) e diz cada diapositivo numa região viva
+      bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Apresentar'); bar.tabIndex = -1;
       bar.innerHTML = '<button type="button" data-p="-1" aria-label="Anterior">‹</button><span data-pn></span><button type="button" data-p="1" aria-label="Seguinte">›</button>'
         + '<span class="pr-media" hidden><span class="pr-t" data-pt></span><button type="button" data-p="play" aria-label="Pausa ( Espaço )">❚❚</button>'
         + '<input type="range" min="0" max="1" step="0.05" value="' + PRES.vol + '" aria-label="Volume" data-vol><button type="button" data-p="mute" aria-pressed="' + PRES.muted + '">Sem som</button></span>'
-        + '<button type="button" data-p="x">Sair (Esc)</button>';
+        + '<button type="button" data-p="x">Sair (Esc)</button><span class="sr" role="status" aria-live="polite" data-plive></span>';
       root.appendChild(bar);   // dentro do elemento em ecrã inteiro (fora dele não aparece)
+      bar.focus({ preventScroll: true });
       if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
       if (AU && AU.hub && AU.hub.pause) AU.hub.pause();
       // §33.13: só em Apresentar o vídeo/áudio toca com som — ao chegar toca, ao sair pára; fora daqui nunca há som sozinho
@@ -3817,7 +3821,9 @@
       function isMediaSlide() { var c = slide(); return (c.type === 'video' || c.type === 'audio') && !!c.asset && !!c.asset.orig; }
       function paintMedia() {
         var w = $('.pr-media', bar), c = slide(), isM = isMediaSlide();
+        var lost = !isM && !w.hidden && w.contains(document.activeElement);   // o foco ia ficar num controlo escondido
         w.hidden = !isM;
+        if (lost) $('[data-p="1"]', bar).focus();
         if (!isM) return;
         $('[data-pt]', bar).textContent = (c.type === 'video' ? 'Vídeo · ' : 'Áudio · ') + (c.asset.title || c.asset.file || '');
         var pb = $('[data-p="play"]', bar), on = presMedia && !presMedia.el.paused;
@@ -3860,6 +3866,7 @@
         select([]);
         if ((c.type === 'video' || c.type === 'audio') && c.asset) startMedia(c);
         paintMedia();
+        $('[data-plive]', bar).textContent = 'Diapositivo ' + (i + 1) + ' de ' + items.length + (isMediaSlide() ? ' · ' + $('[data-pt]', bar).textContent : '');
       }
       bar.addEventListener('input', function (e) {
         if (!e.target.hasAttribute('data-vol')) return;
@@ -3868,13 +3875,23 @@
       function stop() {
         stopMedia();
         presPaint = null;
+        var ae = document.activeElement, back = !ae || ae === document.body || bar.contains(ae);
         root.classList.remove('present');
         bar.remove();
         window.removeEventListener('keydown', pk, true);
         if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+        // o foco volta ao botão «Apresentar» (não cai no corpo da página)
+        var pb = back && $('[data-a="present"]', root);
+        if (pb) pb.focus({ preventScroll: true });
         setTimeout(function () { fitAll(true); }, 50);
       }
       function pk(e) {
+        var t = e.target;
+        if (t && t.closest && t.closest('.cc-pres') === bar && e.key !== 'Escape') {
+          // o deslizador do volume fica com as suas teclas; Espaço/Enter num botão da barra carregam nesse botão
+          if (t.hasAttribute('data-vol') && /^(ArrowLeft|ArrowRight|PageUp|PageDown)$/.test(e.key)) return;
+          if (t.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
+        }
         if (e.key === ' ' && isMediaSlide()) playPause();   // §33.13: num vídeo/áudio, Espaço pausa/retoma (não salta)
         else if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(items.length - 1, i + 1); go(); }
         else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { i = Math.max(0, i - 1); go(); }
