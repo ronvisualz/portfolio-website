@@ -107,6 +107,11 @@ function api_share_billing(array $x): bool {
     require_once __DIR__ . '/inc/drive_share.php';
     return drive_share_shows_billing($x);
 }
+/** Os números do Lixo sem a faturação (para quem não tem o Financeiro), como no trash_list. */
+function api_trash_visible(PDO $pdo): array {
+    $items = array_values(array_filter(drive_trash_all($pdo), static fn($t) => !drive_billing((string)$t['k'])));
+    return ['count' => count($items), 'size' => array_sum(array_column($items, 's'))];
+}
 /** Há documentos de faturação debaixo desta pasta? */
 function api_has_billing(string $folder): bool {
     if (substr($folder, -1) !== '/') return false;
@@ -121,6 +126,10 @@ if (!$FIN) {
     if (is_string($in['key'] ?? null) && is_string($in['name'] ?? null)) $asked[] = drive_parent($in['key']) . $in['name'];
     foreach ((array)($in['keys'] ?? []) as $k) if (is_string($k)) $asked[] = $k;
     foreach ($asked as $k) if (drive_billing($k)) api_err(DRIVE_BILLING_ERR, 403);
+    // §32.1: a caminho da faturação (mover instantâneo ainda na fila) já conta como faturação
+    if ($asked && ($pendingBill = drive_moves_pending($pdo))) {
+        foreach ($asked as $k) if (drive_billing(drive_forward_with($pendingBill, $k))) api_err(DRIVE_BILLING_ERR, 403);
+    }
     $ids = [];
     if (in_array($do, ['restore', 'purge'], true)) {
         if (isset($in['id'])) $ids[] = (int)$in['id'];
@@ -606,7 +615,7 @@ try {
             'thumbs'    => array_map('strval', array_keys($FIN ? $cat['thumbs'] : array_intersect_key($cat['thumbs'], $seenE))),
             'favs'      => array_values(array_filter(drive_favs($pdo), static fn($k) => isset($have[$k]))),
             'recents'   => array_values(array_filter(drive_recents($pdo, 50), static fn($r) => isset($have[$r['k']]))),
-            'trash'     => drive_trash_stats($pdo),
+            'trash'     => $FIN ? drive_trash_stats($pdo) : api_trash_visible($pdo),
             'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !api_share_billing($x)))),
             'index'     => $index,
             'listed_at' => (int)$cat['listed_at'],
@@ -722,6 +731,8 @@ try {
         $folder = substr($key, -1) === '/';
         $cat = drive_catalog();
         $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));
+        // os números da pasta só com o que a pessoa vê (sem o Financeiro, a faturação não conta)
+        if (!$FIN) $cat['objects'] = array_values(array_filter($cat['objects'], static fn($o) => !drive_billing((string)$o['key'])));
         $obj = null; $fst = null; $index = null;
         if ($folder) {
             $st = drive_folder_stats($cat, $key);

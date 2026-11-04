@@ -726,7 +726,7 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
     $over = count($keys) > CC_DRIVE_ADD_MAX;
     foreach (array_slice($keys, 0, CC_DRIVE_ADD_MAX) as $k) {
         if (is_string($k) && str_ends_with($k, '/')) { $folders++; continue; }   // as pastas não entram (dito à parte)
-        if (!is_string($k) || $k === '' || drive_hidden($k) || !drive_can_see($k)) { $skipped++; continue; }
+        if (!is_string($k) || $k === '' || drive_hidden($k) || !drive_can_see_moving($pdo, $k)) { $skipped++; continue; }
         // §32.1: com um mover instantâneo ainda na fila, o objeto está no sítio antigo; o cartão aponta para o novo
         $phys = drive_resolve($pdo, $k);
         if (!($h = r2_head($phys))) { $skipped++; continue; }
