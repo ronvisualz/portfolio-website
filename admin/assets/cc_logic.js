@@ -182,21 +182,26 @@
     else if (key === 'End') to = n - 1;
     return to >= 0 && to < n ? to : -1;
   }
+  /** Teto de um arrasto ou «Adicionar» (centenas de chaves de outra página seriam centenas de pedidos em série). */
+  var DRIVE_DROP_MAX = 120;
   /** Juntar da Drive em pedidos de até size chaves; o servidor põe 4 cartões por linha (310 × 320 px), por isso cada
-   *  pedido seguinte começa as linhas que o anterior ocupou mais abaixo. → [{keys, x, y}] */
-  function driveChunks(keys, at, size) {
+   *  pedido seguinte começa as linhas que o anterior ocupou mais abaixo. max (opcional): só as primeiras max chaves.
+   *  → [{keys, x, y}] */
+  function driveChunks(keys, at, size, max) {
     size = Math.max(1, size || 30);
-    var out = [], rows = Math.ceil(size / 4);
-    for (var i = 0; i < (keys || []).length; i += size) out.push({ keys: keys.slice(i, i + size), x: at.x, y: at.y + (i / size) * rows * 320 });
+    var out = [], rows = Math.ceil(size / 4), l = (keys || []).slice(0, max > 0 ? max : Infinity);
+    for (var i = 0; i < l.length; i += size) out.push({ keys: l.slice(i, i + size), x: at.x, y: at.y + (i / size) * rows * 320 });
     return out;
   }
-  /** A mensagem de juntar da Drive (a mesma do servidor, cc_api.php drive_add). c: {added, folders, skipped, over}. */
+  /** A mensagem de juntar da Drive (a mesma do servidor, cc_api.php drive_add). c: {added, folders, skipped, over, cut}
+   *  (cut: as chaves que ficaram de fora pelo teto DRIVE_DROP_MAX — só no browser). */
   function driveMsg(c) {
-    var a = +c.added || 0, f = +c.folders || 0, s = +c.skipped || 0, out = [];
+    var a = +c.added || 0, f = +c.folders || 0, s = +c.skipped || 0, n = +c.cut || 0, out = [];
     if (a || !f) out.push(a + (a === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.'));
     if (f) out.push('As pastas não entram: abra a pasta e escolha os ficheiros.');
     if (s) out.push(s + (s === 1 ? ' sem acesso ou já não existe.' : ' sem acesso ou já não existem.'));
     if (c.over) out.push('Entram até 30 de cada vez: os restantes ficaram de fora.');
+    if (n) out.push('Entram até ' + DRIVE_DROP_MAX + ' ficheiros de cada vez: ' + n + (n === 1 ? ' ficou de fora.' : ' ficaram de fora.'));
     return out.join(' ');
   }
 
@@ -239,6 +244,23 @@
     var fx = (cx - rect.left) / rect.width, fy = (cy - rect.top) / rect.height;
     if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return null;
     return { x: Math.min(w - 1, Math.floor(fx * w)), y: Math.min(h - 1, Math.floor(fy * h)) };
+  }
+  /** Mira do teclado (WCAG 2.1.1): o píxel pt do original w×h dentro da imagem (inteiro); sem pt, o meio; null sem imagem. */
+  function aimAt(pt, w, h) {
+    if (!(w > 0 && h > 0)) return null;
+    if (!pt || !isFinite(pt.x) || !isFinite(pt.y)) return { x: Math.floor(w / 2), y: Math.floor(h / 2) };
+    return { x: Math.min(w - 1, Math.max(0, Math.floor(pt.x))), y: Math.min(h - 1, Math.max(0, Math.floor(pt.y))) };
+  }
+  /** A mira depois de uma seta: 1 píxel do original, 10 com big (Shift); fica dentro da imagem. null: não é uma seta. */
+  function aimMove(pt, key, big, w, h) {
+    var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key], s = big ? 10 : 1;
+    var q = d && aimAt(pt, w, h);
+    return q ? aimAt({ x: q.x + d[0] * s, y: q.y + d[1] * s }, w, h) : null;
+  }
+  /** O centro do píxel pt no ecrã (o inverso de pickPx); rect: getBoundingClientRect da imagem desenhada. */
+  function aimScreen(pt, rect, w, h) {
+    if (!pt || !rect || !(rect.width > 0 && rect.height > 0) || !(w > 0 && h > 0)) return null;
+    return { x: rect.left + (pt.x + 0.5) * rect.width / w, y: rect.top + (pt.y + 0.5) * rect.height / h };
   }
   /** A cor do texto que se lê sobre a amostra hex: '#111111' ou '#FFFFFF' (o de maior contraste, WCAG). */
   function ink(hex) {
@@ -535,5 +557,5 @@
     return adts(head, 0) ? asAudio('audio/aac') : null;
   }
 
-  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, loupeAt: loupeAt, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, dragKeys: dragKeys, gridStep: gridStep, driveChunks: driveChunks, driveMsg: driveMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
+  return { version: 1, sniffMedia: sniffMedia, sniffMore: sniffMore, rtPub: rtPub, clipMatch: clipMatch, clipPack: clipPack, clipPlace: clipPlace, clipText: clipText, marqueeHit: marqueeHit, avg3: avg3, fitRect: fitRect, pickPx: pickPx, ink: ink, zoomAbout: zoomAbout, loupeAt: loupeAt, aimAt: aimAt, aimMove: aimMove, aimScreen: aimScreen, DRIVE_DROP_MAX: DRIVE_DROP_MAX, hexTo: hexTo, thumbPick: thumbPick, undoPlan: undoPlan, skippedMsg: skippedMsg, dragKeys: dragKeys, gridStep: gridStep, driveChunks: driveChunks, driveMsg: driveMsg, same: same, strokeHit: strokeHit, fitStroke: fitStroke, drawBox: drawBox, toLocal: toLocal, listKey: listKey, listPaste: listPaste, listClean: listClean, BRAND: BRAND, hexParse: hexParse, recentColors: recentColors };
 });

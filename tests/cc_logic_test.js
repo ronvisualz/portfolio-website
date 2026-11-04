@@ -178,6 +178,28 @@ eq(LA(1100, 700, 176, 236, 1180, 820, false), { x: 902, y: 442 }, 'loupeAt rato:
     if (!(above || aside) || q.y >= y || !inside) bad.push([x, y, q.x, q.y]);
   }
   eq(bad.slice(0, 3), [], 'loupeAt toque: em todo o iPad a lupa fica acima do dedo ou ao lado dele (nunca por baixo, nunca fora do ecrã)'); }
+// mira do teclado (WCAG 2.1.1): um píxel do original; começa no meio, as setas andam 1 (Shift: 10) e ficam na imagem
+{ const F = n => typeof CCL[n] === 'function' ? CCL[n] : () => 'sem ' + n;
+  const AA = F('aimAt'), AM = F('aimMove'), AS = F('aimScreen');
+  eq(AA(null, 2400, 1600), { x: 1200, y: 800 }, 'aimAt: sem mira → o meio da imagem');
+  eq(AA({ x: -5, y: 9999 }, 2400, 1600), { x: 0, y: 1599 }, 'aimAt: fora da imagem → a borda mais perto');
+  eq(AA({ x: 3.7, y: 2.2 }, 2400, 1600), { x: 3, y: 2 }, 'aimAt: píxel inteiro');
+  eq(AA({ x: 1, y: 1 }, 0, 0), null, 'aimAt: sem imagem → null');
+  eq(AM({ x: 10, y: 10 }, 'ArrowRight', false, 2400, 1600), { x: 11, y: 10 }, 'aimMove: → anda 1 píxel');
+  eq(AM({ x: 10, y: 10 }, 'ArrowLeft', true, 2400, 1600), { x: 0, y: 10 }, 'aimMove: Shift+← anda 10');
+  eq(AM({ x: 10, y: 10 }, 'ArrowUp', false, 2400, 1600), { x: 10, y: 9 }, 'aimMove: ↑ sobe 1');
+  eq(AM({ x: 10, y: 10 }, 'ArrowDown', true, 2400, 1600), { x: 10, y: 20 }, 'aimMove: Shift+↓ desce 10');
+  eq(AM({ x: 2395, y: 3 }, 'ArrowRight', true, 2400, 1600), { x: 2399, y: 3 }, 'aimMove: na borda direita fica no último píxel');
+  eq(AM({ x: 4, y: 3 }, 'ArrowUp', true, 2400, 1600), { x: 4, y: 0 }, 'aimMove: na borda de cima fica no 0');
+  eq(AM(null, 'ArrowRight', false, 2400, 1600), { x: 1201, y: 800 }, 'aimMove: sem mira começa no meio');
+  eq(AM({ x: 4, y: 3 }, 'Enter', false, 2400, 1600), null, 'aimMove: outras teclas → null (não mexe)');
+  // o centro do píxel no ecrã (o inverso de pickPx: o conta-gotas lê a cor pela mesma função que o rato)
+  const s0 = AS({ x: 0, y: 0 }, R, 2400, 1600);
+  eq(s0 && typeof s0 === 'object' ? [s0.x.toFixed(5), s0.y.toFixed(5)] : s0, ['100.24375', '50.24375'], 'aimScreen: o centro do primeiro píxel');
+  let bad = [];
+  for (const q of [{ x: 0, y: 0 }, { x: 2399, y: 1599 }, { x: 1200, y: 800 }, { x: 17, y: 1033 }]) { const s = AS(q, R, 2400, 1600); if (JSON.stringify(PP(R, 2400, 1600, s.x, s.y)) !== JSON.stringify(q)) bad.push(q); }
+  eq(bad, [], 'aimScreen → pickPx devolve o mesmo píxel (também nas bordas)');
+  eq(AS({ x: 5, y: 5 }, { left: 0, top: 0, width: 0, height: 0 }, 10, 10), null, 'aimScreen: sem imagem desenhada → null'); }
 eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
 eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
 eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');
@@ -317,6 +339,10 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(Array.isArray(ch) && ch.map(c => [c.keys.length, c.keys[0], c.x, c.y]), [[30, 'k0', 100, 200], [30, 'k30', 100, 2760], [5, 'k60', 100, 5320]], 'driveChunks: 65 chaves → 30 + 30 + 5, cada bloco 8 linhas abaixo');
   eq(DC(['a'], { x: 0, y: 0 }, 30).length, 1, 'driveChunks: uma chave → um pedido');
   eq(DC([], { x: 0, y: 0 }, 30), [], 'driveChunks: nada → nenhum pedido');
+  // teto de um arrasto/«Adicionar» (centenas de chaves de outra página eram N pedidos em série): só as primeiras max
+  const k150 = Array.from({ length: 150 }, (_, i) => 'k' + i), c150 = DC(k150, { x: 0, y: 0 }, 30, 120);
+  eq(Array.isArray(c150) && [c150.length, c150.reduce((s, c) => s + c.keys.length, 0), c150[3].keys[0], c150[3].keys[29]], [4, 120, 'k90', 'k119'], 'driveChunks: 150 chaves com teto de 120 → 4 pedidos de 30 (as primeiras 120)');
+  eq(DC(keys, { x: 100, y: 200 }, 30, 120).length, 3, 'driveChunks: abaixo do teto fica igual');
   // a mensagem (igual à do servidor quando um pedido não chega)
   eq(DM({ added: 1 }), '1 ficheiro da Drive no Topperboard.', 'driveMsg: um');
   eq(DM({ added: 65 }), '65 ficheiros da Drive no Topperboard.', 'driveMsg: vários');
@@ -324,7 +350,9 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(DM({ added: 0, folders: 2 }), 'As pastas não entram: abra a pasta e escolha os ficheiros.', 'driveMsg: só pastas');
   eq(DM({ added: 2, skipped: 1 }), '2 ficheiros da Drive no Topperboard. 1 sem acesso ou já não existe.', 'driveMsg: um sem acesso');
   eq(DM({ added: 0, skipped: 3 }), '0 ficheiros da Drive no Topperboard. 3 sem acesso ou já não existem.', 'driveMsg: nenhum entrou');
-  eq(DM({ added: 30, over: 1 }), '30 ficheiros da Drive no Topperboard. Entram até 30 de cada vez: os restantes ficaram de fora.', 'driveMsg: mais de 30 num só pedido'); }
+  eq(DM({ added: 30, over: 1 }), '30 ficheiros da Drive no Topperboard. Entram até 30 de cada vez: os restantes ficaram de fora.', 'driveMsg: mais de 30 num só pedido');
+  eq(DM({ added: 120, cut: 30 }), '120 ficheiros da Drive no Topperboard. Entram até 120 ficheiros de cada vez: 30 ficaram de fora.', 'driveMsg: acima do teto diz quantos ficaram de fora');
+  eq(DM({ added: 119, skipped: 1, cut: 1 }), '119 ficheiros da Drive no Topperboard. 1 sem acesso ou já não existe. Entram até 120 ficheiros de cada vez: 1 ficou de fora.', 'driveMsg: teto com um de fora (singular)'); }
 
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);
