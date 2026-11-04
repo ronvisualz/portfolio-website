@@ -45,6 +45,20 @@ t_true($s3o['code'] === 200 && !empty($s3o['json']['url']), 'sem o Financeiro: t
 $new = md5('novo-envio-' . $tag);
 $s3n = $api(['do' => 'thumb_sign', 'etag' => $new], $nofin);
 t_true($s3n['code'] === 200 && !empty($s3n['json']['url']), 'sem o Financeiro: um envio novo (etag que o catálogo ainda não tem) grava a sua miniatura');
+// … mas um etag que o catálogo não conhece não dá URL de leitura: a miniatura órfã de um documento da Faturação já
+// apagado (cujo etag alguém tenha guardado) não se lê assim; o browser mostra a miniatura que acabou de fazer
+t_true(empty($s3n['json']['get']), 'sem o Financeiro: etag desconhecido → sem URL de leitura (' . substr((string)($s3n['json']['get'] ?? ''), 0, 60) . ')');
+$orphan = md5('orfa-' . $tag) . '-1';
+tests_put(DRIVE_THUMBS . $orphan . '.jpg', $jpg(), 'image/jpeg');
+$s3x = $api(['do' => 'thumb_sign', 'etag' => $orphan], $nofin);
+t_true(empty($s3x['json']['get']), 'sem o Financeiro: uma miniatura órfã (o original já não está na Drive) não se lê por thumb_sign');
+$u3x = (array)($api(['do' => 'thumb_urls', 'etags' => [$orphan]], $nofin)['json']['urls'] ?? []);
+t_true(empty($u3x[$orphan]), 'sem o Financeiro: nem por thumb_urls');
+t_true(!empty($api(['do' => 'thumb_sign', 'etag' => $new], $fin)['json']['get']), 'com o Financeiro: o etag desconhecido continua a dar URL de leitura');
+r2_delete(DRIVE_THUMBS . $orphan . '.jpg');
+// um etag com mudança de linha no fim não passa por válido (o «$» da expressão aceitava o «\n» final)
+$nl = $api(['do' => 'thumb_sign', 'etag' => $eO . "\n"], $nofin);
+t_eq([$nl['code'], (string)($nl['json']['error'] ?? '')], [400, 'Miniatura inválida.'], 'etag com «\n» no fim → «Miniatura inválida.»');
 
 // o mesmo conteúdo fora da Faturação (mesmo etag): esse ficheiro a pessoa vê, por isso a miniatura também
 $copy = tests_put('Empresa/Teste33/thumbperm-' . $tag . '/copia.png', (string)r2_get($bill), 'image/png');

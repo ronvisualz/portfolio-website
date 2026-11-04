@@ -747,11 +747,15 @@ try {
         if (!preg_match(DRIVE_ETAG_RE, $etag)) api_err('Miniatura inválida.');
         // nem ler nem reescrever a miniatura de um documento da Faturação sem o Financeiro; um etag que o catálogo
         // ainda não tem (o envio que acabou de chegar faz já a sua miniatura) passa
-        if (!$FIN && isset(api_thumb_scope($pdo, false)[1][$etag])) api_err(DRIVE_BILLING_ERR, 403);
+        $scope = $FIN ? null : api_thumb_scope($pdo, false);
+        if ($scope && isset($scope[1][$etag])) api_err(DRIVE_BILLING_ERR, 403);
         $k = DRIVE_THUMBS . $etag . '.jpg';
         $hour = intdiv(time(), 3600) * 3600;
-        api_out(200, ['ok' => true, 'url' => r2_presign('PUT', $k, 600), 'type' => 'image/jpeg',
-                      'get' => r2_presign('GET', $k, 7 * 3600, [], $hour)]);
+        $out = ['ok' => true, 'url' => r2_presign('PUT', $k, 600), 'type' => 'image/jpeg'];
+        // ler, só a de um ficheiro que a pessoa vê: um etag que o catálogo não conhece pode ser a miniatura órfã de um
+        // documento da Faturação já apagado (o browser mostra a miniatura que acabou de fazer, sem este URL)
+        if (!$scope || isset($scope[0][$etag])) $out['get'] = r2_presign('GET', $k, 7 * 3600, [], $hour);
+        api_out(200, $out);
     }
     case 'thumb_urls': {
         $etags = want_list($in['etags'] ?? null, 300, 'Demasiadas miniaturas de uma vez (máximo 300).');
