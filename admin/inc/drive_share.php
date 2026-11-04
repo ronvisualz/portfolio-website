@@ -83,12 +83,38 @@ function drive_share_rel(string $base, string $rel, bool $folder = false): ?stri
  */
 function drive_share_sees(array $s, string $key): bool {
     if (drive_hidden($key)) return false;
+    $root = (string)$s['k'];
+    // a faturação (valores em euros) nunca chega pelo link de quem não tem o Financeiro: «com os privados» só a inclui se
+    // quem criou o link tiver hoje o Financeiro (as faturas de um negócio entram sozinhas na pasta, depois do link)
+    if (drive_billing($key) && !drive_billing($root) && !(!empty($s['inc_private']) && drive_share_owner_fin($s))) return false;
     if (!empty($s['inc_private'])) return true;
     require_once __DIR__ . '/ai.php';
-    $root = (string)$s['k'];
     if (ai_private($key) && !ai_private($root)) return false;
-    if (drive_billing($key) && !drive_billing($root)) return false;
     return true;
+}
+
+/** Quem criou o link tem hoje o Financeiro (conta ativa)? Um link antigo, sem dono, não. */
+function drive_share_owner_fin(array $s): bool {
+    global $pdo;
+    static $memo = [];
+    $uid = (int)($s['created_by'] ?? 0);
+    if ($uid <= 0 || !$pdo instanceof PDO) return false;
+    if (isset($memo[$uid])) return $memo[$uid];
+    require_once __DIR__ . '/perm.php';
+    $st = $pdo->prepare('SELECT id, role, is_active FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    $u = $st->fetch();
+    return $memo[$uid] = $u && (int)$u['is_active'] === 1 && (perm_grid($pdo, $u)['financeiro']['level'] ?? PERM_NONE) >= PERM_VIEW;
+}
+
+/** O link mostra documentos da faturação a quem o abre? (para não dar o endereço a quem não tem o Financeiro) */
+function drive_share_shows_billing(array $s): bool {
+    $k = (string)$s['k'];
+    if (drive_billing($k)) return true;
+    if (substr($k, -1) !== '/' || empty($s['inc_private']) || !drive_share_owner_fin($s)) return false;
+    $l = strlen($k);
+    foreach (drive_catalog()['objects'] as $o) if (strncmp((string)$o['key'], $k, $l) === 0 && drive_billing((string)$o['key'])) return true;
+    return false;
 }
 
 /** O IP sem os últimos bytes (IPv4 a.b.x.x; IPv6 os 3 primeiros grupos), para o registo. */

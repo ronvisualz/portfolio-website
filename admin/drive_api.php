@@ -102,6 +102,11 @@ function api_thumb_scope(PDO $pdo, bool $fin): array {
     }
     return [$seen, array_diff_key($bill, $seen)];
 }
+/** Um link cujo endereço não se dá a quem não tem o Financeiro: aberto na faturação, ou que a mostra (com os privados). */
+function api_share_billing(array $x): bool {
+    require_once __DIR__ . '/inc/drive_share.php';
+    return drive_share_shows_billing($x);
+}
 /** Há documentos de faturação debaixo desta pasta? */
 function api_has_billing(string $folder): bool {
     if (substr($folder, -1) !== '/') return false;
@@ -123,9 +128,9 @@ if (!$FIN) {
         if (isset($in['cur']['id'])) $ids[] = (int)$in['cur']['id'];
     }
     foreach ($ids ? drive_trash_get_many($pdo, array_values(array_filter($ids))) : [] as $t) if (drive_billing((string)$t['k'])) api_err(DRIVE_BILLING_ERR, 403);
-    if (in_array($do, ['trash', 'delete', 'share_create'], true) && r2_config()) {
+    if (in_array($do, ['trash', 'delete', 'share_create', 'share_quick'], true) && r2_config()) {
         foreach ($asked as $k) {
-            if (api_has_billing($k)) api_err($do === 'share_create' ? 'Esta pasta tem documentos de faturação. Partilhe uma subpasta ou os ficheiros.'
+            if (api_has_billing($k)) api_err(in_array($do, ['share_create', 'share_quick'], true) ? 'Esta pasta tem documentos de faturação. Partilhe uma subpasta ou os ficheiros.'
                                                                     : 'Esta pasta tem documentos de faturação: só quem tem acesso ao Financeiro a pode enviar para o Lixo.', 403);
         }
     }
@@ -602,7 +607,7 @@ try {
             'favs'      => array_values(array_filter(drive_favs($pdo), static fn($k) => isset($have[$k]))),
             'recents'   => array_values(array_filter(drive_recents($pdo, 50), static fn($r) => isset($have[$r['k']]))),
             'trash'     => drive_trash_stats($pdo),
-            'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !drive_billing((string)$x['k'])))),
+            'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !api_share_billing($x)))),
             'index'     => $index,
             'listed_at' => (int)$cat['listed_at'],
             'truncated' => !empty($cat['truncated']),
@@ -1157,7 +1162,7 @@ try {
     }
     case 'share_list': {
         $key = $str('key') !== '' ? want_any($str('key')) : null;
-        $items = array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !drive_billing((string)$x['k'])));
+        $items = array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !api_share_billing($x)));
         api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', $items)]);
     }
     case 'share_revoke': {
