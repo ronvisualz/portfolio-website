@@ -2500,7 +2500,10 @@ cada correção tem um teste que falhava antes dela.
     «Adicionar» continua a ser o caminho principal.
 - **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
   trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
-  `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. Ao publicar, a migração vai antes de `inc/migrate.php`.
+  `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. **Ordem ao publicar:** primeiro o código de que a
+  migração depende (`inc/cc.php`, `cc_api.php`, `cc_file.php`, `inc/drive_*.php`, `drive_api.php`) e
+  `inc/migrate_creative.php`; `inc/migrate.php` (versão 42) no fim. Um trabalho `media_sniff` que falhe (p. ex. com o
+  `inc/cc.php` antigo) volta à fila na versão seguinte.
 - **Testes** (bancada): PHP `cc_drive_billing_thumb`, `cc_media_sniff`, `cc_media_kind`, `cc_restore`,
   `cc_drive_add_msg`, `drive_thumbs_perm` (e `cc_pref`, `cc_file_px` alargados); JS `cc_logic_test.js`; Playwright
   `cc_drive_noaccess`, `cc_present_hover`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_drive_pick_thumbs`,

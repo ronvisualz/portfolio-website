@@ -158,6 +158,15 @@ t_eq($jobs($m3), 1, 'migração: e para o vídeo sem miniaturas');
 t_eq($jobs($m4), 0, 'migração: nada para o vídeo com miniaturas');
 t_eq($jobs($m1), 0, 'migração: nada para o que já mudou');
 t_true($rev($BID) > $rev0, 'migração: o Topperboard do cartão que mudou foi tocado (os abertos recarregam)');
+// um trabalho que falhou (p. ex. publicado com o inc/cc.php antigo: «Trabalho desconhecido.») volta à fila na próxima
+// migração — o trabalho é idempotente; sem isto o MP3 ficava retângulo de vídeo para sempre
+$k8 = tests_put("Empresa/Teste33/$TAG/WhatsApp Audio falhou $TAG.mpeg", $mp3($TAG . 'm8'), 'video/mpeg');
+[$m8, $c8] = $old("WhatsApp Audio falhou $TAG.mpeg", 'video/mpeg', $k8);
+$pdo->prepare("INSERT INTO cc_jobs (kind, asset_id, status, error, created_at) VALUES ('media_sniff', ?, 'error', 'Trabalho desconhecido.', NOW())")->execute([$m8]);
+migrate_cc_42($pdo);
+t_eq((int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id = $m8 AND status = 'queued'")->fetchColumn(), 1, 'migração: um media_sniff que falhou volta à fila (uma vez)');
+migrate_cc_42($pdo);
+t_eq((int)$pdo->query("SELECT COUNT(*) FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id = $m8 AND status = 'queued'")->fetchColumn(), 1, 'migração: e não duplica enquanto está na fila');
 
 // o trabalho (cc_jobs_run pela ação «work» ou pelo cron)
 $run = function (int $id) use ($pdo) {

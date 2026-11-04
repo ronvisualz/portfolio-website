@@ -262,7 +262,9 @@ function migrate_cc_41(PDO $pdo): void {
 function migrate_cc_42(PDO $pdo): void {
     if (!db_has_table($pdo, 'cc_assets') || !db_has_table($pdo, 'cc_jobs')) return;
     require_once __DIR__ . '/cc.php';
-    $done = array_flip(array_map('intval', $pdo->query("SELECT DISTINCT asset_id FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN)));
+    // só os que estão na fila ou já correram bem: um que falhou (p. ex. publicado com o inc/cc.php antigo, «Trabalho
+    // desconhecido.») volta à fila na próxima versão — o trabalho é idempotente
+    $done = array_flip(array_map('intval', $pdo->query("SELECT DISTINCT asset_id FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id IS NOT NULL AND status IN ('queued', 'running', 'done')")->fetchAll(PDO::FETCH_COLUMN)));
     $now = []; $queue = [];
     foreach ($pdo->query("SELECT id, mime, file_name, file_key FROM cc_assets WHERE kind = 'video' AND (width IS NULL OR width = 0) AND thumbs IS NULL AND deleted_at IS NULL")->fetchAll() as $a) {
         if (cc_kind_for((string)$a['mime'], (string)$a['file_name']) === 'audio' || str_starts_with((string)$a['mime'], 'audio/')) $now[] = $a;
