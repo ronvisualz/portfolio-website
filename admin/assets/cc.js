@@ -2674,7 +2674,7 @@
       vp.classList.toggle('tool-erase', t === 'erase');
       vp.classList.toggle('tool-arrow', t === 'arrow');
       var pb = $('.ccb-pen', root);
-      if (pb) { pb.hidden = t !== 'draw' && t !== 'erase'; penSync(); }
+      if (pb) { pb.hidden = t !== 'draw' && t !== 'erase'; penSync(); penPlace(); }
       if (t === 'erase') { var db = $('[data-tool="draw"]', root); if (db) { db.classList.add('on'); db.setAttribute('aria-pressed', 'true'); } }
     }
     // ── caneta (§33.3): cores da marca (1–5) + livre, espessura, borracha (E), espessura acompanha ──
@@ -2697,6 +2697,11 @@
       $('[data-pt="erase"]', pb).setAttribute('aria-pressed', B.tool === 'erase' ? 'true' : 'false');
       $('[data-pfx]', pb).checked = !B.pen.fx;
       var sw = $('[data-tool="draw"] .sw', root); if (sw) sw.style.background = B.color;
+    }
+    /** Telemóvel: a barra de ferramentas flutua no topo da tela e quebra em linhas; a da caneta fica logo por baixo dela. */
+    function penPlace() {
+      var pb = $('.ccb-pen', root), tb = $('.ccb-tools', root);
+      if (pb && tb && !pb.hidden) pb.style.setProperty('--pen-top', (tb.offsetTop + tb.offsetHeight + 8) + 'px');
     }
     function penColor(h) { B.color = h; if (B.tool !== 'draw') setTool('draw'); else penSync(); }
     function penClick(e) {
@@ -2926,7 +2931,7 @@
         if (!spaceUsed && B.sel.size === 1 && !viewer) { var sc = B.cards.get(Array.from(B.sel)[0]); if (sc && viewable(sc)) openViewer(sc); }
         spaceUsed = false;
       }, true);
-      window.addEventListener('resize', function () { applyView(); });
+      window.addEventListener('resize', function () { applyView(); penPlace(); });
       sideEl.addEventListener('click', sideClick);
     }
     /** O que só existe quando se pode editar: o campo de envio e a barra da caneta (de novo quando a permissão muda). */
@@ -3350,6 +3355,8 @@
       if (cpop && ae && cpop.el.contains(ae)) return;
       if (ae && ae.closest && ae.closest('.cc-dpick, .cc-pmenu, .cc-upmenu, .ccb-selbar .sb-menu')) return;
       if (ae && ae.closest && ae.closest('.ccb-selbar') && (e.key === ' ' || e.key === 'Enter')) return;   // Espaço/Enter carregam no botão, não abrem o visualizador   // as teclas são do diálogo/menu
+      // o Espaço num botão fora da tela (barra de ferramentas, painel lateral, caneta, zoom) carrega nesse botão — não é o «mover»
+      if (e.key === ' ' && ae && ae !== vp && !world.contains(ae) && ae.closest && ae.closest('button, [role="button"]')) return;
       if (typing(ae)) return;
       if (slash && e.key !== 'Escape') return;
       var mod = e.metaKey || e.ctrlKey, k = e.key;

@@ -467,6 +467,8 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
   .ccb-tools.wide button { width: 36px; padding: 0; justify-content: center; }
   .ccb-tools.wide .sw { left: auto; right: 5px; }
   .ccb-hint { display: none; }
+  /* a barra da caneta quebra em linhas e fica por baixo da barra de ferramentas (--pen-top: penPlace), sem tapar Anular/Refazer */
+  .ccb-pen { top: var(--pen-top, 10px); left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ccb-world.anim, .ccc, .ccl-tile, .ccp-tile { transition: none; }
@@ -736,6 +738,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
   .cc-pres input[type=range] { height: 44px; }
   .ccb-acts [data-a="present"] { min-height: 44px; min-width: 44px; }
+  .ccd-h [data-x] { width: 44px; height: 44px; }
   .ccc .pres-play { min-width: calc(44px / var(--vs, 1)); min-height: calc(44px / var(--vs, 1)); }   /* dentro da tela com zoom: --vs é a escala da vista */
 }
 @media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
