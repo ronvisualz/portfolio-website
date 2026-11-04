@@ -330,7 +330,9 @@ function drive_share_create(PDO $pdo, string $key, bool $folder, int $hours, boo
  */
 function drive_share_quick(PDO $pdo, string $key, bool $folder, int $by): array {
     foreach (array_reverse(drive_shares_active($pdo, $key)) as $s) {
-        if ($s['protected'] || ($s['perm'] ?? 'view') !== 'view') continue;
+        // um link rápido é sempre simples: nunca o «com os privados» de outra pessoa (pode mostrar documentos privados e,
+        // de quem tem o Financeiro, a faturação)
+        if ($s['protected'] || ($s['perm'] ?? 'view') !== 'view' || !empty($s['inc_private'])) continue;
         if (!$s['forever'] && $s['exp'] - time() <= 3600) continue;
         return [$s, true];
     }

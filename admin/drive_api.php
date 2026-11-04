@@ -756,7 +756,8 @@ try {
             }
         }
         api_out(200, ['ok' => true, 'object' => $obj, 'folder' => $fst, 'index' => $index,
-                      'shares' => array_map('drive_share_out', drive_shares_active($pdo, $key)), 'fav' => drive_is_fav($pdo, $key)]);
+                      'shares' => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !api_share_billing($x)))),
+                      'fav' => drive_is_fav($pdo, $key)]);
     }
     case 'thumb_sign': {
         $etag = strtolower($str('etag'));

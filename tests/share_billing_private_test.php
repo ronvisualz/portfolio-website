@@ -8,6 +8,7 @@
 require __DIR__ . '/boot.php';
 require __DIR__ . '/fixtures.php';
 require_once __DIR__ . '/../admin/inc/drive_store.php';
+require_once __DIR__ . '/../admin/inc/drive_moves.php';
 
 $tag = bin2hex(random_bytes(3));
 $F = 'Projetos/T7SH-' . $tag . '/';
@@ -61,6 +62,38 @@ try {
 }
 t_eq($visit($s3f, '&f=' . rawurlencode($rel))['code'], 404, 'sem o Financeiro (retirado), o mesmo link já não mostra o recibo');
 
-$pdo->prepare('UPDATE drive_shares SET revoked = 1 WHERE id IN (?, ?, ?)')->execute([(int)$s3['id'], (int)$s1['id'], (int)$s3f['id']]);
-r2_delete($pub); r2_delete($bill); r2_delete(DRIVE_THUMBS . $eB . '.jpg'); drive_catalog_invalidate();
+// 5) o «info» da pasta (painel de detalhes da Drive) também não dá o endereço do link que mostra Faturação
+t_true(!str_contains($api(['do' => 'info', 'key' => $F], $nofin)['body'], $tok1), 'sem o Financeiro: info da pasta não traz o link que mostra Faturação');
+t_true(str_contains($api(['do' => 'info', 'key' => $F], $fin)['body'], $tok1), 'com o Financeiro: info traz o link');
+
+// 6) o endereço obtido ANTES de a fatura chegar: a regra não pode depender do que a pasta tem no momento
+$G = 'Projetos/T7SH2-' . $tag . '/';
+$pubG = tests_put($G . 'briefing.txt', 'ok');
+$sG = drive_share_create($pdo, $G, true, 24, false, '', 'view', $fin, true);   // de quem tem o Financeiro, «com os privados», ainda sem Faturação
+t_true(!str_contains($api(['do' => 'share_list', 'key' => $G], $nofin)['body'], $sG['token']), 'sem o Financeiro: share_list não traz o link «com os privados» de quem tem o Financeiro, mesmo sem Faturação ainda');
+t_true(!str_contains($api(['do' => 'catalog'], $nofin)['body'], $sG['token']), 'nem catalog.shares');
+t_true(!str_contains($api(['do' => 'info', 'key' => $G], $nofin)['body'], $sG['token']), 'nem info');
+$qG = $api(['do' => 'share_quick', 'key' => $G], $nofin);
+t_true($qG['code'] === 200 && !str_contains($qG['body'], $sG['token']), 'share_quick não reaproveita o link «com os privados» (cria um simples) (' . $qG['code'] . ')');
+$billG = tests_put($G . $rel, $png(), 'image/png');   // a fatura do negócio chega depois
+$qGs = drive_share_get($pdo, (int)($qG['json']['share']['id'] ?? 0)) ?? ['token' => 'x', 'id' => 0];
+t_eq($visit($qGs, '&f=' . rawurlencode($rel))['code'], 404, 'o link rápido de quem não tem o Financeiro não mostra a fatura que chegou depois');
+
+// 7) um link de quem não tem o Financeiro que passa a estar dentro da Faturação (os links seguem os movimentos)
+$H = 'Projetos/T7SH3-' . $tag . '/';
+$docH = tests_put($H . 'Docs/notas.txt', 'ok');
+$rH = $api(['do' => 'share_create', 'key' => $H . 'Docs/', 'hours' => 24], $nofin);
+$sH = drive_share_get($pdo, (int)($rH['json']['share']['id'] ?? 0)) ?? ['token' => 'x', 'id' => 0, 'k' => ''];
+$mv = $api(['do' => 'move', 'from' => $H . 'Docs/', 'to' => $H . 'Faturação/Docs/', 'on_conflict' => 'error'], $fin);
+t_eq($mv['code'], 200, 'com o Financeiro: a pasta partilhada vai para dentro da Faturação (' . substr($mv['body'], 0, 80) . ')');
+for ($i = 0; $i < 5 && drive_moves_pending($pdo); $i++) drive_moves_run($pdo, 30);
+$sH = drive_share_get($pdo, (int)$sH['id']) ?? $sH;
+t_eq((string)($sH['k'] ?? ''), $H . 'Faturação/Docs/', 'o link acompanhou a pasta');
+$billH = tests_put($H . 'Faturação/Docs/recibo-' . $tag . '.png', $png(), 'image/png');
+t_eq($visit($sH, '&f=' . rawurlencode('recibo-' . $tag . '.png'))['code'], 404, 'o link de quem não tem o Financeiro, agora dentro da Faturação, não mostra a fatura');
+t_true(!str_contains($visit($sH)['body'], 'recibo-' . $tag), 'nem a lista');
+
+$pdo->prepare('UPDATE drive_shares SET revoked = 1 WHERE id IN (?, ?, ?, ?, ?, ?)')->execute([(int)$s3['id'], (int)$s1['id'], (int)$s3f['id'], (int)$sG['id'], (int)$qGs['id'], (int)$sH['id']]);
+foreach ([$pub, $bill, DRIVE_THUMBS . $eB . '.jpg', $pubG, $billG, $billH, $H . 'Faturação/Docs/notas.txt', $docH] as $k) r2_delete($k);
+drive_catalog_invalidate();
 t_done();
