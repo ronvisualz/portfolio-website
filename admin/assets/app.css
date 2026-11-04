@@ -701,8 +701,11 @@ body.is-dragging .board { scroll-snap-type: none; }
 .tst.err { background: var(--danger); color: #fff; }
 .tst .tx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .tst .undo { background: none; border: 0; color: var(--hi); font-weight: 600; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
-:root[data-theme="dark"] .tst .undo { color: #8a6a00; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tst .undo { color: #8a6a00; } }
+:root[data-theme="dark"] .tst .undo { color: #6b5200; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tst .undo { color: #6b5200; } }
+/* o aviso tem o fundo ao contrário da página (escuro no claro, claro no escuro): o anel de foco usa a cor da página */
+.tst :focus-visible { outline-color: var(--bg); }
+@media (pointer: coarse) { .tst .undo, .tst .x { min-height: 44px; min-width: 44px; } }
 .tst .t { font: 500 10.5px var(--mono); opacity: .6; min-width: 2ch; text-align: right; }
 .tst .x { background: none; border: 0; color: inherit; opacity: .6; cursor: pointer; line-height: 0; padding: 4px; }
 .tst .x:hover { opacity: 1; }

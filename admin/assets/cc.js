@@ -2648,7 +2648,7 @@
         push(ent);
         reload();
         // o «Anular» do aviso é o mesmo que o Ctrl Z (passa para o Refazer e publica no tempo real)
-        toast(j.msg, { undo: function () { undo(false, ent); } });
+        toast(j.msg, { undo: function () { undo(false, ent); }, back: vp });   // fechado com o foco lá dentro, o foco volta à tela
       }).catch(fail));
     }
     function dupSel() {
