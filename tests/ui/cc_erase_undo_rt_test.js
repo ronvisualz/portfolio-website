@@ -1,10 +1,11 @@
 // Anular depois da borracha com o tempo real ligado (§33.10): o traço volta e fica — o marcador de apagado do
 // documento do tempo real não o volta a esconder (nem a quem abre o Topperboard a seguir); anular um traço acabado de
-// fazer não deixa um cartão fantasma; um Anular carregado enquanto a borracha ainda grava espera por ela.
+// fazer não deixa um cartão fantasma; um Anular carregado enquanto a borracha ainda grava espera por ela — também o
+// «Anular» da barra tocado no iPad quando a borracha é a 1.ª ação a anular (antes ficava desativado até à resposta).
 // A bancada não tem o serviço de tempo real: o teste troca o fornecedor (YProvider) por um falso que diz «ligado» e
 // «sincronizado» e guarda o documento entre páginas (como o servidor e o IndexedDB); o resto é o código real (Yjs).
 //   node tests/ui/cc_erase_undo_rt_test.js        (CC_BASE=http://127.0.0.1:8766 para outra bancada)
-const { chromium } = require('playwright');
+const { chromium, devices } = require('playwright');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const BASE = process.env.CC_BASE || 'http://127.0.0.1:8765', REPO = path.join(__dirname, '..', '..');
@@ -225,6 +226,60 @@ function fakeRealtime() {
     check(same(await dom(c), ids), 'depois da migração aparece (ecrã ' + await dom(c) + ')');
     check(await marker(c, ids[0]) === false, 'e o marcador de apagado do documento é limpo');
     await c.close();
+  }
+
+  // ── 7. iPad (revisão final): a borracha é a 1.ª ação a anular (traços de outra sessão) e o «Anular» da barra é tocado
+  //       enquanto o cards_delete ainda não respondeu — o toque não se perde: espera pela borracha e o traço volta e fica ──
+  {
+    const bid = newBoard('iPad');
+    const ids = [120, 320].map(y => +php(`echo cc_card_add($pdo, ${bid}, ['type' => 'drawing', 'x' => 40, 'y' => ${y}, 'w' => 320, 'h' => 100, 'content' => ['paths' => [['c' => '#111111', 'w' => 6, 'pts' => [10, 50, 310, 50]]], 'vw' => 320, 'vh' => 100]], 1);`).trim());
+    const ictx = await b.newContext({ ...devices['iPad Pro 11'] });
+    await ictx.addInitScript(fakeRealtime);
+    const q0 = await ictx.newPage(); await q0.goto(BASE + '/admin/__as/1'); await q0.close();
+    const openI = async () => {
+      const p = await ictx.newPage();
+      p.on('pageerror', e => errs.push(e.message));
+      await p.goto(BASE + '/admin/toppernote.php?b=' + bid);
+      await p.waitForSelector('.ccc.t-drawing');
+      const live = await p.waitForFunction(() => /Ligado/.test((document.querySelector('.rt-st') || {}).textContent || ''), null, { timeout: 8000 }).then(() => true).catch(() => false);
+      check(live, 'iPad: o tempo real (falso) está «Ligado»');
+      await p.waitForTimeout(400);
+      return p;
+    };
+    const p = await openI();
+    const undoBtn = p.locator('[data-undo="0"]');
+    check(same(await dom(p), ids) && await undoBtn.isDisabled(), 'iPad, prova do teste: dois traços de outra sessão e «Anular» desativado (pilha vazia) (ecrã ' + await dom(p) + ')');
+    const DELAY = 1500;
+    await p.route(/cc_api\.php\?a=cards_delete/, async route => { await new Promise(r => setTimeout(r, DELAY)); await route.continue(); });
+    const cdp = await ictx.newCDPSession(p);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 1 })) });
+    const tapAt = async loc => { const r = await loc.boundingBox(); await p.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await p.waitForTimeout(200); };
+    await tapAt(p.locator('[data-tool="draw"]'));
+    await tapAt(p.locator('.ccb-pen [data-pt="erase"]'));
+    check(await p.evaluate(() => document.querySelector('.ccb-vp').classList.contains('tool-erase')), 'iPad: a borracha está escolhida (por toques)');
+    const bb = await p.locator(`.ccc[data-id="${ids[0]}"]`).boundingBox();
+    const cx = Math.round(bb.x + bb.width / 2);
+    const del = resp(p, 'cards_delete');
+    await touch('touchStart', [[cx, Math.round(bb.y + bb.height * 0.1)]]);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [[cx, Math.round(bb.y + bb.height * (0.1 + i * 0.1))]]); await p.waitForTimeout(16); }
+    await touch('touchEnd', []);
+    await p.waitForTimeout(250);
+    const t0 = Date.now();
+    const enabled = !(await undoBtn.isDisabled());
+    check(enabled, 'iPad: enquanto a borracha grava, o «Anular» da barra está ativo (aceita o toque)');
+    const restore = resp(p, 'cards_restore').catch(() => null);
+    await tapAt(undoBtn);
+    const early = Date.now() - t0 < DELAY - 300;
+    const d = await del.catch(() => null);
+    check(!!d && early, 'iPad, prova do teste: o toque em «Anular» chegou antes de o cards_delete responder (' + (Date.now() - t0) + ' ms)');
+    check(!!(await restore), 'iPad: o toque em «Anular» repõe o traço (cards_restore) depois da borracha');
+    await p.waitForTimeout(1200);
+    check(same(alive(bid), ids), 'iPad: o traço volta na base (' + alive(bid) + ')');
+    check(same(await dom(p), ids), 'iPad: e no ecrã fica (ecrã ' + await dom(p) + ')');
+    check(await marker(p, ids[0]) === false, 'iPad: o tempo real deixa de o marcar como apagado');
+    const f = await openI();
+    check(same(await dom(f), ids), 'iPad: quem abre a seguir (tempo real) vê os dois traços (ecrã ' + await dom(f) + ')');
+    await f.close(); await p.close(); await ictx.close();
   }
 
   check(!errs.length, 'sem erros na página (' + errs.join(' | ') + ')');

@@ -2270,8 +2270,8 @@
     // Anular carregado entretanto espera por essa resposta — senão anulava a ação anterior (e a nova ficava por anular)
     var writing = 0, waiting = [];
     function writes(p) {
-      writing++;
-      var done = function () { writing = Math.max(0, writing - 1); if (!writing) release(); };
+      writing++; undoSync();   // enquanto grava, o «Anular» da barra aceita o clique/toque (espera, como o Ctrl Z)
+      var done = function () { writing = Math.max(0, writing - 1); if (!writing) release(); undoSync(); };
       p.then(done, done);
       return p;
     }
@@ -2317,7 +2317,7 @@
     }
     function undoSync() {
       var u = $('[data-undo="0"]', root), r = $('[data-undo="1"]', root);
-      if (u) u.disabled = !B.undo.length;
+      if (u) u.disabled = !B.undo.length && !writing;
       if (r) r.disabled = !B.redo.length;
     }
 
