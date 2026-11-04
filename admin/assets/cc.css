@@ -650,6 +650,12 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-pres .pr-t { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; opacity: .8; }
 .cc-pres input[type=range] { width: 90px; accent-color: var(--hi); }
 .cc-pres [data-p="mute"][aria-pressed="true"] { background: var(--hi); color: #111; }
+/* telemóvel: a barra de Apresentar quebra em linhas e fica no ecrã (‹ › e «Sair» em cima, o título e os controlos de media por baixo) */
+@media (max-width: 640px) {
+  .cc-pres { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 16px); border-radius: 16px; }
+  .cc-pres .pr-media { order: 5; flex: 1 0 100%; flex-wrap: wrap; justify-content: center; margin: 0; }
+  .cc-pres .pr-t { flex: 0 0 100%; max-width: none; text-align: center; }
+}
 
 /* §33.9: enviar do dispositivo ou da Drive; ficheiros apagados da Drive */
 .cc-upmenu { position: fixed; z-index: 97; display: flex; flex-direction: column; min-width: 190px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 5px; }
@@ -728,6 +734,9 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .ccd-pal .ccd-pcb, .ccd-pal .ccd-pm { min-height: 44px; }
   .ccd-pal .ccd-pm { min-width: 44px; }
   .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
+  .cc-pres input[type=range] { height: 44px; }
+  .ccb-acts [data-a="present"] { min-height: 44px; min-width: 44px; }
+  .ccc .pres-play { min-width: calc(44px / var(--vs, 1)); min-height: calc(44px / var(--vs, 1)); }   /* dentro da tela com zoom: --vs é a escala da vista */
 }
 @media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 @media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }

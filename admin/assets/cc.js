@@ -1427,6 +1427,7 @@
         rafView = 0;
         var v = B.view;
         world.style.transform = 'translate3d(' + v.x + 'px,' + v.y + 'px,0) scale(' + v.s + ')';
+        if (presMedia && presMedia.btn) presMedia.btn.style.setProperty('--vs', v.s);   // «▶ Tocar»: 44 px no ecrã com toque
         // §33.5: will-change só enquanto a vista se mexe; ao parar, a camada volta a rasterizar na escala nova (nítida)
         world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () { world.classList.remove('moving'); }, 200);
         var g = 24 * v.s;
@@ -1649,6 +1650,7 @@
       if (AU) AU.hub.paint();
     }
     function auAct(c, b, e) {
+      if (presAct) { presAct(c, b, e); return; }   // em Apresentar nunca um 2.º som (o leitor AU por cima do da apresentação)
       var a = c.asset;
       if (!a || !AU) return;
       var box = b.closest('.ccc-au');
@@ -3785,6 +3787,7 @@
     var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
     var presMedia = null;   // o vídeo/áudio do diapositivo atual ({ c, el, btn }); makeEl e cull precisam de o conhecer
     var presPaint = null;   // redesenha a barra da apresentação (▶/❚❚, «Vídeo ·»/«Áudio ·»), enquanto se apresenta
+    var presAct = null;     // o ▶ e a forma de onda de um cartão de áudio, enquanto se apresenta (comandam o som da apresentação)
     /** Pára e tira o vídeo/áudio da apresentação (o load() descarta o evento «pause»: quem chama redesenha a barra). */
     function presStop() {
       var m = presMedia;
@@ -3849,7 +3852,7 @@
           if (presMedia !== cur) return;
           m.pause();
           var btn = document.createElement('button');
-          btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar';
+          btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar'; btn.style.setProperty('--vs', B.view.s);
           btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); if (cur.btn === btn) cur.btn = null; }).catch(function () {}); });
           (B.els.get(c.id) || el).appendChild(btn); cur.btn = btn;
           paintMedia();
@@ -3858,9 +3861,18 @@
       function toggleMedia() { if (!presMedia) return false; if (presMedia.el.paused) { var p = presMedia.el.play(); if (p && p.catch) p.catch(function () {}); } else presMedia.el.pause(); return true; }
       /** ❚❚/▶ e Espaço: pausa ou retoma; se ainda não há elemento, começa (nunca salta o diapositivo). */
       function playPause() { if (!toggleMedia() && isMediaSlide()) { startMedia(slide()); paintMedia(); } }
+      // o ▶ do cartão do diapositivo faz o mesmo que o ▶ da barra; a forma de onda leva o som da apresentação a esse ponto;
+      // noutro cartão não fazem nada
+      presAct = function (c, b, e) {
+        if (slide().id !== c.id || !isMediaSlide()) return;
+        var m = presMedia && presMedia.c.id === c.id ? presMedia.el : null;
+        if (b.getAttribute('data-cact') === 'au-seek' && m && isFinite(m.duration)) { var r = b.getBoundingClientRect(); m.currentTime = clamp((e.clientX - r.left) / r.width, 0, 1) * m.duration; return; }
+        playPause();
+      };
       function go() {
         var c = slide(), b = bbox(c);
         stopMedia();
+        if (AU && AU.hub) AU.hub.pause();
         animateView(function () { fitTo(b, 70, 3); });
         $('[data-pn]', bar).textContent = (i + 1) + ' / ' + items.length;
         select([]);
@@ -3874,7 +3886,8 @@
       });
       function stop() {
         stopMedia();
-        presPaint = null;
+        if (AU && AU.hub) AU.hub.pause();
+        presPaint = null; presAct = null;
         var ae = document.activeElement, back = !ae || ae === document.body || bar.contains(ae);
         root.classList.remove('present');
         bar.remove();
