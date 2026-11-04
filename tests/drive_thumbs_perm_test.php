@@ -25,8 +25,9 @@ $c1 = $api(['do' => 'catalog', 'fresh' => true], $fin)['json'] ?? [];
 t_true(in_array($eB, $c1['thumbs'] ?? [], true) && in_array($eO, $c1['thumbs'] ?? [], true), 'com o Financeiro: o catálogo traz as duas miniaturas');
 $u1 = (array)($api(['do' => 'thumb_urls', 'etags' => [$eB, $eO]], $fin)['json']['urls'] ?? []);
 t_true(!empty($u1[$eB]) && !empty($u1[$eO]), 'com o Financeiro: thumb_urls assina as duas');
-$s1 = $api(['do' => 'thumb_sign', 'etag' => $eB], $fin);
-t_true($s1['code'] === 200 && !empty($s1['json']['url']) && !empty($s1['json']['get']), 'com o Financeiro: thumb_sign da Faturação continua');
+$s1 = $api(['do' => 'thumb_sign', 'etag' => $eB, 'key' => $bill], $fin);
+t_true($s1['code'] === 200 && !empty($s1['json']['url']) && !empty($s1['json']['get']), 'com o Financeiro: thumb_sign da Faturação (com a chave) continua');
+t_true(!empty($api(['do' => 'thumb_sign', 'etag' => $eB], $fin)['json']['get']), 'com o Financeiro: sem a chave (browser com o JS antigo em cache) também');
 
 // sem o Financeiro: a Faturação não aparece em lado nenhum
 $c3 = $api(['do' => 'catalog'], $nofin)['json'] ?? [];
@@ -37,27 +38,35 @@ $r3 = $api(['do' => 'thumb_urls', 'etags' => [$eB, $eO]], $nofin);
 $u3 = (array)($r3['json']['urls'] ?? []);
 t_true(empty($u3[$eB]), 'sem o Financeiro: thumb_urls não assina a miniatura da Faturação (' . substr((string)($u3[$eB] ?? ''), 0, 60) . ')');
 t_true(!empty($u3[$eO]), 'sem o Financeiro: thumb_urls continua a assinar a de um ficheiro visível');
-$s3 = $api(['do' => 'thumb_sign', 'etag' => $eB], $nofin);
-t_true($s3['code'] === 403 && empty($s3['json']['url']) && empty($s3['json']['get']), 'sem o Financeiro: thumb_sign da Faturação → 403, sem URL de leitura nem de escrita (' . $s3['code'] . ')');
-t_eq((string)($s3['json']['error'] ?? ''), 'Os documentos de faturação só estão disponíveis para quem tem acesso ao Financeiro.', 'com a mensagem da Faturação');
-$s3o = $api(['do' => 'thumb_sign', 'etag' => $eO], $nofin);
-t_true($s3o['code'] === 200 && !empty($s3o['json']['url']), 'sem o Financeiro: thumb_sign de um ficheiro visível continua');
-$new = md5('novo-envio-' . $tag);
-$s3n = $api(['do' => 'thumb_sign', 'etag' => $new], $nofin);
-t_true($s3n['code'] === 200 && !empty($s3n['json']['url']), 'sem o Financeiro: um envio novo (etag que o catálogo ainda não tem) grava a sua miniatura');
-// … mas um etag que o catálogo não conhece não dá URL de leitura: a miniatura órfã de um documento da Faturação já
-// apagado (cujo etag alguém tenha guardado) não se lê assim; o browser mostra a miniatura que acabou de fazer
-t_true(empty($s3n['json']['get']), 'sem o Financeiro: etag desconhecido → sem URL de leitura (' . substr((string)($s3n['json']['get'] ?? ''), 0, 60) . ')');
+// thumb_sign prova a chave: a pessoa tem de ver o ficheiro e o etag tem de ser o do objeto — nem às cegas (a miniatura
+// órfã de um documento da Faturação no Lixo podia ser reescrita), nem com respostas diferentes que digam se um etag
+// existe na Faturação (oráculo)
+$sB = $api(['do' => 'thumb_sign', 'etag' => $eB], $nofin);
+$sR = $api(['do' => 'thumb_sign', 'etag' => md5('qualquer-' . $tag)], $nofin);
+t_true(empty($sB['json']['url']) && empty($sB['json']['get']), 'sem o Financeiro: o etag da Faturação sem chave não dá URL nenhum (' . $sB['code'] . ')');
+t_eq([$sB['code'], (string)($sB['json']['error'] ?? '')], [$sR['code'], (string)($sR['json']['error'] ?? '')], 'e a resposta é a mesma de um etag qualquer (sem oráculo)');
+$sBk = $api(['do' => 'thumb_sign', 'etag' => $eB, 'key' => $bill], $nofin);
+t_true($sBk['code'] === 403 && empty($sBk['json']['url']), 'sem o Financeiro: com a chave da Faturação → 403 (' . $sBk['code'] . ')');
+$sOk = $api(['do' => 'thumb_sign', 'etag' => $eO, 'key' => $open], $nofin);
+t_true($sOk['code'] === 200 && !empty($sOk['json']['url']) && !empty($sOk['json']['get']), 'sem o Financeiro: um ficheiro visível (chave + etag certo) → escrever e ler');
+$sWrong = $api(['do' => 'thumb_sign', 'etag' => $eB, 'key' => $open], $nofin);
+t_true(empty($sWrong['json']['url']), 'sem o Financeiro: a chave de um ficheiro visível com o etag da Faturação não serve (' . $sWrong['code'] . ')');
+// um envio acabado de chegar (ainda fora do catálogo de 30 s): a chave prova-o
+$fresh = 'Empresa/Teste33/thumbperm-' . $tag . '/novo.png';
+r2_put($fresh, $png(1, 2, 3), 'image/png');
+$eF = (string)(r2_head($fresh)['etag'] ?? '');
+$sF = $api(['do' => 'thumb_sign', 'etag' => $eF, 'key' => $fresh], $nofin);
+t_true($sF['code'] === 200 && !empty($sF['json']['url']) && !empty($sF['json']['get']), 'sem o Financeiro: um envio novo (fora do catálogo) grava e lê a sua miniatura com a chave');
+r2_delete($fresh);
+// a miniatura órfã (o original já não está na Drive, p. ex. foi para o Lixo): nem por thumb_sign nem por thumb_urls
 $orphan = md5('orfa-' . $tag) . '-1';
 tests_put(DRIVE_THUMBS . $orphan . '.jpg', $jpg(), 'image/jpeg');
-$s3x = $api(['do' => 'thumb_sign', 'etag' => $orphan], $nofin);
-t_true(empty($s3x['json']['get']), 'sem o Financeiro: uma miniatura órfã (o original já não está na Drive) não se lê por thumb_sign');
+t_true(empty($api(['do' => 'thumb_sign', 'etag' => $orphan], $nofin)['json']['url']), 'sem o Financeiro: miniatura órfã → sem URL de escrita nem de leitura');
 $u3x = (array)($api(['do' => 'thumb_urls', 'etags' => [$orphan]], $nofin)['json']['urls'] ?? []);
 t_true(empty($u3x[$orphan]), 'sem o Financeiro: nem por thumb_urls');
-t_true(!empty($api(['do' => 'thumb_sign', 'etag' => $new], $fin)['json']['get']), 'com o Financeiro: o etag desconhecido continua a dar URL de leitura');
 r2_delete(DRIVE_THUMBS . $orphan . '.jpg');
 // um etag com mudança de linha no fim não passa por válido (o «$» da expressão aceitava o «\n» final)
-$nl = $api(['do' => 'thumb_sign', 'etag' => $eO . "\n"], $nofin);
+$nl = $api(['do' => 'thumb_sign', 'etag' => $eO . "\n", 'key' => $open], $nofin);
 t_eq([$nl['code'], (string)($nl['json']['error'] ?? '')], [400, 'Miniatura inválida.'], 'etag com «\n» no fim → «Miniatura inválida.»');
 
 // o mesmo conteúdo fora da Faturação (mesmo etag): esse ficheiro a pessoa vê, por isso a miniatura também

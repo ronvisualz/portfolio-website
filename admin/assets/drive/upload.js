@@ -177,9 +177,10 @@
     const u = URL.createObjectURL(blob);
     try { return await imageThumb(u); } finally { URL.revokeObjectURL(u); }
   }
-  /** Envia o JPEG para .topper/thumbs/<etag>.jpg. Devolve um URL para mostrar já. */
-  async function putThumb(e, blob) {
-    const j = TD.must(await TD.api({ do: 'thumb_sign', etag: e }));
+  /** Envia o JPEG para .topper/thumbs/<etag>.jpg. Devolve um URL para mostrar já. k: a chave do ficheiro (o servidor
+   *  confirma que a pessoa o vê e que o etag é o dele). */
+  async function putThumb(e, blob, k) {
+    const j = TD.must(await TD.api({ do: 'thumb_sign', etag: e, key: k || '' }));
     const r = await fetch(j.url, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob, credentials: 'omit' });
     if (!r.ok) throw new Error('O R2 recusou a miniatura (HTTP ' + r.status + ').');
     const url = j.get || URL.createObjectURL(blob);
@@ -205,7 +206,7 @@
   // ── a partir do ficheiro local (ao enviar), um de cada vez ──
   const localPending = new Map();   // etag → Promise<url|null>
   let localChain = Promise.resolve();
-  function fromFile(file, etag) {
+  function fromFile(file, etag, key) {
     const e = normEtag(etag), kind = file && thumbKind(file.name);
     if (!kind || !ETAG_RE.test(e)) return Promise.resolve(null);
     if (kind === 'image' && file.size > IMG_LOCAL_MAX) return Promise.resolve(null);
@@ -214,7 +215,7 @@
       const src = URL.createObjectURL(file);
       try {
         const blob = kind === 'image' ? await imageThumb(src) : await videoThumb(src, false);
-        const url = await putThumb(e, blob);
+        const url = await putThumb(e, blob, key);
         notify(e, url);
         return url;
       } catch (err) {
@@ -274,7 +275,7 @@
         if (!src) continue;
         try {
           const blob = x.kind === 'image' ? await remoteImage(src) : await videoThumb(src, true);
-          notify(x.e, await putThumb(x.e, blob));
+          notify(x.e, await putThumb(x.e, blob, x.k));
         } catch (err) {
           if (err instanceof ThumbError) remember(x.e);
         }
@@ -499,7 +500,7 @@
       touch(job);
       job.batch.keys.push(job.key);
       // a miniatura primeiro (o app pede-a logo a seguir ao upload:done)
-      if (job.etag) job.batch.thumbs.push(fromFile(job.file, job.etag));
+      if (job.etag) job.batch.thumbs.push(fromFile(job.file, job.etag, job.key));
       TD.bus.emit('upload:done', { key: job.key, size: job.size, etag: job.etag });
       refreshSaved();
     } catch (e) {
