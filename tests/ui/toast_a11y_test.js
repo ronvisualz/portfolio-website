@@ -88,9 +88,14 @@ function ratio(a, b) { const x = lum(parse(a)), y = lum(parse(b)); return (Math.
     await p.waitForSelector('.ccc[data-id]'); await p.waitForTimeout(400);
     await p.evaluate(() => topper.toast('Cartão apagado.', { undo: function () {} }));
     const T = p.locator('.tst', { hasText: 'Cartão apagado.' });
-    const u = await T.locator('.undo').boundingBox(), x = await T.locator('.x').boundingBox();
-    check(u && u.width >= 44 && u.height >= 44, 'toque: «Anular» tem 44 × 44 px (' + JSON.stringify(u) + ')');
-    check(x && x.width >= 44 && x.height >= 44, 'toque: «×» tem 44 × 44 px (' + JSON.stringify(x) + ')');
+    // a área de toque efetiva (o que o dedo acerta nos cantos de um quadrado de 44 px à volta do centro)
+    const hit = sel => T.locator(sel).evaluate(el => { const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      return [[-21, -21], [21, -21], [-21, 21], [21, 21], [0, -21], [0, 21], [-21, 0], [21, 0]].every(([dx, dy]) => { const h = document.elementFromPoint(cx + dx, cy + dy); return !!h && el.contains(h); }); });
+    check(await hit('.undo'), 'toque: «Anular» tem 44 × 44 px de alvo');
+    check(await hit('.x'), 'toque: «×» tem 44 × 44 px de alvo');
+    // o aviso não cresce no toque (mais alto, tapava a barra de ferramentas do iPad: cc_tools_bar)
+    const th = (await T.boundingBox()).height;
+    check(th <= 52, 'toque: o aviso de uma linha mantém a altura (' + th + ' px)');
     await ctx.close();
   }
 

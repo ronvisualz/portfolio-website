@@ -705,7 +705,11 @@ body.is-dragging .board { scroll-snap-type: none; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tst .undo { color: #6b5200; } }
 /* o aviso tem o fundo ao contrário da página (escuro no claro, claro no escuro): o anel de foco usa a cor da página */
 .tst :focus-visible { outline-color: var(--bg); }
-@media (pointer: coarse) { .tst .undo, .tst .x { min-height: 44px; min-width: 44px; } }
+/* toque: alvo de 44 × 44 px no «Anular»/«Ver» e no «×» sem o aviso crescer (mais alto tapava a barra de ferramentas do iPad) */
+@media (pointer: coarse) {
+  .tst .undo, .tst .x { position: relative; }
+  .tst .undo::before, .tst .x::before { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%); }
+}
 .tst .t { font: 500 10.5px var(--mono); opacity: .6; min-width: 2ch; text-align: right; }
 .tst .x { background: none; border: 0; color: inherit; opacity: .6; cursor: pointer; line-height: 0; padding: 4px; }
 .tst .x:hover { opacity: 1; }
