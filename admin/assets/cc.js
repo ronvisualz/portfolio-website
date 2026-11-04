@@ -3974,6 +3974,8 @@
         root.classList.remove('present');
         bar.remove();
         window.removeEventListener('keydown', pk, true);
+        // saída por «Sair»/Esc: o fullscreenchange desta apresentação não fica ligado (corria este stop() na seguinte)
+        document.removeEventListener('fullscreenchange', onFs);
         if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
         // o foco volta ao botão «Apresentar» (não cai no corpo da página)
         var pb = back && $('[data-a="present"]', root);
@@ -4002,7 +4004,8 @@
         else if (v === 'mute') { PRES.muted = !PRES.muted; if (presMedia) presMedia.el.muted = PRES.muted; paintMedia(); }
         else { i = clamp(i + +v, 0, items.length - 1); go(); }
       });
-      document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement && root.classList.contains('present')) { document.removeEventListener('fullscreenchange', f); stop(); } });
+      function onFs() { if (!document.fullscreenElement && bar.isConnected) stop(); }
+      document.addEventListener('fullscreenchange', onFs);
       window.addEventListener('keydown', pk, true);
       setTimeout(go, 80);
     }

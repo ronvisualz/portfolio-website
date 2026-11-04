@@ -129,6 +129,36 @@ function ratio(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.
   s = await st();
   check(!s.present && s.focus === 'APRESENTAR', 'Esc sai e o foco volta ao botão «Apresentar» (' + JSON.stringify(s) + ')');
 
+  // ── revisão final: as apresentações anteriores (saídas por «Sair» e Esc) não deixam o fullscreenchange delas ligado ──
+  // numa 3.ª apresentação, sair do ecrã inteiro (Esc do browser ou o controlo dele) fecha ESTA apresentação: a barra
+  // sai, nada toca e as setas voltam à tela (antes corria o stop() antigo, que parava o som novo e deixava a barra)
+  await key('Enter', 900);
+  for (let i = 0; i < 5; i++) await key('ArrowRight', 300);
+  await p.waitForTimeout(900);
+  s = await st();
+  const fs3 = await p.evaluate(() => !!document.fullscreenElement);
+  check(s.present && s.pn === '6 / 7' && s.playing === 1 && fs3, 'prova do teste: 3.ª apresentação no vídeo a tocar, em ecrã inteiro (' + JSON.stringify({ s, fs3 }) + ')');
+  await p.evaluate(() => document.exitFullscreen());
+  await p.waitForTimeout(700);
+  s = await st();
+  const bars = await p.evaluate(() => document.querySelectorAll('.cc-pres').length);
+  check(bars === 0 && !s.present, 'sair do ecrã inteiro tira a barra e o modo Apresentar (' + JSON.stringify({ bars, present: s.present }) + ')');
+  check(s.playing === 0, 'e nada fica a tocar (' + s.playing + ')');
+  // sem nada escolhido, as setas/Page Down não são da apresentação (antes avançavam diapositivos e a vista saltava)
+  await p.waitForTimeout(600);
+  const view = () => p.evaluate(() => document.querySelector('.ccb-world').style.transform);
+  const v0 = await view();
+  await key('ArrowRight', 300); await key('PageDown', 900);
+  const v1 = await view();
+  s = await st();
+  check(v1 === v0 && s.pn === null, 'sem nada escolhido, ArrowRight/Page Down não mudam de diapositivo nem mexem na vista (' + JSON.stringify({ v0, v1, pn: s.pn }) + ')');
+  const noteX = () => p.evaluate(() => document.querySelector('.ccc.t-note').style.transform);
+  await p.locator('.ccc.t-note').click(); await p.waitForTimeout(200);
+  const nx0 = await noteX();
+  await key('ArrowRight', 300);
+  const nx1 = await noteX();
+  check(nx1 !== nx0, 'as setas voltam à tela: ArrowRight move a nota escolhida (' + JSON.stringify({ nx0, nx1 }) + ')');
+
   check(errs.length === 0, 'sem erros de JavaScript (' + errs.join(' | ') + ')');
   await b.close();
   fs.rmSync(dir, { recursive: true, force: true });
