@@ -321,6 +321,57 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   check(await t.locator('.cc-pickfs').count() === 0, 'iPad: sem Shift, o toque escolhe e sai');
   check(manual(SP.assets.image).includes('#DC2828'), 'iPad: a cor tocada é a certa');
 
+  // 13) revisão final: um logótipo escuro num PNG transparente vê-se — atrás da imagem há um xadrez de dois cinzentos
+  //     (antes: preto, e o logótipo desaparecia); a cor de um píxel opaco continua a ler-se do original
+  {
+    const TP = JSON.parse(php(`require_once "admin/inc/cc.php"; require_once "tests/fixtures.php";
+      foreach ($pdo->query("SELECT id FROM cc_boards WHERE title LIKE 'Pick33t ·%'")->fetchAll(PDO::FETCH_COLUMN) as $o) { $pdo->exec("DELETE FROM cc_cards WHERE board_id = " . (int)$o); $pdo->exec("DELETE FROM cc_boards WHERE id = " . (int)$o); }
+      $im = imagecreatetruecolor(2400, 1600); imagealphablending($im, false); imagesavealpha($im, true);
+      imagefilledrectangle($im, 0, 0, 2399, 1599, imagecolorallocatealpha($im, 0, 0, 0, 127));
+      imagefilledrectangle($im, 900, 500, 1499, 1099, imagecolorallocate($im, 26, 26, 26));
+      ob_start(); imagepng($im); $png = (string)ob_get_clean();
+      [$a, $restored] = tests_cc_asset($pdo, $png, ['name' => 'pick33-logo.png', 'mime' => 'image/png']);
+      if (trim((string)$a['thumbs']) === '' || $restored) $pdo->prepare("UPDATE cc_assets SET thumbs = ? WHERE id = ?")->execute([json_encode(cc_thumbs_make(cc_gd_open($png), 't/' . substr((string)$a['sha1'], 0, 2) . '/' . $a['sha1'])), $a['id']]);
+      $pdo->prepare("UPDATE cc_assets SET deleted_at = NULL, inbox = 0 WHERE id = ?")->execute([$a['id']]);
+      $b = cc_board_create($pdo, ['title' => 'Pick33t · transparente', 'kind' => 'free'], 1);
+      echo json_encode(['board' => $b, 'card' => cc_card_add($pdo, $b, ['type' => 'image', 'x' => 40, 'y' => 40, 'w' => 300, 'asset_id' => $a['id']], 1)]);`));
+    // a cor de um píxel do ecrã (captura de 1 × 1: o único píxel do PNG fica igual com qualquer filtro)
+    const zlib = require('zlib');
+    const px = async (pg, x, y) => {
+      const buf = await pg.screenshot({ clip: { x: Math.round(x), y: Math.round(y), width: 1, height: 1 } });
+      const idat = []; let o = 8;
+      while (o < buf.length) { const len = buf.readUInt32BE(o), type = buf.toString('ascii', o + 4, o + 8); if (type === 'IDAT') idat.push(buf.slice(o + 8, o + 8 + len)); o += 12 + len; }
+      const raw = zlib.inflateSync(Buffer.concat(idat));
+      return [raw[1], raw[2], raw[3]];
+    };
+    const c3 = await b.newContext({ viewport: { width: 1400, height: 900 } });
+    const q = await c3.newPage();
+    q.on('pageerror', e => errs.push(e.message));
+    await q.goto(BASE + '/admin/__as/1');
+    await q.goto(BASE + '/admin/toppernote.php?b=' + TP.board);
+    await q.waitForSelector('.ccc[data-id="' + TP.card + '"]'); await q.waitForTimeout(300);
+    await q.locator('.ccc[data-id="' + TP.card + '"]').click(); await q.waitForTimeout(200);
+    await q.keyboard.press('i'); await q.waitForSelector('.cc-pickfs', { timeout: 8000 }).catch(() => {});
+    await q.waitForFunction(() => /Clique para escolher/.test((document.querySelector('.cc-pickfs .pf-hint') || {}).textContent || '') && document.querySelector('.cc-pickfs .pf-img').complete, null, { timeout: 15000 }).catch(() => {});
+    await q.mouse.move(4, 4); await q.waitForTimeout(400);
+    const tr3 = await q.evaluate(() => { const e = document.querySelector('.cc-pickfs .pf-img'); return e ? e.getBoundingClientRect().toJSON() : null; });
+    const grey = c => Math.min(...c) >= 90 && Math.max(...c) - Math.min(...c) <= 8;
+    for (const theme of ['light', 'dark']) {
+      await q.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme); await q.waitForTimeout(150);
+      const s = tr3 ? [await px(q, tr3.x + tr3.width * 0.1, tr3.y + tr3.height * 0.1), await px(q, tr3.x + tr3.width * 0.1 + 16, tr3.y + tr3.height * 0.1)] : [];
+      check(s.length === 2 && s.every(grey), 'transparente (' + theme + '): atrás da imagem há cinzento neutro, não preto (' + JSON.stringify(s) + ')');
+      check(s.length === 2 && s[0].join() !== s[1].join(), 'transparente (' + theme + '): em xadrez de dois cinzentos (' + JSON.stringify(s) + ')');
+    }
+    let lh = '';
+    if (tr3) {
+      await q.mouse.move(tr3.x + tr3.width / 2 - 1, tr3.y + tr3.height / 2); await q.mouse.move(tr3.x + tr3.width / 2, tr3.y + tr3.height / 2); await q.waitForTimeout(80);
+      lh = await q.evaluate(() => { const l = document.querySelector('.cc-loupe'); return l && !l.hidden ? (l.querySelector('.sw') || {}).textContent || '' : ''; });
+    }
+    check(lh === '#1A1A1A', 'transparente: a cor de um píxel opaco do logótipo continua a ler-se do original (' + lh + ')');
+    await c3.close();
+  }
+  check(!errs.length, 'sem erros na página (passos 12–13) (' + errs.join(' | ') + ')');
+
   await b.close();
   console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
   process.exit(fail ? 1 : 0);
