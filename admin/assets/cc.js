@@ -896,7 +896,8 @@
           return;
         }
       }
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch' };
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch',
+        out: !CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY) };   // começou fora da imagem
       p.last = { x: e.clientX, y: e.clientY };
       if (drag.touch) aim(e);
     });
@@ -916,7 +917,9 @@
       if (!drag || drag.id !== e.pointerId) return;
       var d = drag; drag = null; el.classList.remove('panning');
       if (d.pan || p.closing) return;
-      if (!CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY)) { p.loupe.hidden = true; closeSoon(); return; }   // clique fora sai
+      // clique fora sai — só se também começou fora: carregar dentro e largar fora (o dedo que escorrega da borda) não
+      // escolhe nem sai
+      if (!CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY)) { p.loupe.hidden = true; if (d.out) closeSoon(); return; }
       var hex = aim(e);
       if (!hex) return;   // ainda a carregar
       add(hex);

@@ -152,6 +152,17 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
   check(await p.locator('.cc-pickfs').count() === 0 && await p.locator('.cc-loupe').count() === 0 && await focusPick(), 'Esc sai e devolve o foco');
   check(await p.locator('.ccc.t-image.sel').count() === 1, 'Esc no conta-gotas não tira a seleção do Topperboard');
   await openPick();
+  // revisão final: carregar dentro da imagem e largar 1 px fora não escolhe nem sai (só sai o clique que começa E acaba fora)
+  {
+    const r8 = await img(), n8 = manual().length, adds8 = reqs.filter(u => /a=palette_add/.test(u)).length;
+    if (r8) {
+      const y8 = r8.y + r8.height * 0.5;
+      await p.mouse.move(r8.x + 3, y8); await p.mouse.down(); await p.mouse.move(r8.x + 1, y8); await p.mouse.move(r8.x - 1, y8); await p.mouse.up();
+    }
+    await p.waitForTimeout(800);
+    check(r8 && await p.locator('.cc-pickfs').count() === 1, 'rato: carregar dentro da imagem e largar 1 px fora não fecha o conta-gotas');
+    check(manual().length === n8 && reqs.filter(u => /a=palette_add/.test(u)).length === adds8, 'rato: e não acrescenta nenhuma cor');
+  }
   const fsOpen = await p.locator('.cc-pickfs').count() === 1;
   if (fsOpen) { await p.mouse.click(8, 300); await p.waitForTimeout(200); }
   check(fsOpen && await p.locator('.cc-pickfs').count() === 0, 'clicar fora da imagem sai');
@@ -292,6 +303,17 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
     check(!lp2 && !lp1, 'iPad: a lupa desaparece com o 2.º dedo e não volta com o dedo que fica (' + JSON.stringify([lp2, lp1]) + ')');
     await t.keyboard.press('0'); await t.waitForTimeout(150);
     check(await zoomTxt() === '100%', 'iPad: 0 volta ao ajustado depois da pinça');
+  }
+  // revisão final: o dedo a apontar a borda escorrega 1 px para fora e levanta — não escolhe nem fecha
+  if (tr) {
+    const tz = await t.evaluate(() => document.querySelector('.cc-pickfs .pf-img').getBoundingClientRect().toJSON());
+    const y = Math.round(tz.y + tz.height / 2), xin = Math.ceil(tz.x) + 3, xout = Math.floor(tz.x) - 1;
+    await touch('touchStart', [[xin, y]]);
+    await touch('touchMove', [[xin - 2, y]]); await touch('touchMove', [[xout, y]]);
+    await touch('touchEnd', []);
+    await t.waitForTimeout(1000);
+    check(xout > 0 && adds.length === 0, 'iPad: começar dentro da imagem e levantar o dedo 1 px fora não acrescenta nenhuma cor (' + adds.length + ' pedidos)');
+    check(await t.locator('.cc-pickfs').count() === 1, 'iPad: e o conta-gotas continua aberto');
   }
   if (tr) await t.touchscreen.tap(tr.x + tr.width * 0.25, tr.y + tr.height * 0.5);
   await t.waitForTimeout(1000);
