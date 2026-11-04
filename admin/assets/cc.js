@@ -3875,6 +3875,8 @@
       var m = presMedia;
       if (!m) return;
       presMedia = null;
+      // o foco no «▶ Tocar» que vai sair passa para «Seguinte» da barra (não cai no corpo da página)
+      if (m.btn && m.btn.contains(document.activeElement)) { var nx = $('.cc-pres [data-p="1"]', root); if (nx) nx.focus({ preventScroll: true }); }
       m.el.pause(); m.el.removeAttribute('src'); try { m.el.load(); } catch (e) {}
       m.el.remove(); if (m.btn) m.btn.remove();
     }
@@ -3935,7 +3937,14 @@
           m.pause();
           var btn = document.createElement('button');
           btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar'; btn.style.setProperty('--vs', B.view.s);
-          btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); if (cur.btn === btn) cur.btn = null; }).catch(function () {}); });
+          btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            m.play().then(function () {
+              // o foco passa para o ❚❚ da barra antes de o botão sair (não cai no corpo da página)
+              if (btn.contains(document.activeElement)) $('[data-p="play"]', bar).focus({ preventScroll: true });
+              btn.remove(); if (cur.btn === btn) cur.btn = null;
+            }).catch(function () {});
+          });
           (B.els.get(c.id) || el).appendChild(btn); cur.btn = btn;
           paintMedia();
         });

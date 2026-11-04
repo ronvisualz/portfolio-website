@@ -159,6 +159,39 @@ function ratio(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.
   const nx1 = await noteX();
   check(nx1 !== nx0, 'as setas voltam à tela: ArrowRight move a nota escolhida (' + JSON.stringify({ nx0, nx1 }) + ')');
 
+  // ── revisão final: «▶ Tocar» (o browser recusou o som) sai sem deixar o foco cair no corpo ──
+  await p.evaluate(() => {
+    const play = HTMLMediaElement.prototype.play;
+    window.__deny = true;
+    HTMLMediaElement.prototype.play = function () { return window.__deny ? Promise.reject(new DOMException('no', 'NotAllowedError')) : play.call(this); };
+  });
+  await p.locator('[data-a="present"]').focus();
+  await key('Enter', 900);
+  for (let i = 0; i < 5; i++) await key('ArrowRight', 300);
+  await p.waitForTimeout(700);
+  s = await st();
+  const tocar = p.locator('.ccc.t-video .pres-play');
+  check(s.pn === '6 / 7' && await tocar.isVisible().catch(() => false), 'prova do teste: no vídeo com o som recusado aparece «▶ Tocar» (' + JSON.stringify({ pn: s.pn }) + ')');
+  await p.evaluate(() => { window.__deny = false; });
+  await tocar.focus();
+  await key('Enter', 700);
+  s = await st();
+  check(await p.locator('.pres-play').count() === 0 && s.playing === 1, 'Enter em «▶ Tocar» toca e o botão sai (' + JSON.stringify({ playing: s.playing }) + ')');
+  check(s.focus === 'p=play', 'o foco passa para o ❚❚ da barra (não cai no corpo) (' + s.focus + ')');
+  // mudar de diapositivo com o foco em «▶ Tocar»: o foco vai para «Seguinte»
+  await p.evaluate(() => { window.__deny = true; });
+  await key('ArrowLeft', 500); await key('ArrowRight', 900);
+  s = await st();
+  check(s.pn === '6 / 7' && await tocar.isVisible().catch(() => false), 'prova do teste: de volta ao vídeo, «▶ Tocar» outra vez (' + JSON.stringify({ pn: s.pn, focus: s.focus }) + ')');
+  await tocar.focus();
+  await key('ArrowRight', 900);
+  s = await st();
+  check(s.pn === '7 / 7', 'a seta direita com o foco em «▶ Tocar» avança (' + s.pn + ')');
+  check(s.focus === 'p=1', 'o «▶ Tocar» sai com o diapositivo e o foco passa para «Seguinte» (não cai no corpo) (' + s.focus + ')');
+  await key('Escape', 700);
+  s = await st();
+  check(!s.present && s.focus === 'APRESENTAR' && s.playing === 0, 'Esc sai, o foco volta a «Apresentar» e nada toca (' + JSON.stringify({ present: s.present, focus: s.focus, playing: s.playing }) + ')');
+
   check(errs.length === 0, 'sem erros de JavaScript (' + errs.join(' | ') + ')');
   await b.close();
   fs.rmSync(dir, { recursive: true, force: true });
