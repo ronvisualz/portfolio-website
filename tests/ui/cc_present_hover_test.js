@@ -1,6 +1,7 @@
 // Apresentar: o vídeo/áudio toca até ao fim (correções de 2 nov). Com os cartões longe uns dos outros (o cartão seguinte
 // ainda não está desenhado quando se chega), a política de autoplay por omissão (o clique em «Apresentar» autoriza o som):
-// ao chegar toca com som; o cursor não o pára nem cria pré-visualização; sobrevive ao redesenho da IA, à forma de onda
+// ao chegar toca com som; o cursor não o pára nem cria pré-visualização (num vídeo vizinho começa-o com som: 5 nov);
+// sobrevive ao redesenho da IA, à forma de onda
 // calculada, ao recarregar da sondagem e a deslocar a vista; Espaço pausa sem saltar o diapositivo.
 //   node tests/ui/cc_present_hover_test.js
 const { chromium } = require('playwright');
@@ -146,13 +147,15 @@ const touch = () => php(`cc_board_touch($pdo, ${S.bid});`);
   await p.waitForTimeout(1000);
   check((await alive('__pa')).ok && (await st()).pn === '4 / 6', 'o áudio continua depois de a sondagem recarregar o Topperboard (' + JSON.stringify(await alive('__pa')) + ')');
 
-  // ── numa nota, o vídeo vizinho (à vista) não se pré-visualiza ──
+  // ── numa nota, o vídeo vizinho (à vista): o cursor começa-o com som (decidido a 5 nov), sem pré-visualização sem som ──
   await p.keyboard.press('ArrowRight'); await p.waitForTimeout(1000);
   check((await st()).pn === '5 / 6' && (await playing()).length === 0, 'avançar pára o áudio');
   const nb = await card(S.ids.v2).boundingBox();
   check(!!nb && nb.x < 1360, 'o vídeo vizinho está à vista ao lado da nota (prova do teste: ' + JSON.stringify(nb) + ')');
   if (nb) { await p.mouse.move(Math.min(1390, Math.max(nb.x, 0) + 20), nb.y + nb.height / 2, { steps: 6 }); await p.waitForTimeout(800); }
-  check((await st()).media.length === 0, 'em Apresentar, passar o cursor por um vídeo vizinho não cria pré-visualização (' + JSON.stringify((await st()).media) + ')');
+  const nm = (await st()).media;
+  check(nm.length === 1 && nm[0].cls === 'card-play' && !nm[0].paused && !nm[0].muted && nm[0].card === S.ids.v2,
+    'em Apresentar, passar o cursor por um vídeo vizinho começa-o com som, sem pré-visualização (' + JSON.stringify(nm) + ')');
   await p.mouse.move(5, 5);
 
   // ── vídeo perto do anterior (já desenhado) ──

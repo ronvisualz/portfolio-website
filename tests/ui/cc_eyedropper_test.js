@@ -217,7 +217,8 @@ const near = (hex, want, tol = 4) => { const h = /^#([0-9A-F]{2})([0-9A-F]{2})([
 
   // 10) vídeo: I logo a seguir a escolher o cartão — o fotograma é lido por um clone com crossorigin e endereço próprio
   errs.length = 0; reqs.length = 0;
-  await soft(p.locator('.ccc[data-id="' + SP.cards.video + '"]').click({ timeout: 4000 }));
+  // no canto: o centro do cartão de vídeo é o ▶ (toca no cartão, não o escolhe — 5 nov)
+  await soft(p.locator('.ccc[data-id="' + SP.cards.video + '"]').click({ timeout: 4000, position: { x: 14, y: 14 } }));
   await p.keyboard.press('i'); await p.waitForSelector('.cc-pickfs', { timeout: 8000 }).catch(() => {});
   check(await p.locator('.cc-pickfs').count() === 1, 'vídeo: o conta-gotas abre em ecrã inteiro');
   await ready();

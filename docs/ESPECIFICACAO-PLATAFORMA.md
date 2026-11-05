@@ -1748,7 +1748,8 @@ primeira vez que alguém com edição os vê.
 - **No browser (`assets/cc_audio.js`):** ao carregar, o Web Audio lê o ficheiro (até 150 MB) e faz a
   forma de onda (guardada, não se recalcula), as medidas (BPM estimado com confiança, energia, pico,
   dinâmica, brilho, silêncio) e uma imagem com a forma de onda e o espectrograma (escala log) — é o que
-  a IA «vê». O **leitor único** da página garante um áudio de cada vez (e pára se um vídeo começar).
+  a IA «vê». O **leitor único** da página garante um áudio de cada vez (e pára se um vídeo começar — menos os vídeos
+  que tocam nos cartões do Toppernote, que tocam ao mesmo tempo que um MP3: decidido a 5 nov, §33.14).
 - **Cartão no quadro:** tocar/pausar, nome, categoria e duração (o tempo corre ao tocar), forma de onda
   com o progresso e clique para ir a esse ponto. Duplo clique abre a **vista aberta** (também na
   gaveta da Biblioteca): forma de onda grande (clique = ir; arrastar = marcar a repetição A–B),
@@ -2528,6 +2529,21 @@ cada correção tem um teste que falhava antes dela.
   - Avisos com «Anular» (toda a plataforma): contraste no escuro, anel de foco visível, o tempo pára com o foco e
     alvos de 44 px no toque. Topperboard: o Espaço num botão carrega no botão; a barra da caneta cabe no telemóvel sem
     tapar o «Anular»; anéis de foco no claro com a cor de foco da plataforma (o amarelo tinha 1,6:1).
+- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):**
+  - Causa (provada na bancada e no Topperboard 1 de produção, com o vídeo e o MP3 dentro de uma coluna): as correções
+    de 2 nov tiraram o cursor de Apresentar e só o cartão do diapositivo tocava — um cartão dentro de uma coluna nunca é
+    diapositivo, por isso nada o fazia tocar; o ▶ de um cartão de áudio em Apresentar comandava só o som do diapositivo
+    (noutro cartão não fazia nada). Fora de Apresentar não era erro mas a regra de então: o vídeo que «tocava» era a
+    pré-visualização sem som, que pára quando o cursor sai, e o leitor único de áudio parava ao começar um vídeo.
+  - Agora: em Apresentar o cursor a **mexer-se** num vídeo que não é o diapositivo começa-o com som e ele toca até ao fim;
+    o quadro a deslizar por baixo do cursor parado (ao mudar de diapositivo) não começa nada; clicar/tocar no vídeo
+    pausa/retoma; o ▶ e a forma de onda de um MP3 que não é o diapositivo usam o leitor normal (o do diapositivo
+    continua a comandar o som da apresentação); avançar, recuar e sair param tudo. Fora de Apresentar o cartão de
+    vídeo tem um botão ▶/❚❚ («Tocar ou pausar o vídeo», 44 px no toque) que toca com som no cartão até ao fim; o vídeo
+    passa para o cartão redesenhado (sondagem, tempo real, IA) sem parar e o cartão — ou a coluna — não sai da área
+    desenhada enquanto toca. Os vídeos dos cartões e o da apresentação têm `data-mix`: o leitor único de áudio
+    (`cc_audio.js`) já não pára por causa deles, e o MP3 toca ao mesmo tempo. Abrir outro Topperboard ou entrar em
+    Apresentar pára os vídeos que tocavam nos cartões.
 - **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
   trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
   `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. **Ordem ao publicar:** primeiro o código de que a
@@ -2539,7 +2555,8 @@ cada correção tem um teste que falhava antes dela.
   alargados); JS `cc_logic_test.js`; Playwright `cc_drive_noaccess`, `cc_present_hover`, `cc_present_keys`,
   `cc_present_touch`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_board_a11y`, `cc_focus_rings`,
   `toast_a11y`, `cc_eyedropper_keys`, `cc_drive_pick_thumbs`, `cc_drive_pick_drag`, `cc_drive_pick_a11y`,
-  `drive_upload_thumb` (e `cc_eyedropper`, `cc_drive_pick` alargados).
+  `drive_upload_thumb`, `cc_media_mix` (e `cc_eyedropper`, `cc_drive_pick` alargados; `cc_present_hover` ajustado a
+  5 nov: o cursor num vídeo vizinho passa a tocá-lo).
 - **A verificar depois de publicar:** escolher a cor do fotograma de um vídeo (tocar no detalhe, depois «+ Escolher da
   imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium); no
   servidor, que `admin/inc/cache/drive_catalog.json` responde 403 (a bancada, com `php -S`, ignora o `.htaccess`).
@@ -4559,7 +4576,7 @@ Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar vár
 ### 33.13 Som só em «Apresentar» (31 out 2026)
 Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
 - **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
-- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
+- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador (desde 5 nov também no ▶ do próprio cartão de vídeo — §33.14).
 
 ### 33.14 Correções pedidas pela equipa (2 nov 2026)
 - **Apresentar:** ao passar o cursor por um vídeo em Apresentar ele não deve parar quando o cursor sai — **toca até
@@ -4577,3 +4594,8 @@ Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **víd
   para o Topperboard — do seletor e da página da Drive noutro separador.
 - **Segurança (encontrado na investigação):** a miniatura, o nome e o original de um ficheiro da Faturação nunca chegam
   a quem não tem o Financeiro, mesmo que alguém com o Financeiro o ponha num Topperboard ou o veja na Drive.
+- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):** em Apresentar, passar o cursor por um vídeo que não é o
+  diapositivo (p. ex. dentro de uma coluna, como no Topperboard real) começa-o **com som** e ele toca até ao fim (o
+  cursor sair não o pára); clicar no vídeo pausa/retoma; o ▶ de um MP3 dentro de uma coluna toca; mudar de diapositivo
+  ou sair pára tudo. Fora de Apresentar o cartão de vídeo tem um **▶** que toca com som no próprio cartão até ao fim
+  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo**.

@@ -254,6 +254,15 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc-media video { position: absolute; inset: 0; }
 .ccc.t-image .ccc-media, .ccc.t-video .ccc-media { border-radius: 9px; }
 .ccc-play { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(17,17,17,.62); color: #fff; display: grid; place-items: center; pointer-events: none; }
+/* §33.14 (5 nov): o ▶ do cartão de vídeo é um botão (toca com som no cartão); a tocar mostra ❚❚ e só aparece ao passar */
+button.ccc-play { border: 0; padding: 0; cursor: pointer; pointer-events: auto; z-index: 2; transition: opacity .15s, transform var(--t); }
+button.ccc-play:hover { transform: scale(1.06); }
+button.ccc-play .ico.pause, .ccc.playing button.ccc-play .ico:not(.pause) { display: none; }
+.ccc.playing button.ccc-play .ico.pause { display: inline-block; }
+.ccc.playing button.ccc-play { opacity: 0; }
+.ccc.playing:hover button.ccc-play, .ccc.playing button.ccc-play:focus-visible { opacity: 1; }
+@media (hover: none) { .ccc.playing button.ccc-play { opacity: .7; } }
+.ccc-media video.card-play { z-index: 1; }
 .ccc-dur { position: absolute; right: 7px; bottom: 7px; font: 600 10.5px var(--mono); background: rgba(0,0,0,.65); color: #fff; padding: 1px 6px; border-radius: 5px; }
 .ccc-pal { position: absolute; left: 7px; bottom: 7px; display: flex; gap: 3px; opacity: 0; transition: opacity .15s; }
 .ccc:hover .ccc-pal, .ccc.sel .ccc-pal { opacity: 1; }
@@ -762,6 +771,7 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
   .ccb-acts [data-a="present"] { min-height: 44px; min-width: 44px; }
   .ccd-h [data-x] { width: 44px; height: 44px; }
   .ccc .pres-play { min-width: calc(44px / var(--vs, 1)); min-height: calc(44px / var(--vs, 1)); }   /* dentro da tela com zoom: --vs é a escala da vista */
+  .ccc button.ccc-play { scale: max(1, calc(0.96 / var(--vs, 1))); }   /* ▶ do vídeo (46 px no cartão): pelo menos 44 px no ecrã, com o ícone */
 }
 @media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 @media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }

@@ -1370,6 +1370,13 @@
     var spaceUsed = false;
     var vp, world, layer, svg, lanesEl, zoomOut, sideEl, sideBody, emptyEl, ptr = { x: 0, y: 0 }, spaceDown = false;
     var RT = null;   // tempo real (cc_rt.js): presença, cursores, alterações dos outros logo
+    // §33.14 (5 nov): vídeos a tocar com som nos próprios cartões — o ▶ do cartão e, em Apresentar, o cursor ou o clique
+    // num vídeo que não é o diapositivo. Id do cartão → { c, el }; mudam-se para o cartão redesenhado (makeEl).
+    var players = new Map();
+    // o cursor mexeu-se mesmo (coordenadas novas)? Ao mudar de diapositivo o quadro desliza por baixo do cursor parado e o
+    // browser dá entradas/movimentos nos cartões que passam: nenhum vídeo começa por isso
+    var ptrMoved = false, ptrX = null, ptrY = null;
+    root.addEventListener('pointermove', function (e) { ptrMoved = e.clientX !== ptrX || e.clientY !== ptrY; ptrX = e.clientX; ptrY = e.clientY; }, true);
 
     function load() {
       var id = B.id;
@@ -1491,7 +1498,11 @@
         world.style.transform = 'translate3d(' + v.x + 'px,' + v.y + 'px,0) scale(' + v.s + ')';
         if (presMedia && presMedia.btn) presMedia.btn.style.setProperty('--vs', v.s);   // «▶ Tocar»: 44 px no ecrã com toque
         // §33.5: will-change só enquanto a vista se mexe; ao parar, a camada volta a rasterizar na escala nova (nítida)
-        world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () { world.classList.remove('moving'); }, 200);
+        world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () {
+          world.classList.remove('moving');
+          // no toque, o ▶ dos cartões de vídeo fica com 44 px no ecrã em qualquer zoom (só ao parar: não redesenha a cada passo)
+          if (window.matchMedia && matchMedia('(pointer: coarse)').matches) layer.style.setProperty('--vs', B.view.s);
+        }, 200);
         var g = 24 * v.s;
         while (g < 12) g *= 2;
         vp.style.backgroundSize = g + 'px ' + g + 'px';
@@ -1577,7 +1588,7 @@
         case 'image': case 'video': {
           var ratio = a && a.w && a.h ? a.w + '/' + a.h : (c.h ? c.w + '/' + c.h : '4/3');
           h = '<div class="ccc-media" style="aspect-ratio:' + ratio + '">' + (a && (a.thumb || (c.type === 'image' && a.orig)) ? '<img alt="' + esc(a.caption || a.title) + '" decoding="async" draggable="false">' : '<span class="nf">' + ico('file') + '</span>')
-            + (c.type === 'video' ? '<span class="ccc-play">' + ico('play') + '</span>' + (a && a.dur ? '<span class="ccc-dur">' + fmtDur(a.dur) + '</span>' : '') : '')
+            + (c.type === 'video' ? (a && a.orig && !c.local && !c.noaccess ? '<button type="button" class="ccc-play" data-cact="v-play" aria-label="Tocar ou pausar o vídeo">' + ico('play') + ico('pause', 'pause') + '</button>' : '<span class="ccc-play">' + ico('play') + '</span>') + (a && a.dur ? '<span class="ccc-dur">' + fmtDur(a.dur) + '</span>' : '') : '')
             + (a && a.pal && a.pal.length ? '<span class="ccc-pal">' + palHtml(a.pal, 5) + '</span>' : '')
             + (a && a.tags && a.tags.length ? '<span class="ccc-tags">' + a.tags.slice(0, 3).map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>' : '') + '</div>'
             + (x.caption ? '<div class="ccc-cap">' + esc(x.caption) + '</div>' : '');
@@ -1666,6 +1677,12 @@
           if (presMedia.btn) el.appendChild(presMedia.btn);
         }
       }
+      // o mesmo para o vídeo que toca no cartão (▶ do cartão / cursor em Apresentar)
+      var pl = players.get(c.id);
+      if (pl) {
+        if (c.type !== 'video' || (c.asset && c.asset.id) !== (pl.c.asset && pl.c.asset.id)) { pl.el.pause(); pl.el.remove(); players.delete(c.id); }
+        else { pl.c = c; ($('.ccc-media', el) || el).appendChild(pl.el); el.classList.toggle('playing', !pl.el.paused && !pl.el.ended); }
+      }
       return el;
     }
     function place(c, el) {
@@ -1694,10 +1711,44 @@
     function updateThumbs() { B.els.forEach(function (el, id) { var c = B.cards.get(id); if (c) setThumb(c, el); }); }
     /** Tira só a pré-visualização sem som (nunca o vídeo da apresentação, que é outro elemento). */
     function killHoverPrev(el) { var v = $('video.hov-prev', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } }
+    function playerPaint(id) { var el = B.els.get(id), p = players.get(id); if (el) el.classList.toggle('playing', !!(p && !p.el.paused && !p.el.ended)); }
+    /** O vídeo do cartão a tocar com som no próprio cartão (até ao fim; mistura com o leitor de áudio: data-mix). */
+    function playerStart(c) {
+      var el = B.els.get(c.id);
+      if (!el || !c.asset || !c.asset.orig) return null;
+      killHoverPrev(el);
+      var v = document.createElement('video');
+      v.className = 'card-play'; v.setAttribute('data-mix', ''); v.playsInline = true; v.preload = 'auto'; v.src = c.asset.orig;
+      ($('.ccc-media', el) || el).appendChild(v);
+      var pl = { c: c, el: v };
+      players.set(c.id, pl);
+      ['play', 'pause', 'ended'].forEach(function (k) { v.addEventListener(k, function () { playerPaint(c.id); }); });
+      var pr = v.play();
+      if (pr && pr.catch) pr.catch(function () { playerPaint(c.id); });
+      return pl;
+    }
+    function playersStop() {
+      players.forEach(function (pl, id) { pl.el.pause(); pl.el.removeAttribute('src'); try { pl.el.load(); } catch (e) {} pl.el.remove(); players.delete(id); playerPaint(id); });
+    }
+    /** ▶ do cartão de vídeo (e, em Apresentar, o clique no vídeo): começa, pausa ou retoma; no diapositivo, o da apresentação. */
+    function vAct(c) {
+      if (!c || c.type !== 'video' || !c.asset || !c.asset.orig || c.local || c.noaccess) return;
+      if (presMedia && presMedia.c.id === c.id && presToggle) { presToggle(); return; }
+      var pl = players.get(c.id);
+      if (!pl) { playerStart(c); return; }
+      if (pl.el.paused || pl.el.ended) { var pr = pl.el.play(); if (pr && pr.catch) pr.catch(function () {}); } else pl.el.pause();
+    }
     function bindVideoHover(el, c) {
+      // §33.14 (5 nov): em Apresentar o cursor a passar num vídeo começa-o com som e ele toca até ao fim (sair não o pára);
+      // o do diapositivo é o da apresentação. Só com o cursor a mexer-se (não com o quadro a deslizar por baixo dele).
+      el.addEventListener('pointermove', function (e) {
+        if (e.pointerType !== 'mouse' || !ptrMoved || !root.classList.contains('present')) return;
+        var cc = B.cards.get(c.id) || c;
+        if (!players.has(cc.id) && !(presMedia && presMedia.c.id === cc.id) && !cc.local && !cc.noaccess) playerStart(cc);
+      });
       el.addEventListener('pointerenter', function (e) {
-        // em Apresentar quem manda no vídeo é a apresentação: o cursor não toca nem pára nada
-        if (e.pointerType !== 'mouse' || root.classList.contains('present') || $('video', el)) return;
+        if (e.pointerType !== 'mouse' || root.classList.contains('present')) return;
+        if ($('video', el)) return;
         var v = document.createElement('video');
         v.className = 'hov-prev';
         v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.src = c.asset.orig;
@@ -1712,7 +1763,7 @@
       if (AU) AU.hub.paint();
     }
     function auAct(c, b, e) {
-      if (presAct) { presAct(c, b, e); return; }   // em Apresentar nunca um 2.º som (o leitor AU por cima do da apresentação)
+      if (presAct && presAct(c, b, e)) return;   // o cartão do diapositivo: o som da apresentação (nunca um 2.º som por cima)
       var a = c.asset;
       if (!a || !AU) return;
       var box = b.closest('.ccc-au');
@@ -1736,7 +1787,8 @@
       B.cards.forEach(function (c) {
         if (c.col || c.type === 'arrow') return;
         // o cartão que se está a apresentar conta sempre como à vista: deslocar a vista ou redesenhar tudo não lhe tira o vídeo
-        var bb = bbox(c), vis = (bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1) || !!(presMedia && presMedia.c.id === c.id);
+        var bb = bbox(c), vis = (bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1) || !!(presMedia && presMedia.c.id === c.id)
+          || players.has(c.id) || (c.type === 'column' && players.size > 0 && childrenOf(c.id).some(function (k) { return players.has(k.id); }));
         var el = B.els.get(c.id);
         if (vis && !el) {
           el = makeEl(c);
@@ -2876,6 +2928,7 @@
         e.stopPropagation();
         var el = b.closest('.ccc'), c = B.cards.get(+el.getAttribute('data-id')), act = b.getAttribute('data-cact');
         if (act === 'au-play' || act === 'au-seek') { auAct(c, b, e); return; }
+        if (act === 'v-play') { vAct(c); return; }
         if (act === 'com') { select([c.id]); B.side = 'com'; sideEl.hidden = false; sideSync(); return; }
         if (act === 'del') { select([c.id]); delSel(); return; }
         if (act === 'keep') {
@@ -3043,6 +3096,7 @@
       if (pointers.size > 2) return;
       var p = vpPoint(e), w = toWorld(p.x, p.y);
       var cardEl = t.closest('.ccc'), c = cardEl ? B.cards.get(+cardEl.getAttribute('data-id')) : null;
+      if (root.classList.contains('present') && c && c.type === 'video' && t.closest('.ccc-media')) { pointers.delete(e.pointerId); vAct(c); return; }
       var arrowHit = t.closest('[data-arrow]');
       if (spaceDown) spaceUsed = true;
       if (spaceDown || e.button === 1) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; vp.classList.add('panning'); return; }
@@ -3872,7 +3926,8 @@
     var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
     var presMedia = null;   // o vídeo/áudio do diapositivo atual ({ c, el, btn }); makeEl e cull precisam de o conhecer
     var presPaint = null;   // redesenha a barra da apresentação (▶/❚❚, «Vídeo ·»/«Áudio ·»), enquanto se apresenta
-    var presAct = null;     // o ▶ e a forma de onda de um cartão de áudio, enquanto se apresenta (comandam o som da apresentação)
+    var presAct = null;     // o ▶ e a forma de onda do cartão de áudio do diapositivo (comandam o som da apresentação)
+    var presToggle = null;  // pausa/retoma o vídeo/áudio do diapositivo (o ▶ ou o clique no cartão do diapositivo)
     /** Pára e tira o vídeo/áudio da apresentação (o load() descarta o evento «pause»: quem chama redesenha a barra). */
     function presStop() {
       var m = presMedia;
@@ -3891,6 +3946,7 @@
       var i = 0, bar = document.createElement('div');
       root.classList.add('present');
       B.els.forEach(killHoverPrev);   // uma pré-visualização que já estava a correr não fica
+      playersStop();                  // nem um vídeo que tocava no cartão antes de apresentar
       bar.className = 'cc-pres';
       // teclado e leitor de ecrã: a barra é uma toolbar com nome, recebe o foco ao entrar (o botão «Apresentar» fica
       // escondido) e diz cada diapositivo numa região viva
@@ -3927,7 +3983,7 @@
         if (!a || !a.orig || !el) return;
         killHoverPrev(el);
         var m = document.createElement(c.type === 'video' ? 'video' : 'audio');
-        m.className = 'pres-media'; m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
+        m.className = 'pres-media'; m.setAttribute('data-mix', ''); m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
         m.muted = PRES.muted; m.volume = PRES.vol;
         // o vídeo vê-se no cartão; o áudio não se vê e fica na barra (nenhum redesenho do cartão o desliga)
         (c.type === 'video' ? ($('.ccc-media', el) || el) : bar).appendChild(m);
@@ -3958,14 +4014,17 @@
       // o ▶ do cartão do diapositivo faz o mesmo que o ▶ da barra; a forma de onda leva o som da apresentação a esse ponto;
       // noutro cartão não fazem nada
       presAct = function (c, b, e) {
-        if (slide().id !== c.id || !isMediaSlide()) return;
+        if (slide().id !== c.id || !isMediaSlide()) return false;   // noutro cartão (p. ex. dentro de uma coluna): o leitor normal
         var m = presMedia && presMedia.c.id === c.id ? presMedia.el : null;
-        if (b.getAttribute('data-cact') === 'au-seek' && m && isFinite(m.duration)) { var r = b.getBoundingClientRect(); m.currentTime = clamp((e.clientX - r.left) / r.width, 0, 1) * m.duration; return; }
+        if (b.getAttribute('data-cact') === 'au-seek' && m && isFinite(m.duration)) { var r = b.getBoundingClientRect(); m.currentTime = clamp((e.clientX - r.left) / r.width, 0, 1) * m.duration; return true; }
         playPause();
+        return true;
       };
+      presToggle = playPause;
       function go() {
         var c = slide(), b = bbox(c);
         stopMedia();
+        playersStop();   // os vídeos começados pelo cursor no diapositivo anterior param (§33.13: ao avançar/recuar pausa)
         if (AU && AU.hub) AU.hub.pause();
         animateView(function () { fitTo(b, 70, 3); });
         $('[data-pn]', bar).textContent = (i + 1) + ' / ' + items.length;
@@ -3980,8 +4039,9 @@
       });
       function stop() {
         stopMedia();
+        playersStop();
         if (AU && AU.hub) AU.hub.pause();
-        presPaint = null; presAct = null;
+        presPaint = null; presAct = null; presToggle = null;
         var ae = document.activeElement, back = !ae || ae === document.body || bar.contains(ae);
         root.classList.remove('present');
         bar.remove();
@@ -4113,6 +4173,7 @@
       id = +id;
       if (!id || id === B.id || navBusy) return Promise.resolve();
       navBusy = true;
+      playersStop();
       // uma edição aberta grava-se antes de sair
       var ae = document.activeElement;
       if (B.editing && ae && ae.isContentEditable) ae.blur();

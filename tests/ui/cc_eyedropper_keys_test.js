@@ -159,7 +159,7 @@ const soft = (pr, ms) => Promise.race([pr, new Promise(res => setTimeout(res, ms
   await v.goto(BASE + '/admin/__as/1');
   await v.goto(BASE + '/admin/toppernote.php?b=' + SP.board);
   await v.waitForSelector('.ccc[data-id="' + SP.cards.video + '"]'); await v.waitForTimeout(300);
-  await v.locator('.ccc[data-id="' + SP.cards.video + '"]').click(); await v.waitForTimeout(200);
+  await v.locator('.ccc[data-id="' + SP.cards.video + '"]').click({ position: { x: 14, y: 14 } }); await v.waitForTimeout(200);   // no canto: o centro é o ▶
   // o detalhe do vídeo aberto, parado a meio (0,5 s); o conta-gotas lê o fotograma desse tempo
   await v.keyboard.press('i'); await soft(v.waitForSelector('.cc-pickfs', { timeout: 8000 })); await v.waitForTimeout(300);
   await v.keyboard.press('Escape'); await v.waitForTimeout(200);
