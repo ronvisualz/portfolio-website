@@ -2437,7 +2437,7 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Testes na bancada:** o R2 simulado vive em memória; `tests_cc_asset()` (`tests/fixtures.php`) repõe o objeto de
   uma referência reaproveitada depois de a bancada reiniciar, e as imagens do teste de envio otimista são únicas.
 
-### 10.32 Toppernote — correções pedidas a 2 nov — §33.14 (2–3 nov 2026)
+### 10.32 Toppernote — correções pedidas a 2 nov — §33.14 (2–5 nov 2026)
 
 Cada problema foi investigado até à causa (reprodução na bancada e um segundo revisor cético) antes de ser corrigido;
 cada correção tem um teste que falhava antes dela.
@@ -2452,6 +2452,21 @@ cada correção tem um teste que falhava antes dela.
     original), a Biblioteca, a pesquisa e as semelhantes deixam-no de fora e as ações sobre ele dão 403. Na Drive, o
     catálogo só dá as miniaturas dos ficheiros que a pessoa vê, `thumb_urls` só assina essas e `thumb_sign` recusa um
     etag que só existe na Faturação (um envio acabado de chegar continua a gravar a sua miniatura).
+  - **Miniaturas da Drive com prova:** o browser manda a chave do ficheiro com o etag (envio e grelha) e o `thumb_sign`
+    só assina se a pessoa vê esse ficheiro e o etag for o do objeto (no sítio onde está); sem isso, quem não tem o
+    Financeiro recebe sempre «Miniatura inválida.» (não se troca a miniatura de um documento no Lixo nem se descobre
+    se um etag existe na Faturação). O etag com «\n» no fim deixou de passar por válido.
+  - **Links de partilha (encontrado na verificação; já existia na §32):** a Faturação só aparece num link se quem o
+    criou tiver hoje o Financeiro e o link estiver aberto na própria Faturação ou a incluir de propósito («com os
+    privados»). Não depende do que a pasta tem hoje (as faturas de um negócio chegam sozinhas a
+    `Projetos/<ID>/Faturação/`) nem de onde o link estava (os links seguem os movimentos). Quem não tem o Financeiro
+    não recebe o endereço de nenhum link que a possa mostrar — lista de links, catálogo, painel de detalhes (`info`)
+    — e a partilha rápida nunca reaproveita um link «com os privados» (e recusa uma pasta com Faturação, como
+    «Partilhar link…»). Links antigos, sem dono: só os abertos na própria Faturação.
+  - **Mover para a Faturação:** com o mover instantâneo ainda na fila, o ficheiro já não se lê pela chave antiga
+    (Drive, «Da Drive» e os ficheiros de uma referência já num Topperboard). Os números do Lixo e das pastas não contam
+    a Faturação a quem não a vê.
+  - A cache do catálogo (`admin/inc/cache/`) fica protegida pelo `admin/inc/.htaccess` (`Require all denied`).
 - **Apresentar — vídeo e áudio até ao fim:**
   - Causa: a pré-visualização ao passar o cursor não sabia de Apresentar e, ao sair o cursor, apagava o primeiro
     `<video>` do cartão — o da apresentação.
@@ -2468,8 +2483,9 @@ cada correção tem um teste que falhava antes dela.
   - Causa: repor um cartão não limpava o marcador de apagado do tempo real — o marcador era mais recente do que o
     cartão e escondia-o logo a seguir ao Anular (na base o traço existia; ninguém o via).
   - Agora: repor e apagar atualizam a hora do cartão e publicam a mudança no tempo real; o aviso de apagar tem
-    «Anular»; Anular espera pelos pedidos em curso (no máximo 10 s cada). A migração 42 repõe uma vez os cartões vivos
-    que tinham ficado escondidos.
+    «Anular»; Anular espera pelos pedidos em curso (no máximo 10 s cada) e o «Anular» da barra fica ativo enquanto um
+    pedido grava (no iPad um toque logo a seguir à borracha já não se perde). A migração 42 repõe uma vez os cartões
+    vivos que tinham ficado escondidos.
 - **Barra de ferramentas estática e expansível:**
   - Causa: 1 px a mais (botões de 36 px numa coluna de 35 px úteis) tornava a barra deslizável para o lado; com
     barras de deslocação clássicas (Windows/Opera) via-se uma barra horizontal.
@@ -2485,7 +2501,11 @@ cada correção tem um teste que falhava antes dela.
     com amostra de 56×56 px, #HEX e RGB; média 3×3 só com os píxeis que existem (bordas certas), Alt = 1 px, Shift =
     várias; «Concluir», Esc e clique fora saem e devolvem o foco; as teclas do Topperboard ficam paradas; no toque a
     lupa fica acima ou ao lado do dedo e um toque acrescenta uma vez só. A entrada é só opacidade (com escala, um
-    clique rápido perto da borda caía no que está por trás).
+    clique rápido perto da borda caía no que está por trás). O clique fora só fecha se começar e acabar fora da imagem;
+    atrás da imagem há um xadrez cinzento (as imagens com transparência veem-se).
+  - Teclado: o palco recebe o foco (Tab), as setas movem uma mira 1 píxel do original (Shift: 10), Enter/Espaço
+    escolhem; a dica diz o caminho do teclado e os estados (a carregar, erro) são anunciados; o foco volta para onde
+    estava. No iPad o ecrã inteiro não deixa a página por trás aproximar nem deslocar.
   - O fotograma lê-se por um clone do vídeo com `crossorigin` e um endereço assinado próprio (`cc_file.php …&cors=1`,
     com os mesmos bloqueios da Faturação). **Depende da regra CORS do R2** aceitar a origem do admin; sem ela aparece
     «Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.».
@@ -2496,8 +2516,18 @@ cada correção tem um teste que falhava antes dela.
     para o Topperboard põe os cartões onde se larga e fecha o seletor — o diálogo só fica transparente depois de o rato
     se afastar 24 px (um clique trémulo não larga nada); largar fora devolve o diálogo com a escolha. Arrastar da
     página da Drive noutro separador também entra. Pastas: «As pastas não entram: abra a pasta e escolha os
-    ficheiros.»; mais de 30 ficheiros vão em pedidos de 30 com um só Anular e uma só mensagem. No toque, tocar e
-    «Adicionar» continua a ser o caminho principal.
+    ficheiros.»; mais de 30 ficheiros vão em pedidos de 30 com um só Anular e uma só mensagem (no máximo 120 de cada
+    vez, com a mensagem dos que ficaram de fora). No toque, tocar e «Adicionar» continua a ser o caminho principal.
+    Teclado e leitor de ecrã: fechar devolve o foco a «Enviar», entrar numa pasta põe o foco no primeiro item, e uma
+    região viva diz a pasta e o número de itens.
+- **Acessibilidade (auditoria WCAG 2.2 nos dois modos, computador, iPad e telemóvel):**
+  - Apresentar: ao entrar o foco vai para a barra («Apresentar», com região viva por diapositivo) e ao sair volta ao
+    botão; as setas no volume e o Espaço/Enter nos botões da barra deixam de mudar de diapositivo; no telemóvel a
+    barra fica no ecrã (‹, ›, «Sair» sempre à vista); o ▶ de um cartão de áudio comanda o som da apresentação (já não
+    há um segundo som que continua depois de sair); sair do ecrã inteiro fecha a apresentação atual.
+  - Avisos com «Anular» (toda a plataforma): contraste no escuro, anel de foco visível, o tempo pára com o foco e
+    alvos de 44 px no toque. Topperboard: o Espaço num botão carrega no botão; a barra da caneta cabe no telemóvel sem
+    tapar o «Anular»; anéis de foco no claro com a cor de foco da plataforma (o amarelo tinha 1,6:1).
 - **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
   trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
   `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. **Ordem ao publicar:** primeiro o código de que a
@@ -2505,11 +2535,14 @@ cada correção tem um teste que falhava antes dela.
   `inc/migrate_creative.php`; `inc/migrate.php` (versão 42) no fim. Um trabalho `media_sniff` que falhe (p. ex. com o
   `inc/cc.php` antigo) volta à fila na versão seguinte.
 - **Testes** (bancada): PHP `cc_drive_billing_thumb`, `cc_media_sniff`, `cc_media_kind`, `cc_restore`,
-  `cc_drive_add_msg`, `drive_thumbs_perm` (e `cc_pref`, `cc_file_px` alargados); JS `cc_logic_test.js`; Playwright
-  `cc_drive_noaccess`, `cc_present_hover`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_drive_pick_thumbs`,
-  `cc_drive_pick_drag` (e `cc_eyedropper`, `cc_drive_pick` alargados).
+  `cc_drive_add_msg`, `drive_thumbs_perm`, `drive_billing_window`, `share_billing_private` (e `cc_pref`, `cc_file_px`
+  alargados); JS `cc_logic_test.js`; Playwright `cc_drive_noaccess`, `cc_present_hover`, `cc_present_keys`,
+  `cc_present_touch`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_board_a11y`, `cc_focus_rings`,
+  `toast_a11y`, `cc_eyedropper_keys`, `cc_drive_pick_thumbs`, `cc_drive_pick_drag`, `cc_drive_pick_a11y`,
+  `drive_upload_thumb` (e `cc_eyedropper`, `cc_drive_pick` alargados).
 - **A verificar depois de publicar:** escolher a cor do fotograma de um vídeo (tocar no detalhe, depois «+ Escolher da
-  imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium).
+  imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium); no
+  servidor, que `admin/inc/cache/drive_catalog.json` responde 403 (a bancada, com `php -S`, ignora o `.htaccess`).
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
