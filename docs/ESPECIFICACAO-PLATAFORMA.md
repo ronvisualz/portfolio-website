@@ -2537,13 +2537,16 @@ cada correção tem um teste que falhava antes dela.
     pré-visualização sem som, que pára quando o cursor sai, e o leitor único de áudio parava ao começar um vídeo.
   - Agora: em Apresentar o cursor a **mexer-se** num vídeo que não é o diapositivo começa-o com som e ele toca até ao fim;
     o quadro a deslizar por baixo do cursor parado (ao mudar de diapositivo) não começa nada; clicar/tocar no vídeo
-    pausa/retoma; o ▶ e a forma de onda de um MP3 que não é o diapositivo usam o leitor normal (o do diapositivo
+    pausa/retoma ao levantar o dedo/rato sem mexer (é o gesto que o iPad aceita para som; arrastar a partir do vídeo
+    move a vista e a pinça faz zoom); o ▶ e a forma de onda de um MP3 que não é o diapositivo usam o leitor normal (o do diapositivo
     continua a comandar o som da apresentação); avançar, recuar e sair param tudo. Fora de Apresentar o cartão de
     vídeo tem um botão ▶/❚❚ («Tocar ou pausar o vídeo», 44 px no toque) que toca com som no cartão até ao fim; o vídeo
     passa para o cartão redesenhado (sondagem, tempo real, IA) sem parar e o cartão — ou a coluna — não sai da área
-    desenhada enquanto toca. Os vídeos dos cartões e o da apresentação têm `data-mix`: o leitor único de áudio
-    (`cc_audio.js`) já não pára por causa deles, e o MP3 toca ao mesmo tempo. Abrir outro Topperboard ou entrar em
-    Apresentar pára os vídeos que tocavam nos cartões.
+    desenhada enquanto toca. Os vídeos dos cartões e o da apresentação têm `data-mix` e um vídeo sem som não conta: o
+    leitor único de áudio (`cc_audio.js`) já não pára por causa deles nem da pré-visualização, e o MP3 toca ao mesmo
+    tempo. Um vídeo com som de cada vez (começar outro pausa o que tocava); «Sem som» e volume da apresentação valem
+    para os vídeos começados pelo cursor. Abrir outro Topperboard ou entrar em Apresentar pára os vídeos que tocavam
+    nos cartões.
 - **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
   trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
   `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. **Ordem ao publicar:** primeiro o código de que a
@@ -4598,4 +4601,7 @@ Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **víd
   diapositivo (p. ex. dentro de uma coluna, como no Topperboard real) começa-o **com som** e ele toca até ao fim (o
   cursor sair não o pára); clicar no vídeo pausa/retoma; o ▶ de um MP3 dentro de uma coluna toca; mudar de diapositivo
   ou sair pára tudo. Fora de Apresentar o cartão de vídeo tem um **▶** que toca com som no próprio cartão até ao fim
-  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo**.
+  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo** (em
+  qualquer ordem). Um **vídeo com som de cada vez**: começar outro (no cartão, na apresentação, no detalhe ou no
+  visualizador) pausa o que tocava; o «Sem som» e o volume da barra de Apresentar valem também para os vídeos começados
+  pelo cursor.

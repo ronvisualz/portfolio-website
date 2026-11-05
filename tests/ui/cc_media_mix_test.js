@@ -55,7 +55,15 @@ const I = S.ids;
   const vbtn = '.ccc[data-id="' + I.vs + '"] [data-cact="v-play"]';
   check(await p.locator(vbtn).count() === 1, 'o cartão de vídeo tem um ▶ verdadeiro (botão)');
   check(/Tocar ou pausar o vídeo/.test(await p.locator(vbtn).getAttribute('aria-label').catch(() => '') || ''), 'com o nome «Tocar ou pausar o vídeo»');
-  let c = await center(vbtn);
+  // primeiro o MP3; o cursor a caminho do ▶ do vídeo passa pela pré-visualização sem som — o MP3 não pára
+  let c = await center('.ccc[data-id="' + I.as + '"] [data-cact="au-play"]');
+  if (c) await p.mouse.click(c.x, c.y);
+  await p.waitForTimeout(700);
+  c = await center(vbtn);
+  if (c) { await p.mouse.move(c.x - 50, c.y - 30, { steps: 6 }); await p.waitForTimeout(900); }
+  const pv0 = await p.evaluate(i => { const v = document.querySelector('.ccc[data-id="' + i + '"] video.hov-prev'); return v ? { muted: v.muted, paused: v.paused } : null; }, I.vs);
+  let pl = await playing();
+  check(pv0 && pv0.muted && !pv0.paused && pl.some(m => m.tag === 'AUDIO'), 'com o MP3 a tocar, a pré-visualização sem som de um vídeo não pára o MP3 (' + JSON.stringify({ pv0, pl }) + ')');
   if (c) await p.mouse.click(c.x, c.y);
   await p.waitForTimeout(700);
   let v = await vidOf(I.vs);
@@ -64,9 +72,6 @@ const I = S.ids;
   await p.mouse.move(5, 880, { steps: 6 }); await p.waitForTimeout(700);
   v = await vidOf(I.vs);
   check(v && !v.paused, 'o cursor sair do cartão não pára o vídeo');
-  c = await center('.ccc[data-id="' + I.as + '"] [data-cact="au-play"]');
-  if (c) await p.mouse.click(c.x, c.y);
-  await p.waitForTimeout(800);
   const both = await playing();
   check(both.some(m => m.tag === 'AUDIO') && both.some(m => m.tag === 'VIDEO' && m.card === I.vs), 'o MP3 toca junto com o vídeo (' + JSON.stringify(both) + ')');
   // a pré-visualização sem som noutro vídeo continua (ao passar o cursor), com o vídeo e o MP3 a tocar
@@ -90,11 +95,17 @@ const I = S.ids;
   await p.waitForTimeout(400);
   v = await vidOf(I.vs);
   check(v && v.paused, '▶ outra vez pausa');
+  c = await center(vbtn);
+  if (c) await p.mouse.click(c.x, c.y);
+  await p.waitForTimeout(400);
   // um redesenho do Topperboard (sondagem / tempo real) a meio não pára o vídeo do cartão nem cria outro
   // (o vídeo longo, dentro da coluna: o cartão é mesmo substituído — marca no elemento antigo)
   c = await center('.ccc[data-id="' + I.cv + '"] [data-cact="v-play"]');
   if (c) await p.mouse.click(c.x, c.y);
   await p.waitForTimeout(600);
+  // um vídeo com som de cada vez: começar o da coluna pausa o curto; o MP3 continua
+  v = await vidOf(I.vs); pl = await playing();
+  check(v && v.paused && pl.some(m => m.tag === 'VIDEO' && m.card === I.cv) && pl.some(m => m.tag === 'AUDIO'), 'outro vídeo começa → o que tocava pausa, o MP3 continua (' + JSON.stringify({ vs: v, pl }) + ')');
   await p.evaluate(i => { const e = document.querySelector('.ccc[data-id="' + i + '"]'); e.__mark = 1; const v = e.querySelector('video.card-play'); if (v) v.__mark = 1; }, I.cv);
   php(`$pdo->prepare('UPDATE cc_cards SET updated_at = NOW() WHERE id = ?')->execute([${I.cv}]); cc_board_touch($pdo, ${S.bid});`);
   await p.waitForFunction(i => { const e = document.querySelector('.ccc[data-id="' + i + '"]'); return e && !e.__mark; }, I.cv, { timeout: 15000 }).catch(() => {});
@@ -104,7 +115,7 @@ const I = S.ids;
 
   // ── Apresentar (com o vídeo da coluna e o MP3 ainda a tocar) ──
   await p.click('[data-a="present"]'); await p.waitForTimeout(1500);
-  let pl = await playing();
+  pl = await playing();
   check(pl.length === 0, 'ao entrar em Apresentar o que tocava fora pára (' + JSON.stringify(pl) + ')');
   await p.keyboard.press('ArrowRight'); await p.waitForTimeout(1600);   // diapositivo 2: a coluna
   check((await p.locator('.cc-pres [data-pn]').textContent()) === '2 / 4', 'o diapositivo 2 é a coluna');
@@ -125,6 +136,10 @@ const I = S.ids;
   await p.waitForTimeout(500);
   v = await vidOf(I.cv);
   check(v && !v.paused, 'clicar outra vez retoma');
+  if (c) { await p.mouse.move(c.x - 50, c.y - 30); await p.mouse.down(); await p.mouse.move(c.x + 30, c.y + 10, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(400); }
+  v = await vidOf(I.cv);
+  check(v && !v.paused, 'arrastar a partir do vídeo move a vista e não o pausa (' + JSON.stringify(v) + ')');
+  c = await center('.ccc[data-id="' + I.cv + '"] .ccc-media');
   c = await center('.ccc[data-id="' + I.ca + '"] [data-cact="au-play"]');
   if (c) await p.mouse.click(c.x, c.y);
   await p.waitForTimeout(900);
@@ -140,6 +155,13 @@ const I = S.ids;
   if (c) { await p.mouse.move(c.x - 40, c.y - 30, { steps: 4 }); await p.waitForTimeout(700); }
   pl = await playing();
   check(pl.filter(m => m.tag === 'VIDEO').length <= 1, 'o cursor no vídeo do diapositivo não cria um 2.º som (' + JSON.stringify(pl) + ')');
+  // «Sem som» na barra (num diapositivo de vídeo) vale também para um vídeo que o cursor comece noutro diapositivo
+  await p.click('.cc-pres [data-p="mute"]'); await p.waitForTimeout(200);
+  await p.keyboard.press('ArrowLeft'); await p.waitForTimeout(1600);   // de volta à coluna
+  c = await center('.ccc[data-id="' + I.cv + '"] .ccc-media');
+  if (c) { await p.mouse.move(c.x - 50, c.y - 20, { steps: 5 }); await p.waitForTimeout(900); }
+  v = await vidOf(I.cv);
+  check(v && !v.paused && v.muted, 'com «Sem som» na apresentação, o vídeo que o cursor começa fica sem som (' + JSON.stringify(v) + ')');
   await p.keyboard.press('Escape'); await p.waitForTimeout(700);
   pl = await playing();
   check(pl.length === 0, 'sair de Apresentar pára tudo (' + JSON.stringify(pl) + ')');
@@ -188,6 +210,17 @@ const I = S.ids;
   await tp.waitForTimeout(400);
   v = await tvid(I.cv);
   check(v && v.paused, 'iPad, Apresentar: tocar outra vez pausa (' + JSON.stringify(v) + ')');
+  const sc = () => tp.evaluate(i => { const e = document.querySelector('.ccc[data-id="' + i + '"]'); return e.getBoundingClientRect().width / e.offsetWidth; }, I.cv);
+  const s0 = await sc();
+  const tid = (x, y, id) => ({ x: Math.round(x), y: Math.round(y), id, radiusX: 2, radiusY: 2, force: 1 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [tid(tm.x, tm.y, 0)] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [tid(tm.x, tm.y, 0), tid(tm.x + 40, tm.y + 40, 1)] });
+  for (let k = 1; k <= 6; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [tid(tm.x - 12 * k, tm.y - 12 * k, 0), tid(tm.x + 40 + 12 * k, tm.y + 40 + 12 * k, 1)] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await tp.waitForTimeout(500);
+  const s1 = await sc();
+  v = await tvid(I.cv);
+  check(s1 > s0 * 1.2 && v && v.paused, 'iPad, Apresentar: a pinça a começar em cima do vídeo aproxima e não o toca (' + JSON.stringify({ s0, s1, v }) + ')');
   check(terrs.length === 0, 'iPad: sem erros na página (' + terrs.join(' | ') + ')');
   await tctx.close();
 

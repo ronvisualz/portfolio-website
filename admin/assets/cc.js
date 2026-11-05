@@ -1377,6 +1377,13 @@
     // browser dá entradas/movimentos nos cartões que passam: nenhum vídeo começa por isso
     var ptrMoved = false, ptrX = null, ptrY = null;
     root.addEventListener('pointermove', function (e) { ptrMoved = e.clientX !== ptrX || e.clientY !== ptrY; ptrX = e.clientX; ptrY = e.clientY; }, true);
+    // um vídeo com som de cada vez (cartões, apresentação, detalhe, visualizador): o que começa pausa os outros; os MP3
+    // misturam (cc_audio.js) e um vídeo sem som (pré-visualização) não conta
+    document.addEventListener('play', function (e) {
+      var t = e.target;
+      if (!t || t.tagName !== 'VIDEO' || t.muted) return;
+      Array.prototype.forEach.call(document.querySelectorAll('video'), function (v) { if (v !== t && !v.muted && !v.paused) v.pause(); });
+    }, true);
 
     function load() {
       var id = B.id;
@@ -1719,6 +1726,7 @@
       killHoverPrev(el);
       var v = document.createElement('video');
       v.className = 'card-play'; v.setAttribute('data-mix', ''); v.playsInline = true; v.preload = 'auto'; v.src = c.asset.orig;
+      if (root.classList.contains('present')) { v.muted = PRES.muted; v.volume = PRES.vol; }   // «Sem som»/volume da barra
       ($('.ccc-media', el) || el).appendChild(v);
       var pl = { c: c, el: v };
       players.set(c.id, pl);
@@ -3096,7 +3104,9 @@
       if (pointers.size > 2) return;
       var p = vpPoint(e), w = toWorld(p.x, p.y);
       var cardEl = t.closest('.ccc'), c = cardEl ? B.cards.get(+cardEl.getAttribute('data-id')) : null;
-      if (root.classList.contains('present') && c && c.type === 'video' && t.closest('.ccc-media')) { pointers.delete(e.pointerId); vAct(c); return; }
+      // em Apresentar, tocar/clicar num vídeo alterna-o ao levantar sem mexer (o levantar do dedo é o gesto que o iPad
+      // aceita para som); arrastar move a vista e um 2.º dedo faz a pinça
+      if (root.classList.contains('present') && c && c.type === 'video' && t.closest('.ccc-media')) { drag = { kind: 'vtap', c: c, p0: p }; return; }
       var arrowHit = t.closest('[data-arrow]');
       if (spaceDown) spaceUsed = true;
       if (spaceDown || e.button === 1) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; vp.classList.add('panning'); return; }
@@ -3188,7 +3198,7 @@
         if (Math.hypot(w.x - drag.pts[last], w.y - drag.pts[last + 1]) * B.view.s < 2) return;
         drag.pts.push(w.x, w.y);
         drag.path.setAttribute('d', pathD(drag.pts.map(function (v) { return Math.round(v * 10) / 10; })));
-      } else if (drag.kind === 'click') {
+      } else if (drag.kind === 'click' || drag.kind === 'vtap') {
         if (Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) > 4) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; }
       }
     }
@@ -3291,6 +3301,8 @@
         else if (d.shift) select([d.c.id], true);
         else if (d.wasSel && d.c.type === 'note' && EDIT && e.pointerType !== 'touch') startEdit(d.c, null, { at: d.at });
         else select([d.c.id]);
+      } else if (d.kind === 'vtap') {
+        vAct(d.c);
       } else if (d.kind === 'click') {
         select([d.c.id], d.shift);
       } else if (d.kind === 'pan' && d.bg && !d.moved) {
@@ -4036,6 +4048,7 @@
       bar.addEventListener('input', function (e) {
         if (!e.target.hasAttribute('data-vol')) return;
         PRES.vol = +e.target.value; if (presMedia) presMedia.el.volume = PRES.vol;
+        players.forEach(function (pl) { pl.el.volume = PRES.vol; });
       });
       function stop() {
         stopMedia();
@@ -4073,7 +4086,7 @@
         var v = b.getAttribute('data-p');
         if (v === 'x') stop();
         else if (v === 'play') playPause();
-        else if (v === 'mute') { PRES.muted = !PRES.muted; if (presMedia) presMedia.el.muted = PRES.muted; paintMedia(); }
+        else if (v === 'mute') { PRES.muted = !PRES.muted; if (presMedia) presMedia.el.muted = PRES.muted; players.forEach(function (pl) { pl.el.muted = PRES.muted; }); paintMedia(); }
         else { i = clamp(i + +v, 0, items.length - 1); go(); }
       });
       function onFs() { if (!document.fullscreenElement && bar.isConnected) stop(); }
