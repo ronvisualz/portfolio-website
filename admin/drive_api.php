@@ -87,6 +87,31 @@ if (in_array($do, DRIVE_WRITE_ACTIONS, true) && !can('drive', PERM_EDIT)) {
     api_err('Só quem pode editar a Drive pode fazer isto. Peça a um administrador.', 403);
 }
 const DRIVE_BILLING_ERR = 'Os documentos de faturação só estão disponíveis para quem tem acesso ao Financeiro.';
+/**
+ * As miniaturas da Drive são por etag (.topper/thumbs/<etag>.jpg), e a de um documento da Faturação mostra o documento
+ * (os valores em euros): [etags dos ficheiros que a pessoa vê, etags que só existem na Faturação]. O segundo fica
+ * vazio para quem tem o Financeiro. Com o mover instantâneo (§32.1) conta o sítio para onde o ficheiro vai, como no
+ * catálogo. Um etag que o catálogo ainda não conhece (um envio acabado de chegar) não está em nenhum dos dois.
+ */
+function api_thumb_scope(PDO $pdo, bool $fin): array {
+    $seen = []; $bill = [];
+    foreach (drive_moves_overlay(drive_catalog()['objects'], drive_moves_pending($pdo)) as $o) {
+        $e = (string)($o['etag'] ?? '');
+        if ($e === '') continue;
+        if (!$fin && drive_billing((string)$o['key'])) $bill[$e] = true; else $seen[$e] = true;
+    }
+    return [$seen, array_diff_key($bill, $seen)];
+}
+/** Um link cujo endereço não se dá a quem não tem o Financeiro: aberto na faturação, ou que a mostra (com os privados). */
+function api_share_billing(array $x): bool {
+    require_once __DIR__ . '/inc/drive_share.php';
+    return drive_share_shows_billing($x);
+}
+/** Os números do Lixo sem a faturação (para quem não tem o Financeiro), como no trash_list. */
+function api_trash_visible(PDO $pdo): array {
+    $items = array_values(array_filter(drive_trash_all($pdo), static fn($t) => !drive_billing((string)$t['k'])));
+    return ['count' => count($items), 'size' => array_sum(array_column($items, 's'))];
+}
 /** Há documentos de faturação debaixo desta pasta? */
 function api_has_billing(string $folder): bool {
     if (substr($folder, -1) !== '/') return false;
@@ -101,6 +126,10 @@ if (!$FIN) {
     if (is_string($in['key'] ?? null) && is_string($in['name'] ?? null)) $asked[] = drive_parent($in['key']) . $in['name'];
     foreach ((array)($in['keys'] ?? []) as $k) if (is_string($k)) $asked[] = $k;
     foreach ($asked as $k) if (drive_billing($k)) api_err(DRIVE_BILLING_ERR, 403);
+    // §32.1: a caminho da faturação (mover instantâneo ainda na fila) já conta como faturação
+    if ($asked && ($pendingBill = drive_moves_pending($pdo))) {
+        foreach ($asked as $k) if (drive_billing(drive_forward_with($pendingBill, $k))) api_err(DRIVE_BILLING_ERR, 403);
+    }
     $ids = [];
     if (in_array($do, ['restore', 'purge'], true)) {
         if (isset($in['id'])) $ids[] = (int)$in['id'];
@@ -108,9 +137,9 @@ if (!$FIN) {
         if (isset($in['cur']['id'])) $ids[] = (int)$in['cur']['id'];
     }
     foreach ($ids ? drive_trash_get_many($pdo, array_values(array_filter($ids))) : [] as $t) if (drive_billing((string)$t['k'])) api_err(DRIVE_BILLING_ERR, 403);
-    if (in_array($do, ['trash', 'delete', 'share_create'], true) && r2_config()) {
+    if (in_array($do, ['trash', 'delete', 'share_create', 'share_quick'], true) && r2_config()) {
         foreach ($asked as $k) {
-            if (api_has_billing($k)) api_err($do === 'share_create' ? 'Esta pasta tem documentos de faturação. Partilhe uma subpasta ou os ficheiros.'
+            if (api_has_billing($k)) api_err(in_array($do, ['share_create', 'share_quick'], true) ? 'Esta pasta tem documentos de faturação. Partilhe uma subpasta ou os ficheiros.'
                                                                     : 'Esta pasta tem documentos de faturação: só quem tem acesso ao Financeiro a pode enviar para o Lixo.', 403);
         }
     }
@@ -564,10 +593,11 @@ try {
         api_lazy_purge($pdo);
         $cat = drive_catalog(!empty($in['fresh']));
         $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));   // mover instantâneo (§32.1)
-        $objs = []; $have = [];
+        $objs = []; $have = []; $seenE = [];
         foreach ($cat['objects'] as $o) {
             if (!$FIN && drive_billing($o['key'])) continue;
             $objs[] = api_obj($o);
+            $seenE[(string)($o['etag'] ?? '')] = true;
             $have[$o['key']] = true;
             // as pastas que só existem por terem coisas lá dentro
             for ($p = drive_parent($o['key']); $p !== '' && !isset($have[$p]); $p = drive_parent($p)) $have[$p] = true;
@@ -581,11 +611,12 @@ try {
             'ok'        => true,
             'objects'   => $objs,
             'roots'     => DRIVE_ROOTS,
-            'thumbs'    => array_map('strval', array_keys($cat['thumbs'])),
+            // só as miniaturas dos ficheiros que a pessoa vê (a de um recibo da Faturação mostra o recibo)
+            'thumbs'    => array_map('strval', array_keys($FIN ? $cat['thumbs'] : array_intersect_key($cat['thumbs'], $seenE))),
             'favs'      => array_values(array_filter(drive_favs($pdo), static fn($k) => isset($have[$k]))),
             'recents'   => array_values(array_filter(drive_recents($pdo, 50), static fn($r) => isset($have[$r['k']]))),
-            'trash'     => drive_trash_stats($pdo),
-            'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !drive_billing((string)$x['k'])))),
+            'trash'     => $FIN ? drive_trash_stats($pdo) : api_trash_visible($pdo),
+            'shares'    => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo), static fn($x) => $FIN || !api_share_billing($x)))),
             'index'     => $index,
             'listed_at' => (int)$cat['listed_at'],
             'truncated' => !empty($cat['truncated']),
@@ -700,6 +731,8 @@ try {
         $folder = substr($key, -1) === '/';
         $cat = drive_catalog();
         $cat['objects'] = drive_moves_overlay($cat['objects'], drive_moves_pending($pdo));
+        // os números da pasta só com o que a pessoa vê (sem o Financeiro, a faturação não conta)
+        if (!$FIN) $cat['objects'] = array_values(array_filter($cat['objects'], static fn($o) => !drive_billing((string)$o['key'])));
         $obj = null; $fst = null; $index = null;
         if ($folder) {
             $st = drive_folder_stats($cat, $key);
@@ -723,11 +756,21 @@ try {
             }
         }
         api_out(200, ['ok' => true, 'object' => $obj, 'folder' => $fst, 'index' => $index,
-                      'shares' => array_map('drive_share_out', drive_shares_active($pdo, $key)), 'fav' => drive_is_fav($pdo, $key)]);
+                      'shares' => array_map('drive_share_out', array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !api_share_billing($x)))),
+                      'fav' => drive_is_fav($pdo, $key)]);
     }
     case 'thumb_sign': {
         $etag = strtolower($str('etag'));
         if (!preg_match(DRIVE_ETAG_RE, $etag)) api_err('Miniatura inválida.');
+        // A miniatura é de um ficheiro que a pessoa vê, provado pela chave: o etag tem de ser o do objeto (no sítio onde
+        // está, com o mover instantâneo). Nem às cegas (a miniatura órfã de um documento da Faturação no Lixo podia ser
+        // reescrita), nem com respostas que digam se um etag existe na Faturação. A chave da Faturação já foi recusada a
+        // quem não tem o Financeiro (em cima); sem chave (o JS antigo em cache) só com o Financeiro, como antes.
+        if ($str('key') !== '' || !$FIN) {
+            $key = want_key($str('key'));
+            $h = drive_can_see($key) ? r2_head(drive_resolve($pdo, $key)) : null;
+            if (!$h || (string)($h['etag'] ?? '') !== $etag) api_err('Miniatura inválida.');
+        }
         $k = DRIVE_THUMBS . $etag . '.jpg';
         $hour = intdiv(time(), 3600) * 3600;
         api_out(200, ['ok' => true, 'url' => r2_presign('PUT', $k, 600), 'type' => 'image/jpeg',
@@ -736,13 +779,15 @@ try {
     case 'thumb_urls': {
         $etags = want_list($in['etags'] ?? null, 300, 'Demasiadas miniaturas de uma vez (máximo 300).');
         $thumbs = drive_catalog()['thumbs'];
+        // sem o Financeiro, só as miniaturas dos ficheiros que a pessoa vê (nunca a de um documento da Faturação)
+        $seenE = $FIN ? null : api_thumb_scope($pdo, false)[0];
         // Com a hora certa como data da assinatura, o URL é o mesmo durante uma hora (o browser
         // aproveita a cache) e vale sempre pelo menos 6 h.
         $hour = intdiv(time(), 3600) * 3600;
         $urls = [];
         foreach ($etags as $e) {
             $e = strtolower($e);
-            if (!preg_match(DRIVE_ETAG_RE, $e) || empty($thumbs[$e])) continue;
+            if (!preg_match(DRIVE_ETAG_RE, $e) || empty($thumbs[$e]) || ($seenE !== null && empty($seenE[$e]))) continue;
             $urls[$e] = r2_presign('GET', DRIVE_THUMBS . $e . '.jpg', 7 * 3600, [], $hour);
         }
         api_out(200, ['ok' => true, 'urls' => (object)$urls]);
@@ -1131,7 +1176,7 @@ try {
     }
     case 'share_list': {
         $key = $str('key') !== '' ? want_any($str('key')) : null;
-        $items = array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !drive_billing((string)$x['k'])));
+        $items = array_values(array_filter(drive_shares_active($pdo, $key), static fn($x) => $FIN || !api_share_billing($x)));
         api_out(200, ['ok' => true, 'items' => array_map('drive_share_out', $items)]);
     }
     case 'share_revoke': {

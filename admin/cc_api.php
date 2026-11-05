@@ -25,7 +25,8 @@
  *   a=versions          board — as versões do Topperboard (ler) · a=version_view  board, id — os cartões de uma versão (ler)
  *   version_restore, version_mark (editar) · rt_usage (o que o browser enviou; só pede o token CSRF)
  * Paleta (§33.11): palette_add  asset, hex, name · palette_edit  asset, hex, op (name|hide|show|remove), name
- * Preferências da pessoa (§33): pref  k=colors (JSON, últimas 8 cores) | side_w (largura do painel, 280–4000) — só pede o token CSRF
+ * Preferências da pessoa (§33): pref  k=colors (JSON, últimas 8 cores) | side_w (largura do painel, 280–4000) | tools (1/0: barra
+ *   de ferramentas expandida, §33.14) — só pede o token CSRF
  */
 require_once __DIR__ . '/inc/bootstrap.php';
 require_once __DIR__ . '/inc/cc.php';
@@ -74,6 +75,11 @@ function board_editable(array $b): void {
     global $pdo, $by;
     if ($b['status'] === 'archived') cfail('Este Topperboard está arquivado. Reabra-o para mudar.');
     cc_board_version_session($pdo, $b, $by);
+}
+
+/** §33.9: um ficheiro da Faturação e quem pede não tem o Financeiro: não o muda, não o analisa, não procura parecidos. */
+function asset_visible(array $x): void {
+    if (cc_asset_blocked($x)) cfail('Sem acesso a este ficheiro.', 403);
 }
 
 /** Os cartões de um pedido em lote, só deste Topperboard. */
@@ -139,8 +145,9 @@ case 'boards': {
     if ($rows) {
         $ids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
         // capa: as primeiras 4 imagens do Topperboard (ou dos sub-Topperboards)
+        // §33.9: sem as que esta pessoa não vê (a miniatura daria 404)
         $cs = $pdo->query("SELECT COALESCE(p.parent_id, p.id) AS root, a.id, a.sha1 FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id JOIN cc_boards p ON p.id = c.board_id
-                            WHERE (p.id IN ($ids) OR p.parent_id IN ($ids)) AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL ORDER BY c.id LIMIT 2000");
+                            WHERE (p.id IN ($ids) OR p.parent_id IN ($ids)) AND c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.thumbs IS NOT NULL" . cc_blocked_sql($pdo, 'a.id') . " ORDER BY c.id LIMIT 2000");
         foreach ($cs->fetchAll() as $c) {
             $r = (int)$c['root'];
             if (count($covers[$r] ?? []) < 4) $covers[$r][] = '/admin/cc_file.php?a=' . (int)$c['id'] . '&s=256&v=' . substr((string)$c['sha1'], 0, 8);
@@ -268,7 +275,7 @@ case 'library': {
     if (rint('offset') === 0) {
         $out['facets'] = cc_library_facets($pdo);
         $out['vocab'] = array_map(fn($k) => ['key' => $k, 'label' => CC_VOCAB[$k][0], 'values' => cc_vocab($pdo, $k)], array_keys(CC_VOCAB));
-        $out['inbox_n'] = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
+        $out['inbox_n'] = cc_inbox_count($pdo);
         $out['acats'] = CC_AUDIO_CATS;
     }
     cout(200, $out);
@@ -282,10 +289,13 @@ case 'asset': {
                                           'caption' => (string)(json_decode((string)$f['analysis'], true)['caption'] ?? ''), 'pal' => array_column(cc_palette_hex($f['palette'], 5), 'hex')],
                                cc_frames($pdo, (int)$x['id']));
     $pub['palette'] = cc_palette_hex($x['palette'], 8);
+    // §33.9: da Faturação, sem o Financeiro: nem os frames, a paleta, os Topperboards onde está ou o negócio
+    $hidden = !empty($pub['noaccess']);
+    if ($hidden) { $pub['frames'] = []; $pub['palette'] = []; }
     $st = $pdo->prepare("SELECT DISTINCT b.id, b.title, b.kind FROM cc_cards c JOIN cc_boards b ON b.id = c.board_id WHERE c.asset_id = ? AND c.deleted_at IS NULL AND b.status <> 'deleted' ORDER BY b.id DESC LIMIT 20");
     $st->execute([(int)$x['id']]);
-    $pub['boards'] = array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => $r['kind']], $st->fetchAll());
-    if ($x['deal_id']) {
+    $pub['boards'] = $hidden ? [] : array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => $r['kind']], $st->fetchAll());
+    if ($x['deal_id'] && !$hidden) {
         $d = $pdo->query('SELECT code, name, disclose FROM deals WHERE id = ' . (int)$x['deal_id'])->fetch();
         if ($d) $pub['deal'] = ['code' => (string)$d['code'], 'name' => (string)$d['name'], 'disclose' => (string)($d['disclose'] ?? '')];
     }
@@ -297,6 +307,7 @@ case 'similar': {
     require_once __DIR__ . '/inc/cc_ai.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     release_session();
     $rows = cc_more_like($pdo, $x, 24);
     cout(200, ['ok' => true, 'items' => array_map(fn($r) => cc_asset_public($r[0]) + ['score' => round($r[1], 3)], $rows), 'by' => $x['embedding'] ? 'vetores' : 'etiquetas']);
@@ -467,20 +478,26 @@ case 'cards_restore': {
     $del = $a === 'cards_delete';
     if ($del && count($ids) >= 5) cc_board_version_save($pdo, $b, 'before', 'Antes de apagar ' . count($ids) . ' cartões', $by);
     // apagar uma coluna solta os cartões dela (ficam onde estavam); repor volta a pô-los
-    $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')')
-        ->execute($del ? [cc_now(), (int)$b['id']] : [(int)$b['id']]);
+    // a hora e quem o fez (updated_at/by): o tempo real guarda um marcador de apagado e fica com o mais recente —
+    // sem isto, um cartão reposto (Anular) continuava «mais antigo» do que o marcador e voltava a esconder-se
+    $now = cc_now();
+    $pdo->prepare('UPDATE cc_cards SET deleted_at = ' . ($del ? '?' : 'NULL') . ', updated_by = ?, updated_at = ? WHERE board_id = ? AND id IN (' . implode(',', $ids) . ')')
+        ->execute($del ? [$now, $by, $now, (int)$b['id']] : [$by, $now, (int)$b['id']]);
     // setas presas a cartões apagados também saem
     if ($del) {
         foreach ($pdo->query("SELECT id, content FROM cc_cards WHERE type = 'arrow' AND deleted_at IS NULL AND board_id = " . (int)$b['id'])->fetchAll() as $ar) {
             $c = cc_card_content('arrow', $ar['content']);
             if (in_array($c['from'], $ids, true) || in_array($c['to'], $ids, true)) {
-                $pdo->prepare('UPDATE cc_cards SET deleted_at = ? WHERE id = ?')->execute([cc_now(), (int)$ar['id']]);
+                $pdo->prepare('UPDATE cc_cards SET deleted_at = ?, updated_by = ?, updated_at = ? WHERE id = ?')->execute([$now, $by, $now, (int)$ar['id']]);
                 $ids[] = (int)$ar['id'];
             }
         }
     }
-    cout(200, ['ok' => true, 'ids' => $ids, 'rev' => cc_board_touch($pdo, (int)$b['id']),
-               'msg' => $del ? (count($ids) === 1 ? 'Cartão apagado.' : count($ids) . ' cartões apagados.') : 'Reposto.']);
+    $out = ['ok' => true, 'ids' => $ids, 'rev' => cc_board_touch($pdo, (int)$b['id']),
+            'msg' => $del ? (count($ids) === 1 ? 'Cartão apagado.' : count($ids) . ' cartões apagados.') : 'Reposto.'];
+    // os repostos como o Topperboard os mostra (o browser publica-os no tempo real): sem referências apagadas, «sem acesso» à Faturação
+    if (!$del) $out['cards'] = cc_board_cards_public($pdo, (int)$b['id'], $ids);
+    cout(200, $out);
 }
 
 case 'cards_dup': {
@@ -554,6 +571,7 @@ case 'card_swap': {   // «trocar» no pré-criativo: outra referência parecida
     $c = cc_card_get($pdo, rint('card'));
     if (!$c || (int)$c['board_id'] !== (int)$b['id'] || !$c['asset_id']) cfail('Cartão inválido.');
     $x = cc_asset_get($pdo, (int)$c['asset_id']);
+    if ($x) asset_visible($x);
     release_session();
     $have = array_map('intval', $pdo->query('SELECT asset_id FROM cc_cards WHERE board_id = ' . (int)$b['id'] . ' AND deleted_at IS NULL AND asset_id IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN));
     $vec = cc_vec_unpack($x['embedding'] ?? null);
@@ -597,7 +615,8 @@ case 'upload_done': {
     if ($b) board_editable($b);
     release_session();
     $name = r2_clean_name((string)rq('name')) ?: 'ficheiro';
-    $o = ['name' => $name, 'mime' => (string)rq('mime'), 'kind' => (string)rq('kind'), 'by' => $by, 'inbox' => !$b && rq('inbox') === '1',
+    // o tipo (imagem, vídeo, áudio…) decide-o o servidor pelo conteúdo, não o browser (cc_media_kind)
+    $o = ['name' => $name, 'mime' => (string)rq('mime'), 'by' => $by, 'inbox' => !$b && rq('inbox') === '1',
           'w' => rint('w'), 'h' => rint('h'), 'duration' => rq('dur'), 'size' => rint('size'), 'fp' => (string)rq('fp'),
           'origin' => rq('origin') === 'topper' ? 'topper' : 'external'];
     if (!empty($_FILES['prev']['tmp_name']) && is_uploaded_file($_FILES['prev']['tmp_name']) && $_FILES['prev']['size'] < 12582912) {
@@ -612,13 +631,22 @@ case 'upload_done': {
         if (!$head) cfail('O envio não chegou ao armazenamento. Tente outra vez.');
         $o['file_key'] = 'r2:' . $key;
         $o['size'] = (int)($head['size'] ?? $o['size']);
+        // o princípio (e, num MP4/MOV, o fim) do ficheiro diz o que é: um MP3 chamado .mpeg é áudio
+        $mk = cc_media_kind_key($o['mime'], $name, $key, $o['size']);
+        $o['kind'] = $mk['kind']; $o['mime'] = $mk['mime'];
+        if ($mk['dur'] && !is_numeric($o['duration'])) $o['duration'] = $mk['dur'];
         // uma imagem sem pré-visualização: o servidor lê-a (até 40 MB) para fazer as miniaturas
-        if (empty($o['preview']) && cc_kind_for($o['mime'], $name) === 'image' && $o['size'] <= 41943040) $o['preview'] = r2_get($key, null, 41943040);
+        if (empty($o['preview']) && $o['kind'] === 'image' && $o['size'] <= 41943040) $o['preview'] = r2_get($key, null, 41943040);
     } else {
         cfail('Falta o ficheiro.');
     }
     if ($bytes !== null && strlen($bytes) === 0) cfail('O ficheiro está vazio.');
-    if (cc_kind_for($o['mime'], $name) === 'audio' || $o['kind'] === 'audio') {
+    if ($bytes !== null) {
+        $mk = cc_media_kind_bytes($o['mime'], $name, $bytes);
+        $o['kind'] = $mk['kind']; $o['mime'] = $mk['mime'];
+        if ($mk['dur'] && !is_numeric($o['duration'])) $o['duration'] = $mk['dur'];
+    }
+    if ($o['kind'] === 'audio') {
         // áudio (§27): a forma de onda e as medidas calculadas no browser
         if (($pk = audio_peaks_in((string)rq('peaks'))) !== null) $o['peaks'] = $pk;
         $o['feats'] = audio_feats_in((string)rq('feats'));
@@ -660,6 +688,7 @@ case 'upload_done': {
 case 'audio_meta': {   // um áudio já guardado (antigo, ou vindo da Drive): o browser calculou a forma de onda
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x || $x['deleted_at'] || $x['kind'] !== 'audio') cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $set = [];
     if (($pk = audio_peaks_in((string)rq('peaks'))) !== null && (string)$x['peaks'] === '') $set['peaks'] = $pk;
     if ((float)$x['duration'] <= 0 && is_numeric(rq('dur')) && (float)rq('dur') > 0) $set['duration'] = round((float)rq('dur'), 3);
@@ -692,16 +721,22 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
     $keys = json_decode((string)rq('keys', '[]'), true);
     if (!is_array($keys) || !$keys) cfail('Nada para juntar.');
     release_session();
-    $cards = []; $skipped = 0; $i = 0;
-    foreach (array_slice($keys, 0, 30) as $k) {
-        $k = (string)$k;
-        if ($k === '' || str_ends_with($k, '/') || drive_hidden($k) || !drive_can_see($k) || !($h = r2_head($k))) { $skipped++; continue; }
+    require_once __DIR__ . '/inc/drive_moves.php';
+    $cards = []; $skipped = 0; $folders = 0; $i = 0;
+    $over = count($keys) > CC_DRIVE_ADD_MAX;
+    foreach (array_slice($keys, 0, CC_DRIVE_ADD_MAX) as $k) {
+        if (is_string($k) && str_ends_with($k, '/')) { $folders++; continue; }   // as pastas não entram (dito à parte)
+        if (!is_string($k) || $k === '' || drive_hidden($k) || !drive_can_see_moving($pdo, $k)) { $skipped++; continue; }
+        // §32.1: com um mover instantâneo ainda na fila, o objeto está no sítio antigo; o cartão aponta para o novo
+        $phys = drive_resolve($pdo, $k);
+        if (!($h = r2_head($phys))) { $skipped++; continue; }
         $name = drive_base($k);
-        $mime = r2_mime($name);
-        $kind = cc_kind_for($mime, $name);
-        $o = ['name' => $name, 'mime' => $mime, 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
-              'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'];
-        if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($k, null, 41943040);
+        // o tipo pelo conteúdo (leituras por intervalo): um MP3 chamado .mpeg é áudio
+        $mk = cc_media_kind_key(r2_mime($name), $name, $phys, (int)$h['size']);
+        $kind = $mk['kind'];
+        $o = ['name' => $name, 'mime' => $mk['mime'], 'kind' => $kind, 'by' => $by, 'file_key' => 'r2:' . $k, 'size' => (int)$h['size'],
+              'fp' => sha1('drive:' . $k . ':' . ($h['etag'] ?? '')), 'origin' => 'external'] + ($mk['dur'] ? ['duration' => $mk['dur']] : []);
+        if ($kind === 'image' && (int)$h['size'] <= 41943040) $o['preview'] = r2_get($phys, null, 41943040);
         [$x] = cc_asset_create($pdo, null, $o);
         $ratio = $x['width'] && $x['height'] ? (float)$x['height'] / (float)$x['width'] : 0.62;
         $type = cc_card_type_for($x);
@@ -712,7 +747,8 @@ case 'drive_add': {   // ficheiros arrastados da Drive para o Topperboard (o ori
         $i++;
     }
     $rev = $cards ? cc_board_touch($pdo, (int)$b['id']) : (int)$b['rev'];
-    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'msg' => count($cards) . (count($cards) === 1 ? ' ficheiro da Drive no Topperboard.' : ' ficheiros da Drive no Topperboard.') . ($skipped ? ' ' . $skipped . ' sem acesso ou já não existem.' : '')]);
+    cout(200, ['ok' => true, 'rev' => $rev, 'cards' => $cards, 'added' => count($cards), 'folders' => $folders, 'skipped' => $skipped, 'over' => $over,
+               'msg' => cc_drive_add_msg(count($cards), $folders, $skipped, $over)]);
 }
 
 case 'link_add': {
@@ -737,6 +773,7 @@ case 'link_add': {
 case 'asset_save': {
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $in = [];
     foreach (['title', 'caption', 'why', 'composition', 'color', 'movement', 'tags', 'origin', 'acat', 'au_mood', 'au_genre', 'au_use', 'au_instruments', 'au_bpm', 'au_energy', ...array_keys(CC_VOCAB)] as $k) if (isset($_POST[$k])) $in[$k] = (string)$_POST[$k];
     foreach (array_keys(CC_VOCAB) as $k) if (isset($in[$k]) && $in[$k] !== '' && !in_array($in[$k], cc_vocab($pdo, $k), true)) cfail('«' . $in[$k] . '» não está no vocabulário (Definições › Toppernote).');
@@ -748,6 +785,7 @@ case 'asset_delete':
 case 'asset_restore': {
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     $del = $a === 'asset_delete';
     $pdo->prepare('UPDATE cc_assets SET deleted_at = ' . ($del ? '?' : 'NULL') . ' WHERE id = ?')->execute($del ? [cc_now(), (int)$x['id']] : [(int)$x['id']]);
     // os Topperboards onde estava atualizam-se (o cartão deixa de aparecer; repor volta a mostrá-lo)
@@ -782,6 +820,7 @@ case 'analyze': {
     require_once __DIR__ . '/inc/cc_stt.php';
     $x = cc_asset_get($pdo, rint('id'));
     if (!$x) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     if (!cc_ai_config()) cfail('A IA do Toppernote ainda não está ligada (Definições › Integrações).');
     // áudio e vídeo sem transcrição: primeiro a fala (se o serviço estiver ligado), depois a análise
     if (cc_ai_queue_asset($pdo, $x, $by, true) === '') {
@@ -949,6 +988,7 @@ case 'palette_add':
 case 'palette_edit': {
     $x = cc_asset_get($pdo, rint('asset'));
     if (!$x || $x['deleted_at']) cfail('Referência não encontrada.', 404);
+    asset_visible($x);
     try {
         $out = $a === 'palette_add' ? cc_palette_add($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('name'), $by)
                                     : cc_palette_edit($pdo, (int)$x['id'], (string)rq('hex'), (string)rq('op'), (string)rq('name'));
@@ -969,6 +1009,10 @@ case 'pref': {
     } elseif ($k === 'side_w') {
         $val = (int)$v;
         if ($val < 280 || $val > 4000) cfail('Largura inválida.');
+    } elseif ($k === 'tools') {
+        // barra de ferramentas expandida (com os nomes) ou recolhida (só ícones) — §33.14
+        if (!in_array($v, ['', '0', '1'], true)) cfail('Valor inválido.');
+        $val = $v === '1';
     } else cfail('Preferência desconhecida.');
     $p = user_prefs($pdo, $by);
     $p['cc'] = array_merge(is_array($p['cc'] ?? null) ? $p['cc'] : [], [$k => $val]);

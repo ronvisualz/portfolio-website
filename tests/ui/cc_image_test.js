@@ -8,7 +8,9 @@ let ok = 0, fail = 0;
 const check = (c, msg) => { if (c) ok++; else { fail++; console.error('FALHA: ' + msg); } };
 const BID = execFileSync('php', [path.join(__dirname, 'seed_board.php')]).toString().trim();
 const PNG = path.join(os.tmpdir(), 'cc_up2400_' + process.pid + '.png');
-execFileSync('php', ['-r', '$im=imagecreatetruecolor(2400,1600); for($i=0;$i<2400;$i+=20){imagefilledrectangle($im,$i,0,$i+9,1599,imagecolorallocate($im,($i*7+' + Date.now() % 97 + ')%255,($i*3)%255,120));} imagepng($im, $argv[1]);', PNG]);
+execFileSync('php', ['-r', '$im=imagecreatetruecolor(2400,1600); for($i=0;$i<2400;$i+=20){imagefilledrectangle($im,$i,0,$i+9,1599,imagecolorallocate($im,($i*7+' + Date.now() % 97 + ')%255,($i*3)%255,120));} for($p=0;$p<4;$p++) imagesetpixel($im,$p,0,imagecolorallocate($im,random_int(0,255),random_int(0,255),random_int(0,255))); imagepng($im, $argv[1]);', PNG]);
+// os píxeis ao acaso tornam a imagem única: com só 97 variantes, o envio reaproveitava (pela impressão digital) uma
+// referência de uma corrida anterior, sem miniaturas (este teste tira-as no fim) e com o original já fora do R2 simulado
 
 (async () => {
   const b = await chromium.launch();

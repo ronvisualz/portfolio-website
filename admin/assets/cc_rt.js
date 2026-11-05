@@ -285,16 +285,19 @@
       doc.transact(function () { ids.forEach(function (id) { var c = B.cards.get(id); if (c) setEntry(id, { x: c.x, y: c.y, w: c.w, h: c.h }, now(), false); }); });
     }, 70);
     RT.added = function (list) {
+      var fromServer = false;
       doc.transact(function () {
         (list || []).forEach(function (c) {
           if (!c || !c.id) return;
-          var pub = Object.assign({}, c);
-          delete pub._mh; delete pub.__new;
+          // §33.9: um cartão que nem todos podem ver (Faturação) não vai inteiro pelo tempo real; os outros recarregam
+          // e cada um recebe do servidor o que pode ver
+          var pub = window.CCL && CCL.rtPub ? CCL.rtPub(c) : '';
           var f = fields(c);
-          f.pub = JSON.stringify(pub);
+          if (pub) f.pub = pub; else fromServer = true;
           setEntry(c.id, f, now(), false);
         });
       });
+      if (fromServer) RT.signal();
     };
     RT.removed = function (ids) { doc.transact(function () { (ids || []).forEach(function (id) { setEntry(id, {}, now(), true); }); }); };
     RT.signal = function () { meta.set('reload', { n: Math.random(), by: me.id, t: now() }); };

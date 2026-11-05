@@ -5,6 +5,7 @@
  *   GET cc_file.php?a=<referência>&s=256|768|1600   a miniatura mais próxima (por cima) da largura
  *   GET cc_file.php?a=<referência>&s=0              o original (vídeo com pedidos parciais)
  *   GET cc_file.php?a=<referência>&s=…&px=1         a imagem servida daqui (não redireciona): o conta-gotas lê os píxeis
+ *   GET cc_file.php?a=<referência>&s=0&cors=1        o original por outro endereço assinado (o clone do vídeo com crossorigin)
  *   GET cc_file.php?f=<frame>&s=…                   um frame-chave de um vídeo
  *   GET cc_file.php?pt=<token da proposta>&a=…      as imagens do pré-criativo na página do cliente
  *                                                   (só as referências das páginas dessa proposta)
@@ -49,15 +50,24 @@ if ($public) {
 if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
 $key = null; $mime = ''; $name = 'ficheiro';
+// §32.1: um ficheiro a caminho da Faturação (mover instantâneo ainda na fila) já é da Faturação
+require_once __DIR__ . '/inc/drive_moves.php';
+$ccfMoving = static function (array $x) use ($pdo): bool { $dk = cc_asset_drive_key($x); return $dk !== '' && !drive_can_see_moving($pdo, $dk); };
 if (!empty($_GET['f']) && !$public) {
     $st = $pdo->prepare('SELECT * FROM cc_frames WHERE id = ?');
     $st->execute([(int)$_GET['f']]);
     $f = $st->fetch();
     if (!$f) ccf_404();
+    // §33.9: o frame é do ficheiro da referência; quem não vê esse ficheiro na Drive também não vê os frames
+    $fa = cc_asset_get($pdo, (int)$f['asset_id']);
+    if (!$fa || cc_asset_blocked($fa) || $ccfMoving($fa)) ccf_404();
     $key = $size > 0 ? cc_thumb_pick($f['thumbs'], $size) : $f['file_key'];
 } else {
     $a = cc_asset_get($pdo, (int)($_GET['a'] ?? 0));
     if (!$a || ($a['deleted_at'] && !$public)) ccf_404();
+    // §33.9: as miniaturas (.topper/cc/…) são feitas a partir do ficheiro da Drive: verifica-se a chave da própria
+    // referência, para qualquer tamanho (a Faturação só a quem tem o Financeiro; na página do cliente, nunca)
+    if (cc_asset_blocked($a) || $ccfMoving($a)) ccf_404();
     if ($size > 0) {
         $key = cc_thumb_pick($a['thumbs'], $size);
     } else {
@@ -72,6 +82,12 @@ if (strncmp($key, 'r2:', 3) === 0) {
     require_once __DIR__ . '/inc/drive.php';
     $dk = substr($key, 3);
     if (!drive_hidden($dk) && ($public || !drive_can_see($dk))) ccf_404();
+    // com o mover instantâneo ainda na fila, o ficheiro continua fisicamente na origem: lê-se de lá (como a Drive);
+    // a permissão é a do sítio onde o ficheiro está para o utilizador (verificada acima)
+    if (!drive_hidden($dk)) {
+        require_once __DIR__ . '/inc/drive_moves.php';
+        $key = 'r2:' . drive_resolve($pdo, $dk);
+    }
 }
 if ($mime === '' || $size > 0) {
     $ext = strtolower(pathinfo($key, PATHINFO_EXTENSION));
@@ -95,7 +111,9 @@ if (strncmp($key, 'r2:', 3) === 0 && !$public && !empty($_GET['px'])) {
 if (strncmp($key, 'r2:', 3) === 0) {
     // endereço assinado com a hora arredondada: o mesmo URL durante uma hora (cache do browser)
     $now = intdiv(time(), 3600) * 3600;
-    $url = r2_get_url(substr($key, 3), true, $mime, 7200, $now);
+    // &cors=1 (§33.14, o fotograma do conta-gotas lido por um clone com crossorigin): outro endereço assinado (outra
+    // validade), porque o R2 pode reaproveitar a resposta sem cabeçalhos CORS que o leitor do detalhe já guardou
+    $url = r2_get_url(substr($key, 3), true, $mime, empty($_GET['cors']) ? 7200 : 7260, $now);
     header('Cache-Control: private, max-age=' . max(60, $now + 3600 - time()));
     header('Location: ' . $url, true, 302);
     exit;

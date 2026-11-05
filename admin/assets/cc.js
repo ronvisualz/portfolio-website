@@ -11,6 +11,8 @@
   var EDIT = root.getAttribute('data-edit') === '1';
   var MANAGE = root.getAttribute('data-manage') === '1';
   var API = '/admin/cc_api.php';
+  // as miniaturas da Drive (TD.thumbs, no seletor «Da Drive») usam o TD.api, que só lê o token do #drive da página da Drive
+  if (window.TD && TD.cfg && !TD.cfg.csrf) TD.cfg.csrf = CSRF;
 
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
@@ -51,7 +53,9 @@
     x: '<path d="M18 6 6 18M6 6l12 12"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/>',
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     side: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>', ext: '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
-    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    chev: '<path d="m15 18-6-6 6-6"/>'
   };
   function ico(n, cls) { return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (IC[n] || IC.file) + '</svg>'; }
 
@@ -359,11 +363,27 @@
       return { prev: frames[0].blob, w: W, h: H, dur: dur, frames: frames };
     }).catch(function () { cleanup(); return null; });
   }
+  /** O tipo pelo nome e pelo tipo MIME (como cc_kind_for): uma extensão de áudio passa à frente de video/* (menos .ogg com video/ogg). */
   function kindOf(file) {
+    if (isAudioName(file.name) && !(/\.ogg$/i.test(file.name) && file.type === 'video/ogg')) return 'audio';
     if (/^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) return 'video';
     if (/^image\//.test(file.type) || /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp)$/i.test(file.name)) return 'image';
-    if (/^audio\//.test(file.type) || isAudioName(file.name)) return 'audio';
+    if (/^audio\//.test(file.type)) return 'audio';
     return 'file';
+  }
+  /**
+   * O que o ficheiro é pelos bytes (CCL.sniffMedia, a mesma regra do servidor): os primeiros 64 KB e, num MP4/MOV que
+   * ainda não se sabe, 2 MB do início e 2 MB do fim (o moov pode estar no fim). Um MP3 chamado .mpeg (que o browser dá
+   * como video/mpeg) é áudio; nunca se decide por o browser não mostrar a imagem. null: não se sabe.
+   */
+  async function sniffFile(file) {
+    if (!window.CCL || !CCL.sniffMedia || !file || !file.slice) return null;
+    try {
+      var rd = function (a, b) { return file.slice(a, b).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
+      var head = await rd(0, 65536), r = CCL.sniffMedia(head, null, file.size), MORE = 2097152;
+      if (!r && CCL.sniffMore(head) && file.size > head.length) r = CCL.sniffMedia(await rd(0, MORE), file.size > MORE ? await rd(file.size - MORE, file.size) : null, file.size);
+      return r;
+    } catch (e) { return null; }
   }
   /** Envia um ficheiro. ctx: board, x, y, lane, column, inbox, cw. Devolve { asset, card }. */
   async function uploadFile(file, ctx) {
@@ -371,6 +391,8 @@
     var row0 = Up.add(file.name), row = { set: function (p) { row0.set(p); if (ctx.onp) ctx.onp(p); }, done: row0.done, fail: row0.fail };
     try {
       var kind = kindOf(file);
+      // um vídeo (ou ficheiro) que é só som vai como áudio, com a forma de onda; o servidor confirma pelos mesmos bytes
+      if (kind !== 'image') { var sn = await sniffFile(file); if (sn && sn.kind === 'audio') kind = 'audio'; }
       var fp = await fingerprint(file);
       var init = await api('upload_init', { name: file.name, size: file.size, mime: file.type, fp: fp });
       if (init.dup) {
@@ -452,7 +474,12 @@
 
   // ── detalhe de uma referência (gaveta na Biblioteca, painel no Topperboard) ──
   function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
+  // §33.9: um ficheiro da Faturação e quem vê não tem o Financeiro: só o aviso (sem formulário nem ações; o servidor também recusa)
+  function noAccessHtml() {
+    return '<div class="ccc-noacc ccd-noacc" role="note">' + ico('lock') + '<span>Sem acesso a este ficheiro</span><p>Só quem tem acesso ao Financeiro o pode abrir, analisar ou editar.</p></div>';
+  }
   function assetDetailHtml(a) {
+    if (a.noaccess) return noAccessHtml();
     var media;
     if (isAudio(a)) media = auPlayerHtml(a);
     else if (a.vembed && /^https:\/\/(www\.youtube-nocookie\.com\/embed|player\.vimeo\.com\/video)\/[A-Za-z0-9_-]+$/.test(a.vembed))   // §33.8: o leitor do serviço (só toca com ▶)
@@ -473,7 +500,7 @@
     if (a.orig && a.kind !== 'video') links.push('<a class="lnk" href="' + esc(a.orig) + '" target="_blank" rel="noopener"' + (a.kind === 'audio' ? ' download="' + esc(a.file || '') + '"' : '') + '>' + ico('ext') + ' Original</a>');
     if (a.drive) links.push('<a class="lnk" href="' + esc(a.drive) + '" data-tip="' + esc(a.drive_path) + '">' + ico('drive') + ' Mostrar no Drive</a>');
     if (links.length) h += '<div>' + links.join(' ') + '</div>';
-    if (!isAudio(a) && (a.kind === 'image' || a.kind === 'video' || (a.palette && a.palette.length))) h += '<div class="ccd-palw">' + palSection(a) + '</div>';
+    if (!isAudio(a) && (a.kind === 'image' || a.kind === 'video' || (a.palette && a.palette.length))) h += '<div class="ccd-palw" data-aid="' + a.id + '">' + palSection(a) + '</div>';
     var an = a.analysis || {};
     var st = a.ai === 'queued' || a.ai === 'running' ? '<p class="muted small"><span class="spin"></span> A IA está a analisar…</p>'
            : a.ai === 'error' ? '<p class="small" style="color:var(--bad-fg)">A análise falhou: ' + esc(a.ai_error) + '</p>'
@@ -582,7 +609,21 @@
       else palEdit(box, a, hex, k);
     });
   }
-  function palRefresh(box, a, pal) { a.palette = pal; var w = $('.ccd-palw', box); if (w) w.innerHTML = palSection(a); }
+  /** Atualiza a paleta no detalhe — no box e em qualquer painel vivo com a mesma referência (§33.14: o painel pode ter sido
+   *  redesenhado por baixo do conta-gotas pelo tempo real, pela sondagem ou por uma seleção). msg: a confirmação. */
+  function palRefresh(box, a, pal, msg) {
+    a.palette = pal;
+    var ws = $$('.ccd-palw[data-aid="' + a.id + '"]'), own = box && $('.ccd-palw', box);
+    if (own && ws.indexOf(own) < 0) ws.push(own);
+    ws.forEach(function (w) {
+      var h = w; while (h && !h.__ccA) h = h.parentNode;   // a referência do painel (bindAssetDetail)
+      var aa = h && h.__ccA ? h.__ccA : a; aa.palette = pal;
+      var ae = document.activeElement, back = ae && w.contains(ae) && ae.hasAttribute('data-pick');
+      w.innerHTML = palSection(aa);
+      if (back) { var pb = $('[data-pick]', w); if (pb) pb.focus({ preventScroll: true }); }
+      if (msg) { var m = $('.ccd-palmsg', w); if (m) m.textContent = msg; }
+    });
+  }
   function palEdit(box, a, hex, op, name) {
     api('palette_edit', { asset: a.id, hex: hex, op: op, name: name || '' }).then(function (j) {
       palRefresh(box, a, j.palette);
@@ -591,78 +632,353 @@
       } });
     }).catch(fail);
   }
-  // conta-gotas: lê os píxeis do original (mesmo domínio, px=1) em resolução total; lupa ×8; média 3×3, Alt = 1 píxel
+  // ── conta-gotas (§33.11, §33.14): a imagem — ou o fotograma em pausa do vídeo — em ecrã inteiro, com zoom (roda, + − 0) e
+  // deslocação com zoom; lê os píxeis do original (mesmo domínio, px=1) ou de um clone do vídeo com crossorigin e endereço
+  // próprio (&cors=1); lupa ×8 com a cor num retângulo grande; média 3×3, Alt = 1 píxel; Shift = várias; Esc, «Concluir» ou
+  // clique fora saem. As teclas são todas do conta-gotas enquanto está aberto (o Topperboard não as recebe).
   var pickState = null;
-  function stopPick() {
+  var PICK_HINT = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Roda: aproximar · Tab e setas: apontar com o teclado · Esc: sair',
+      PICK_HINT_TOUCH = 'Toque e arraste para apontar; levante o dedo para escolher · Dois dedos: aproximar',
+      PICK_ERR_FRAME = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.';
+  /** O botão «+ Escolher da imagem» do painel vivo desta referência (o do box, ou o de um painel redesenhado). */
+  function pickBtn(p) {
+    var b = p.box && p.box.isConnected ? $('[data-pick]', p.box) : null;
+    if (!b) { var w = $$('.ccd-palw[data-aid="' + p.a.id + '"]')[0]; b = w ? $('[data-pick]', w) : null; }
+    return b;
+  }
+  function stopPick(noFocus) {
     if (!pickState) return;
     var p = pickState; pickState = null;
-    p.wrap.classList.remove('picking'); if (p.ov) p.ov.remove(); if (p.hint) p.hint.remove(); if (p.loupe) p.loupe.remove();
+    clearTimeout(p.closeT);
+    document.removeEventListener('keydown', p.key, true);
+    window.removeEventListener('resize', p.resize);
+    if (p.el) p.el.remove();
+    if (p.loupe) p.loupe.remove();
+    if (p.vid) { p.vid.pause(); p.vid.removeAttribute('src'); try { p.vid.load(); } catch (e) {} p.vid = null; }
+    if (p.url) URL.revokeObjectURL(p.url);
     if (p.src && p.src.close) p.src.close();
+    p.src = p.blob = null;
+    // o foco volta para onde estava (a tela, quando se abriu com I) ou, sem isso, para «+ Escolher da imagem»
+    if (!noFocus) { var b = p.back && p.back.isConnected && p.back.getClientRects().length ? p.back : pickBtn(p); if (b) b.focus({ preventScroll: true }); }
   }
   function startPick(box, a) {
-    stopPick();
-    var wrap = $('.ccd-media', box), m = wrap && $('img, video', wrap);
-    if (!m || !window.CCL) return;
-    if (m.tagName === 'VIDEO') m.pause();
-    var p = pickState = { box: box, a: a, wrap: wrap, m: m, src: null, w: 0, h: 0 };
-    wrap.classList.add('picking');
-    p.ov = document.createElement('div'); p.ov.className = 'ccd-pickov'; wrap.appendChild(p.ov);
-    p.hint = document.createElement('div'); p.hint.className = 'ccd-pickhint'; p.hint.textContent = 'A carregar a imagem original…'; wrap.appendChild(p.hint);
+    var from = document.activeElement;
+    stopPick(true);
+    if (!a || !window.CCL) return;
+    var dv = box && $('.ccd-media video', box);
+    if (dv) dv.pause();   // o fotograma em pausa é o do tempo onde o leitor do detalhe está
+    var isVid = a.kind === 'video' && !!a.orig;
+    var el = document.createElement('div');
+    el.className = 'cc-pickfs';
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Escolher uma cor da imagem');
+    el.setAttribute('aria-describedby', 'cc-pf-hint');   // a dica e os estados (a carregar, erro) também são anunciados
+    el.innerHTML = '<div class="pf-stage" data-pf-stage tabindex="0" role="application" aria-label="Imagem: use as setas para apontar e Enter para escolher"><span class="pf-cross" hidden aria-hidden="true"></span></div>'
+      + '<div class="pf-bar"><span class="pf-sw" data-pf-sw aria-hidden="true"></span>'
+      + '<span class="pf-val"><b class="pf-hex" data-pf-hex>#——————</b><small data-pf-rgb></small></span>'
+      + '<span class="pf-txt"><span class="pf-hint" id="cc-pf-hint" role="status" aria-live="polite"></span><span class="pf-msg" role="status" aria-live="polite"></span></span>'
+      + '<span class="pf-zoom"><button type="button" class="ibtn" data-pf="out" aria-label="Afastar ( - )">' + ico('minus') + '</button><output aria-label="Zoom">100%</output>'
+      + '<button type="button" class="ibtn" data-pf="in" aria-label="Aproximar ( + )">' + ico('plus') + '</button></span>'
+      + '<button type="button" class="btn" data-pf="done" aria-label="Concluir ( Esc )">Concluir</button></div>';
+    document.body.appendChild(el);
+    var p = pickState = { box: box, a: a, el: el, stage: $('[data-pf-stage]', el), src: null, w: 0, h: 0, nw: 0, nh: 0, z: 1, px: 0, py: 0, fit: { w: 0, h: 0 },
+      disp: null, last: null, touch: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches), closing: false,
+      back: from && from !== document.body && !el.contains(from) ? from : null, aim: null };
+    var cross = $('.pf-cross', el), aimDraw = null;
+    var hint = $('.pf-hint', el), msg = $('.pf-msg', el);
+    var say = function (t) { hint.textContent = t; };
     p.loupe = document.createElement('div'); p.loupe.className = 'cc-loupe'; p.loupe.hidden = true; p.loupe.setAttribute('aria-hidden', 'true');
-    p.loupe.innerHTML = '<canvas width="120" height="120"></canvas><b></b>'; document.body.appendChild(p.loupe);
-    p.cv = document.createElement('canvas'); p.cv.width = p.cv.height = 15;
-    var ready = function (src, w, h) { if (pickState !== p) return; p.src = src; p.w = w; p.h = h; p.hint.textContent = 'Clique para escolher · Alt: 1 píxel · Shift: várias · Esc: sair'; };
-    if (m.tagName === 'VIDEO') {
-      // o fotograma em pausa
-      try {
-        var fc = document.createElement('canvas'); fc.width = m.videoWidth; fc.height = m.videoHeight;
-        fc.getContext('2d').drawImage(m, 0, 0); fc.getContext('2d').getImageData(0, 0, 1, 1);
-        ready(fc, fc.width, fc.height);
-      } catch (e) { p.hint.textContent = 'Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.'; }
-    } else {
+    p.loupe.innerHTML = '<canvas width="168" height="168"></canvas><div class="sw"></div>'; document.body.appendChild(p.loupe);
+    p.cv = document.createElement('canvas'); p.cv.width = p.cv.height = 21;   // 21 × 21 píxeis do original à volta do ponto (centro em 10)
+
+    // o tamanho: a imagem inteira no palco (medido no próprio palco, não na janela: a Biblioteca tem barra de deslocação)
+    var layout = function (w, h) {
+      if (!w || !h) return;
+      p.nw = w; p.nh = h;
+      p.fit = CCL.fitRect(w, h, p.stage.clientWidth - 32, p.stage.clientHeight - 32, 8);
+      p.disp.style.width = p.fit.w + 'px'; p.disp.style.height = p.fit.h + 'px';
+      clampPan(); apply();
+    };
+    var clampPan = function () { var mx = p.fit.w * p.z / 2, my = p.fit.h * p.z / 2; p.px = clamp(p.px, -mx, mx); p.py = clamp(p.py, -my, my); };
+    var apply = function () {
+      if (!p.disp) return;
+      p.disp.style.transform = 'translate(' + p.px + 'px,' + p.py + 'px) scale(' + p.z + ')';
+      $('output', el).textContent = Math.round(p.z * 100) + '%';
+      el.classList.toggle('zoomed', p.z > 1);
+      var dpr = window.devicePixelRatio || 1;
+      // um píxel do original com 2 ou mais píxeis no ecrã: vê-se cada píxel, sem suavizar
+      p.disp.classList.toggle('px', p.w > 0 && p.fit.w * p.z * dpr / p.w >= 2);
+      // com zoom, o original em vez da miniatura (só quando é preciso: memória e rede)
+      var im = p.disp;
+      if (p.blob && !p.url && im.tagName === 'IMG' && im.naturalWidth && p.w > im.naturalWidth && p.fit.w * p.z * dpr > im.naturalWidth * 1.25) {
+        p.url = URL.createObjectURL(p.blob); im.src = p.url;
+      }
+      if (aimDraw && !cross.hidden) aimDraw(false);   // a mira do teclado acompanha o zoom e a deslocação
+    };
+    var ready = function (src, w, h) {
+      if (pickState !== p) { if (src && src.close) src.close(); return; }
+      p.src = src; p.w = w; p.h = h;
+      layout(w, h);
+      say(p.touch ? PICK_HINT_TOUCH : PICK_HINT);
+      if (document.activeElement === p.stage) aimDraw(true);   // o palco já tinha o foco enquanto carregava
+    };
+    p.resize = function () { if (pickState === p && p.nw) layout(p.nw, p.nh); };
+    window.addEventListener('resize', p.resize);
+
+    if (!isVid) {
+      // a maior miniatura logo; os píxeis vêm do original (ImageBitmap); o original só é desenhado com zoom
+      var im = document.createElement('img');
+      im.className = 'pf-img'; im.alt = a.title || ''; im.draggable = false;
+      p.disp = im; p.stage.appendChild(im);
+      im.addEventListener('load', function () { if (pickState === p && !p.w) layout(im.naturalWidth, im.naturalHeight); });
+      im.src = (a.tw || []).length && a.thumb ? a.thumb + '&s=' + Math.max.apply(null, a.tw) : (a.orig || a.thumb);
+      say('A carregar a imagem original…');
       var url = (a.kind === 'image' && a.orig ? a.orig : a.thumb + '&s=' + Math.max.apply(null, (a.tw || []).concat([768]))) + '&px=1';
       fetch(url, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
-        .then(function (b) { return createImageBitmap(b); })
-        .then(function (bmp) { ready(bmp, bmp.width, bmp.height); })
-        .catch(function () { if (pickState === p) p.hint.textContent = 'Não foi possível ler a imagem.'; });
+        .then(function (b) {
+          if (pickState !== p) return null;
+          p.blob = b;
+          return createImageBitmap(b, { imageOrientation: 'from-image' }).catch(function () { return createImageBitmap(b); });
+        })
+        .then(function (bmp) { if (bmp) ready(bmp, bmp.width, bmp.height); })
+        .catch(function () { if (pickState === p) say('Não foi possível ler a imagem.'); });
+    } else {
+      // o fotograma: um clone com crossorigin (o leitor do detalhe fica como está e não depende de CORS), no tempo do leitor
+      var cvs = document.createElement('canvas');
+      cvs.className = 'pf-img'; cvs.width = cvs.height = 1; cvs.setAttribute('role', 'img'); cvs.setAttribute('aria-label', a.title || 'Fotograma');
+      p.disp = cvs; p.stage.appendChild(cvs);
+      say('A carregar o fotograma…');
+      var v = p.vid = document.createElement('video'), want = dv && isFinite(dv.currentTime) ? dv.currentTime : 0, got = false;
+      v.crossOrigin = 'anonymous'; v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      var give = function (ok) {
+        if (got) return; got = true; clearTimeout(tm);
+        if (pickState !== p) return;
+        if (!ok) { say(PICK_ERR_FRAME); return; }
+        try {
+          cvs.width = v.videoWidth; cvs.height = v.videoHeight;
+          var cx = cvs.getContext('2d', { willReadFrequently: true });
+          cx.drawImage(v, 0, 0); cx.getImageData(0, 0, 1, 1);   // um canvas «sujo» (outro domínio sem CORS) falha aqui
+          ready(cvs, cvs.width, cvs.height);
+        } catch (e) { say(PICK_ERR_FRAME); }
+        if (p.vid === v) { v.pause(); v.removeAttribute('src'); try { v.load(); } catch (e2) {} p.vid = null; }
+      };
+      var grab = function () { if (v.readyState >= 2 && v.videoWidth > 0 && !v.seeking && (want <= 0.001 || Math.abs(v.currentTime - want) < 0.05)) give(true); };
+      var tm = setTimeout(function () { give(false); }, 10000);
+      v.addEventListener('loadedmetadata', function () { if (want > 0.001) { try { v.currentTime = want; } catch (e) {} } });
+      v.addEventListener('loadeddata', grab); v.addEventListener('seeked', grab); v.addEventListener('canplay', grab);
+      v.addEventListener('error', function () { give(false); });
+      v.src = a.orig + '&cors=1';
+      // iPad (Safari): sem um play, o clone pode não chegar a ter o fotograma; a reprodução passa do tempo pedido antes do
+      // pause(), por isso volta-se ao tempo pedido e lê-se no «seeked» (antes: grab() recusava o tempo e esperava 10 s)
+      setTimeout(function () {
+        if (got || pickState !== p || v.readyState >= 2) return;
+        var pr = v.play();
+        if (pr && pr.then) pr.then(function () {
+          v.pause();
+          if (got || pickState !== p) return;
+          if (Math.abs(v.currentTime - want) >= 0.01) { try { v.currentTime = want; } catch (e) { grab(); } } else grab();
+        }).catch(function () {});
+      }, 1500);
     }
-    var at = function (e) {
+
+    // a cor em (cx, cy): 21 × 21 píxeis à volta (a caixa só com os que existem, nas bordas), média 3×3 ou o píxel com Alt
+    var at = function (cx, cy, alt) {
       if (!p.src) return null;
-      var r = m.getBoundingClientRect();
-      var sx = clamp(Math.floor((e.clientX - r.left) / r.width * p.w), 0, p.w - 1), sy = clamp(Math.floor((e.clientY - r.top) / r.height * p.h), 0, p.h - 1);
-      var ctx = p.cv.getContext('2d'); ctx.clearRect(0, 0, 15, 15);
-      ctx.drawImage(p.src, sx - 7, sy - 7, 15, 15, 0, 0, 15, 15);
-      // nas bordas, a média só conta os píxeis que existem
-      var d = ctx.getImageData(0, 0, 15, 15).data, cx = 7, cy = 7;
-      if (sx < 7) cx = sx; if (sy < 7) cy = sy;
-      return CCL.avg3(d, 15, cx, cy, e.altKey);
+      var q = CCL.pickPx(p.disp.getBoundingClientRect(), p.w, p.h, cx, cy);
+      if (!q) return null;
+      var x0 = Math.max(0, q.x - 10), y0 = Math.max(0, q.y - 10), x1 = Math.min(p.w, q.x + 11), y1 = Math.min(p.h, q.y + 11);
+      var ctx = p.cv.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, 21, 21);
+      ctx.drawImage(p.src, x0, y0, x1 - x0, y1 - y0, x0 - q.x + 10, y0 - q.y + 10, x1 - x0, y1 - y0);
+      return CCL.avg3(ctx.getImageData(0, 0, 21, 21).data, 21, 10, 10, alt, [x0 - q.x + 10, y0 - q.y + 10, x1 - q.x + 10, y1 - q.y + 10]);
     };
-    p.ov.addEventListener('pointermove', function (e) {
-      var hex = at(e); if (!hex) return;
+    var show = function (hex, alt, x, y, touch) {
       var lc = $('canvas', p.loupe).getContext('2d');
-      lc.imageSmoothingEnabled = false; lc.clearRect(0, 0, 120, 120); lc.drawImage(p.cv, 0, 0, 15, 15, 0, 0, 120, 120);
-      lc.strokeStyle = '#fff'; lc.lineWidth = 2; lc.strokeRect(e.altKey ? 56 : 48, e.altKey ? 56 : 48, e.altKey ? 8 : 24, e.altKey ? 8 : 24);
-      lc.strokeStyle = '#000'; lc.lineWidth = 1; lc.strokeRect(e.altKey ? 55 : 47, e.altKey ? 55 : 47, e.altKey ? 10 : 26, e.altKey ? 10 : 26);
-      $('b', p.loupe).textContent = hex;
-      $('b', p.loupe).style.setProperty('--c', hex);
+      lc.imageSmoothingEnabled = false; lc.clearRect(0, 0, 168, 168); lc.drawImage(p.cv, 0, 0, 21, 21, 0, 0, 168, 168);
+      var o = alt ? 80 : 72, s = alt ? 8 : 24;
+      lc.strokeStyle = '#fff'; lc.lineWidth = 2; lc.strokeRect(o, o, s, s);
+      lc.strokeStyle = '#000'; lc.lineWidth = 1; lc.strokeRect(o - 1.5, o - 1.5, s + 3, s + 3);
+      var sw = $('.sw', p.loupe), ink = CCL.ink(hex);
+      sw.textContent = hex; sw.style.background = hex; sw.style.color = ink;
+      $('[data-pf-sw]', el).style.background = hex;
+      $('[data-pf-hex]', el).textContent = hex;
+      $('[data-pf-rgb]', el).textContent = CCL.hexTo(hex, 'rgb');
       p.loupe.hidden = false;
-      var x = e.clientX + 18, y = e.clientY + 18;
-      if (x + 140 > innerWidth) x = e.clientX - 158; if (y + 160 > innerHeight) y = e.clientY - 178;
-      p.loupe.style.left = x + 'px'; p.loupe.style.top = y + 'px';
+      // no toque, acima do dedo (ou ao lado, sem espaço acima) — nunca por baixo do dedo e da mão
+      var at2 = CCL.loupeAt(x, y, p.loupe.offsetWidth || 176, p.loupe.offsetHeight || 236, innerWidth, innerHeight, touch);
+      p.loupe.style.left = at2.x + 'px'; p.loupe.style.top = at2.y + 'px';
+    };
+    var aim = function (e) {
+      var hex = at(e.clientX, e.clientY, e.altKey);
+      if (!hex) { p.loupe.hidden = true; return null; }
+      show(hex, e.altKey, e.clientX, e.clientY, e.pointerType === 'touch');
+      return hex;
+    };
+    var zoom = function (f, cx, cy) {
+      if (!p.fit.w) return;
+      var sr = p.stage.getBoundingClientRect(), pt = cx != null ? { x: cx, y: cy } : p.last;
+      var v2 = CCL.zoomAbout({ z: p.z, px: p.px, py: p.py }, f, pt ? pt.x - (sr.left + sr.width / 2) : 0, pt ? pt.y - (sr.top + sr.height / 2) : 0, 16);
+      p.z = v2.z; p.px = v2.px; p.py = v2.py; clampPan(); apply();
+    };
+    var add = function (hex) {
+      var done = hex + ' adicionada à paleta.';
+      api('palette_add', { asset: a.id, hex: hex }).then(function (j) {
+        palRefresh(p.box, a, j.palette, done);
+        if (pickState === p) msg.textContent = done;
+      }).catch(function (e2) { if (pickState === p) msg.textContent = (e2 && e2.message) || 'Não foi possível acrescentar a cor.'; else fail(e2); });
+    };
+    // sair depois do clique que vem a seguir ao pointerup (senão o clique — ou o do toque — cai no que está por baixo)
+    var closeSoon = function () { p.closing = true; clearTimeout(p.closeT); p.closeT = setTimeout(function () { if (pickState === p) stopPick(); }, 450); };
+
+    // mira do teclado (WCAG 2.1.1): com o foco no palco, a mira aponta um píxel do original (CCL.aimMove: setas 1,
+    // Shift+setas 10); a lupa, o #HEX, o RGB e a mensagem seguem-na; Enter/Espaço escolhem (Shift: várias; Alt: 1 píxel)
+    var aimPt = function () { return p.aim && p.src ? CCL.aimScreen(p.aim, p.disp.getBoundingClientRect(), p.w, p.h) : null; };
+    aimDraw = function (announce) {
+      if (!p.src) { cross.hidden = true; return null; }
+      p.aim = CCL.aimAt(p.aim, p.w, p.h);
+      var s = aimPt(), sr = p.stage.getBoundingClientRect();
+      if (!s) { cross.hidden = true; return null; }
+      cross.hidden = false;
+      cross.style.transform = 'translate(' + (s.x - sr.left) + 'px,' + (s.y - sr.top) + 'px)';
+      var hex = at(s.x, s.y, false);
+      if (hex) {
+        show(hex, false, s.x, s.y, false);
+        if (announce) msg.textContent = hex + ' · ponto ' + (p.aim.x + 1) + ', ' + (p.aim.y + 1) + ' de ' + p.w + ' × ' + p.h;
+      }
+      return hex;
+    };
+    // com zoom, a imagem desloca-se para a mira ficar sempre no palco
+    var aimKeepIn = function () {
+      var s = aimPt(); if (!s) return;
+      var sr = p.stage.getBoundingClientRect(), m = 24, dx = 0, dy = 0;
+      if (s.x < sr.left + m) dx = sr.left + m - s.x; else if (s.x > sr.right - m) dx = sr.right - m - s.x;
+      if (s.y < sr.top + m) dy = sr.top + m - s.y; else if (s.y > sr.bottom - m) dy = sr.bottom - m - s.y;
+      if (dx || dy) { p.px += dx; p.py += dy; clampPan(); apply(); }
+    };
+    p.stage.addEventListener('focus', function () { aimDraw(true); });
+    p.stage.addEventListener('blur', function () { cross.hidden = true; p.loupe.hidden = true; });
+
+    // apontar, escolher, deslocar com zoom (rato: arrastar ≥ 4 px; toque: arrastar aponta, levantar o dedo escolhe)
+    var drag = null;
+    // dois dedos: pinça (zoom à volta do meio dos dedos, deslocar com o meio); nada se escolhe até levantar todos os dedos
+    var fingers = {}, pinch = null;
+    var pinchMove = function () {
+      var k = Object.keys(fingers);
+      if (k.length < 2) { pinch.ids = ''; return; }
+      var A = fingers[k[0]], B = fingers[k[1]], ids = k[0] + ',' + k[1];
+      var d = Math.hypot(B.x - A.x, B.y - A.y), m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      if (pinch.ids === ids && pinch.d > 0 && p.fit.w) {
+        var sr = p.stage.getBoundingClientRect();
+        var v2 = CCL.zoomAbout({ z: p.z, px: p.px + m.x - pinch.m.x, py: p.py + m.y - pinch.m.y }, d / pinch.d, m.x - (sr.left + sr.width / 2), m.y - (sr.top + sr.height / 2), 16);
+        p.z = v2.z; p.px = v2.px; p.py = v2.py; clampPan(); apply();
+      }
+      pinch.ids = ids; pinch.d = d; pinch.m = m;
+    };
+    var lift = function (e) {   // true: o dedo fazia parte de uma pinça (não escolhe)
+      if (e.pointerType !== 'touch') return !!pinch;
+      delete fingers[e.pointerId];
+      if (!pinch) return false;
+      if (!Object.keys(fingers).length) pinch = null;
+      return true;
+    };
+    p.stage.addEventListener('pointerdown', function (e) {
+      if (p.closing || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (e.pointerType === 'touch' && !p.touch) { p.touch = true; if (p.src) say(PICK_HINT_TOUCH); }
+      e.preventDefault();
+      if (e.pointerType === 'touch' && e.isPrimary) { fingers = {}; pinch = null; }   // um gesto novo: nada fica do anterior
+      else if (pinch && e.pointerType !== 'touch') return;
+      try { p.stage.setPointerCapture(e.pointerId); } catch (err) {}
+      if (e.pointerType === 'touch') {
+        fingers[e.pointerId] = { x: e.clientX, y: e.clientY };
+        if (pinch || Object.keys(fingers).length > 1) {
+          drag = null; el.classList.remove('panning'); p.loupe.hidden = true;
+          pinch = pinch || { ids: '', d: 0, m: null };
+          pinchMove();
+          return;
+        }
+      }
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: p.px, py: p.py, pan: false, touch: e.pointerType === 'touch',
+        out: !CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY) };   // começou fora da imagem
+      p.last = { x: e.clientX, y: e.clientY };
+      if (drag.touch) aim(e);
     });
-    p.ov.addEventListener('pointerleave', function () { p.loupe.hidden = true; });
-    p.ov.addEventListener('click', function (e) {
-      e.preventDefault(); e.stopPropagation();
-      var hex = at(e); if (!hex) return;
-      var keep = e.shiftKey;
-      api('palette_add', { asset: a.id, hex: hex }).then(function (j) { palRefresh(box, a, j.palette); var mm = $('.ccd-palmsg', box); if (mm) mm.textContent = hex + ' adicionada à paleta.'; }).catch(fail);
-      if (!keep) stopPick();
+    p.stage.addEventListener('pointermove', function (e) {
+      if (p.closing) return;
+      if (pinch) { if (e.pointerType === 'touch' && fingers[e.pointerId]) { fingers[e.pointerId] = { x: e.clientX, y: e.clientY }; pinchMove(); } return; }
+      p.last = { x: e.clientX, y: e.clientY };
+      if (drag && drag.id === e.pointerId && !drag.touch && p.z > 1) {
+        var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        if (!drag.pan && Math.hypot(dx, dy) >= 4) { drag.pan = true; el.classList.add('panning'); }
+        if (drag.pan) { p.px = drag.px + dx; p.py = drag.py + dy; clampPan(); apply(); p.loupe.hidden = true; return; }
+      }
+      aim(e);
     });
+    p.stage.addEventListener('pointerup', function (e) {
+      if (lift(e)) { p.loupe.hidden = true; return; }
+      if (!drag || drag.id !== e.pointerId) return;
+      var d = drag; drag = null; el.classList.remove('panning');
+      if (d.pan || p.closing) return;
+      // clique fora sai — só se também começou fora: carregar dentro e largar fora (o dedo que escorrega da borda) não
+      // escolhe nem sai
+      if (!CCL.pickPx(p.disp.getBoundingClientRect(), 1, 1, e.clientX, e.clientY)) { p.loupe.hidden = true; if (d.out) closeSoon(); return; }
+      var hex = aim(e);
+      if (!hex) return;   // ainda a carregar
+      add(hex);
+      if (!e.shiftKey) { p.loupe.hidden = true; closeSoon(); }
+    });
+    p.stage.addEventListener('pointercancel', function (e) { lift(e); drag = null; el.classList.remove('panning'); p.loupe.hidden = true; });
+    p.stage.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch' && !drag) { if (!cross.hidden) aimDraw(false); else p.loupe.hidden = true; } });
+    el.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      if (p.closing || !p.stage.contains(e.target)) return;
+      zoom(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)), e.clientX, e.clientY);
+      aim(e);
+    }, { passive: false });
+    el.addEventListener('click', function (e) {
+      if (p.closing) { e.preventDefault(); e.stopPropagation(); stopPick(); return; }
+      var b = e.target.closest('[data-pf]');
+      if (!b) return;
+      var k = b.getAttribute('data-pf');
+      if (k === 'done') stopPick(); else zoom(k === 'in' ? 1.25 : 0.8);
+    });
+    el.addEventListener('contextmenu', function (e) { if (p.stage.contains(e.target)) e.preventDefault(); });
+
+    // teclado: Esc sai; + − 0 zoom (à volta da mira, com o foco no palco); Tab fica no diálogo (palco e barra); no palco
+    // as setas mexem a mira e Enter/Espaço escolhem; o resto não chega ao Topperboard nem à página
+    p.key = function (e) {
+      if (pickState !== p) return;
+      var k = e.key, ae = document.activeElement, onBtn = ae && el.contains(ae) && ae.tagName === 'BUTTON', mod = e.ctrlKey || e.metaKey;
+      var onStage = ae === p.stage, c = onStage ? aimPt() : null;
+      e.stopImmediatePropagation();
+      if (k === 'Escape') { e.preventDefault(); stopPick(); }
+      else if (!mod && (k === '+' || k === '=')) { e.preventDefault(); zoom(1.25, c && c.x, c && c.y); }
+      else if (!mod && k === '-') { e.preventDefault(); zoom(0.8, c && c.x, c && c.y); }
+      else if (!mod && k === '0') { e.preventDefault(); p.z = 1; p.px = p.py = 0; apply(); }
+      else if (k === 'Tab') { e.preventDefault(); var f = [p.stage].concat($$('.pf-bar button', el)), i = f.indexOf(ae); f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus(); }
+      else if (onStage && !mod && /^Arrow(Left|Right|Up|Down)$/.test(k)) {
+        e.preventDefault();
+        var q = p.src && CCL.aimMove(p.aim, k, e.shiftKey, p.w, p.h);
+        if (q) { p.aim = q; aimKeepIn(); aimDraw(true); }
+      }
+      else if (onStage && !mod && (k === 'Enter' || k === ' ')) {
+        e.preventDefault();
+        if (e.repeat || !c) return;
+        var hex = at(c.x, c.y, e.altKey);
+        if (!hex) return;
+        add(hex);
+        if (!e.shiftKey) stopPick();
+      }
+      else if ((k === 'Enter' || k === ' ') && onBtn) { /* carrega no botão */ }
+      else if (/^(Arrow|Page|Home|End| )/.test(k) || k === ' ') e.preventDefault();   // nada de deslocar a página por trás
+    };
+    document.addEventListener('keydown', p.key, true);
+    $('[data-pf="done"]', el).focus({ preventScroll: true });
   }
 
   /** Liga os botões do detalhe. o: onColor(hex), onAdd(asset), onChange(asset), onDelete(id), onOpen(id). */
   function bindAssetDetail(box, a, o) {
+    if (a.noaccess) return;
     o = o || {};
+    box.__ccA = a;   // para a paleta deste painel se atualizar quando as cores chegam de outro sítio (palRefresh)
     if (isAudio(a)) bindAuPlayer(box, a);
     box.addEventListener('click', function (e) {
       var s = e.target.closest('[data-seek]');
@@ -973,7 +1289,10 @@
 
     // detalhe (gaveta)
     var drawer = null;
-    function closeDetail() { if (drawer) { drawer.remove(); drawer = null; } }
+    function closeDetail() {
+      if (pickState && drawer && pickState.box && drawer.contains(pickState.box)) stopPick(true);   // a lupa não fica a flutuar sobre a grelha
+      if (drawer) { drawer.remove(); drawer = null; }
+    }
     function openDetail(id) {
       closeDetail();
       drawer = document.createElement('aside');
@@ -998,7 +1317,8 @@
         $('[data-x]', drawer).focus();
       }).catch(function (e) { fail(e); closeDetail(); });
     }
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer && !(T.topMdl && T.topMdl())) { e.preventDefault(); closeDetail(); } });
+    // Esc fecha a gaveta — mas, com o conta-gotas aberto, o Esc é dele (fecha-o primeiro e a gaveta fica)
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer && !pickState && !(T.topMdl && T.topMdl())) { e.preventDefault(); closeDetail(); } });
 
     // capturar: carregar, colar, arrastar
     function addFiles(files) {
@@ -1050,6 +1370,20 @@
     var spaceUsed = false;
     var vp, world, layer, svg, lanesEl, zoomOut, sideEl, sideBody, emptyEl, ptr = { x: 0, y: 0 }, spaceDown = false;
     var RT = null;   // tempo real (cc_rt.js): presença, cursores, alterações dos outros logo
+    // §33.14 (5 nov): vídeos a tocar com som nos próprios cartões — o ▶ do cartão e, em Apresentar, o cursor ou o clique
+    // num vídeo que não é o diapositivo. Id do cartão → { c, el }; mudam-se para o cartão redesenhado (makeEl).
+    var players = new Map();
+    // o cursor mexeu-se mesmo (coordenadas novas)? Ao mudar de diapositivo o quadro desliza por baixo do cursor parado e o
+    // browser dá entradas/movimentos nos cartões que passam: nenhum vídeo começa por isso
+    var ptrMoved = false, ptrX = null, ptrY = null;
+    root.addEventListener('pointermove', function (e) { ptrMoved = e.clientX !== ptrX || e.clientY !== ptrY; ptrX = e.clientX; ptrY = e.clientY; }, true);
+    // um vídeo com som de cada vez (cartões, apresentação, detalhe, visualizador): o que começa pausa os outros; os MP3
+    // misturam (cc_audio.js) e um vídeo sem som (pré-visualização) não conta
+    document.addEventListener('play', function (e) {
+      var t = e.target;
+      if (!t || t.tagName !== 'VIDEO' || t.muted) return;
+      Array.prototype.forEach.call(document.querySelectorAll('video'), function (v) { if (v !== t && !v.muted && !v.paused) v.pause(); });
+    }, true);
 
     function load() {
       var id = B.id;
@@ -1084,21 +1418,50 @@
             + (MANAGE ? '<button type="button" class="ibtn" data-a="more" aria-label="Mais" data-tip>⋯</button>' : '');
       return '<nav class="ccb-crumb" aria-label="Caminho">' + crumbs + '</nav>' + stages + '<div class="ccb-acts">' + acts + '</div>';
     }
+    // §33.14: a barra de ferramentas é estática (nunca desliza para o lado); a seta na borda direita expande-a com o nome
+    // de cada ferramenta, como o menu da aplicação (§12.0). O estado é da pessoa (pref k=tools) e lê-se só no arranque:
+    // a resposta de um sub-Topperboard pode vir pré-carregada (até 60 s) com a preferência antiga.
+    var toolsWide = false;
     function toolsHtml() {
-      return '<div class="ccb-tools" role="toolbar" aria-label="Ferramentas">'
-        + tb('select', 'cursor', 'Selecionar e mover ( V )')
-        + (EDIT ? '<button type="button" data-undo="0" aria-label="Anular (' + MODK + ' Z)" data-tip disabled>' + ico('undo') + '</button><button type="button" data-undo="1" aria-label="Refazer (' + MODK + ' Shift Z)" data-tip disabled>' + ico('redo') + '</button><hr>' : '')
-        + (EDIT ? tb('note', 'note', 'Nota ( N )') + tb('column', 'column', 'Coluna ( C )') + tb('list', 'list', 'Lista ( L )')
-          + tb('swatch', 'swatch', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>') + tb('arrow', 'arrow', 'Seta entre cartões ( A )')
-          + '<hr>' + '<button type="button" data-upmenu aria-haspopup="menu" aria-label="Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)" data-tip>' + ico('upload') + '</button><input type="file" multiple hidden data-up>'
-          + tb('link', 'link', 'Link (ou cole com Ctrl V)') + tb('board', 'board', 'Sub-Topperboard') : '')
-        + '<hr>' + tb('ai', 'spark', 'IA ( / )') + '</div>';
+      return '<div class="ccb-tools' + (toolsWide ? ' wide' : '') + '" id="ccb-tools" role="toolbar" aria-label="Ferramentas">'
+        + tb('select', 'cursor', 'Selecionar e mover ( V )', '', 'Selecionar')
+        + (EDIT ? toolBtn('data-undo="0" disabled', 'undo', 'Anular (' + MODK + ' Z)', 'Anular') + toolBtn('data-undo="1" disabled', 'redo', 'Refazer (' + MODK + ' Shift Z)', 'Refazer') + '<hr>' : '')
+        + (EDIT ? tb('note', 'note', 'Nota ( N )', '', 'Nota') + tb('column', 'column', 'Coluna ( C )', '', 'Coluna') + tb('list', 'list', 'Lista ( L )', '', 'Lista')
+          + tb('swatch', 'swatch', 'Amostra de cor', '', 'Amostra de cor') + tb('draw', 'pen', 'Desenhar ( D )', '<i class="sw" style="background:' + B.color + '"></i>', 'Desenhar') + tb('arrow', 'arrow', 'Seta entre cartões ( A )', '', 'Seta')
+          + '<hr>' + toolBtn('data-upmenu aria-haspopup="menu"', 'upload', 'Enviar imagens, vídeos ou ficheiros (do dispositivo ou da Drive)', 'Enviar') + '<input type="file" multiple hidden data-up>'
+          + tb('link', 'link', 'Link (ou cole com Ctrl V)', '', 'Link') + tb('board', 'board', 'Sub-Topperboard', '', 'Sub-Topperboard') : '')
+        + '<hr>' + tb('ai', 'spark', 'IA ( / )', '', 'IA') + '</div>';
+    }
+    // o nome fica à vista com a barra expandida; aí não há dicas (diriam o mesmo)
+    function toolBtn(attrs, icon, label, short, extra) {
+      return '<button type="button" ' + attrs + ' aria-label="' + esc(label) + '"' + (toolsWide ? '' : ' data-tip') + '>' + ico(icon) + (extra || '') + '<span class="tl">' + esc(short) + '</span></button>';
+    }
+    function toolsEdgeHtml() {
+      return '<button type="button" class="ccb-tools-edge" data-a="tools" aria-controls="ccb-tools" aria-keyshortcuts="]">' + ico('chev') + '</button>';
+    }
+    function toolsSync() {
+      var t = $('.ccb-tools', root), e = $('.ccb-tools-edge', root), l = toolsWide ? 'Recolher ferramentas' : 'Expandir ferramentas';
+      if (t) {
+        t.classList.toggle('wide', toolsWide);
+        $$('button', t).forEach(function (b) { if (toolsWide) b.removeAttribute('data-tip'); else b.setAttribute('data-tip', ''); });
+      }
+      if (e) { e.setAttribute('aria-expanded', toolsWide ? 'true' : 'false'); e.setAttribute('aria-label', l + ' ( ] )'); e.setAttribute('data-tip', l + '  ·  ] '); }
+    }
+    function toggleTools() {
+      var x0 = vp.getBoundingClientRect().left;
+      toolsWide = !toolsWide;
+      toolsSync();
+      if (T.hideTip) T.hideTip();
+      // a tela estreita (ou alarga) pela esquerda: os cartões ficam no mesmo sítio do ecrã
+      var dx = vp.getBoundingClientRect().left - x0;
+      if (dx) { B.view.x -= dx; applyView(); }
+      api('pref', { k: 'tools', v: toolsWide ? 1 : 0 }).catch(function () {});
     }
     function frame() {
       root.innerHTML = '<header class="ccb-top">' + topHtml() + '</header>'
         + (B.lanes ? '<div class="ccb-lanebar" data-lanebar></div>' : '')
         + '<div class="ccb-main">'
-        + toolsHtml()
+        + '<div class="ccb-toolsw">' + toolsHtml() + toolsEdgeHtml() + '</div>'
         + '<div class="ccb-vp" tabindex="0" aria-label="Tela do Topperboard. Espaço + arrastar para mover; Ctrl + roda para zoom." data-vp>'
         + '<div class="ccb-world"><div data-lanes></div><svg class="ccb-arrows" width="1" height="1"><defs><marker id="cc-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g data-ar></g></svg><div data-layer></div></div>'
         + '<div class="ccb-empty" hidden><div><b>Topperboard vazio</b><span>Cole (Ctrl V) ou arraste imagens, vídeos e links. <span class="kbd">N</span> nota · <span class="kbd">C</span> coluna · <span class="kbd">/</span> IA</span></div></div>'
@@ -1112,11 +1475,12 @@
       vp = $('[data-vp]', root); world = $('.ccb-world', root); layer = $('[data-layer]', root); svg = $('.ccb-arrows', root); lanesEl = $('[data-lanes]', root);
       zoomOut = $('[data-zo]', root); sideEl = $('[data-side]', root); sideBody = $('[data-side-b]', root); emptyEl = $('.ccb-empty', root);
       sideGrip();
+      toolsSync();
       if (window.innerWidth < 1100) sideEl.hidden = true;
       setTool('select');
       bindBoard();
     }
-    function tb(tool, icon, label, extra) { return '<button type="button" data-tool="' + tool + '" aria-label="' + esc(label) + '" data-tip>' + ico(icon) + (extra || '') + '</button>'; }
+    function tb(tool, icon, label, extra, short) { return toolBtn('data-tool="' + tool + '"', icon, label, short, extra); }
 
     function lanebar() {
       var el = $('[data-lanebar]', root);
@@ -1139,8 +1503,13 @@
         rafView = 0;
         var v = B.view;
         world.style.transform = 'translate3d(' + v.x + 'px,' + v.y + 'px,0) scale(' + v.s + ')';
+        if (presMedia && presMedia.btn) presMedia.btn.style.setProperty('--vs', v.s);   // «▶ Tocar»: 44 px no ecrã com toque
         // §33.5: will-change só enquanto a vista se mexe; ao parar, a camada volta a rasterizar na escala nova (nítida)
-        world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () { world.classList.remove('moving'); }, 200);
+        world.classList.add('moving'); clearTimeout(applyView.mv); applyView.mv = setTimeout(function () {
+          world.classList.remove('moving');
+          // no toque, o ▶ dos cartões de vídeo fica com 44 px no ecrã em qualquer zoom (só ao parar: não redesenha a cada passo)
+          if (window.matchMedia && matchMedia('(pointer: coarse)').matches) layer.style.setProperty('--vs', B.view.s);
+        }, 200);
         var g = 24 * v.s;
         while (g < 12) g *= 2;
         vp.style.backgroundSize = g + 'px ' + g + 'px';
@@ -1210,7 +1579,13 @@
     function cardHtml(c) {
       if (c.local) return localHtml(c);
       var a = c.asset, x = c.c || {}, h = '';
-      var badges = (c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '')
+      var ncb = c.nc ? '<button type="button" class="ccc-nc" data-cact="nc" aria-label="' + c.nc + (c.nc === 1 ? ' comentário' : ' comentários') + ' — ver os últimos" aria-haspopup="dialog">' + c.nc + '</button>' : '';
+      // §33.9: um ficheiro da Faturação e quem vê não tem o Financeiro: o servidor não manda miniatura, nome nem análise
+      if (c.noaccess) {
+        return '<div class="ccc-noacc" role="note"' + ((c.type === 'image' || c.type === 'video') && c.h ? ' style="aspect-ratio:' + c.w + '/' + c.h + '"' : '') + '>'
+          + ico('lock') + '<span>Sem acesso a este ficheiro</span></div>' + ncb + '<div class="ccc-hov"><button type="button" data-cact="com" title="Comentários">' + ico('bubble') + '</button></div>';
+      }
+      var badges = ncb
         + (x.state === 'keep' ? '<span class="ccc-state">Manter</span>' : x.state === 'swap' ? '<span class="ccc-state swap">Trocar</span>' : '')
         + (a ? '<span class="ccc-ai">' + aiBadge(a) + '</span>' : '');
       var hov = '';
@@ -1220,7 +1595,7 @@
         case 'image': case 'video': {
           var ratio = a && a.w && a.h ? a.w + '/' + a.h : (c.h ? c.w + '/' + c.h : '4/3');
           h = '<div class="ccc-media" style="aspect-ratio:' + ratio + '">' + (a && (a.thumb || (c.type === 'image' && a.orig)) ? '<img alt="' + esc(a.caption || a.title) + '" decoding="async" draggable="false">' : '<span class="nf">' + ico('file') + '</span>')
-            + (c.type === 'video' ? '<span class="ccc-play">' + ico('play') + '</span>' + (a && a.dur ? '<span class="ccc-dur">' + fmtDur(a.dur) + '</span>' : '') : '')
+            + (c.type === 'video' ? (a && a.orig && !c.local && !c.noaccess ? '<button type="button" class="ccc-play" data-cact="v-play" aria-label="Tocar ou pausar o vídeo">' + ico('play') + ico('pause', 'pause') + '</button>' : '<span class="ccc-play">' + ico('play') + '</span>') + (a && a.dur ? '<span class="ccc-dur">' + fmtDur(a.dur) + '</span>' : '') : '')
             + (a && a.pal && a.pal.length ? '<span class="ccc-pal">' + palHtml(a.pal, 5) + '</span>' : '')
             + (a && a.tags && a.tags.length ? '<span class="ccc-tags">' + a.tags.slice(0, 3).map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>' : '') + '</div>'
             + (x.caption ? '<div class="ccc-cap">' + esc(x.caption) + '</div>' : '');
@@ -1287,7 +1662,7 @@
     }
     function makeEl(c) {
       var el = document.createElement('div');
-      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '') + (c.gone ? ' gone' : '');
+      el.className = 'ccc t-' + c.type + (c.type === 'note' && c.c && c.c.brief ? ' brief' : '') + (B.sel.has(c.id) ? ' sel' : '') + (c.local ? (c.local.state === 'fail' ? ' failed' : ' uploading') : '') + (c.gone ? ' gone' : '') + (c.noaccess ? ' noacc' : '');
       el.setAttribute('data-id', c.id);
       if (c.type === 'note' && c.c && c.c.color) { el.style.setProperty('--note', c.c.color); el.classList.add('dark-ink'); }
       el.innerHTML = cardHtml(c);
@@ -1298,7 +1673,23 @@
       }
       if (c.type === 'drawing') el.style.height = (c.h || 100) + 'px';
       if (c.type === 'video' && c.asset && c.asset.orig && !c.local) bindVideoHover(el, c);
-      if (c.type === 'audio') auNeedPeaks(c.asset, auUpdated);
+      if (c.type === 'audio' && !c.noaccess) auNeedPeaks(c.asset, auUpdated);
+      // o cartão que se está a apresentar foi redesenhado (IA, forma de onda, sondagem, tempo real): o vídeo e o «▶ Tocar»
+      // passam para o cartão novo na mesma tarefa, por isso o browser não os pausa (o áudio vive na barra e não se mexe).
+      // Se mudou de referência ou de tipo (um «vídeo» que afinal é áudio), o que estava a tocar pára: ▶ começa o novo.
+      if (presMedia && presMedia.c.id === c.id) {
+        if (c.type !== presMedia.c.type || (c.asset && c.asset.id) !== (presMedia.c.asset && presMedia.c.asset.id)) { presStop(); if (presPaint) presPaint(); }
+        else {
+          if (presMedia.el.tagName === 'VIDEO') ($('.ccc-media', el) || el).appendChild(presMedia.el);
+          if (presMedia.btn) el.appendChild(presMedia.btn);
+        }
+      }
+      // o mesmo para o vídeo que toca no cartão (▶ do cartão / cursor em Apresentar)
+      var pl = players.get(c.id);
+      if (pl) {
+        if (c.type !== 'video' || (c.asset && c.asset.id) !== (pl.c.asset && pl.c.asset.id)) { pl.el.pause(); pl.el.remove(); players.delete(c.id); }
+        else { pl.c = c; ($('.ccc-media', el) || el).appendChild(pl.el); el.classList.toggle('playing', !pl.el.paused && !pl.el.ended); }
+      }
       return el;
     }
     function place(c, el) {
@@ -1325,15 +1716,54 @@
       }
     }
     function updateThumbs() { B.els.forEach(function (el, id) { var c = B.cards.get(id); if (c) setThumb(c, el); }); }
+    /** Tira só a pré-visualização sem som (nunca o vídeo da apresentação, que é outro elemento). */
+    function killHoverPrev(el) { var v = $('video.hov-prev', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } }
+    function playerPaint(id) { var el = B.els.get(id), p = players.get(id); if (el) el.classList.toggle('playing', !!(p && !p.el.paused && !p.el.ended)); }
+    /** O vídeo do cartão a tocar com som no próprio cartão (até ao fim; mistura com o leitor de áudio: data-mix). */
+    function playerStart(c) {
+      var el = B.els.get(c.id);
+      if (!el || !c.asset || !c.asset.orig) return null;
+      killHoverPrev(el);
+      var v = document.createElement('video');
+      v.className = 'card-play'; v.setAttribute('data-mix', ''); v.playsInline = true; v.preload = 'auto'; v.src = c.asset.orig;
+      if (root.classList.contains('present')) { v.muted = PRES.muted; v.volume = PRES.vol; }   // «Sem som»/volume da barra
+      ($('.ccc-media', el) || el).appendChild(v);
+      var pl = { c: c, el: v };
+      players.set(c.id, pl);
+      ['play', 'pause', 'ended'].forEach(function (k) { v.addEventListener(k, function () { playerPaint(c.id); }); });
+      var pr = v.play();
+      if (pr && pr.catch) pr.catch(function () { playerPaint(c.id); });
+      return pl;
+    }
+    function playersStop() {
+      players.forEach(function (pl, id) { pl.el.pause(); pl.el.removeAttribute('src'); try { pl.el.load(); } catch (e) {} pl.el.remove(); players.delete(id); playerPaint(id); });
+    }
+    /** ▶ do cartão de vídeo (e, em Apresentar, o clique no vídeo): começa, pausa ou retoma; no diapositivo, o da apresentação. */
+    function vAct(c) {
+      if (!c || c.type !== 'video' || !c.asset || !c.asset.orig || c.local || c.noaccess) return;
+      if (presMedia && presMedia.c.id === c.id && presToggle) { presToggle(); return; }
+      var pl = players.get(c.id);
+      if (!pl) { playerStart(c); return; }
+      if (pl.el.paused || pl.el.ended) { var pr = pl.el.play(); if (pr && pr.catch) pr.catch(function () {}); } else pl.el.pause();
+    }
     function bindVideoHover(el, c) {
+      // §33.14 (5 nov): em Apresentar o cursor a passar num vídeo começa-o com som e ele toca até ao fim (sair não o pára);
+      // o do diapositivo é o da apresentação. Só com o cursor a mexer-se (não com o quadro a deslizar por baixo dele).
+      el.addEventListener('pointermove', function (e) {
+        if (e.pointerType !== 'mouse' || !ptrMoved || !root.classList.contains('present')) return;
+        var cc = B.cards.get(c.id) || c;
+        if (!players.has(cc.id) && !(presMedia && presMedia.c.id === cc.id) && !cc.local && !cc.noaccess) playerStart(cc);
+      });
       el.addEventListener('pointerenter', function (e) {
-        if (e.pointerType !== 'mouse' || $('video', el)) return;
+        if (e.pointerType !== 'mouse' || root.classList.contains('present')) return;
+        if ($('video', el)) return;
         var v = document.createElement('video');
+        v.className = 'hov-prev';
         v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.src = c.asset.orig;
         $('.ccc-media', el).appendChild(v);
         v.play().catch(function () {});
       });
-      el.addEventListener('pointerleave', function () { var v = $('video', el); if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } });
+      el.addEventListener('pointerleave', function () { killHoverPrev(el); });
     }
     /** A forma de onda calculada: todos os cartões com essa referência. */
     function auUpdated(na) {
@@ -1341,6 +1771,7 @@
       if (AU) AU.hub.paint();
     }
     function auAct(c, b, e) {
+      if (presAct && presAct(c, b, e)) return;   // o cartão do diapositivo: o som da apresentação (nunca um 2.º som por cima)
       var a = c.asset;
       if (!a || !AU) return;
       var box = b.closest('.ccc-au');
@@ -1363,7 +1794,9 @@
       var frag = null;
       B.cards.forEach(function (c) {
         if (c.col || c.type === 'arrow') return;
-        var bb = bbox(c), vis = bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1;
+        // o cartão que se está a apresentar conta sempre como à vista: deslocar a vista ou redesenhar tudo não lhe tira o vídeo
+        var bb = bbox(c), vis = (bb.x < x2 && bb.x + bb.w > x1 && bb.y < y2 && bb.y + bb.h > y1) || !!(presMedia && presMedia.c.id === c.id)
+          || players.has(c.id) || (c.type === 'column' && players.size > 0 && childrenOf(c.id).some(function (k) { return players.has(k.id); }));
         var el = B.els.get(c.id);
         if (vis && !el) {
           el = makeEl(c);
@@ -1526,6 +1959,8 @@
     }
     function driveRun(body) { return driveApi(body).then(function (j) { return j.ok && j.done === false && j.next ? driveRun(j.next) : j; }); }
     var upm = null;
+    // arrasto do seletor «Da Drive» para a tela: o largar na tela (vp drop) fecha o seletor por aqui (§33.9)
+    var pickDrag = null;
     function closeUpMenu() { if (upm) { upm.el.remove(); document.removeEventListener('pointerdown', upm.out, true); upm = null; } }
     function upMenu(btn) {
       var inp = $('[data-up]', root);
@@ -1549,24 +1984,41 @@
       el.addEventListener('click', function (e) {
         var b = e.target.closest('[data-um]'); if (!b) return;
         var k = b.getAttribute('data-um'); closeUpMenu();
-        if (k === 'dev') inp.click(); else drivePick();
+        if (k === 'dev') inp.click(); else drivePick(btn);   // ao fechar, o foco volta a «Enviar» (o item do menu já não existe)
       });
     }
     function fold(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
-    function drivePick() {
+    function drivePick(opener) {
       var at = ptrWorld();
       var el = document.createElement('div');
       el.className = 'cc-dpick-back';
+      // a região viva (.dp-sr) diz a pasta, os resultados e o carregar; a dica do arrasto (.dp-drag-hint, também viva)
+      // fica dentro do diálogo aria-modal (durante o arrasto só ela se vê); no toque e a ≤ 640 px o rodapé perde a parte
+      // do rato (.dp-mouse)
       el.innerHTML = '<div class="cc-dpick" role="dialog" aria-modal="true" aria-label="Juntar da Drive"><div class="dp-h"><h3>Juntar da Drive</h3>'
         + '<input type="search" placeholder="Procurar na Drive (nome ou pasta)" aria-label="Procurar na Drive"></div>'
         + '<nav class="dp-crumb" aria-label="Pasta"></nav><div class="dp-list" role="group" aria-label="Ficheiros da Drive"><p class="muted"><span class="spin"></span> A carregar a Drive…</p></div>'
-        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia. Shift ou Ctrl para escolher vários.</span>'
-        + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div></div>';
+        + '<div class="dp-f-bar"><span class="muted small">O cartão aponta para o ficheiro: não se faz cópia.<span class="dp-mouse"> Shift ou Ctrl para escolher vários. Também pode arrastá-los para o sítio certo do Topperboard.</span></span>'
+        + '<button type="button" class="btn ghost" data-dp-cancel>Cancelar</button><button type="button" class="btn" data-dp-add disabled>Adicionar</button></div>'
+        + '<p class="sr dp-sr" role="status" aria-live="polite"></p><div class="dp-drag-hint" role="status" aria-live="polite"></div></div>';
       document.body.appendChild(el);
       var dlg = $('.cc-dpick', el), list = $('.dp-list', el), crumb = $('.dp-crumb', el), q = $('input[type=search]', el), addB = $('[data-dp-add]', el);
+      var hint = $('.dp-drag-hint', el), sr = $('.dp-sr', el), loading = true;
       var objs = [], recents = [], roots = [], prefix = '', picked = new Set(), shown = [], last = -1;
-      var back = document.activeElement;
-      function close() { el.remove(); document.removeEventListener('keydown', escKey, true); if (back && back.focus) back.focus(); }
+      var back = opener || document.activeElement;
+      setTimeout(function () { if (loading && el.isConnected) sr.textContent = 'A carregar a Drive…'; }, 100);
+      // miniaturas como na Drive (TD.thumbs): as que existem (catalog.thumbs) pedem-se em lote, as que faltam fazem-se no
+      // browser; só as que se veem. Só se pedem etags que vieram do catálogo (que já esconde a Faturação a quem não a vê).
+      var TH = window.TD && TD.thumbs && TD.kind ? TD.thumbs : null, hasTh = new Set(), thumbUrl = new Map();
+      var io = TH && 'IntersectionObserver' in window ? new IntersectionObserver(seen, { root: list, rootMargin: '200px' }) : null, seenQ = [], seenT = 0;
+      function close(to) {
+        endDrag(false);
+        el.remove(); document.removeEventListener('keydown', escKey, true);
+        if (io) io.disconnect();
+        clearTimeout(seenT);
+        to = to || back;
+        if (to && to.focus && to.isConnected) to.focus();
+      }
       // Esc fecha sempre (antes dos atalhos da tela); Tab fica dentro do diálogo
       function escKey(e) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
@@ -1577,14 +2029,85 @@
       }
       document.addEventListener('keydown', escKey, true);
       function base(k) { var p = k.replace(/\/$/, '').split('/'); return p[p.length - 1]; }
-      function paint() {
+      function kindOfKey(k) { return window.TD && TD.kind ? TD.kind(k) : { id: 'other', preview: '' }; }
+      function thumbOf(e) {
+        var u = thumbUrl.get(e);
+        if (!u && TH && TH.cached) { u = TH.cached(e) || ''; if (u) thumbUrl.set(e, u); }
+        return u || '';
+      }
+      function imgHtml(u) { return '<img src="' + esc(u) + '" alt="" decoding="async" draggable="false">'; }
+      function iconHtml(k, kd) {
+        var x = (base(k).match(/\.([a-z0-9]{1,5})$/i) || [])[1] || '';
+        return (window.TD && TD.icon ? TD.icon(kd.id) : ico('file')) + (x ? '<span class="dp-ext">' + esc(x.toUpperCase()) + '</span>' : '');
+      }
+      // uma célula da grelha: pré-visualização (miniatura, ou ícone e extensão), visto, nome, pasta e tamanho
+      function cellHtml(o, i, path) {
+        var on = picked.has(o.k), kd = kindOfKey(o.k), pv = kd.preview === 'image' || kd.preview === 'video';
+        var e = o.e && (pv || hasTh.has(o.e)) ? o.e : '', u = e ? thumbOf(e) : '';
+        return '<button type="button" class="dp-f' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-i="' + i + '" draggable="true">'
+          + '<span class="dp-th k-' + esc(kd.id) + (u ? ' has-img' : '') + '"' + (e ? ' data-e="' + esc(e) + '"' : '') + '>' + (u ? imgHtml(u) : iconHtml(o.k, kd))
+          + (kd.id === 'video' ? '<span class="dp-play" aria-hidden="true"></span>' : '') + '</span>'
+          + '<i class="dp-ck" aria-hidden="true"></i><span class="dp-nm"><b>' + esc(base(o.k)) + '</b>'
+          + (path ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '<small>' + fmtBytes(o.s || 0) + '</small></span></button>';
+      }
+      function paintThumb(e, u) {
+        if (!u || !el.isConnected) return;
+        thumbUrl.set(e, u);
+        $$('.dp-th[data-e="' + e + '"]', list).forEach(function (t) {
+          if (t.classList.contains('has-img')) return;
+          var play = $('.dp-play', t);
+          t.innerHTML = imgHtml(u) + (play ? play.outerHTML : '');
+          t.classList.add('has-img');
+        });
+      }
+      // uma miniatura que não carrega (URL caducado, removida): volta o ícone, sem erro
+      list.addEventListener('error', function (ev) {
+        var img = ev.target; if (!img || img.tagName !== 'IMG') return;
+        var t = img.closest('.dp-th'), f = t && t.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+        if (!o) return;
+        var play = $('.dp-play', t);
+        thumbUrl.delete(t.getAttribute('data-e'));
+        t.classList.remove('has-img'); t.innerHTML = iconHtml(o.k, kindOfKey(o.k)) + (play ? play.outerHTML : '');
+      }, true);
+      function seen(entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          io.unobserve(en.target);
+          var f = en.target.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+          if (o && o.e) seenQ.push(o);
+        });
+        clearTimeout(seenT);
+        if (seenQ.length) seenT = setTimeout(flushSeen, 40);
+      }
+      function flushSeen() {
+        var l = seenQ.filter(function (o) { return !thumbUrl.has(o.e); }); seenQ = [];
+        var have = l.filter(function (o) { return hasTh.has(o.e); }), make = l.filter(function (o) { return !hasTh.has(o.e); });
+        try {
+          if (have.length) Promise.resolve(TH.urls(have.map(function (o) { return o.e; }))).then(function (map) {
+            var miss = [];
+            have.forEach(function (o) { if (map && map[o.e]) paintThumb(o.e, map[o.e]); else miss.push(o); });
+            if (miss.length) TH.ensure(miss, paintThumb);
+          }).catch(function () {});
+          if (make.length) TH.ensure(make, paintThumb);
+        } catch (err) { /* sem miniaturas: ficam os ícones */ }
+      }
+      function watchThumbs() {
+        if (!io) return;
+        io.disconnect();
+        $$('.dp-th[data-e]:not(.has-img)', list).forEach(function (t) { io.observe(t); });
+      }
+      function bar() {
         addB.disabled = !picked.size;
         addB.textContent = picked.size ? 'Adicionar ' + picked.size : 'Adicionar';
-        var term = fold(q.value.trim()), html = '';
+      }
+      function paint() {
+        bar();
+        var term = fold(q.value.trim()), html = '', said;
         shown = [];
         if (term) {
           shown = objs.filter(function (o) { return fold(o.k).indexOf(term) >= 0; }).slice(0, 200);
           crumb.textContent = shown.length ? shown.length + (shown.length === 1 ? ' resultado' : ' resultados') : '';
+          said = crumb.textContent || 'Nada encontrado com «' + q.value.trim() + '».';
         } else {
           var dirs = {};
           var pool = prefix ? objs.filter(function (o) { return o.k.indexOf(prefix) === 0; }) : [];
@@ -1594,36 +2117,109 @@
           html += Object.keys(dirs).sort().map(function (d) { return '<button type="button" class="dp-d" data-dp-go="' + esc(d) + '">' + ico('drive') + ' ' + esc(base(d)) + '</button>'; }).join('');
           if (!prefix && recents.length) { html += '<h4>Recentes</h4>'; shown = recents.slice(0, 12); }
         }
-        html += shown.map(function (o, i) {
-          var on = picked.has(o.k);
-          return '<button type="button" class="dp-f' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-i="' + i + '"><i class="dp-ck" aria-hidden="true"></i><span><b>' + esc(base(o.k)) + '</b>'
-            + (term || !prefix ? '<small>' + esc(o.k.slice(0, o.k.length - base(o.k).length)) + '</small>' : '') + '</span><small>' + fmtBytes(o.s || 0) + '</small></button>';
-        }).join('');
+        if (shown.length) html += '<div class="dp-grid">' + shown.map(function (o, i) { return cellHtml(o, i, term || !prefix); }).join('') + '</div>';
         list.innerHTML = html || '<p class="muted">' + (term ? 'Nada encontrado com «' + esc(q.value.trim()) + '».' : 'Pasta vazia.') + '</p>';
+        watchThumbs();
+        if (!term) { var n = $$('.dp-d, .dp-f', list).length; said = (prefix ? base(prefix) : 'Drive') + ' · ' + (n ? n + (n === 1 ? ' item' : ' itens') : 'pasta vazia'); }
+        if (!loading) sr.textContent = said;   // anunciado na região viva do diálogo
+      }
+      // escolher muda só o visto (as imagens ficam: nada se volta a desenhar)
+      function mark() {
+        $$('.dp-f', list).forEach(function (f) { var o = shown[+f.getAttribute('data-i')], on = !!o && picked.has(o.k); f.classList.toggle('on', on); f.setAttribute('aria-pressed', on); });
+        bar();
       }
       function toggle(i, range) {
         if (range && last >= 0) { var a = Math.min(last, i), b2 = Math.max(last, i); for (var j = a; j <= b2; j++) picked.add(shown[j].k); }
         else { var k = shown[i].k; if (picked.has(k)) picked.delete(k); else picked.add(k); }
-        last = i; paint();
+        last = i; mark();
         var f = $('.dp-f[data-i="' + i + '"]', list); if (f) f.focus();
       }
       el.addEventListener('click', function (e) {
         if (e.target === el || e.target.closest('[data-dp-cancel]')) { close(); return; }
-        var g = e.target.closest('[data-dp-go]'); if (g) { prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint(); return; }
+        var g = e.target.closest('[data-dp-go]');
+        if (g) {
+          prefix = g.getAttribute('data-dp-go'); q.value = ''; last = -1; paint();
+          // o botão carregado foi refeito: o foco vai para a 1.ª pasta/célula (pasta vazia: a migalha da pasta)
+          var f1 = $('.dp-d, .dp-f', list) || $$('button', crumb).pop(); if (f1) f1.focus();
+          return;
+        }
         var f = e.target.closest('.dp-f'); if (f) { toggle(+f.getAttribute('data-i'), e.shiftKey); return; }
-        if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(JSON.stringify(keys), at); }
+        if (e.target.closest('[data-dp-add]') && picked.size) { var keys = Array.from(picked); close(); addDrive(keys, at); }
       });
       el.addEventListener('keydown', function (e) {
         var f = e.target.closest && e.target.closest('.dp-f');
         if (f && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(+f.getAttribute('data-i'), e.shiftKey); }
-        else if (f && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); var n = f[e.key === 'ArrowDown' ? 'nextElementSibling' : 'previousElementSibling']; if (n && n.classList.contains('dp-f')) n.focus(); }
+        else if (f && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(e.key)) {
+          // setas na grelha (as colunas contam-se pelo desenho: mudam com a largura)
+          e.preventDefault();
+          var cells = $$('.dp-f', list), cols = cells.filter(function (c) { return c.offsetTop === cells[0].offsetTop; }).length;
+          var j = CCL.gridStep(cells.indexOf(f), e.key, cols, cells.length);
+          if (j >= 0) { cells[j].focus(); if (cells[j].scrollIntoView) cells[j].scrollIntoView({ block: 'nearest' }); }
+        }
       });
+      // ── arrastar para o Topperboard: o escolhido (ou todos os escolhidos) vai para onde se larga ──
+      // Quando o rato se afasta do sítio onde começou (DRAG_OUT px), o diálogo fica transparente e deixa passar o rato
+      // (is-dragging); largar na tela junta e fecha (pickDrag, chamado pelo drop da tela); largar noutro sítio devolve o
+      // diálogo como estava (dragend). Antes disso o diálogo fica à vista e por cima da tela: um clique que mexe uns
+      // píxeis (o browser começa o arrasto aos 4 px) acaba no próprio diálogo e não junta nada. Se o dragend não chegar
+      // (arrasto perdido), o próximo toque/clique ou 15 s sem eventos de arrasto devolvem o diálogo.
+      var drag = null, DRAG_OUT = 24;
+      function endDrag(restore) {
+        if (!drag) return;
+        var d = drag; drag = null;
+        if (pickDrag === d.api) pickDrag = null;
+        clearTimeout(d.watch);
+        document.removeEventListener('pointerdown', d.down, true);
+        el.classList.remove('is-dragging'); hint.textContent = '';
+        if (restore && d.cell.isConnected) d.cell.focus();
+      }
+      function watchdog() { if (!drag) return; clearTimeout(drag.watch); drag.watch = setTimeout(function () { endDrag(true); }, 15000); }
+      // o rato saiu do sítio: o diálogo deixa ver e largar na tela (nunca no próprio dragstart: mudar o estilo da origem
+      // aí cancela o arrasto no Chromium)
+      el.addEventListener('dragover', function (e) {
+        var d = drag;
+        if (!d || d.out || Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_OUT) return;
+        d.out = true;
+        var r = vp.getBoundingClientRect();   // a dica no topo da tela, ao meio
+        hint.style.left = Math.round(r.left + r.width / 2) + 'px'; hint.style.top = Math.round(r.top + 16) + 'px';
+        el.classList.add('is-dragging');
+        hint.textContent = 'Largue no Topperboard para juntar.';
+      });
+      el.addEventListener('dragstart', function (e) {
+        var f = e.target.closest && e.target.closest('.dp-f'), o = f && shown[+f.getAttribute('data-i')];
+        if (!o || !e.dataTransfer) { if (!f) return; e.preventDefault(); return; }
+        endDrag(false);
+        var keys = CCL.dragKeys(picked, o.k), dt = e.dataTransfer;
+        dt.effectAllowed = 'copy';
+        try { dt.setData('application/x-td-keys', JSON.stringify(keys)); } catch (err) { /* sem dados */ }
+        // o fantasma: a pré-visualização do arrastado e quantos são
+        var g = document.createElement('div'), th = $('.dp-th', f), img = th && $('img', th);
+        g.className = 'dp-ghost';
+        g.innerHTML = (img ? imgHtml(img.getAttribute('src')) : iconHtml(o.k, kindOfKey(o.k)).replace(/<span class="dp-ext">[^<]*<\/span>/, '')) + '<span>' + (keys.length === 1 ? '1 ficheiro' : keys.length + ' ficheiros') + '</span>';
+        document.body.appendChild(g);
+        try { dt.setDragImage(g, -12, -8); } catch (err) { /* sem imagem */ }
+        setTimeout(function () { g.remove(); }, 0);
+        var fr = f.getBoundingClientRect(), hasXY = e.clientX || e.clientY;
+        var d = drag = { cell: f, keys: keys, watch: 0, out: false,
+          x0: hasXY ? e.clientX : fr.left + fr.width / 2, y0: hasXY ? e.clientY : fr.top + fr.height / 2 };
+        d.api = pickDrag = { close: function () { close(vp); } };   // largado na tela: o foco fica na tela (os cartões novos)
+        // arrasto perdido: com o diálogo transparente, o próximo toque devolve-o (e não chega à tela nem fecha o diálogo);
+        // ainda à vista, o toque segue normalmente
+        d.down = function (ev) { if (d.out) { ev.stopPropagation(); ev.preventDefault(); endDrag(true); } else endDrag(false); };
+        document.addEventListener('pointerdown', d.down, true);
+        watchdog();
+      });
+      el.addEventListener('drag', watchdog);
+      el.addEventListener('dragend', function () { endDrag(true); });   // largado fora da tela (ou cancelado com Esc)
       q.addEventListener('input', function () { last = -1; paint(); });
       el.hidden = false; q.focus();
       driveApi({ do: 'catalog' }).then(function (j) {
-        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; return; }
+        if (!el.isConnected) return;
+        loading = false;
+        if (!j.ok) { list.innerHTML = '<p class="small" style="color:var(--bad-fg)">' + esc(j.error || 'Não foi possível abrir a Drive. Tente outra vez.') + '</p>'; sr.textContent = list.textContent; return; }
         objs = (j.objects || []).filter(function (o) { return o.k.slice(-1) !== '/'; });
         roots = j.roots || [];
+        hasTh = new Set(j.thumbs || []);
         var have = {}; objs.forEach(function (o) { have[o.k] = o; });
         recents = (j.recents || []).map(function (r) { return have[r.k]; }).filter(Boolean);
         paint();
@@ -1688,7 +2284,7 @@
     function pasteClip(pack, at) {
       if (!EDIT) { toast('Pode ver este Topperboard, mas não editá-lo.'); return Promise.resolve(); }
       var items = CCL.clipPlace(pack, at, pack.board === B.id);
-      return api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
+      return writes(api('cards_paste', { board: B.id, items: JSON.stringify(items), arrows: JSON.stringify(pack.arrows || []) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
         if (RT) RT.added(j.cards);
@@ -1698,7 +2294,7 @@
         select(ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }));
         var n = ids.filter(function (id) { var c = B.cards.get(id); return c && c.type !== 'arrow' && !c.col; }).length;
         if (n < pack.items.filter(function (i) { return !i.col; }).length) toast('Alguns cartões não foram colados: a referência já não existe ou não tem acesso.');
-      }).catch(fail);
+      }).catch(fail));
     }
     function ptrWorld() { return ptr.inside ? (function (w) { return { x: Math.round(w.x), y: Math.round(w.y) }; })(toWorld(ptr.x, ptr.y)) : null; }
     function select(ids, add) {
@@ -1733,31 +2329,58 @@
       renderAll();
       return save(states.map(function (s) { return Object.assign({}, s); }));
     }
+    // o que só entra na pilha de «Anular» quando o servidor responde (traço, borracha, apagar, colar, duplicar): um
+    // Anular carregado entretanto espera por essa resposta — senão anulava a ação anterior (e a nova ficava por anular)
+    var writing = 0, waiting = [];
+    function writes(p) {
+      writing++; undoSync();   // enquanto grava, o «Anular» da barra aceita o clique/toque (espera, como o Ctrl Z)
+      var done = function () { writing = Math.max(0, writing - 1); if (!writing) release(); undoSync(); };
+      p.then(done, done);
+      return p;
+    }
+    function release() { var w = waiting; waiting = []; w.forEach(function (f) { f(); }); }
     // §33.10: cada pessoa só anula o que ela própria fez — o que outra pessoa mudou entretanto fica (CCL.undoPlan)
-    function undo(redo) {
+    // only: anular essa entrada (o «Anular» de um aviso), esteja onde estiver na pilha
+    function undo(redo, only) {
+      if (writing) {
+        var go = function () { undo(redo, only); };
+        waiting.push(go);
+        // um pedido pendurado não prende o Anular: ao fim de 10 s esta espera (se ainda estiver na fila) solta-se
+        setTimeout(function () { if (waiting.indexOf(go) >= 0) { writing = 0; release(); } }, 10000);
+        return;
+      }
       var st = redo ? B.redo : B.undo, other = redo ? B.undo : B.redo;
-      var e = st.pop();
+      var e;
+      if (only) { var at = st.lastIndexOf(only); if (at < 0) { undoSync(); return; } e = st.splice(at, 1)[0]; }
+      else e = st.pop();
       if (!e) { toast(redo ? 'Nada para refazer.' : 'Nada para anular.'); undoSync(); return; }
       var plan = CCL.undoPlan(e, B.cards, redo), n = planCount(plan);
-      if (n) { other.push(e); runPlan(e, plan, redo); }
+      if (n) { other.push(e); runPlan(e, plan, redo, !!only); }
       if (plan.skipped) toast(CCL.skippedMsg(plan.skipped));
       undoSync();
     }
     function planCount(p) { return p.apply.reduce(function (s, x) { return s + (x && x.apply ? planCount(x) : 1); }, 0); }
-    function runPlan(e, plan, redo) {
+    function runPlan(e, plan, redo, say) {
       if (e.t === 'multi') { plan.apply.forEach(function (p) { runPlan(p.entry, p, redo); }); return; }
       if (!plan.apply.length) return;
       if (e.t === 'move') applyStates(plan.apply.map(function (s) { return Object.assign({}, s); }));
       else if (e.t === 'add' || e.t === 'del') {
         var restore = (e.t === 'add') === !!redo;
-        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: plan.apply }).then(function () { if (RT) RT.signal(); reload(); }).catch(fail);
+        api(restore ? 'cards_restore' : 'cards_delete', { board: B.id, ids: plan.apply }).then(function (j) {
+          if (j.rev) B.rev = j.rev;
+          // no tempo real, como ao criar e ao apagar: senão o marcador de apagado (ou a cópia do cartão novo) do documento
+          // voltava a esconder o cartão reposto (ou a mostrar o apagado) — aqui e a quem abre o Topperboard a seguir
+          if (RT) { if (restore) RT.added(j.cards || []); else RT.removed(j.ids || plan.apply); RT.signal(); }
+          reload();
+          if (say && j.msg) toast(j.msg);
+        }).catch(fail);
       } else if (e.t === 'content') {
         plan.apply.forEach(function (x) { var c = B.cards.get(x.id); if (c) { c.c = JSON.parse(JSON.stringify(x.c)); rerender(c); save([{ id: c.id, content: c.c }]); } });
       }
     }
     function undoSync() {
       var u = $('[data-undo="0"]', root), r = $('[data-undo="1"]', root);
-      if (u) u.disabled = !B.undo.length;
+      if (u) u.disabled = !B.undo.length && !writing;
       if (r) r.disabled = !B.redo.length;
     }
 
@@ -1773,7 +2396,7 @@
       var w = { column: 300, note: 240, list: 260, swatch: 140, board: 240 }[type] || 260;
       var p = at || spot(w);
       var d = Object.assign({ board: B.id, type: type, x: p.x, y: p.y, w: w, lane: laneAt(p.y), content: JSON.stringify(content || {}) }, extra || {});
-      return api('card_add', d).then(function (j) {
+      return writes(api('card_add', d).then(function (j) {
         B.rev = j.rev;
         var c = j.card;
         B.cards.set(c.id, c);
@@ -1785,7 +2408,7 @@
         push({ t: 'add', ids: [c.id] });
         if (!(opt && opt.keepSel)) select([c.id]);
         return c;
-      }).catch(fail);
+      }).catch(fail));
     }
     function addNote(text, at) { return addCard('note', { text: text || '' }, at).then(function (c) { if (c && !text) startEdit(c); return c; }); }
     function addColumn() { return addCard('column', { title: 'Coluna' }).then(function (c) { if (c) startEdit(c); }); }
@@ -1807,21 +2430,43 @@
         if (RT) RT.added([j.card]);
       }).catch(function (e) { row.fail(e.message); });
     }
+    // ficheiros da Drive (seletor, arrasto do seletor ou da página da Drive): pedidos de até 30 (o limite do servidor),
+    // um a seguir ao outro; um só Anular e uma só mensagem para tudo
+    var DRIVE_ADD_MAX = 30;   // = CC_DRIVE_ADD_MAX (inc/cc.php)
     function addDrive(keys, at) {
-      var p = at || spot(300), row = Up.add('Da Drive');
-      return api('drive_add', { board: B.id, keys: keys, x: p.x, y: p.y, lane: laneAt(p.y) }).then(function (j) {
+      var p = at || spot(300), list = keys, row = Up.add('Da Drive');
+      if (typeof keys === 'string') { try { list = JSON.parse(keys); } catch (e) { list = null; } }
+      // teto (CCL.DRIVE_DROP_MAX = 120): centenas de chaves de outra página seriam centenas de pedidos em série
+      var parts = Array.isArray(list) ? CCL.driveChunks(list, p, DRIVE_ADD_MAX, CCL.DRIVE_DROP_MAX) : [];
+      if (!parts.length) parts = [{ keys: keys, x: p.x, y: p.y }];   // vazio ou ilegível: o servidor responde («Nada para juntar.»)
+      var cut = Array.isArray(list) ? Math.max(0, list.length - CCL.DRIVE_DROP_MAX) : 0;
+      var got = [], sum = { added: 0, folders: 0, skipped: 0, over: false, cut: cut }, msg = '';
+      function done() {
+        if (!got.length) return;
+        var ids = got.map(function (c) { return c.id; });
+        push({ t: 'add', ids: ids });
+        select(ids);
+        kickWorker();
+      }
+      return parts.reduce(function (pr, c) {
+        return pr.then(function () {
+          return api('drive_add', { board: B.id, keys: typeof c.keys === 'string' ? c.keys : JSON.stringify(c.keys), x: c.x, y: c.y, lane: laneAt(c.y) }).then(function (j) {
+            B.rev = j.rev;
+            if (j.cards.length) {
+              j.cards.forEach(function (x) { B.cards.set(x.id, x); });
+              cull();
+              if (RT) RT.added(j.cards);
+              got = got.concat(j.cards);
+            }
+            sum.added += j.cards.length; sum.folders += +j.folders || 0; sum.skipped += +j.skipped || 0; sum.over = sum.over || !!j.over;
+            msg = j.msg;
+          });
+        });
+      }, Promise.resolve()).then(function () {
         row.done();
-        B.rev = j.rev;
-        if (j.cards.length) {
-          j.cards.forEach(function (c) { B.cards.set(c.id, c); });
-          cull();
-          push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
-          if (RT) RT.added(j.cards);
-          select(j.cards.map(function (c) { return c.id; }));
-          kickWorker();
-        }
-        toast(j.msg, j.cards.length ? {} : { err: true });
-      }).catch(function (e) { row.fail(e.message); });
+        done();
+        toast(parts.length > 1 || cut ? CCL.driveMsg(sum) : msg, got.length ? {} : { err: true });
+      }).catch(function (e) { done(); row.fail(e.message); });
     }
     // §33.10: envio otimista — o cartão aparece logo (pré-visualização local e progresso) e troca pelo do servidor no fim
     var localSeq = 0, localFiles = new Map();
@@ -2131,29 +2776,31 @@
       Array.from(B.sel).forEach(function (id) { var lc = B.cards.get(id); if (lc && lc.local && lc.local.state === 'fail') dropLocal(lc); });
       var ids = Array.from(B.sel).filter(function (id) { return id > 0; });
       if (!ids.length) return;
-      api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
+      writes(api('cards_delete', { board: B.id, ids: ids }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); });
         if (RT) RT.removed(j.ids);
         B.cards.forEach(function (c) { if (c.col && j.ids.indexOf(c.col) >= 0) { /* a coluna foi apagada: os cartões ficam onde a coluna estava */ } });
         B.sel.clear();
-        push({ t: 'del', ids: j.ids });
+        var ent = { t: 'del', ids: j.ids };
+        push(ent);
         reload();
-        toast(j.msg, { undo: function () { api('cards_restore', { board: B.id, ids: j.ids }).then(function () { if (RT) RT.signal(); reload(); toast('Reposto.'); }).catch(fail); } });
-      }).catch(fail);
+        // o «Anular» do aviso é o mesmo que o Ctrl Z (passa para o Refazer e publica no tempo real)
+        toast(j.msg, { undo: function () { undo(false, ent); }, back: vp });   // fechado com o foco lá dentro, o foco volta à tela
+      }).catch(fail));
     }
     function dupSel() {
       if (!EDIT || !B.sel.size) return;
       var pk = packSel();
       if (pk) { pasteClip(pk, null); return; }   // §33.6: o mesmo caminho do colar (+24 px, setas e colunas incluídas)
-      api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
+      writes(api('cards_dup', { board: B.id, ids: Array.from(B.sel) }).then(function (j) {
         B.rev = j.rev;
         j.cards.forEach(function (c) { B.cards.set(c.id, c); });
         if (RT) RT.added(j.cards);
         push({ t: 'add', ids: j.cards.map(function (c) { return c.id; }) });
         renderAll();
         select(j.cards.map(function (c) { return c.id; }));
-      }).catch(fail);
+      }).catch(fail));
     }
 
     // ── ferramentas ──
@@ -2165,7 +2812,7 @@
       vp.classList.toggle('tool-erase', t === 'erase');
       vp.classList.toggle('tool-arrow', t === 'arrow');
       var pb = $('.ccb-pen', root);
-      if (pb) { pb.hidden = t !== 'draw' && t !== 'erase'; penSync(); }
+      if (pb) { pb.hidden = t !== 'draw' && t !== 'erase'; penSync(); penPlace(); }
       if (t === 'erase') { var db = $('[data-tool="draw"]', root); if (db) { db.classList.add('on'); db.setAttribute('aria-pressed', 'true'); } }
     }
     // ── caneta (§33.3): cores da marca (1–5) + livre, espessura, borracha (E), espessura acompanha ──
@@ -2188,6 +2835,11 @@
       $('[data-pt="erase"]', pb).setAttribute('aria-pressed', B.tool === 'erase' ? 'true' : 'false');
       $('[data-pfx]', pb).checked = !B.pen.fx;
       var sw = $('[data-tool="draw"] .sw', root); if (sw) sw.style.background = B.color;
+    }
+    /** Telemóvel: a barra de ferramentas flutua no topo da tela e quebra em linhas; a da caneta fica logo por baixo dela. */
+    function penPlace() {
+      var pb = $('.ccb-pen', root), tb = $('.ccb-tools', root);
+      if (pb && tb && !pb.hidden) pb.style.setProperty('--pen-top', (tb.offsetTop + tb.offsetHeight + 8) + 'px');
     }
     function penColor(h) { B.color = h; if (B.tool !== 'draw') setTool('draw'); else penSync(); }
     function penClick(e) {
@@ -2284,6 +2936,7 @@
         e.stopPropagation();
         var el = b.closest('.ccc'), c = B.cards.get(+el.getAttribute('data-id')), act = b.getAttribute('data-cact');
         if (act === 'au-play' || act === 'au-seek') { auAct(c, b, e); return; }
+        if (act === 'v-play') { vAct(c); return; }
         if (act === 'com') { select([c.id]); B.side = 'com'; sideEl.hidden = false; sideSync(); return; }
         if (act === 'del') { select([c.id]); delSel(); return; }
         if (act === 'keep') {
@@ -2370,7 +3023,7 @@
         var aid = e.dataTransfer.getData('text/x-cc-asset');
         if (aid) { addAsset(+aid, at); return; }
         var tdk = e.dataTransfer.getData('application/x-td-keys');   // da Drive: o original fica lá e o tipo mantém-se
-        if (tdk) { addDrive(tdk, at); return; }
+        if (tdk) { if (pickDrag) pickDrag.close(); addDrive(tdk, at); return; }   // do seletor «Da Drive»: fecha-o
         if (e.dataTransfer.files && e.dataTransfer.files.length) { addFiles(e.dataTransfer.files, at); return; }
         var u = (e.dataTransfer.getData('text/uri-list') || '').split('\n')[0].trim();
         var t = u || e.dataTransfer.getData('text/plain');
@@ -2414,10 +3067,10 @@
         if (e.key !== ' ' || !spaceDown) return;
         spaceDown = false; vp.classList.remove('space');
         // §33.10: Espaço sem arrastar, com uma imagem/vídeo selecionado, abre o visualizador
-        if (!spaceUsed && B.sel.size === 1 && !viewer) { var sc = B.cards.get(Array.from(B.sel)[0]); if (sc && (sc.type === 'image' || sc.type === 'video') && sc.asset && !sc.local) openViewer(sc); }
+        if (!spaceUsed && B.sel.size === 1 && !viewer) { var sc = B.cards.get(Array.from(B.sel)[0]); if (sc && viewable(sc)) openViewer(sc); }
         spaceUsed = false;
       }, true);
-      window.addEventListener('resize', function () { applyView(); });
+      window.addEventListener('resize', function () { applyView(); penPlace(); });
       sideEl.addEventListener('click', sideClick);
     }
     /** O que só existe quando se pode editar: o campo de envio e a barra da caneta (de novo quando a permissão muda). */
@@ -2451,6 +3104,9 @@
       if (pointers.size > 2) return;
       var p = vpPoint(e), w = toWorld(p.x, p.y);
       var cardEl = t.closest('.ccc'), c = cardEl ? B.cards.get(+cardEl.getAttribute('data-id')) : null;
+      // em Apresentar, tocar/clicar num vídeo alterna-o ao levantar sem mexer (o levantar do dedo é o gesto que o iPad
+      // aceita para som); arrastar move a vista e um 2.º dedo faz a pinça
+      if (root.classList.contains('present') && c && c.type === 'video' && t.closest('.ccc-media')) { drag = { kind: 'vtap', c: c, p0: p }; return; }
       var arrowHit = t.closest('[data-arrow]');
       if (spaceDown) spaceUsed = true;
       if (spaceDown || e.button === 1) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; vp.classList.add('panning'); return; }
@@ -2542,7 +3198,7 @@
         if (Math.hypot(w.x - drag.pts[last], w.y - drag.pts[last + 1]) * B.view.s < 2) return;
         drag.pts.push(w.x, w.y);
         drag.path.setAttribute('d', pathD(drag.pts.map(function (v) { return Math.round(v * 10) / 10; })));
-      } else if (drag.kind === 'click') {
+      } else if (drag.kind === 'click' || drag.kind === 'vtap') {
         if (Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) > 4) { drag = { kind: 'pan', p0: p, v0: Object.assign({}, B.view) }; }
       }
     }
@@ -2645,6 +3301,8 @@
         else if (d.shift) select([d.c.id], true);
         else if (d.wasSel && d.c.type === 'note' && EDIT && e.pointerType !== 'touch') startEdit(d.c, null, { at: d.at });
         else select([d.c.id]);
+      } else if (d.kind === 'vtap') {
+        vAct(d.c);
       } else if (d.kind === 'click') {
         select([d.c.id], d.shift);
       } else if (d.kind === 'pan' && d.bg && !d.moved) {
@@ -2684,15 +3342,17 @@
       if (c.type === 'note' || c.type === 'column' || c.type === 'swatch') { startEdit(c, null, at); return; }
       if (c.type === 'link' && c.asset && c.asset.url) { window.open(c.asset.url, '_blank', 'noopener'); return; }
       if (c.type === 'file' && c.asset && c.asset.orig) { window.open(c.asset.orig, '_blank', 'noopener'); return; }
-      if ((c.type === 'image' || c.type === 'video') && c.asset && !c.local) { openViewer(c); return; }
+      if (c.noaccess) { select([c.id]); return; }   // §33.9: nada para abrir
+      if (viewable(c)) { openViewer(c); return; }
       if (c.asset) { select([c.id]); B.side = 'det'; sideEl.hidden = false; sideSync(); }
     }
 
     // ── visualizador em ecrã inteiro (§33.10): duplo clique ou Espaço; zoom; ← → pelas imagens do Topperboard; Esc fecha ──
     var viewer = null;
+    function viewable(c) { return (c.type === 'image' || c.type === 'video') && !!c.asset && !c.local && !c.noaccess; }
     function viewList() {
       var l = [];
-      B.cards.forEach(function (c) { if ((c.type === 'image' || c.type === 'video') && c.asset && !c.local) l.push(c); });
+      B.cards.forEach(function (c) { if (viewable(c)) l.push(c); });
       var pos = function (c) { var p = c.col && B.cards.get(c.col) ? B.cards.get(c.col) : c; return { y: Math.round(p.y / 60), x: p.x, o: c.ord || 0 }; };
       return l.sort(function (a, b) { var A = pos(a), Bb = pos(b); return A.y - Bb.y || A.x - Bb.x || A.o - Bb.o; });
     }
@@ -2814,14 +3474,14 @@
       if (saves.length) save(saves);
       var done = function () { if (list.length) push(list.length === 1 ? list[0] : { t: 'multi', list: list }); };
       if (!dels.length) { done(); return; }
-      api('cards_delete', { board: B.id, ids: dels }).then(function (j) {
+      writes(api('cards_delete', { board: B.id, ids: dels }).then(function (j) {
         B.rev = j.rev;
         j.ids.forEach(function (id) { B.cards.delete(id); var el = B.els.get(id); if (el) el.remove(); B.els.delete(id); B.sel.delete(id); });
         if (RT) RT.removed(j.ids);
         list.push({ t: 'del', ids: j.ids });
         done();
         drawArrows();
-      }).catch(fail);
+      }).catch(fail));
     }
 
     // ── teclado ──
@@ -2829,15 +3489,18 @@
       if (T.topMdl && T.topMdl()) return;
       if (document.querySelector('.cmdk-back.open') || document.querySelector('.cmdk.open')) return;
       if (viewer) { viewerKey(e); return; }
+      if (pickState) return;   // §33.14: o conta-gotas em ecrã inteiro tem as teclas todas (Esc, + − 0, Tab); nada chega ao Topperboard
       if (document.querySelector('.cc-dpick')) return;   // seletor da Drive aberto: as teclas (Esc, Tab) são dele, mesmo com o foco no corpo
       if (root.classList.contains('present')) return;   // em Apresentar, as teclas são da apresentação
-      if ((pickState || pmenu) && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (pmenu) closePalMenu(); else stopPick(); return; }
+      if (pmenu && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closePalMenu(); return; }
       if (cpop && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeColorPop(); return; }
       if (nball && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); var nb = nball.badge; closeBalloon(); if (nb && nb.isConnected) nb.focus(); return; }
       var ae = document.activeElement;
       if (cpop && ae && cpop.el.contains(ae)) return;
       if (ae && ae.closest && ae.closest('.cc-dpick, .cc-pmenu, .cc-upmenu, .ccb-selbar .sb-menu')) return;
       if (ae && ae.closest && ae.closest('.ccb-selbar') && (e.key === ' ' || e.key === 'Enter')) return;   // Espaço/Enter carregam no botão, não abrem o visualizador   // as teclas são do diálogo/menu
+      // o Espaço num botão fora da tela (barra de ferramentas, painel lateral, caneta, zoom) carrega nesse botão — não é o «mover»
+      if (e.key === ' ' && ae && ae !== vp && !world.contains(ae) && ae.closest && ae.closest('button, [role="button"]')) return;
       if (typing(ae)) return;
       if (slash && e.key !== 'Escape') return;
       var mod = e.metaKey || e.ctrlKey, k = e.key;
@@ -2849,7 +3512,7 @@
       else if (!mod && (k === 'v' || k === 'V')) setTool('select');
       else if (!mod && (k === 'd' || k === 'D') && EDIT) runTool('draw');
       else if (!mod && !e.altKey && (k === 'p' || k === 'P') && EDIT) setTool('draw');
-      else if (!mod && !e.altKey && (k === 'i' || k === 'I') && EDIT && B.sel.size === 1 && (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic && ic.asset && (ic.type === 'image' || ic.type === 'video'); })()) {
+      else if (!mod && !e.altKey && (k === 'i' || k === 'I') && EDIT && B.sel.size === 1 && (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic && ic.asset && !ic.noaccess && (ic.type === 'image' || ic.type === 'video'); })()) {
         // §33.11: I abre o detalhe e liga o conta-gotas
         if (B.side === 'det' && !sideEl.hidden && $('.ccd-media', sideBody)) startPick(sideBody.firstChild, null || (function () { var ic = B.cards.get(Array.from(B.sel)[0]); return ic.asset; })());
         else { B.pickNext = true; B.side = 'det'; sideEl.hidden = false; sideSync(); }
@@ -2859,6 +3522,8 @@
       else if (!mod && (k === 'a' || k === 'A') && EDIT) runTool('arrow');
       else if (k === '/' && !mod) openSlash();
       else if ((k === 'Delete' || k === 'Backspace') && B.sel.size) delSel();
+      // §33.14: ] expande/recolhe a barra de ferramentas ([ é do menu); aceita AltGr (Ctrl+Alt no Windows) e Option no Mac
+      else if (k === ']' && !e.metaKey && (!e.ctrlKey || e.altKey)) toggleTools();
       else if (k === 'Escape') { if (slash) closeSlash(); else if (RT && RT.escape()) { /* deixou de seguir */ } else if (B.tool !== 'select') setTool('select'); else if (B.sel.size) select([]); else handled = false; }
       else if (mod && (k === 'z' || k === 'Z')) undo(e.shiftKey);
       else if (mod && (k === 'y' || k === 'Y')) undo(true);
@@ -3021,6 +3686,7 @@
       if (B.side === 'det') {
         var c = sel.length === 1 ? sel[0] : null;
         if (!c || !c.asset) { sideBody.innerHTML = '<p class="muted">Selecione uma imagem, vídeo, áudio ou link para ver a análise, a paleta e editar.</p>'; return; }
+        if (c.noaccess) { B.pickNext = false; sideBody.innerHTML = noAccessHtml(); return; }
         sideBody.innerHTML = '<span class="spin"></span>';
         api('asset', { id: c.asset.id }, 'GET').then(function (j) {
           if (B.side !== 'det') return;
@@ -3032,7 +3698,7 @@
             onRestore: function () { reload(); },
             onAdd: function (aid) { addAsset(aid); }
           });
-          if (B.pickNext) { B.pickNext = false; startPick(sideBody.firstChild, j.asset); }
+          if (B.pickNext) { B.pickNext = false; if (!j.asset.noaccess) startPick(sideBody.firstChild, j.asset); }
         }).catch(fail);
         return;
       }
@@ -3214,6 +3880,7 @@
     // ── ações do topo ──
     function topAction(k, btn) {
       if (k === 'side') { sideEl.hidden = !sideEl.hidden; sideSync(); return; }
+      if (k === 'tools') { toggleTools(); return; }
       if (k === 'present') { present(); return; }
       if (k === 'prepare') {
         if (btn) btn.disabled = true;
@@ -3269,6 +3936,20 @@
 
     // ── apresentação ──
     var PRES = { vol: 1, muted: false };   // volume e «Sem som» lembrados durante a sessão
+    var presMedia = null;   // o vídeo/áudio do diapositivo atual ({ c, el, btn }); makeEl e cull precisam de o conhecer
+    var presPaint = null;   // redesenha a barra da apresentação (▶/❚❚, «Vídeo ·»/«Áudio ·»), enquanto se apresenta
+    var presAct = null;     // o ▶ e a forma de onda do cartão de áudio do diapositivo (comandam o som da apresentação)
+    var presToggle = null;  // pausa/retoma o vídeo/áudio do diapositivo (o ▶ ou o clique no cartão do diapositivo)
+    /** Pára e tira o vídeo/áudio da apresentação (o load() descarta o evento «pause»: quem chama redesenha a barra). */
+    function presStop() {
+      var m = presMedia;
+      if (!m) return;
+      presMedia = null;
+      // o foco no «▶ Tocar» que vai sair passa para «Seguinte» da barra (não cai no corpo da página)
+      if (m.btn && m.btn.contains(document.activeElement)) { var nx = $('.cc-pres [data-p="1"]', root); if (nx) nx.focus({ preventScroll: true }); }
+      m.el.pause(); m.el.removeAttribute('src'); try { m.el.load(); } catch (e) {}
+      m.el.remove(); if (m.btn) m.btn.remove();
+    }
     function present() {
       var items = [];
       B.cards.forEach(function (c) { if (!c.col && c.type !== 'arrow' && c.type !== 'drawing') items.push(c); });
@@ -3276,76 +3957,124 @@
       items.sort(function (a, b) { return Math.round(a.y / 300) - Math.round(b.y / 300) || a.x - b.x; });
       var i = 0, bar = document.createElement('div');
       root.classList.add('present');
+      B.els.forEach(killHoverPrev);   // uma pré-visualização que já estava a correr não fica
+      playersStop();                  // nem um vídeo que tocava no cartão antes de apresentar
       bar.className = 'cc-pres';
+      // teclado e leitor de ecrã: a barra é uma toolbar com nome, recebe o foco ao entrar (o botão «Apresentar» fica
+      // escondido) e diz cada diapositivo numa região viva
+      bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Apresentar'); bar.tabIndex = -1;
       bar.innerHTML = '<button type="button" data-p="-1" aria-label="Anterior">‹</button><span data-pn></span><button type="button" data-p="1" aria-label="Seguinte">›</button>'
         + '<span class="pr-media" hidden><span class="pr-t" data-pt></span><button type="button" data-p="play" aria-label="Pausa ( Espaço )">❚❚</button>'
         + '<input type="range" min="0" max="1" step="0.05" value="' + PRES.vol + '" aria-label="Volume" data-vol><button type="button" data-p="mute" aria-pressed="' + PRES.muted + '">Sem som</button></span>'
-        + '<button type="button" data-p="x">Sair (Esc)</button>';
+        + '<button type="button" data-p="x">Sair (Esc)</button><span class="sr" role="status" aria-live="polite" data-plive></span>';
       root.appendChild(bar);   // dentro do elemento em ecrã inteiro (fora dele não aparece)
+      bar.focus({ preventScroll: true });
       if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
       if (AU && AU.hub && AU.hub.pause) AU.hub.pause();
       // §33.13: só em Apresentar o vídeo/áudio toca com som — ao chegar toca, ao sair pára; fora daqui nunca há som sozinho
-      var media = null;
-      function stopMedia() {
-        if (!media) return;
-        media.el.pause(); media.el.removeAttribute('src'); try { media.el.load(); } catch (e) {}
-        media.el.remove(); if (media.btn) media.btn.remove();
-        media = null;
-      }
+      var stopMedia = presStop;
+      presPaint = function () { paintMedia(); };
+      // o cartão do diapositivo como está agora (um recarregamento troca os objetos; um trabalho pode mudar-lhe o tipo)
+      function slide() { var c = items[i]; return B.cards.get(c.id) || c; }
+      function isMediaSlide() { var c = slide(); return (c.type === 'video' || c.type === 'audio') && !!c.asset && !!c.asset.orig; }
       function paintMedia() {
-        var w = $('.pr-media', bar), c = items[i], isM = (c.type === 'video' || c.type === 'audio') && c.asset && c.asset.orig;
+        var w = $('.pr-media', bar), c = slide(), isM = isMediaSlide();
+        var lost = !isM && !w.hidden && w.contains(document.activeElement);   // o foco ia ficar num controlo escondido
         w.hidden = !isM;
+        if (lost) $('[data-p="1"]', bar).focus();
         if (!isM) return;
         $('[data-pt]', bar).textContent = (c.type === 'video' ? 'Vídeo · ' : 'Áudio · ') + (c.asset.title || c.asset.file || '');
-        var pb = $('[data-p="play"]', bar), on = media && !media.el.paused;
+        var pb = $('[data-p="play"]', bar), on = presMedia && !presMedia.el.paused;
         pb.textContent = on ? '❚❚' : '▶'; pb.setAttribute('aria-label', on ? 'Pausa ( Espaço )' : 'Tocar ( Espaço )');
         $('[data-p="mute"]', bar).setAttribute('aria-pressed', PRES.muted ? 'true' : 'false');
       }
       function startMedia(c) {
         var a = c.asset, el = B.els.get(c.id);
+        // um cartão longe do anterior ainda não está desenhado (o cull só corre no frame seguinte); o fitTo já pôs a vista
+        if (!el) { cull(); el = B.els.get(c.id); }
         if (!a || !a.orig || !el) return;
+        killHoverPrev(el);
         var m = document.createElement(c.type === 'video' ? 'video' : 'audio');
-        m.className = 'pres-media'; m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
+        m.className = 'pres-media'; m.setAttribute('data-mix', ''); m.playsInline = true; m.preload = 'auto'; m.src = a.orig;
         m.muted = PRES.muted; m.volume = PRES.vol;
-        (c.type === 'video' ? ($('.ccc-media', el) || el) : el).appendChild(m);
-        media = { c: c, el: m };
+        // o vídeo vê-se no cartão; o áudio não se vê e fica na barra (nenhum redesenho do cartão o desliga)
+        (c.type === 'video' ? ($('.ccc-media', el) || el) : bar).appendChild(m);
+        var cur = presMedia = { c: c, el: m };
         m.addEventListener('play', paintMedia); m.addEventListener('pause', paintMedia);
         var p = m.play();
         if (p && p.catch) p.catch(function () {
           // o browser não deixou tocar com som: «Tocar» no cartão (nada fica a tocar escondido)
-          if (!media || media.el !== m) return;
+          if (presMedia !== cur) return;
           m.pause();
           var btn = document.createElement('button');
-          btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar';
-          btn.addEventListener('click', function (e) { e.stopPropagation(); m.play().then(function () { btn.remove(); }).catch(function () {}); });
-          el.appendChild(btn); media.btn = btn;
+          btn.type = 'button'; btn.className = 'pres-play btn'; btn.textContent = '▶ Tocar'; btn.style.setProperty('--vs', B.view.s);
+          btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            m.play().then(function () {
+              // o foco passa para o ❚❚ da barra antes de o botão sair (não cai no corpo da página)
+              if (btn.contains(document.activeElement)) $('[data-p="play"]', bar).focus({ preventScroll: true });
+              btn.remove(); if (cur.btn === btn) cur.btn = null;
+            }).catch(function () {});
+          });
+          (B.els.get(c.id) || el).appendChild(btn); cur.btn = btn;
           paintMedia();
         });
       }
-      function toggleMedia() { if (!media) return false; if (media.el.paused) { var p = media.el.play(); if (p && p.catch) p.catch(function () {}); } else media.el.pause(); return true; }
+      function toggleMedia() { if (!presMedia) return false; if (presMedia.el.paused) { var p = presMedia.el.play(); if (p && p.catch) p.catch(function () {}); } else presMedia.el.pause(); return true; }
+      /** ❚❚/▶ e Espaço: pausa ou retoma; se ainda não há elemento, começa (nunca salta o diapositivo). */
+      function playPause() { if (!toggleMedia() && isMediaSlide()) { startMedia(slide()); paintMedia(); } }
+      // o ▶ do cartão do diapositivo faz o mesmo que o ▶ da barra; a forma de onda leva o som da apresentação a esse ponto;
+      // noutro cartão não fazem nada
+      presAct = function (c, b, e) {
+        if (slide().id !== c.id || !isMediaSlide()) return false;   // noutro cartão (p. ex. dentro de uma coluna): o leitor normal
+        var m = presMedia && presMedia.c.id === c.id ? presMedia.el : null;
+        if (b.getAttribute('data-cact') === 'au-seek' && m && isFinite(m.duration)) { var r = b.getBoundingClientRect(); m.currentTime = clamp((e.clientX - r.left) / r.width, 0, 1) * m.duration; return true; }
+        playPause();
+        return true;
+      };
+      presToggle = playPause;
       function go() {
-        var c = items[i], b = bbox(c);
+        var c = slide(), b = bbox(c);
         stopMedia();
+        playersStop();   // os vídeos começados pelo cursor no diapositivo anterior param (§33.13: ao avançar/recuar pausa)
+        if (AU && AU.hub) AU.hub.pause();
         animateView(function () { fitTo(b, 70, 3); });
         $('[data-pn]', bar).textContent = (i + 1) + ' / ' + items.length;
         select([]);
         if ((c.type === 'video' || c.type === 'audio') && c.asset) startMedia(c);
         paintMedia();
+        $('[data-plive]', bar).textContent = 'Diapositivo ' + (i + 1) + ' de ' + items.length + (isMediaSlide() ? ' · ' + $('[data-pt]', bar).textContent : '');
       }
       bar.addEventListener('input', function (e) {
         if (!e.target.hasAttribute('data-vol')) return;
-        PRES.vol = +e.target.value; if (media) media.el.volume = PRES.vol;
+        PRES.vol = +e.target.value; if (presMedia) presMedia.el.volume = PRES.vol;
+        players.forEach(function (pl) { pl.el.volume = PRES.vol; });
       });
       function stop() {
         stopMedia();
+        playersStop();
+        if (AU && AU.hub) AU.hub.pause();
+        presPaint = null; presAct = null; presToggle = null;
+        var ae = document.activeElement, back = !ae || ae === document.body || bar.contains(ae);
         root.classList.remove('present');
         bar.remove();
         window.removeEventListener('keydown', pk, true);
+        // saída por «Sair»/Esc: o fullscreenchange desta apresentação não fica ligado (corria este stop() na seguinte)
+        document.removeEventListener('fullscreenchange', onFs);
         if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+        // o foco volta ao botão «Apresentar» (não cai no corpo da página)
+        var pb = back && $('[data-a="present"]', root);
+        if (pb) pb.focus({ preventScroll: true });
         setTimeout(function () { fitAll(true); }, 50);
       }
       function pk(e) {
-        if (e.key === ' ' && media) { toggleMedia(); }   // §33.13: com vídeo/áudio, Espaço pausa/retoma
+        var t = e.target;
+        if (t && t.closest && t.closest('.cc-pres') === bar && e.key !== 'Escape') {
+          // o deslizador do volume fica com as suas teclas; Espaço/Enter num botão da barra carregam nesse botão
+          if (t.hasAttribute('data-vol') && /^(ArrowLeft|ArrowRight|PageUp|PageDown)$/.test(e.key)) return;
+          if (t.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
+        }
+        if (e.key === ' ' && isMediaSlide()) playPause();   // §33.13: num vídeo/áudio, Espaço pausa/retoma (não salta)
         else if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(items.length - 1, i + 1); go(); }
         else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { i = Math.max(0, i - 1); go(); }
         else if (e.key === 'Escape') stop();
@@ -3356,11 +4085,12 @@
         var b = e.target.closest('[data-p]'); if (!b) return;
         var v = b.getAttribute('data-p');
         if (v === 'x') stop();
-        else if (v === 'play') toggleMedia();
-        else if (v === 'mute') { PRES.muted = !PRES.muted; if (media) media.el.muted = PRES.muted; paintMedia(); }
+        else if (v === 'play') playPause();
+        else if (v === 'mute') { PRES.muted = !PRES.muted; if (presMedia) presMedia.el.muted = PRES.muted; players.forEach(function (pl) { pl.el.muted = PRES.muted; }); paintMedia(); }
         else { i = clamp(i + +v, 0, items.length - 1); go(); }
       });
-      document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement && root.classList.contains('present')) { document.removeEventListener('fullscreenchange', f); stop(); } });
+      function onFs() { if (!document.fullscreenElement && bar.isConnected) stop(); }
+      document.addEventListener('fullscreenchange', onFs);
       window.addEventListener('keydown', pk, true);
       setTimeout(go, 80);
     }
@@ -3456,6 +4186,7 @@
       id = +id;
       if (!id || id === B.id || navBusy) return Promise.resolve();
       navBusy = true;
+      playersStop();
       // uma edição aberta grava-se antes de sair
       var ae = document.activeElement;
       if (B.editing && ae && ae.isContentEditable) ae.blur();
@@ -3476,7 +4207,7 @@
         if (EDIT !== wasEdit) editChrome();
         B.lanes = j.board.kind === 'precreative' || j.board.kind === 'front';
         B.cards.clear(); j.cards.forEach(function (c) { B.cards.set(c.id, c); });
-        B.sel.clear(); B.undo = []; B.redo = []; pickMore = false; vp.classList.remove('pick-more'); B.editing = null; B.arrowFrom = null;
+        B.sel.clear(); B.undo = []; B.redo = []; waiting = []; pickMore = false; vp.classList.remove('pick-more'); B.editing = null; B.arrowFrom = null;
         B.els.forEach(function (el) { el.remove(); }); B.els.clear();
         $('.ccb-top', root).innerHTML = topHtml();
         var lb = $('[data-lanebar]', root);
@@ -3513,6 +4244,7 @@
 
     // ── arranque ──
     load().then(function () {
+      toolsWide = !!(B.data.prefs && B.data.prefs.tools);
       frame();
       startRT();
       renderAll();

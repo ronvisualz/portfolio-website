@@ -103,6 +103,17 @@ function drive_moves_pending(PDO $pdo): array {
     return $pdo->query("SELECT id, src, dst, is_folder, policy, status FROM drive_moves WHERE status IN ('queued','running') ORDER BY id")->fetchAll();
 }
 
+/**
+ * drive_can_see com o mover instantâneo (§32.1): uma chave a caminho da faturação (o movimento ainda na fila, o objeto
+ * ainda no sítio antigo) já é da faturação para quem não tem o Financeiro — nem pela chave antiga se lê.
+ */
+function drive_can_see_moving(PDO $pdo, string $key): bool {
+    if (!drive_can_see($key)) return false;
+    if (drive_billing($key) || (function_exists('can') && can('financeiro'))) return true;
+    $pending = drive_moves_pending($pdo);
+    return !$pending || !drive_billing(drive_forward_with($pending, $key));
+}
+
 /** A chave física de $key agora (o próprio, ou a origem por onde ainda está a passar). */
 function drive_resolve(PDO $pdo, string $key): string {
     $pending = drive_moves_pending($pdo);

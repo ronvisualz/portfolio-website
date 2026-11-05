@@ -76,7 +76,13 @@
     t.firstChild.textContent = msg;
     var ms = opt.sticky ? 36e5 : (opt.undo ? 8000 : (opt.err ? 7000 : 4000));
     var timer, tick;
-    function close() { clearTimeout(timer); clearInterval(tick); if (t.parentNode) t.parentNode.removeChild(t); }
+    var back = opt.back || document.activeElement;   // se fechar com o foco lá dentro, o foco volta para aqui (não cai no corpo)
+    function close() {
+      clearTimeout(timer); clearInterval(tick);
+      var had = t.contains(document.activeElement);
+      if (t.parentNode) t.parentNode.removeChild(t);
+      if (had && back && back !== document.body && back.isConnected && back.focus) back.focus({ preventScroll: true });
+    }
     if (opt.undo) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'undo'; b.textContent = 'Anular';
@@ -104,7 +110,10 @@
     toastBox.appendChild(t);
     timer = setTimeout(close, ms);
     t.addEventListener('pointerenter', function () { clearTimeout(timer); });
-    t.addEventListener('pointerleave', function () { if (!opt.sticky) timer = setTimeout(close, 2500); });
+    t.addEventListener('pointerleave', function () { if (!opt.sticky && !t.contains(document.activeElement)) { clearTimeout(timer); timer = setTimeout(close, 2500); } });
+    // teclado: com o foco no aviso o tempo pára; quando o foco sai, volta a correr (como ao tirar o rato)
+    t.addEventListener('focusin', function () { clearTimeout(timer); });
+    t.addEventListener('focusout', function (e) { if (!opt.sticky && !t.contains(e.relatedTarget)) { clearTimeout(timer); timer = setTimeout(close, 2500); } });
     return { close: close, el: t };
   }
 
@@ -217,6 +226,7 @@
     tipFor = el;
   }
   function hideTip() { clearTimeout(tipTimer); clearTimeout(touchTimer); if (tip) tip.classList.remove('on'); tipFor = null; }
+  window.topper.hideTip = hideTip;
   // Botões só com ícone que ainda não tenham a marca ganham-na: o nome acessível é a dica.
   $$('.ibtn[aria-label]:not([data-tip])').forEach(function (b) { b.setAttribute('data-tip', ''); });
   document.addEventListener('pointerover', function (e) {

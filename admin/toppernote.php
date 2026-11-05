@@ -64,7 +64,7 @@ if (($_GET['print'] ?? '') === 'treatment') {
   <?php foreach ((array)$doc['sections'] as $s): ?>
     <h2><?= e((string)($s['heading'] ?? '')) ?></h2>
     <p><?= e((string)($s['body'] ?? '')) ?></p>
-    <?php $imgs = array_filter(array_map(fn($id) => $rows[(int)$id] ?? null, (array)($s['refs'] ?? [])), fn($x) => $x && $x['thumbs']); ?>
+    <?php $imgs = array_filter(array_map(fn($id) => $rows[(int)$id] ?? null, (array)($s['refs'] ?? [])), fn($x) => $x && $x['thumbs'] && !cc_asset_blocked($x)); ?>
     <?php if ($imgs): ?><div class="refs"><?php foreach (array_slice($imgs, 0, 6) as $x): ?><img src="<?= e(cc_file_url($x, 768)) ?>" alt="<?= e((string)$x['title']) ?>"><?php endforeach; ?></div><?php endif; ?>
   <?php endforeach; ?>
 </main></body></html><?php
@@ -143,6 +143,7 @@ if ($boardId) {
 <script src="<?= asset_url('vendor/rt/topper-rt.js') ?>" defer></script>
 <?php endif; ?>
 <script src="<?= asset_url('drive/core.js') ?>" defer></script>
+<script src="<?= asset_url('drive/upload.js') ?>" defer></script><?php /* TD.thumbs: as miniaturas da Drive no seletor «Da Drive» */ ?>
 <script src="<?= asset_url('cc_audio.js') ?>" defer></script>
 <script src="<?= asset_url('cc_rt.js') ?>" defer></script>
 <script src="<?= asset_url('cc_logic.js') ?>" defer></script>
@@ -155,7 +156,7 @@ if ($boardId) {
 // ── os separadores ──────────────────────────────────────────
 $tab = isset(CC_TABS[$_GET['t'] ?? '']) ? (string)$_GET['t'] : 'projetos';
 csp_send('', CC_EMBED_FRAMES);   // a Biblioteca abre os leitores de música (SoundCloud, Spotify…)
-$inboxN = (int)$pdo->query('SELECT COUNT(*) FROM cc_assets WHERE inbox = 1 AND deleted_at IS NULL')->fetchColumn();
+$inboxN = cc_inbox_count($pdo);
 render_header('Toppernote', 'criativo', '', [CC_TABS[$tab]]);
 render_flashes();
 ?>

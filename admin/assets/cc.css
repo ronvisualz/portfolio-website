@@ -3,6 +3,11 @@
 .cc { --cc-grid: rgba(17,17,17,.13); --cc-board: #F3F2EE; --cc-sel: var(--blue); --cc-sel-fg: #fff; --cc-a: var(--sky); --cc-b: var(--hi); }
 :root[data-theme="dark"] .cc { --cc-grid: rgba(255,255,255,.09); --cc-board: #0F1012; --cc-sel: #81CFE3; --cc-sel-fg: #0F1012; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cc { --cc-grid: rgba(255,255,255,.09); --cc-board: #0F1012; --cc-sel: #81CFE3; --cc-sel-fg: #0F1012; } }
+/* anéis de foco (WCAG 1.4.11): no claro o azul de foco da plataforma (o amarelo dava 1,4–1,56:1 sobre o branco e a tela),
+   no escuro o amarelo (10+:1); --cc-on-ring: o anel escuro por dentro do amarelo de uma escolha, só no claro */
+:root { --cc-ring: var(--focus); --cc-on-ring: #111111; }
+:root[data-theme="dark"] { --cc-ring: var(--hi); --cc-on-ring: transparent; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --cc-ring: var(--hi); --cc-on-ring: transparent; } }
 
 .cc-n { font: 600 10.5px/16px var(--mono); font-style: normal; background: var(--coral); color: #000; border-radius: 100px; padding: 0 6px; margin-left: 4px; }
 .ccb-loading { display: flex; align-items: center; gap: 10px; color: var(--mute); padding: 40px 6px; }
@@ -99,7 +104,7 @@
 .ccd-pal .ccd-pcb small { color: var(--mute); font-size: 10.5px; }
 .ccd-pal .ccd-pm { padding: 0 8px 0 2px; color: var(--mute); font: 600 13px var(--body); min-width: 28px; }
 .ccd-pal .ccd-pm:hover, .ccd-pal .ccd-pcb:hover { color: var(--fg); background: var(--chip); }
-.ccd-pal button:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+.ccd-pal button:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 1px; }
 .ccd-palmsg { margin-top: 6px; color: var(--mute); }
 .ccd-palmsg:empty { display: none; }
 .ccd-copybox { width: 12em; font: 500 12px var(--mono); }
@@ -108,13 +113,11 @@
 .cc-pmenu button:hover, .cc-pmenu button:focus-visible { background: var(--chip); outline: none; }
 .cc-pmenu code { font: 500 11.5px var(--mono); color: var(--mute); }
 .ccd-media { position: relative; }
-.ccd-pickov { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
-.ccd-media.picking { outline: 2px solid var(--hi); outline-offset: 2px; }
-.ccd-pickhint { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; pointer-events: none; padding: 5px 8px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: 11.5px; text-align: center; }
-.cc-loupe { position: fixed; z-index: 130; pointer-events: none; width: 120px; background: #111; border-radius: 12px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
-.cc-loupe canvas { display: block; width: 120px; height: 120px; border-radius: 8px; image-rendering: pixelated; }
-.cc-loupe b { display: flex; align-items: center; gap: 6px; justify-content: center; font: 600 12px var(--mono); color: #fff; padding: 5px 0 2px; }
-.cc-loupe b::before { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
+/* §33.14: a lupa do conta-gotas (por cima do ecrã inteiro): 21 × 21 píxeis × 8 e a cor num retângulo grande com o #HEX */
+.cc-loupe { position: fixed; z-index: 130; pointer-events: none; width: 176px; box-sizing: border-box; background: #111; border-radius: 12px; padding: 4px; box-shadow: 0 10px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 4px; }
+.cc-loupe[hidden] { display: none; }
+.cc-loupe canvas { display: block; width: 168px; height: 168px; border-radius: 8px; image-rendering: pixelated; }
+.cc-loupe .sw { width: auto; height: 56px; margin: 0; border: 0; vertical-align: baseline; border-radius: 8px; display: grid; place-items: center; font: 700 20px var(--mono); letter-spacing: .02em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
 .ccd-pal { display: flex; flex-wrap: wrap; gap: 6px; }
 .ccd-pal button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 100px; padding: 3px 9px 3px 3px; font: 500 11.5px var(--mono); color: var(--fg); cursor: pointer; }
 .ccd-pal i { width: 18px; height: 18px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.1); }
@@ -156,13 +159,33 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-lanebar .cclb button:hover { background: var(--line); }
 .ccb-lanebar .cclb button.on { background: var(--hi); color: #000; }
 .ccb-main { flex: 1; min-height: 0; display: flex; position: relative; }
-.ccb-tools { flex: none; width: 48px; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; overflow: auto; }
+.ccb-tools { flex: none; width: auto; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 3px; padding: 8px 14px 8px 6px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
 .ccb-tools button, .ccb-tools label { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; position: relative; flex: none; }
 .ccb-tools button:hover, .ccb-tools label:hover { background: var(--chip); color: var(--fg); }
 .ccb-tools button.on { background: var(--fg); color: var(--bg); }
 .ccb-tools button:disabled { opacity: .35; cursor: default; background: none; }
+/* margem direita de 14 px: a seta da borda (24 px, centrada na borda) nunca fica por cima de um botão */
 .ccb-tools hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; width: auto; }
 .ccb-tools .sw { position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px var(--panel); }
+/* §33.14: estática — a largura é a dos botões (com a barra vertical, se faltar altura), nunca desliza para o lado;
+   a seta na borda direita (como a do menu, §12.0) expande-a com o nome de cada ferramenta */
+.ccb-toolsw { flex: none; position: relative; z-index: 6; display: flex; }
+.ccb-tools .tl { display: none; }
+.ccb-tools.wide button { width: auto; display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 14px 0 9px; white-space: nowrap; text-align: left; }
+.ccb-tools.wide .tl { display: inline; font: 500 13px/1 var(--body); color: inherit; }
+.ccb-tools.wide .sw { right: auto; left: 23px; }
+.ccb-tools-edge {
+  position: absolute; top: calc(50% - 12px); right: -12px; margin: 0; width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-2); background: var(--raise); color: var(--fg);
+  box-shadow: var(--shadow); cursor: pointer; opacity: 0; transition: opacity var(--t), background var(--t), color var(--t);
+}
+.ccb-tools-edge .ico { width: 14px; height: 14px; transform: scaleX(-1); transition: transform var(--t); }
+.ccb-tools.wide + .ccb-tools-edge .ico { transform: none; }
+.ccb-toolsw:hover .ccb-tools-edge, .ccb-tools-edge:hover, .ccb-tools-edge:focus-visible { opacity: 1; }
+.ccb-tools-edge:hover { background: var(--hi); border-color: var(--hi); color: var(--on-hi); }
+.ccb-tools-edge:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 2px; }
+.touch .ccb-tools-edge { opacity: .6; }
+.touch .ccb-tools-edge:focus-visible { opacity: 1; }   /* com teclado no iPad: o foco não fica a 60 % */
 
 .ccb-vp { flex: 1; min-width: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: default; outline: none;
   background-color: var(--cc-board); background-image: radial-gradient(var(--cc-grid) 1.1px, transparent 1.2px); background-size: 24px 24px; }
@@ -231,6 +254,15 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc-media video { position: absolute; inset: 0; }
 .ccc.t-image .ccc-media, .ccc.t-video .ccc-media { border-radius: 9px; }
 .ccc-play { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(17,17,17,.62); color: #fff; display: grid; place-items: center; pointer-events: none; }
+/* §33.14 (5 nov): o ▶ do cartão de vídeo é um botão (toca com som no cartão); a tocar mostra ❚❚ e só aparece ao passar */
+button.ccc-play { border: 0; padding: 0; cursor: pointer; pointer-events: auto; z-index: 2; transition: opacity .15s, transform var(--t); }
+button.ccc-play:hover { transform: scale(1.06); }
+button.ccc-play .ico.pause, .ccc.playing button.ccc-play .ico:not(.pause) { display: none; }
+.ccc.playing button.ccc-play .ico.pause { display: inline-block; }
+.ccc.playing button.ccc-play { opacity: 0; }
+.ccc.playing:hover button.ccc-play, .ccc.playing button.ccc-play:focus-visible { opacity: 1; }
+@media (hover: none) { .ccc.playing button.ccc-play { opacity: .7; } }
+.ccc-media video.card-play { z-index: 1; }
 .ccc-dur { position: absolute; right: 7px; bottom: 7px; font: 600 10.5px var(--mono); background: rgba(0,0,0,.65); color: #fff; padding: 1px 6px; border-radius: 5px; }
 .ccc-pal { position: absolute; left: 7px; bottom: 7px; display: flex; gap: 3px; opacity: 0; transition: opacity .15s; }
 .ccc:hover .ccc-pal, .ccc.sel .ccc-pal { opacity: 1; }
@@ -245,7 +277,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccc-state.swap { background: var(--coral); color: #000; }
 .ccc-nc { position: absolute; bottom: -9px; right: 10px; font: 600 10px var(--mono); padding: 1px 7px; border-radius: 100px; background: var(--fg); color: var(--bg); z-index: 1; border: 0; cursor: pointer; line-height: 1.5; }
 .ccc-nc::after { content: ''; position: absolute; inset: -10px -8px; }   /* alvo maior para o dedo, sem mudar o desenho */
-.ccc-nc:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.ccc-nc:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 2px; }
 /* §33.4: balão dos últimos comentários (só leitura) */
 .cc-nballoon { position: fixed; z-index: 96; width: 280px; max-width: calc(100vw - 16px); background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 10px 12px; animation: pop-in .14s cubic-bezier(.2,.7,.2,1); }
 .cc-nballoon .nb-i + .nb-i { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
@@ -307,7 +339,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .ccb-pen button { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--mute); cursor: pointer; padding: 0; }
 .ccb-pen button:hover { background: var(--chip); color: var(--fg); }
 .ccb-pen button[aria-pressed="true"] { background: var(--chip); color: var(--fg); box-shadow: inset 0 0 0 2px var(--fg); }
-.ccb-pen button:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+.ccb-pen button:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 1px; }
 .ccb-pen .pen-c::before { content: ''; width: 18px; height: 18px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 22%, transparent); grid-area: 1 / 1; }
 .ccb-pen .pen-free { font: 600 14px var(--body); }
 .ccb-pen .pen-free:not(.set)::before { background: conic-gradient(#E8846D, #FFC718, #81CFE3, #2F77B1, #E8846D); opacity: .35; }
@@ -381,7 +413,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-cpop .cp-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .cc-cpop .cp-sw { width: 28px; height: 28px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); cursor: pointer; padding: 0; }
 .cc-cpop .cp-sw:hover { transform: scale(1.08); }
-.cc-cpop .cp-sw:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.cc-cpop .cp-sw:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 2px; }
 .cc-cpop .cp-hex { display: flex; gap: 6px; align-items: center; }
 .cc-cpop .cp-free { width: 36px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; flex: none; }
 .cc-cpop .cp-in { flex: 1; min-width: 0; font: 500 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; padding: 6px 8px; }
@@ -420,7 +452,7 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 .cc-page .pal { display: flex; gap: 4px; } .cc-page .pal i { width: 28px; height: 28px; border-radius: 7px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
 
 /* apresentação */
-.cc-boardview.present .ccb-top, .cc-boardview.present .ccb-lanebar, .cc-boardview.present .ccb-tools, .cc-boardview.present .ccb-side, .cc-boardview.present .ccb-zoom, .cc-boardview.present .ccb-hint { display: none !important; }
+.cc-boardview.present .ccb-top, .cc-boardview.present .ccb-lanebar, .cc-boardview.present .ccb-toolsw, .cc-boardview.present .ccb-tools, .cc-boardview.present .ccb-side, .cc-boardview.present .ccb-zoom, .cc-boardview.present .ccb-hint { display: none !important; }
 .cc-boardview.present { position: fixed; inset: 0; z-index: 95; background: var(--cc-board); }
 .cc-boardview.present .ccc-hov, .cc-boardview.present .ccc-res { display: none !important; }
 .cc-pres { position: fixed; z-index: 96; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; background: rgba(17,17,17,.78); color: #fff; padding: 6px 8px; border-radius: 100px; font: 500 12px var(--mono); }
@@ -444,7 +476,14 @@ body.cc-full main > .flash { margin: 8px 12px 0; }
 @media (max-width: 640px) {
   .ccb-tools { position: absolute; left: 8px; top: 8px; bottom: auto; z-index: 6; width: auto; flex-direction: row; flex-wrap: wrap; max-width: calc(100% - 16px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-card); padding: 4px; }
   .ccb-tools hr { display: none; }
+  /* barra flutuante do telemóvel: só ícones, sem seta (a barra posiciona-se na área do Topperboard) */
+  .ccb-toolsw { position: static; z-index: auto; }
+  .ccb-tools-edge, .ccb-tools .tl, .ccb-tools.wide .tl { display: none; }
+  .ccb-tools.wide button { width: 36px; padding: 0; justify-content: center; }
+  .ccb-tools.wide .sw { left: auto; right: 5px; }
   .ccb-hint { display: none; }
+  /* a barra da caneta quebra em linhas e fica por baixo da barra de ferramentas (--pen-top: penPlace), sem tapar Anular/Refazer */
+  .ccb-pen { top: var(--pen-top, 10px); left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ccb-world.anim, .ccc, .ccl-tile, .ccp-tile { transition: none; }
@@ -593,6 +632,41 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-viewer output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
 @media (pointer: coarse) { .cc-viewer .ibtn { width: 44px; height: 44px; } }
 
+/* §33.14: conta-gotas em ecrã inteiro (sempre escuro, nos dois modos; por cima do visualizador, por baixo da lupa) */
+/* entra só com opacidade: com escala, nos primeiros 140 ms as bordas ficavam a descoberto e o clique caía no que está por trás */
+/* touch-action: none no ecrã inteiro (barra incluída): no iPad uma pinça ou um arrasto na barra não aproxima nem desloca a página por trás */
+.cc-pickfs { position: fixed; inset: 0; z-index: 125; background: rgba(10,10,12,.96); color: #f4f4f5; display: flex; flex-direction: column; animation: cc-pickfs-in .14s ease-out; touch-action: none; overscroll-behavior: contain; }
+@keyframes cc-pickfs-in { from { opacity: 0; } }
+.cc-pickfs .pf-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.cc-pickfs .pf-stage:focus-visible { outline: 2px solid #81CFE3; outline-offset: -4px; }
+/* a mira do teclado: uma cruz branca com contorno preto e o meio aberto (vê-se o píxel apontado) */
+.cc-pickfs .pf-cross { position: absolute; left: 0; top: 0; z-index: 1; width: 0; height: 0; pointer-events: none; filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000); }
+.cc-pickfs .pf-cross[hidden] { display: none; }
+.cc-pickfs .pf-cross::before, .cc-pickfs .pf-cross::after { content: ''; position: absolute; }
+.cc-pickfs .pf-cross::before { left: -14px; top: -1px; width: 28px; height: 2px; background: linear-gradient(90deg, #fff 0 10px, transparent 10px 18px, #fff 18px); }
+.cc-pickfs .pf-cross::after { left: -1px; top: -14px; width: 2px; height: 28px; background: linear-gradient(180deg, #fff 0 10px, transparent 10px 18px, #fff 18px); }
+.cc-pickfs.panning .pf-stage { cursor: grabbing; }
+/* atrás da imagem um xadrez de dois cinzentos neutros: um PNG/WebP transparente (um logótipo escuro) vê-se nos dois temas */
+.cc-pickfs .pf-img { display: block; max-width: none; max-height: none; transform-origin: center; background: repeating-conic-gradient(#a0a0a0 0 25%, #808080 0 50%) 0 0 / 32px 32px; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+.cc-pickfs .pf-img.px { image-rendering: pixelated; }
+.cc-pickfs .pf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,.08); }
+.cc-pickfs .pf-sw { flex: none; width: 56px; height: 56px; border-radius: 10px; background: transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+.cc-pickfs .pf-val { display: flex; flex-direction: column; gap: 2px; min-width: 128px; }
+.cc-pickfs .pf-hex { font: 700 20px var(--mono); letter-spacing: .02em; }
+.cc-pickfs .pf-val small { font: 500 13px var(--mono); color: #c9c9cf; }
+.cc-pickfs .pf-txt { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 3px; }
+.cc-pickfs .pf-hint { font-size: 13px; color: #c9c9cf; }
+.cc-pickfs .pf-msg { font-size: 13px; font-weight: 600; color: #f4f4f5; }
+.cc-pickfs .pf-msg:empty { display: none; }
+.cc-pickfs .pf-zoom { display: flex; align-items: center; gap: 4px; }
+.cc-pickfs .ibtn { color: #f4f4f5; background: rgba(255,255,255,.08); width: 40px; height: 40px; border-radius: 10px; font-size: 20px; }
+.cc-pickfs .ibtn:hover { background: rgba(255,255,255,.18); }
+.cc-pickfs button:focus-visible { outline: 2px solid #81CFE3; outline-offset: 2px; }
+.cc-pickfs output { min-width: 52px; text-align: center; font: 600 12px var(--mono); color: #c9c9cf; }
+@media (pointer: coarse) { .cc-pickfs .ibtn { width: 44px; height: 44px; } .cc-pickfs .btn { min-height: 44px; min-width: 44px; } }
+@media (max-width: 640px) { .cc-pickfs .pf-bar { padding: 8px 16px 12px; } .cc-pickfs .pf-txt { order: 5; flex-basis: 100%; min-width: 0; } }
+@media (prefers-reduced-motion: reduce) { .cc-pickfs { animation: none; } }
+
 /* §33.13: som em Apresentar */
 .ccc .pres-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 2; }
 .ccc audio.pres-media { display: none; }
@@ -602,13 +676,19 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-pres .pr-t { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; opacity: .8; }
 .cc-pres input[type=range] { width: 90px; accent-color: var(--hi); }
 .cc-pres [data-p="mute"][aria-pressed="true"] { background: var(--hi); color: #111; }
+/* telemóvel: a barra de Apresentar quebra em linhas e fica no ecrã (‹ › e «Sair» em cima, o título e os controlos de media por baixo) */
+@media (max-width: 640px) {
+  .cc-pres { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 16px); border-radius: 16px; }
+  .cc-pres .pr-media { order: 5; flex: 1 0 100%; min-width: 0; flex-wrap: wrap; justify-content: center; margin: 0; }   /* min-width: 0 — senão um título longo (nowrap) alarga a linha para lá do ecrã */
+  .cc-pres .pr-t { flex: 0 0 100%; max-width: none; text-align: center; }
+}
 
 /* §33.9: enviar do dispositivo ou da Drive; ficheiros apagados da Drive */
 .cc-upmenu { position: fixed; z-index: 97; display: flex; flex-direction: column; min-width: 190px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 5px; }
 .cc-upmenu button { display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 9px 10px; border-radius: 8px; font: 500 13px var(--body); color: var(--fg); cursor: pointer; min-height: 40px; }
 .cc-upmenu button:hover, .cc-upmenu button:focus-visible { background: var(--chip); outline: none; }
 .cc-dpick-back { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,.4); display: grid; place-items: center; padding: 16px; }
-.cc-dpick { width: min(640px, 100%); max-height: min(720px, calc(100vh - 32px)); display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.cc-dpick { width: min(880px, 100%); max-height: min(720px, calc(100vh - 32px)); display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
 .cc-dpick .dp-h { padding: 16px 18px 10px; display: flex; flex-direction: column; gap: 10px; }
 .cc-dpick .dp-h h3 { margin: 0; }
 .cc-dpick .dp-crumb { padding: 0 18px 8px; font-size: 12.5px; color: var(--mute); }
@@ -619,13 +699,44 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .cc-dpick .dp-d, .cc-dpick .dp-f { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 8px; border-radius: 8px; color: var(--fg); font: 500 13px var(--body); cursor: pointer; min-height: 40px; }
 .cc-dpick .dp-d:hover, .cc-dpick .dp-f:hover { background: var(--chip); }
 .cc-dpick .dp-f.on { background: color-mix(in srgb, var(--hi) 18%, transparent); }
-.cc-dpick .dp-f:focus-visible, .cc-dpick .dp-d:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
+/* foco ≠ escolha: o foco é o anel de foco da plataforma (--focus, azul: 3:1 nos dois modos), a escolha é o amarelo */
+.cc-dpick .dp-d:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cc-dpick .dp-f:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cc-dpick .dp-ck { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--mute); border-radius: 4px; display: grid; place-items: center; }
 .cc-dpick .dp-f.on .dp-ck { background: var(--hi); border-color: var(--hi); }
 .cc-dpick .dp-f.on .dp-ck::after { content: ''; width: 8px; height: 4px; border: 2px solid #111; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
-.cc-dpick .dp-f span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cc-dpick .dp-f span b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-dpick .dp-f .dp-nm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cc-dpick .dp-f .dp-nm b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-dpick .dp-f small { color: var(--mute); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* §33.9: grelha com pré-visualização, como a «Grelha» da Drive (o CSS da Drive não está nesta página: classes próprias) */
+.cc-dpick .dp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; padding: 6px 0; }
+.cc-dpick .dp-grid .dp-f { position: relative; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: 12px; }
+.cc-dpick .dp-grid .dp-f.on { box-shadow: inset 0 0 0 2px var(--hi), inset 0 0 0 3px var(--cc-on-ring); }   /* a escolha: por dentro (o foco fica por fora, a 2 px) */
+.cc-dpick .dp-grid .dp-ck { position: absolute; top: 12px; left: 12px; z-index: 1; width: 20px; height: 20px; border-radius: 6px; background: var(--raise); }
+.cc-dpick .dp-th { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden; background: var(--chip); color: var(--mute); }
+.cc-dpick .dp-th img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+.cc-dpick .dp-th svg { width: 40px; height: 40px; }
+.cc-dpick .dp-ext { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: 5px; background: var(--raise); color: var(--fg); font: 700 10px/1.4 var(--body); letter-spacing: .04em; }
+.cc-dpick .dp-play { position: absolute; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: rgba(0,0,0,.55); }
+.cc-dpick .dp-play::after { content: ''; margin-left: 3px; border-style: solid; border-width: 7px 0 7px 11px; border-color: transparent transparent transparent #fff; }
+.cc-dpick .dp-grid .dp-nm { padding: 0 2px 2px; }
+.cc-dpick .dp-grid .dp-f { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* arrastar para o Topperboard: o diálogo some e deixa passar o rato até à tela; a dica (dentro do diálogo aria-modal,
+   para os leitores de ecrã a anunciarem) fica à vista; fora do arrasto fica só para o leitor de ecrã (vazia) */
+.cc-dpick-back.is-dragging { background: transparent; pointer-events: none; }
+.cc-dpick-back.is-dragging .cc-dpick { background: transparent; border-color: transparent; box-shadow: none; }
+.cc-dpick-back.is-dragging .cc-dpick > :not(.dp-drag-hint) { opacity: 0; }
+.cc-dpick .dp-drag-hint { position: fixed; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cc-dpick-back.is-dragging .dp-drag-hint { display: block; position: fixed; width: auto; height: auto; overflow: visible; clip: auto; left: 50%; top: 128px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
+  background: var(--fg); color: var(--bg); font: 600 13.5px var(--body); box-shadow: var(--shadow-lg); white-space: nowrap; }
+.cc-dpick .dp-th:not(.has-img) .dp-play { display: none; }   /* o ▶ só por cima de uma miniatura, nunca do ícone do vídeo */
+.cc-dpick input[type=search] { border-color: var(--mute-2); }   /* ≥ 3:1 contra o campo e o diálogo (claro e escuro) */
+.cc-dpick input[type=search]:focus { border-color: var(--fg); }
+@media (pointer: coarse), (max-width: 640px) { .cc-dpick .dp-mouse { display: none; } }   /* sem rato: sem Shift/Ctrl nem arrastar */
+.dp-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 400; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 10px;
+  background: var(--fg); color: var(--bg); font: 600 13px/1.2 var(--body); }
+.dp-ghost img, .dp-ghost svg { flex: none; width: 36px; height: 36px; border-radius: 6px; object-fit: cover; }
+.dp-ghost svg { padding: 6px; color: var(--hi); }
 .cc-dpick .dp-f-bar { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
 .cc-dpick .dp-f-bar span { flex: 1; }
 .ccb-gone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; background: var(--warn-bg, #fff4d6); color: var(--warn-fg, #7a5300); border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -633,6 +744,12 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 .ccc.gone { outline: 2px dashed var(--bad-fg); outline-offset: 2px; }
 .ccc.gone .ccc-media, .ccc.gone > :not(.ccc-gone):not(.ccc-nc):not(.ccc-res) { opacity: .55; }
 .ccc-gone { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font: 600 12px var(--body); color: #fff; background: var(--bad-fg); border-radius: 9px 9px 0 0; }
+/* §33.9: ficheiro da Faturação e quem vê não tem o Financeiro */
+.ccc.noacc { padding: 0; display: block; }
+.ccc-noacc { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 96px; padding: 16px;
+  border-radius: 9px; background: var(--chip); color: var(--mute); font: 600 12.5px var(--body); text-align: center; }
+.ccc-noacc .ico { width: 22px; height: 22px; }
+.ccd-noacc p { margin: 0; max-width: 32ch; font-weight: 400; line-height: 1.45; }
 
 /* §33.8: cartões de link */
 .ccc-link .by { display: block; font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
@@ -641,13 +758,24 @@ span.ccl-aup { background: var(--chip); color: var(--mute); }
 /* §33 acessibilidade: alvos de toque de 44 px no iPad/telemóvel; foco visível nos controlos novos */
 @media (pointer: coarse) {
   .ccb-tools button, .ccb-tools label { width: 44px; height: 44px; }
+  .ccb-tools-edge::before { content: ""; position: absolute; inset: -11px -19px -11px -3px; border-radius: 12px; }   /* 44 × 44 px (medido do interior da borda de 1 px), a crescer para fora da barra: os botões ficam livres */
   .ccb-gone .btn, .ccd-palh .btn, .ccd-palh .lnk, .cc-dpick .dp-f-bar .btn, .cc-pres button { min-height: 44px; min-width: 44px; }
   .cc-cpop { width: 268px; }
   .cc-cpop .cp-sw { width: 44px; height: 44px; }
   .cc-cpop .cp-act .btn { min-height: 44px; }
   .ccd-pal .ccd-pcb, .ccd-pal .ccd-pm { min-height: 44px; }
   .ccd-pal .ccd-pm { min-width: 44px; }
-  .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button { min-height: 44px; }
+  .cc-pmenu button, .cc-upmenu button, .cc-dpick .dp-d, .cc-dpick .dp-f, .cc-dpick .dp-crumb button, .cc-dpick input[type=search] { min-height: 44px; }
+  .cc-dpick .dp-crumb button { min-width: 44px; }
+  .cc-pres input[type=range] { height: 44px; }
+  .ccb-acts [data-a="present"] { min-height: 44px; min-width: 44px; }
+  .ccd-h [data-x] { width: 44px; height: 44px; }
+  .ccc .pres-play { min-width: calc(44px / var(--vs, 1)); min-height: calc(44px / var(--vs, 1)); }   /* dentro da tela com zoom: --vs é a escala da vista */
+  .ccc button.ccc-play { scale: max(1, calc(0.96 / var(--vs, 1))); }   /* ▶ do vídeo (46 px no cartão): pelo menos 44 px no ecrã, com o ícone */
 }
-.ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .cc-pres button:focus-visible, .ccb-gone .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
-.ccb-side-grip:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
+@media (max-width: 640px) { .cc-dpick .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
+@media (pointer: coarse) and (min-width: 641px) { .ccb-tools.wide button { width: auto; padding-left: 13px; } .ccb-tools.wide .sw { left: 31px; } }
+@media (pointer: coarse) and (max-width: 640px) { .ccb-tools.wide button { width: 44px; } }
+.ccb-tools button:focus-visible, .ccb-tools label:focus-within, .ccb-side-grip:focus-visible::after, .ccb-gone .btn:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: 2px; }
+.cc-pres button:focus-visible, .cc-pres input[type=range]:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }   /* a barra de Apresentar é sempre escura */
+.ccb-side-grip:focus-visible { outline: 2px solid var(--cc-ring); outline-offset: -2px; }

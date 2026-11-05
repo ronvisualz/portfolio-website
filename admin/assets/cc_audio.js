@@ -207,8 +207,9 @@
       Array.prototype.forEach.call(sel(cur), function (n) { n.classList.remove('playing'); n.classList.add('au-err'); });
       document.dispatchEvent(new CustomEvent('topper-audio', { detail: { id: cur, error: true } }));
     });
-    // outro leitor da página começou (vídeo do Review, por exemplo): este pára
-    document.addEventListener('play', function (e) { if (e.target !== el && (e.target.tagName === 'AUDIO' || e.target.tagName === 'VIDEO')) el.pause(); }, true);
+    // outro leitor da página começou (vídeo do Review, por exemplo): este pára. Os vídeos dos cartões do Toppernote
+    // (data-mix) tocam ao mesmo tempo que o áudio (decidido a 5 nov) e um vídeo sem som (pré-visualização) não conta.
+    document.addEventListener('play', function (e) { var t = e.target; if (t !== el && (t.tagName === 'AUDIO' || t.tagName === 'VIDEO') && !t.muted && !t.hasAttribute('data-mix')) el.pause(); }, true);
     return {
       el: el,
       play: function (id, url, from) {

@@ -1748,7 +1748,8 @@ primeira vez que alguém com edição os vê.
 - **No browser (`assets/cc_audio.js`):** ao carregar, o Web Audio lê o ficheiro (até 150 MB) e faz a
   forma de onda (guardada, não se recalcula), as medidas (BPM estimado com confiança, energia, pico,
   dinâmica, brilho, silêncio) e uma imagem com a forma de onda e o espectrograma (escala log) — é o que
-  a IA «vê». O **leitor único** da página garante um áudio de cada vez (e pára se um vídeo começar).
+  a IA «vê». O **leitor único** da página garante um áudio de cada vez (e pára se um vídeo começar — menos os vídeos
+  que tocam nos cartões do Toppernote, que tocam ao mesmo tempo que um MP3: decidido a 5 nov, §33.14).
 - **Cartão no quadro:** tocar/pausar, nome, categoria e duração (o tempo corre ao tocar), forma de onda
   com o progresso e clique para ir a esse ponto. Duplo clique abre a **vista aberta** (também na
   gaveta da Biblioteca): forma de onda grande (clique = ir; arrastar = marcar a repetição A–B),
@@ -2393,7 +2394,7 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
     Clique adiciona; Shift, várias; Esc sai.
   - Clicar numa cor copia o #HEX. O menu ⋯ tem RGB/HSL, renomear, remover (só as manuais) e criar Amostra de cor.
     «Copiar paleta» copia todas.
-  - Funciona no fotograma em pausa dos vídeos.
+  - Funciona no fotograma em pausa dos vídeos (ecrã inteiro e leitura do fotograma por um clone com CORS: §10.32).
   - `cc_file.php …&px=1` serve os píxeis no próprio domínio, só para imagens raster e com `CSP: sandbox`.
 - **Selecionar várias coisas (§33.12):**
   - Arrastar no fundo move a tela.
@@ -2436,6 +2437,132 @@ contam no mês do trabalho) e dá o canal «Parceiro» / «Indicação de client
 - **Fica para depois:** personalização de cores/formas.
 - **Testes na bancada:** o R2 simulado vive em memória; `tests_cc_asset()` (`tests/fixtures.php`) repõe o objeto de
   uma referência reaproveitada depois de a bancada reiniciar, e as imagens do teste de envio otimista são únicas.
+
+### 10.32 Toppernote — correções pedidas a 2 nov — §33.14 (2–5 nov 2026)
+
+Cada problema foi investigado até à causa (reprodução na bancada e um segundo revisor cético) antes de ser corrigido;
+cada correção tem um teste que falhava antes dela.
+
+- **Faturação (segurança, encontrado na investigação):**
+  - Causa: a miniatura de um ficheiro da Faturação posto num Topperboard por quem tem o Financeiro era servida a todos
+    (`cc_file.php` só verificava a chave que servia, `.topper/cc/t/…`, e não a da Drive). Também na Drive: o catálogo
+    dava os etags de todas as miniaturas (`.topper/thumbs/<etag>.jpg`) e `thumb_urls`/`thumb_sign` assinavam qualquer
+    etag — quem não tem o Financeiro lia a miniatura de um recibo com os valores em euros.
+  - Agora: `cc_asset_blocked` verifica a chave da Drive da própria referência para qualquer tamanho, para os
+    fotogramas e para `px=1`/`cors=1`; o cartão mostra «Sem acesso a este ficheiro» (sem título, miniatura nem
+    original), a Biblioteca, a pesquisa e as semelhantes deixam-no de fora e as ações sobre ele dão 403. Na Drive, o
+    catálogo só dá as miniaturas dos ficheiros que a pessoa vê, `thumb_urls` só assina essas e `thumb_sign` recusa um
+    etag que só existe na Faturação (um envio acabado de chegar continua a gravar a sua miniatura).
+  - **Miniaturas da Drive com prova:** o browser manda a chave do ficheiro com o etag (envio e grelha) e o `thumb_sign`
+    só assina se a pessoa vê esse ficheiro e o etag for o do objeto (no sítio onde está); sem isso, quem não tem o
+    Financeiro recebe sempre «Miniatura inválida.» (não se troca a miniatura de um documento no Lixo nem se descobre
+    se um etag existe na Faturação). O etag com «\n» no fim deixou de passar por válido.
+  - **Links de partilha (encontrado na verificação; já existia na §32):** a Faturação só aparece num link se quem o
+    criou tiver hoje o Financeiro e o link estiver aberto na própria Faturação ou a incluir de propósito («com os
+    privados»). Não depende do que a pasta tem hoje (as faturas de um negócio chegam sozinhas a
+    `Projetos/<ID>/Faturação/`) nem de onde o link estava (os links seguem os movimentos). Quem não tem o Financeiro
+    não recebe o endereço de nenhum link que a possa mostrar — lista de links, catálogo, painel de detalhes (`info`)
+    — e a partilha rápida nunca reaproveita um link «com os privados» (e recusa uma pasta com Faturação, como
+    «Partilhar link…»). Links antigos, sem dono: só os abertos na própria Faturação.
+  - **Mover para a Faturação:** com o mover instantâneo ainda na fila, o ficheiro já não se lê pela chave antiga
+    (Drive, «Da Drive» e os ficheiros de uma referência já num Topperboard). Os números do Lixo e das pastas não contam
+    a Faturação a quem não a vê.
+  - A cache do catálogo (`admin/inc/cache/`) fica protegida pelo `admin/inc/.htaccess` (`Require all denied`).
+- **Apresentar — vídeo e áudio até ao fim:**
+  - Causa: a pré-visualização ao passar o cursor não sabia de Apresentar e, ao sair o cursor, apagava o primeiro
+    `<video>` do cartão — o da apresentação.
+  - Agora: em Apresentar não há pré-visualização; o vídeo/áudio da apresentação é só dela, sobrevive a uma
+    re-renderização (sondagem, IA) e o cartão apresentado nunca sai da área desenhada; o MP3 toca na barra de
+    Apresentar; Espaço pausa/retoma e nunca salta um slide de media.
+- **MP3 como cartão de áudio:**
+  - Causa: o tipo `video/*` dado pelo browser vinha antes da extensão de áudio (no browser e no servidor), e o servidor
+    confiava no tipo do cliente. O caso real em produção: «WhatsApp Audio … .mpeg», `video/mpeg`, a começar por `ID3`.
+  - Agora: o servidor decide pelos primeiros bytes (`cc_media_sniff`, leituras parciais no R2): MP3/ID3, AAC (ADTS), Ogg,
+    FLAC, WAV, AIFF e MP4/MOV/WebM sem pista de vídeo são áudio; um vídeo verdadeiro que o browser não descodifica (H.264 +
+    Opus, ProRes, HEVC) continua vídeo. Vale para envios, «Da Drive» e os já gravados (trabalho `media_sniff`).
+- **Anular depois da borracha (com tempo real):**
+  - Causa: repor um cartão não limpava o marcador de apagado do tempo real — o marcador era mais recente do que o
+    cartão e escondia-o logo a seguir ao Anular (na base o traço existia; ninguém o via).
+  - Agora: repor e apagar atualizam a hora do cartão e publicam a mudança no tempo real; o aviso de apagar tem
+    «Anular»; Anular espera pelos pedidos em curso (no máximo 10 s cada) e o «Anular» da barra fica ativo enquanto um
+    pedido grava (no iPad um toque logo a seguir à borracha já não se perde). A migração 42 repõe uma vez os cartões
+    vivos que tinham ficado escondidos.
+- **Barra de ferramentas estática e expansível:**
+  - Causa: 1 px a mais (botões de 36 px numa coluna de 35 px úteis) tornava a barra deslizável para o lado; com
+    barras de deslocação clássicas (Windows/Opera) via-se uma barra horizontal.
+  - Agora: a barra nunca desliza para o lado; seta na borda «Expandir ferramentas»/«Recolher ferramentas» e tecla ]
+    (também AltGr) mostram o nome de cada ferramenta; lembrado por pessoa (`cc_api pref`, k=tools) e mantido nos
+    sub-Topperboards; a vista compensa a largura para os cartões não saltarem; no toque a seta tem alvo de 44 px. O
+    painel de detalhes da direita ficou como estava.
+- **Conta-gotas em ecrã inteiro:**
+  - Causa: escolhia-se sobre a pré-visualização do painel (476×317 px na bancada: um píxel do ecrã ≈ 5×5 do original),
+    com a lupa de 120 px e o #HEX a 12 px; nas bordas e em imagens ao alto a posição falhava (object-fit).
+  - Agora: «+ Escolher da imagem» (I) abre a imagem — ou o fotograma em pausa do vídeo — em ecrã inteiro: zoom com a
+    roda, + − 0 e a pinça (iPad), deslocação com zoom; lupa de 168 px com a cor num retângulo e o #HEX a 20 px; barra
+    com amostra de 56×56 px, #HEX e RGB; média 3×3 só com os píxeis que existem (bordas certas), Alt = 1 px, Shift =
+    várias; «Concluir», Esc e clique fora saem e devolvem o foco; as teclas do Topperboard ficam paradas; no toque a
+    lupa fica acima ou ao lado do dedo e um toque acrescenta uma vez só. A entrada é só opacidade (com escala, um
+    clique rápido perto da borda caía no que está por trás). O clique fora só fecha se começar e acabar fora da imagem;
+    atrás da imagem há um xadrez cinzento (as imagens com transparência veem-se).
+  - Teclado: o palco recebe o foco (Tab), as setas movem uma mira 1 píxel do original (Shift: 10), Enter/Espaço
+    escolhem; a dica diz o caminho do teclado e os estados (a carregar, erro) são anunciados; o foco volta para onde
+    estava. No iPad o ecrã inteiro não deixa a página por trás aproximar nem deslocar.
+  - O fotograma lê-se por um clone do vídeo com `crossorigin` e um endereço assinado próprio (`cc_file.php …&cors=1`,
+    com os mesmos bloqueios da Faturação). **Depende da regra CORS do R2** aceitar a origem do admin; sem ela aparece
+    «Não foi possível ler as cores deste fotograma. Escolha a partir de uma imagem.».
+- **«Juntar da Drive» com pré-visualização e arrastar:**
+  - Causa: o seletor foi feito só com nomes (sem miniaturas nem arrastar), e o fundo do diálogo tapava o Topperboard.
+  - Agora: grelha com as miniaturas da Drive (as que existem; as que faltam feitas no browser como na Drive, só para o
+    que se vê), ícone com a extensão no resto e ▶ nos vídeos; setas na grelha; arrastar uma célula (ou as escolhidas)
+    para o Topperboard põe os cartões onde se larga e fecha o seletor — o diálogo só fica transparente depois de o rato
+    se afastar 24 px (um clique trémulo não larga nada); largar fora devolve o diálogo com a escolha. Arrastar da
+    página da Drive noutro separador também entra. Pastas: «As pastas não entram: abra a pasta e escolha os
+    ficheiros.»; mais de 30 ficheiros vão em pedidos de 30 com um só Anular e uma só mensagem (no máximo 120 de cada
+    vez, com a mensagem dos que ficaram de fora). No toque, tocar e «Adicionar» continua a ser o caminho principal.
+    Teclado e leitor de ecrã: fechar devolve o foco a «Enviar», entrar numa pasta põe o foco no primeiro item, e uma
+    região viva diz a pasta e o número de itens.
+- **Acessibilidade (auditoria WCAG 2.2 nos dois modos, computador, iPad e telemóvel):**
+  - Apresentar: ao entrar o foco vai para a barra («Apresentar», com região viva por diapositivo) e ao sair volta ao
+    botão; as setas no volume e o Espaço/Enter nos botões da barra deixam de mudar de diapositivo; no telemóvel a
+    barra fica no ecrã (‹, ›, «Sair» sempre à vista); o ▶ de um cartão de áudio comanda o som da apresentação (já não
+    há um segundo som que continua depois de sair); sair do ecrã inteiro fecha a apresentação atual.
+  - Avisos com «Anular» (toda a plataforma): contraste no escuro, anel de foco visível, o tempo pára com o foco e
+    alvos de 44 px no toque. Topperboard: o Espaço num botão carrega no botão; a barra da caneta cabe no telemóvel sem
+    tapar o «Anular»; anéis de foco no claro com a cor de foco da plataforma (o amarelo tinha 1,6:1).
+- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):**
+  - Causa (provada na bancada e no Topperboard 1 de produção, com o vídeo e o MP3 dentro de uma coluna): as correções
+    de 2 nov tiraram o cursor de Apresentar e só o cartão do diapositivo tocava — um cartão dentro de uma coluna nunca é
+    diapositivo, por isso nada o fazia tocar; o ▶ de um cartão de áudio em Apresentar comandava só o som do diapositivo
+    (noutro cartão não fazia nada). Fora de Apresentar não era erro mas a regra de então: o vídeo que «tocava» era a
+    pré-visualização sem som, que pára quando o cursor sai, e o leitor único de áudio parava ao começar um vídeo.
+  - Agora: em Apresentar o cursor a **mexer-se** num vídeo que não é o diapositivo começa-o com som e ele toca até ao fim;
+    o quadro a deslizar por baixo do cursor parado (ao mudar de diapositivo) não começa nada; clicar/tocar no vídeo
+    pausa/retoma ao levantar o dedo/rato sem mexer (é o gesto que o iPad aceita para som; arrastar a partir do vídeo
+    move a vista e a pinça faz zoom); o ▶ e a forma de onda de um MP3 que não é o diapositivo usam o leitor normal (o do diapositivo
+    continua a comandar o som da apresentação); avançar, recuar e sair param tudo. Fora de Apresentar o cartão de
+    vídeo tem um botão ▶/❚❚ («Tocar ou pausar o vídeo», 44 px no toque) que toca com som no cartão até ao fim; o vídeo
+    passa para o cartão redesenhado (sondagem, tempo real, IA) sem parar e o cartão — ou a coluna — não sai da área
+    desenhada enquanto toca. Os vídeos dos cartões e o da apresentação têm `data-mix` e um vídeo sem som não conta: o
+    leitor único de áudio (`cc_audio.js`) já não pára por causa deles nem da pré-visualização, e o MP3 toca ao mesmo
+    tempo. Um vídeo com som de cada vez (começar outro pausa o que tocava); «Sem som» e volume da apresentação valem
+    para os vídeos começados pelo cursor. Abrir outro Topperboard ou entrar em Apresentar pára os vídeos que tocavam
+    nos cartões.
+- **Base de dados, passo 42:** `migrate_cc_42` (áudio gravado como vídeo: o óbvio muda já, o resto vai para o
+  trabalho `media_sniff`; nada lê o R2 na migração) e `migrate_cc_42_rt_heal` (uma só vez por base, marca
+  `cc_rt_heal_42` em `settings`), em `inc/migrate_creative.php`. **Ordem ao publicar:** primeiro o código de que a
+  migração depende (`inc/cc.php`, `cc_api.php`, `cc_file.php`, `inc/drive_*.php`, `drive_api.php`) e
+  `inc/migrate_creative.php`; `inc/migrate.php` (versão 42) no fim. Um trabalho `media_sniff` que falhe (p. ex. com o
+  `inc/cc.php` antigo) volta à fila na versão seguinte.
+- **Testes** (bancada): PHP `cc_drive_billing_thumb`, `cc_media_sniff`, `cc_media_kind`, `cc_restore`,
+  `cc_drive_add_msg`, `drive_thumbs_perm`, `drive_billing_window`, `share_billing_private` (e `cc_pref`, `cc_file_px`
+  alargados); JS `cc_logic_test.js`; Playwright `cc_drive_noaccess`, `cc_present_hover`, `cc_present_keys`,
+  `cc_present_touch`, `cc_mp3_card`, `cc_erase_undo_rt`, `cc_tools_bar`, `cc_board_a11y`, `cc_focus_rings`,
+  `toast_a11y`, `cc_eyedropper_keys`, `cc_drive_pick_thumbs`, `cc_drive_pick_drag`, `cc_drive_pick_a11y`,
+  `drive_upload_thumb`, `cc_media_mix` (e `cc_eyedropper`, `cc_drive_pick` alargados; `cc_present_hover` ajustado a
+  5 nov: o cursor num vídeo vizinho passa a tocá-lo).
+- **A verificar depois de publicar:** escolher a cor do fotograma de um vídeo (tocar no detalhe, depois «+ Escolher da
+  imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium); no
+  servidor, que `admin/inc/cache/drive_catalog.json` responde 403 (a bancada, com `php -S`, ignora o `.htaccess`).
 
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
@@ -4452,6 +4579,7 @@ Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar vár
 ### 33.13 Som só em «Apresentar» (31 out 2026)
 Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
 - **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
+<<<<<<< HEAD
 - **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
 
 ## 34. Pipeline v2: 7 funis, categorias e execução em dois níveis (2 nov 2026)
@@ -4551,6 +4679,57 @@ A Pipeline v2 **acrescenta**; não remove nem substitui. As maquetes do briefing
 - **Métricas:** tudo de `inc/metrics.php`; «ganho» continua a ser Kickoff; «Concluído no trimestre» é métrica nova.
 - **Código:** não copiar o CSS das maquetes; usar os componentes de `app.css`; só se criam os 7 tokens `--s-*`; prefixos novos sem colidir (`svc-` é dos Contactos, `exec` do Dashboard Executivo). Toppernote: `cc_on_kickoff`, sub-quadros por etapa e rondas da Review passam a ler as sub-etapas.
 - **Decidido a 3 nov:** «Em risco», faturação pelo comercial, comerciais veem todos os negócios no Pipeline e euros visíveis no Pipeline — ver §34.9. Também decidido a 3 nov: quem é responsável por uma frente (ou tem tarefas nela) vê esse negócio **só em leitura**, mesmo sem ser o dono — muda-se em `inc/reach.php`, com security-review; editar continua a seguir as permissões atuais.
+
+### 34.11 Plano técnico obrigatório — análise de impacto no main (5 nov 2026)
+Análise do código do main (4 revisões independentes: Leads/Pipeline/Negócios; Orçamentação/Financeiro/Relatórios/Dashboard; Tarefas/automações/Toppernote/Drive/Equipa; esquema/permissões/site). Estas regras **prevalecem** sobre as maquetes e completam a §34.10. Sem elas, a v2 parte fluxos existentes.
+
+**Faseamento e segurança da publicação**
+- Fases: (0) bandeira `settings.pipeline_v2_at` e esquema; (1) frentes, motor de avanço e regras com testes; (2) vistas; (3) conversão; (4) ligar a v2. **Até ao «Aplicar» a plataforma funciona em modo v1**: no passo de esquema, os funis novos nascem com `is_active = 0`, nenhum funil é desativado e `LEAD_SERVICES_LIST`, posições e ecrãs v2 só mudam na conversão.
+- Esquema num passo novo no fim de `run_migrations` (ficheiro próprio), com semente que corre uma vez (bandeira reclamada com INSERT IGNORE e `GET_LOCK` em MySQL); nenhum `ALTER` que possa falhar por causa dos dados (UNIQUE, ENUM, NOT NULL sem DEFAULT); só `db_has_column`/`db_create`/`db_column_type`; consultas compatíveis com `ONLY_FULL_GROUP_BY`; códigos novos respeitam a largura das colunas (`trig`/`status` ≤ 10, `doc_kind`/`repeat_rule`/`source` ≤ 8, `step` ≤ 12) ou a coluna alarga-se com `MODIFY` guardado. A produção corre MySQL sem modo estrito (corta sem avisar): a conversão confirma o que ficou gravado.
+
+**Modelo**
+- **Sem `kind` novo.** «Em execução» e «Entrega e pagamento final» são `kind 'production'` com `role 'exec'` e `'delivery'` (fixos: não se apagam). Acrescentar `funnel_stages.level ('deal'|'front')` e `retired_at`: as sub-etapas são `level 'front'` e nunca entram em `flow_order` do negócio; as etapas de produção v1 ficam retiradas (sem apagar nem mudar de `kind`) e filtradas em `funnel_stages`/`flow_order`, `deal_steps`, `pipeline.php`, `xsell_close_missing` e `funis.php`; as suas regras passam a `is_active = 0` (lista em «Rever migração»).
+- **Todas as frentes vivem em `deal_lines`**, também a principal e a de um negócio de um só serviço; os ramos de produção perguntam «tem frentes», não «≥ 2 linhas»; `is_main` deixa de filtrar `flow_tick`, gates e regras. Antes do Kickoff, os serviços do negócio são as `deal_lines` em `planned` (fonte da categoria e do campo «Serviço» das linhas do orçamento, obrigatório com 2+ serviços); no Kickoff passam a frentes (criação idempotente). A frente absorvida numa junção fica com `status 'merged'` e `merged_into_id` (nunca DELETE); os estados v2 têm códigos novos (o `'waiting'` atual é do arranque do crosselling); vários externos de uma frente numa tabela-filha.
+- **Funis:** `vfx`, `cgi`, `adverts`, `campanhas` mantêm o id (mudam nome, posição e `xray_kind`); Motion Design, Composit e Edição são linhas novas; códigos fixos `vfx 3d md cmp ed adv cam`; Ads, Buddy e os funis combinados ficam `is_active = 0`; a criação de funis combinados sai de `funis.php`. `funnel_create` cria as 6 etapas comuns; `del_stage` verifica `deal_lines.stage_id` e `tasks`.
+- **Avença** = coluna própria (ex.: `deal_lines.billing = 'monthly'`, e no negócio antes do Kickoff), decidida na fase comercial; `xsell_is_recurring` e `flow_payment_default` passam a lê-la (a chave `pay_terms_buddy` mantém-se, muda só o rótulo). `funnels.department_id` para o chefe do serviço.
+
+**Motor (avanço, gates, movimentos)**
+- Retirar o bloqueio de `deal_move` para negócios com várias frentes (`inc/pipeline.php` «a produção anda por frente»); os movimentos de frente nunca passam por `deal_move`.
+- Gate Entrega → Concluído = obrigatórias da Entrega + todas as frentes em Pronto (avenças excluídas), para todos os negócios; `xsell_close_missing` reescrito sobre Pronto.
+- Uma sub-etapa **sem obrigatórias** (nem unidades previstas) nunca avança sozinha; o avanço é de uma sub-etapa de cada vez, nunca em cadeia no mesmo pedido; as obrigatórias condicionais («Fora do âmbito ou acima das rondas…») deixam de ser `is_gate`.
+- A reavaliação dos movimentos corre dentro de `task_done`, da reabertura, da eliminação e da mudança de `is_gate` (não nos chamadores) e no cron; um gate bloqueado mostra «Pronto para a Entrega — falta: …» e nunca anula a conclusão da tarefa; movimentos sem sessão ficam como «Sistema». O «Anular» de uma ação que provocou movimentos automáticos desfaz também esses movimentos (ou não é oferecido); anular o Kickoff apaga as frentes nele criadas.
+- **Concluído automático** marca `delivered_at` (pela tarefa «Enviar entregáveis finais»); a checklist da §15.5 continua a não bloquear («Fecho incompleto»).
+- **Dependências:** a frente «À espera» fica no fim da sub-etapa anterior; as tarefas de Y só nascem quando A conclui X; o replaneamento não corre durante a espera. `start_mode 'after'` converte-se em dependência; `xsell_tick`/`xsell_start_followers` deixam de correr nos negócios convertidos. Remover `xsell_requirements` do envio da proposta e a validação de modo em `xsell_save_plan`/`xsell_line_move`.
+- **Datas:** `deals.delivery_date` = data comum (ou a maior das frentes); `deal_lines.delivery_date` quando preenchida, sem depender de `sync_mode`; os prazos das tarefas de frente usam a entrega da frente; mudanças automáticas de prazo atualizam `updated_at` e o Google Calendar.
+
+**Tarefas e automações**
+- As regras de fecho v1 (Aprovação final, Enviar entregáveis, Direitos, «Emitir fatura final · {ID}») e **«Validar pagamento final»** passam para a etapa comum Entrega, uma vez por negócio; `billing_validate_payment` marca `deals.is_paid` pela regra de pagamento da Entrega (não por `kind 'done'`). O R-03 garante «Emitir fatura final» (não cria tarefa nova).
+- Tarefas `doc_kind` invoice/payment são só do negócio (frente principal). A deduplicação considera tarefas abertas **e concluídas** do mesmo ciclo; a tarefa de negócio que não se cria por já existir noutra frente conta para o gate. Nas tarefas de frente, a deduplicação `deal_id + auto_rule_id` passa a incluir frente e ciclo; o gate conta só o ciclo atual; o ciclo mensal abre no primeiro cron com dia ≥ N em que ainda não abriu.
+- Uma fatura recebida fecha **só** a tarefa do seu pedido (`flow_complete_doc_tasks` com id; o pedido guarda a tarefa). «Pedir fatura» ganha ação própria em `deal_flow.php` com `flow_can_bill` (security-review); sem Financeiro vê-se o estado, não o NIF.
+- As repetições copiam `line_id`, `stage_id`, `auto_rule_id` e fecham ao sair da sub-etapa; «as 'monthly' migram» refere-se só a `trig`, não a `repeat_rule`.
+- Os avanços automáticos não geram o aviso «Gate de produção passado»; «replaneado», «parada» e «dependência cumprida» avisam uma vez por frente e sub-etapa e respeitam as preferências. A reatribuição filtra por `line_id` (mudar o responsável do negócio não rouba tarefas das frentes); `team_reassign` passa também `exec_owner_id` de negócios e frentes.
+- Ruído medido com dados que existem: concluída em < 1 min, ou sem checklist marcada nem anexo; «apagada» só conta apagamentos humanos registados antes do DELETE.
+
+**Toppernote, Review e rondas**
+- `cc_stages` continua a ser os quadros criativos (não as sub-etapas); as frentes criam-se antes de `cc_on_kickoff`; na conversão cria-se só o quadro das frentes que não o têm, com o nome do serviço novo (os ficheiros não se movem).
+- Uma peça de Review tem sempre frente nos negócios com várias frentes e só fecha tarefas dessa frente. As rondas contam por frente (e ciclo) na sub-etapa Revisões; uma ronda do portal não pode ser registada também à mão; o gatilho «rondas ultrapassadas» substitui `cc_rv_change_order_task`.
+
+**Métricas e Financeiro**
+- As métricas por serviço usam o **serviço v2** (frentes e `deals.funnel_id`), por um mapa v1→v2 do histórico — nunca `origin_funnel_id`, que fica como «começou em». Vale para `mx_filter`, metas, `metrics_snapshot`, `mx_fin`, `report_tabs`, Dashboard, hall of fame e `budget_reports`. As metas `'funnel'` passam a `'service'`; metas que colidem em `uq_goal` somam-se ou vão a «Conflitos» (nunca UPDATE direto à chave).
+- «Pipeline aberto» = X-Ray, Proposta e Aguardar feedback (valor `budget` senão `value_estimate`, por `inc/metrics.php`); Kickoff, Em execução e Entrega num total à parte. As probabilidades continuam por etapa comercial, com fonte única em Definições (`fin_stage_prob` passa a lê-la); não há probabilidades por funil a migrar. Novas métricas de meta `concluidos`/`valor_concluido` por `done_at`, com nota da mudança de significado de «Concluído».
+- `stage_events` grava `line_id` e a sub-etapa; o tempo por sub-etapa exclui «À espera» e soma reentradas; o Operacional agrupa por serviço → sub-etapa (id). Frente única vale o negócio; `xsell_store_values` corre no Kickoff e quando o orçamento aceite muda. Margem por frente = valor da frente − custos com `line_id` − horas das linhas do serviço; o não atribuído reparte-se pelo valor, com indicação. A categoria grava-se no negócio no Kickoff e na conversão (mudar regras não reescreve o histórico sem «Recalcular»).
+- **Em risco**: uma só função em `inc/` usada por Pipeline, aba Negócios, Dashboard e vista guardada; limite `deal_stale_days` passa de 10 para **5** por defeito, comparação ≥; «movimento» inclui concluir tarefas e mudar de sub-etapa; frentes À espera e Por começar não contam; «pagamento em atraso» só com faturas emitidas vencidas.
+
+**Permissões**
+- A leitura por frente é uma **função nova só de leitura**, usada só em `negocio.php` (GET) e na vista «Por serviço» (regra semelhante a `cc_board_access`); `record_reach`/`reach_sql`, ficheiros, Contactos, Relatórios, pesquisa e undo não mudam. `negocio.php` e `deal_in_reach` passam a usar `record_reach` (com `deal_tab_for`). As ações de frente verificam: admin, responsável da frente ou `flow_can_edit`. `pipeline.php` (POST) usa `record_reach(..., PERM_EDIT)`.
+- «Comerciais veem todos» configura-se como exceção por pessoa (não na linha do papel); a carga na vista «Por serviço» mostra contagens (frentes e tarefas), a % de ocupação só para admins.
+- No quadro, a coluna mapeia para a etapa do funil do negócio pelo papel; não se arrasta para/de Em execução e Entrega (só o sistema; admins forçam com motivo). «Mudar de funil» = mudar o serviço principal (o anterior passa a adicional).
+
+**Conversão (fase 3)**
+- UPDATE direto numa transação, **sem** `deal_move`, `deal_change_funnel`, automações, notificações nem `stage_events`; regista um evento próprio (`'v2_convert'`) que as métricas ignoram. Cada alteração fica numa tabela de registo (tabela, id, coluna, antes, depois, lote) — é dela que o «Reverter» repõe, e só se nada convertido tiver mudado. Cópia de segurança antes, com nome próprio fora da rotação; se a cópia falhar, não se converte.
+- Remapeia (vivo): `deals.funnel_id`, `stage_id`, `lost_stage_id` (de todos os negócios, também perdidos e concluídos), `deal_lines`, `tasks.stage_id`/`auto_rule_id`/`line_id`, `deal_rounds`, `cc_rv_items`, `cc_versions`, `cc_rv_rounds`, `budget_lines` (`funnel_id` vazio → funil do negócio), `packages`, `xsell_*`, `metric_goals`. Não remapeia (histórico, lido pelo mapa): `deal_history`, `stage_events`, `metrics_daily`, `origin_funnel_id`. Não toca nos textos de versões de orçamento já enviadas.
+- Negócios v1 com várias frentes (parados no Kickoff com frentes ativas) passam a Em execução; frentes ainda no Kickoff → «Por começar»; funis combinados → uma frente por código; `prod_step` → sub-etapa mais próxima (revisto pelo admin); tabela etapa v1 → sub-etapa/etapa comum revista em «Rever migração», para negócios e regras. O avanço automático fica suspenso em cada frente migrada até à primeira ação humana. Pacotes com menos de 2 serviços e regras de crosselling com origem igual ao destino ficam inativos e vão a «Conflitos».
+- `contacto.php` aceita para sempre `vfx`, `marketing` e `both` além dos códigos novos e publica-se antes do `index.html`; os valores antigos das leads continuam visíveis até à conversão; o executor externo da frente e `budget_lines.contact_id` entram em `contact_merge`/`contact_refs`; correspondência explícita entre os serviços dos Contactos e os 7 serviços; Excel com as colunas novas no fim.
 
 ## 35. Linha visual v2 (2 nov 2026)
 
@@ -4655,3 +4834,31 @@ O freelancer carrega a fatura ou o recibo verde no Topperspace (entra no Finance
 
 ### 36.10 Preservar a estrutura
 Acrescenta, não substitui: contactos, serviços dos contactos, orçamento, Drive, portal do cliente (`portal.php`, `cc_share`) e checklist de fecho mantêm-se; tabelas novas próprias (ex.: `tspace_access`, `tspace_assign`, `tspace_updates`); página nova própria (ex.: `admin/topperspace.php`). Nunca mostrar «§» na interface.
+=======
+- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador (desde 5 nov também no ▶ do próprio cartão de vídeo — §33.14).
+
+### 33.14 Correções pedidas pela equipa (2 nov 2026)
+- **Apresentar:** ao passar o cursor por um vídeo em Apresentar ele não deve parar quando o cursor sai — **toca até
+  ao fim**. Os **MP3** ouvem-se em Apresentar.
+- **MP3 como áudio:** um MP3 aparece como ficheiro de áudio (forma de onda e leitor), não como um retângulo de vídeo
+  — também os que vêm com extensão `.mpeg` ou como `video/mpeg` (gravações do WhatsApp), nos envios novos, «Da Drive»
+  e nos já gravados.
+- **Barra de ferramentas do Topperboard:** **estática** (não desliza para o lado); «expansível» quer dizer poder
+  alargá-la com o nome das ferramentas, como a barra lateral do menu (seta na borda e tecla ]), lembrado por pessoa.
+  O painel de detalhes da direita fica como está.
+- **Conta-gotas:** «+ Escolher da imagem» abre a imagem em **ecrã inteiro** para acertar no píxel com precisão, com a
+  cor **em grande** (retângulo/quadrado com a amostra e o #HEX legível).
+- **Borracha:** apagar com a borracha e carregar em **Anular** repõe o que se apagou (como mover um cartão ou coluna).
+- **«Da Drive»:** o seletor mostra a **pré-visualização** dos ficheiros como a Drive, e os ficheiros **arrastam-se**
+  para o Topperboard — do seletor e da página da Drive noutro separador.
+- **Segurança (encontrado na investigação):** a miniatura, o nome e o original de um ficheiro da Faturação nunca chegam
+  a quem não tem o Financeiro, mesmo que alguém com o Financeiro o ponha num Topperboard ou o veja na Drive.
+- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):** em Apresentar, passar o cursor por um vídeo que não é o
+  diapositivo (p. ex. dentro de uma coluna, como no Topperboard real) começa-o **com som** e ele toca até ao fim (o
+  cursor sair não o pára); clicar no vídeo pausa/retoma; o ▶ de um MP3 dentro de uma coluna toca; mudar de diapositivo
+  ou sair pára tudo. Fora de Apresentar o cartão de vídeo tem um **▶** que toca com som no próprio cartão até ao fim
+  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo** (em
+  qualquer ordem). Um **vídeo com som de cada vez**: começar outro (no cartão, na apresentação, no detalhe ou no
+  visualizador) pausa o que tocava; o «Sem som» e o volume da barra de Apresentar valem também para os vídeos começados
+  pelo cursor.
+>>>>>>> origin/main

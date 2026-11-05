@@ -571,8 +571,8 @@ function cc_refs_for_text(PDO $pdo, string $text, int $n = 9, array $exclude = [
     $words = array_unique(array_filter(preg_split('/[^\p{L}\p{N}]+/u', cc_fold($text)), fn($w) => mb_strlen($w) >= 5));
     usort($words, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
     $scores = [];
-    $ex = array_flip(array_map('intval', $exclude));
-    $st = $pdo->prepare('SELECT id FROM cc_assets WHERE deleted_at IS NULL AND search_text LIKE ? LIMIT 200');
+    $ex = array_flip(array_merge(array_map('intval', $exclude), cc_blocked_ids($pdo)));   // §33.9
+    $st = $pdo->prepare('SELECT id FROM cc_assets WHERE deleted_at IS NULL AND search_text LIKE ?' . cc_blocked_sql($pdo) . ' LIMIT 200');
     foreach (array_slice($words, 0, 14) as $w) {
         $st->execute(['%' . $w . '%']);
         foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) if (!isset($ex[(int)$id])) $scores[(int)$id] = ($scores[(int)$id] ?? 0) + 1;
@@ -625,7 +625,8 @@ function cc_board_refs_text(PDO $pdo, int $boardId, string $lane = '', int $max 
     $st = $pdo->prepare("SELECT a.* FROM cc_cards c JOIN cc_assets a ON a.id = c.asset_id
                           WHERE c.board_id = ? AND c.deleted_at IS NULL AND a.deleted_at IS NULL" . ($lane !== '' ? ' AND c.lane = ?' : '') . ' ORDER BY c.y, c.x LIMIT ' . $max);
     $st->execute($lane !== '' ? [$boardId, $lane] : [$boardId]);
-    return implode("\n", array_map('cc_ai_asset_line', $st->fetchAll()));
+    // §33.9: nunca os ficheiros da Faturação (o que a IA escreve fica no Topperboard, à vista de quem não os vê)
+    return implode("\n", array_map('cc_ai_asset_line', array_filter($st->fetchAll(), fn($a) => !cc_asset_billing($a))));
 }
 
 function cc_board_notes_text(PDO $pdo, int $boardId, string $lane = ''): string {

@@ -212,7 +212,7 @@ if (isset($_GET['ref'])) {
     $aid = (int)$_GET['ref'];
     if (!$aid || empty(portal_allowed_refs($pdo, $share, $deal)[$aid])) { http_response_code(404); exit; }
     $a = cc_asset_get($pdo, $aid);
-    $key = $a ? cc_thumb_pick($a['thumbs'], 768) : null;
+    $key = $a && !cc_asset_billing($a) ? cc_thumb_pick($a['thumbs'], 768) : null;   // §33.9: nunca a Faturação
     if (!$key) { http_response_code(404); exit; }
     header('Cache-Control: private, max-age=240');
     if (strncmp($key, 'r2:', 3) === 0) {

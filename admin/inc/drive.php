@@ -22,7 +22,7 @@ const DRIVE_ROOTS = ['Empresa/', 'Leads/', 'Projetos/', 'Marketing/', 'Bibliotec
 const DRIVE_SYS    = '.topper/';
 const DRIVE_TRASH  = DRIVE_SYS . 'lixo/';     // .topper/lixo/<id>/<chave original>
 const DRIVE_THUMBS = DRIVE_SYS . 'thumbs/';   // .topper/thumbs/<etag>.jpg
-const DRIVE_ETAG_RE = '/^[a-f0-9]{32}(-\d{1,5})?$/';
+const DRIVE_ETAG_RE = '/^[a-f0-9]{32}(-\d{1,5})?$/D';   // D: o «$» não aceita um «\n» no fim
 const DRIVE_CATALOG_TTL = 30;                 // segundos
 const DRIVE_PROJECT_SUBS = [];   // por agora sem subpastas: os ficheiros ficam soltos na pasta do projeto
 

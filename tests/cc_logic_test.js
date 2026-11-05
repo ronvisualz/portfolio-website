@@ -126,6 +126,80 @@ const D = img(5, 5, (x, y) => x === 2 && y === 2 ? [220, 40, 40] : [200, 40, 40]
 eq(CCL.avg3(D, 5, 2, 2, false), '#CA2828', 'avg3: média 3×3 (8 × 200 + 220) / 9 = 202');
 eq(CCL.avg3(D, 5, 2, 2, true), '#DC2828', 'avg3 com Alt: o píxel exato');
 eq(CCL.avg3(D, 5, 0, 0, false), '#C82828', 'avg3 no canto: só os vizinhos que existem');
+// §33.14: nas bordas da imagem, a caixa de recolha só tem parte dos píxeis; os que ficam fora da caixa não contam
+const red7 = img(15, 15, x => x >= 7 ? [220, 40, 40] : [0, 0, 0]); for (let i = 0; i < red7.length; i += 4) if ((i / 4) % 15 < 7) red7[i + 3] = 0;
+eq(CCL.avg3(red7, 15, 7, 7, false, [7, 0, 15, 15]), '#DC2828', 'avg3 com caixa: borda esquerda (só as colunas ≥ 7 existem) → o vermelho, sem o transparente');
+const blue8 = img(15, 15, x => x <= 7 ? [47, 119, 177] : [0, 0, 0]); for (let i = 0; i < blue8.length; i += 4) if ((i / 4) % 15 > 7) blue8[i + 3] = 0;
+eq(CCL.avg3(blue8, 15, 7, 7, false, [0, 0, 8, 15]), '#2F77B1', 'avg3 com caixa: borda direita (só as colunas 0..7 existem) → o azul');
+eq(CCL.avg3(blue8, 15, 7, 7, true, [0, 0, 8, 15]), '#2F77B1', 'avg3 com caixa e Alt: o píxel exato');
+eq(CCL.avg3(D, 5, 2, 2, false, undefined), '#CA2828', 'avg3 sem caixa continua igual');
+// a imagem ajustada ao ecrã: o maior tamanho inteiro que cabe (pode ampliar até maxUp)
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(2400, 1600, 1368, 780, 8), { w: 1170, h: 780 }, 'fitRect: 2400×1600 em 1368×780 → 1170×780');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(300, 200, 1368, 780, 8), { w: 1170, h: 780 }, 'fitRect: imagem pequena é ampliada');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(100, 100, 1368, 780, 4), { w: 400, h: 400 }, 'fitRect: o limite de ampliação conta');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(1200, 2400, 1368, 780), { w: 390, h: 780 }, 'fitRect: imagem ao alto cabe pela altura');
+eq(typeof CCL.fitRect === 'function' && CCL.fitRect(0, 0, 1368, 780), { w: 0, h: 0 }, 'fitRect: sem tamanho → 0×0');
+// o píxel do original debaixo do cursor (rect = getBoundingClientRect da imagem desenhada, já com o zoom)
+const R = { left: 100, top: 50, width: 1170, height: 780 };
+const PP = (...a) => typeof CCL.pickPx === 'function' ? CCL.pickPx(...a) : 'sem pickPx';
+eq(PP(R, 2400, 1600, 100, 50), { x: 0, y: 0 }, 'pickPx: canto de cima à esquerda → (0, 0)');
+eq(PP(R, 2400, 1600, 1270, 830), { x: 2399, y: 1599 }, 'pickPx: canto de baixo à direita → o último píxel');
+eq(PP(R, 2400, 1600, 99, 300), null, 'pickPx: fora da imagem (à esquerda) → null');
+eq(PP(R, 2400, 1600, 600, 831), null, 'pickPx: fora da imagem (em baixo) → null');
+eq(PP(R, 2400, 1600, 100 + 1170 / 2, 50 + 780 / 2), { x: 1200, y: 800 }, 'pickPx: o centro');
+eq(PP({ left: 505, top: 60, width: 390, height: 780 }, 1200, 2400, 505 + 390 * 0.375, 60 + 390), { x: 450, y: 1200 }, 'pickPx: imagem ao alto (a 2.ª de 4 riscas)');
+// a cor do texto que se lê sobre a amostra
+eq(typeof CCL.ink === 'function' && CCL.ink('#FFC718'), '#111111', 'ink: amarelo → texto escuro');
+eq(typeof CCL.ink === 'function' && CCL.ink('#2F77B1'), '#FFFFFF', 'ink: azul → texto branco');
+eq(typeof CCL.ink === 'function' && CCL.ink('#DC2828'), '#FFFFFF', 'ink: vermelho → texto branco');
+eq(typeof CCL.ink === 'function' && CCL.ink('#FFFFFF'), '#111111', 'ink: branco → texto escuro');
+// zoom à volta do cursor (ox, oy: distância ao centro do palco); 1 = ajustado, sem deslocar
+const ZA = (...a) => typeof CCL.zoomAbout === 'function' ? CCL.zoomAbout(...a) : 'sem zoomAbout';
+eq(ZA({ z: 1, px: 0, py: 0 }, 2, 100, 50, 16), { z: 2, px: -100, py: -50 }, 'zoomAbout: o ponto debaixo do cursor fica no sítio');
+eq(ZA({ z: 2, px: -100, py: -50 }, 0.25, 100, 50, 16), { z: 1, px: 0, py: 0 }, 'zoomAbout: abaixo de 1 volta ao ajustado e centrado');
+eq(ZA({ z: 8, px: 0, py: 0 }, 4, 0, 0, 16), { z: 16, px: 0, py: 0 }, 'zoomAbout: não passa do máximo');
+// onde fica a lupa (176 × 236) no iPad (1180 × 820): no toque, acima do dedo; sem espaço, ao lado — nunca por baixo
+// (antes: com menos de 364 px acima do dedo saltava 60 px para baixo do dedo, debaixo da mão)
+const LA = (...a) => typeof CCL.loupeAt === 'function' ? CCL.loupeAt(...a) : 'sem loupeAt';
+eq(LA(590, 600, 176, 236, 1180, 820, true), { x: 502, y: 316 }, 'loupeAt toque: acima do dedo, centrada');
+eq(LA(590, 360, 176, 236, 1180, 820, true), { x: 502, y: 76 }, 'loupeAt toque: dedo a 360 → ainda acima (antes ia para 420, por baixo)');
+eq(LA(590, 292, 176, 236, 1180, 820, true), { x: 502, y: 8 }, 'loupeAt toque: o último ponto em que cabe acima');
+eq(LA(590, 291, 176, 236, 1180, 820, true), { x: 354, y: 55 }, 'loupeAt toque: sem espaço acima → à esquerda do dedo, o mais alto possível');
+eq(LA(590, 200, 176, 236, 1180, 820, true), { x: 354, y: 8 }, 'loupeAt toque: dedo a 200 → à esquerda (antes por baixo)');
+eq(LA(150, 200, 176, 236, 1180, 820, true), { x: 210, y: 8 }, 'loupeAt toque: perto da borda esquerda → à direita do dedo');
+eq(LA(1170, 600, 176, 236, 1180, 820, true), { x: 996, y: 316 }, 'loupeAt toque: perto da borda direita fica dentro do ecrã');
+eq(LA(195, 200, 176, 236, 390, 844, true), { x: 8, y: 8 }, 'loupeAt toque: telemóvel ao alto, sem lado que chegue → o lado com mais espaço, dentro do ecrã');
+eq(LA(500, 400, 176, 236, 1180, 820, false), { x: 522, y: 422 }, 'loupeAt rato: em baixo à direita do cursor');
+eq(LA(1100, 700, 176, 236, 1180, 820, false), { x: 902, y: 442 }, 'loupeAt rato: sem espaço → passa para o outro lado');
+{ let bad = [];
+  for (let x = 20; x <= 1160; x += 20) for (let y = 20; y <= 800; y += 20) {
+    const q = LA(x, y, 176, 236, 1180, 820, true); if (typeof q !== 'object') { bad.push(q); break; }
+    const above = q.y + 236 <= y - 24, aside = q.x + 176 <= x - 24 || q.x >= x + 24, inside = q.x >= 8 && q.y >= 8 && q.x + 176 <= 1172 && q.y + 236 <= 812;
+    if (!(above || aside) || q.y >= y || !inside) bad.push([x, y, q.x, q.y]);
+  }
+  eq(bad.slice(0, 3), [], 'loupeAt toque: em todo o iPad a lupa fica acima do dedo ou ao lado dele (nunca por baixo, nunca fora do ecrã)'); }
+// mira do teclado (WCAG 2.1.1): um píxel do original; começa no meio, as setas andam 1 (Shift: 10) e ficam na imagem
+{ const F = n => typeof CCL[n] === 'function' ? CCL[n] : () => 'sem ' + n;
+  const AA = F('aimAt'), AM = F('aimMove'), AS = F('aimScreen');
+  eq(AA(null, 2400, 1600), { x: 1200, y: 800 }, 'aimAt: sem mira → o meio da imagem');
+  eq(AA({ x: -5, y: 9999 }, 2400, 1600), { x: 0, y: 1599 }, 'aimAt: fora da imagem → a borda mais perto');
+  eq(AA({ x: 3.7, y: 2.2 }, 2400, 1600), { x: 3, y: 2 }, 'aimAt: píxel inteiro');
+  eq(AA({ x: 1, y: 1 }, 0, 0), null, 'aimAt: sem imagem → null');
+  eq(AM({ x: 10, y: 10 }, 'ArrowRight', false, 2400, 1600), { x: 11, y: 10 }, 'aimMove: → anda 1 píxel');
+  eq(AM({ x: 10, y: 10 }, 'ArrowLeft', true, 2400, 1600), { x: 0, y: 10 }, 'aimMove: Shift+← anda 10');
+  eq(AM({ x: 10, y: 10 }, 'ArrowUp', false, 2400, 1600), { x: 10, y: 9 }, 'aimMove: ↑ sobe 1');
+  eq(AM({ x: 10, y: 10 }, 'ArrowDown', true, 2400, 1600), { x: 10, y: 20 }, 'aimMove: Shift+↓ desce 10');
+  eq(AM({ x: 2395, y: 3 }, 'ArrowRight', true, 2400, 1600), { x: 2399, y: 3 }, 'aimMove: na borda direita fica no último píxel');
+  eq(AM({ x: 4, y: 3 }, 'ArrowUp', true, 2400, 1600), { x: 4, y: 0 }, 'aimMove: na borda de cima fica no 0');
+  eq(AM(null, 'ArrowRight', false, 2400, 1600), { x: 1201, y: 800 }, 'aimMove: sem mira começa no meio');
+  eq(AM({ x: 4, y: 3 }, 'Enter', false, 2400, 1600), null, 'aimMove: outras teclas → null (não mexe)');
+  // o centro do píxel no ecrã (o inverso de pickPx: o conta-gotas lê a cor pela mesma função que o rato)
+  const s0 = AS({ x: 0, y: 0 }, R, 2400, 1600);
+  eq(s0 && typeof s0 === 'object' ? [s0.x.toFixed(5), s0.y.toFixed(5)] : s0, ['100.24375', '50.24375'], 'aimScreen: o centro do primeiro píxel');
+  let bad = [];
+  for (const q of [{ x: 0, y: 0 }, { x: 2399, y: 1599 }, { x: 1200, y: 800 }, { x: 17, y: 1033 }]) { const s = AS(q, R, 2400, 1600); if (JSON.stringify(PP(R, 2400, 1600, s.x, s.y)) !== JSON.stringify(q)) bad.push(q); }
+  eq(bad, [], 'aimScreen → pickPx devolve o mesmo píxel (também nas bordas)');
+  eq(AS({ x: 5, y: 5 }, { left: 0, top: 0, width: 0, height: 0 }, 10, 10), null, 'aimScreen: sem imagem desenhada → null'); }
 eq(CCL.hexTo('#7C7774', 'rgb'), 'rgb(124, 119, 116)', 'hexTo rgb');
 eq(CCL.hexTo('#7C7774', 'hsl'), 'hsl(23, 3%, 47%)', 'hexTo hsl');
 eq(CCL.hexTo('#FFFFFF', 'hsl'), 'hsl(0, 0%, 100%)', 'hexTo hsl branco');
@@ -168,6 +242,117 @@ eq(CCL.clipText(pk), 'Col\na\nb', 'clipText: resumo legível (títulos e textos)
   eq(CCL.clipMatch(st, ''), null, 'clipMatch: área de transferência sem texto → nada (não cola o pacote antigo)');
   eq(CCL.clipMatch(st, 'outra coisa'), null, 'clipMatch: texto diferente → nada');
   eq(CCL.clipMatch(null, 'x'), null, 'clipMatch: sem pacote guardado → nada'); }
+
+// Faturação (§33.9): o tempo real não espalha o cartão de um ficheiro que nem todos podem ver (o servidor dá-o a cada um)
+{ const rtPub = typeof CCL.rtPub === 'function' ? CCL.rtPub : () => 'sem rtPub';
+  const parse = s => { try { return JSON.parse(s); } catch (e) { return s; } };
+  const pub = rtPub({ id: 7, type: 'image', x: 1, asset: { id: 3, title: 'foto' }, _mh: 40, __new: true });
+  eq(parse(pub), { id: 7, type: 'image', x: 1, asset: { id: 3, title: 'foto' } }, 'rtPub: um cartão normal vai inteiro (sem os campos locais)');
+  eq(rtPub({ id: 8, type: 'image', asset: { id: 4, title: 'recibo', restricted: true } }), '', 'rtPub: referência «restrita» (Faturação) → não vai pelo tempo real');
+  eq(rtPub({ id: 9, type: 'image', noaccess: true, asset: { id: 4, title: '', noaccess: true } }), '', 'rtPub: cartão «sem acesso» → também não (quem o vê teria o vazio)');
+  eq(parse(rtPub({ id: 10, type: 'note', c: { text: 'olá' } })), { id: 10, type: 'note', c: { text: 'olá' } }, 'rtPub: nota sem referência vai inteira'); }
+
+// Áudio num contentor de vídeo ou com extensão estranha (o «WhatsApp Audio … .mpeg», MP3 com ID3 dado como video/mpeg):
+// o tipo decide-se pelos bytes (a mesma regra que cc_media_sniff no servidor), nunca por o browser não mostrar a imagem
+{ const sniff = typeof CCL.sniffMedia === 'function' ? CCL.sniffMedia : () => 'sem sniffMedia';
+  const B = (...a) => Buffer.concat(a.map(x => typeof x === 'string' ? Buffer.from(x, 'latin1') : Buffer.from(x)));
+  const N = n => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const Z = n => Buffer.alloc(n);
+  const box = (t, ...body) => { const b = B(...body); return B(N(8 + b.length), t, b); };
+  const hdlr = (h, pre = Z(4)) => box('hdlr', Z(4), pre, h, Z(13));
+  const trak = (h, stbl = 64, pre = Z(4)) => box('trak', box('tkhd', Z(84)), box('mdia', box('mdhd', Z(24)), hdlr(h, pre), box('minf', hdlr('alis', 'dhlr'), box('stbl', Z(stbl)))));
+  const ftyp = (brand = 'isom') => box('ftyp', brand, '\0\0\x02\0', brand, 'mp41');
+  const moov = (...t) => box('moov', box('mvhd', Z(4), N(0), N(0), N(1000), N(5000), Z(80)), ...t);
+  const S = (file, headLen = 65536, tailLen = 0) => sniff(file.subarray(0, headLen == null ? file.length : headLen), tailLen ? file.subarray(file.length - tailLen) : null, file.length);
+  const K = r => r && typeof r === 'object' ? [r.kind, r.mime] : r;
+  const frame = (h, len) => B(h, Z(len - 4));
+  const mp3 = B(frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417), frame('\xFF\xFB\x90\x64', 417));
+  const id3 = B('ID3\x04\0\0', '\0\0\0\x16', 'TSSE', '\0\0\0\x0C\0\0', '\x03Lavf60.3.10');
+  eq(K(S(B(id3, mp3))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 + frames MPEG (o MP3 do WhatsApp) → áudio audio/mpeg');
+  eq(K(S(B('ID3\x03\0\0\0\x01\0\0', Z(128)))), ['audio', 'audio/mpeg'], 'sniffMedia: ID3 maior do que o que se leu → áudio');
+  eq(K(S(mp3)), ['audio', 'audio/mpeg'], 'sniffMedia: frames MPEG (FF FB) → áudio');
+  eq(K(S(B(frame('\xFF\xF3\x80\x40', 208), frame('\xFF\xF3\x80\x40', 208)))), ['audio', 'audio/mpeg'], 'sniffMedia: MPEG-2 Layer III (FF F3) → áudio');
+  eq(K(S(B(frame('\xFF\xFA\x90\x64', 417), frame('\xFF\xFA\x90\x64', 417)))), ['audio', 'audio/mpeg'], 'sniffMedia: frames com CRC (FF FA) → áudio');
+  eq(S(B('\xFF\xFB\x90\x64', Buffer.alloc(413, 0x11), '\x12\x34\x56\x78', Z(400))), null, 'sniffMedia: FF FB sem o frame seguinte → desconhecido');
+  eq(S(B('\xFF\xFB\xF0\x64', Z(1000))), null, 'sniffMedia: débito inválido → desconhecido');
+  const info = B('\xFF\xFB\x90\x64', Z(32), 'Info', N(1), N(192), Z(417 - 4 - 32 - 12));
+  const ri = S(B(id3, info, mp3));
+  eq(!!ri && Math.abs(ri.dur - 192 * 1152 / 44100) < 0.01, true, 'sniffMedia: MP3 com Info → duração dos frames');
+  const m4a = B(ftyp('M4A '), moov(trak('soun')), box('mdat', Z(2000)));
+  eq(K(S(m4a)), ['audio', 'audio/mp4'], 'sniffMedia: MP4 só com som → áudio audio/mp4');
+  eq(Math.abs(S(m4a).dur - 5) < 0.001, true, 'sniffMedia: MP4 de áudio → duração do mvhd');
+  eq(K(S(B(ftyp(), moov(trak('vide'), trak('soun')), box('mdat', Z(2000))))), ['video', ''], 'sniffMedia: MP4 com vídeo → vídeo');
+  eq(K(S(B(ftyp(), moov(trak('soun'), trak('vide')), box('mdat', Z(2000))))), ['video', ''], 'sniffMedia: vídeo depois do som → vídeo');
+  const qt = B(ftyp('qt  '), box('wide'), box('mdat', Z(3000000)), moov(trak('vide', 64, 'mhlr'), trak('soun', 64, 'mhlr')));
+  eq(K(S(qt, 65536, 2097152)), ['video', ''], 'sniffMedia: MOV com o moov no fim → vídeo');
+  eq(S(qt, 65536, 0), null, 'sniffMedia: MOV com o moov no fim, sem o fim → desconhecido');
+  eq(K(S(B(ftyp('M4A '), box('mdat', Z(3000000)), moov(trak('soun'))), 65536, 2097152)), ['audio', 'audio/mp4'], 'sniffMedia: só som com o moov no fim → áudio');
+  const big = B(ftyp(), moov(trak('soun', 90000), trak('vide')), box('mdat', Z(1000)));
+  eq(S(big, 65536, 0), null, 'sniffMedia: moov maior do que o lido, só o som à vista → desconhecido (um vídeo nunca vira áudio)');
+  eq(K(S(big, null, 0)), ['video', ''], 'sniffMedia: o mesmo lido todo → vídeo');
+  eq(K(S(B(ftyp(), moov(trak('soun', 90000)), box('mdat', Z(1000))), null, 0)), ['audio', 'audio/mp4'], 'sniffMedia: moov grande só de som, lido todo → áudio');
+  const vint = n => n < 0x7F ? B([0x80 | n]) : n < 0x3FFF ? B([0x40 | (n >> 8), n & 0xFF]) : B([0x10, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF]);
+  const el = (id, ...body) => { const b = B(...body); return B(id, vint(b.length), b); };
+  const ebml = doc => el('\x1A\x45\xDF\xA3', el('\x42\x82', doc));
+  const entry = (t, codec) => el('\xAE', el('\xD7', '\x01'), el('\x83', B([t])), el('\x86', codec));
+  const seg = tracks => B('\x18\x53\x80\x67\x01\xFF\xFF\xFF\xFF\xFF\xFF\xFF', el('\x15\x49\xA9\x66', el('\x2A\xD7\xB1', '\x0F\x42\x40')), el('\x16\x54\xAE\x6B', tracks), el('\x1F\x43\xB6\x75', Z(200)));
+  eq(K(S(B(ebml('webm'), seg(entry(2, 'A_OPUS'))))), ['audio', 'audio/webm'], 'sniffMedia: WebM só com áudio → áudio audio/webm');
+  eq(K(S(B(ebml('webm'), seg(B(entry(1, 'V_VP9'), entry(2, 'A_OPUS')))))), ['video', ''], 'sniffMedia: WebM com vídeo → vídeo');
+  eq(K(S(B(ebml('matroska'), seg(entry(2, 'A_FLAC'))))), ['audio', 'audio/x-matroska'], 'sniffMedia: Matroska só com áudio → áudio');
+  const ogg = p => B('OggS\0\x02', Z(8), '\x01\0\0\0', Z(8), B([1, p.length]), p);
+  eq(K(S(ogg(B('OpusHead\x01\x02', Z(9))))), ['audio', 'audio/ogg'], 'sniffMedia: Ogg Opus → áudio');
+  eq(K(S(ogg(B('\x80theora', Z(30))))), ['video', ''], 'sniffMedia: Ogg Theora → vídeo');
+  const le = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
+  eq(K(S(B('RIFF', le(1000), 'WAVEfmt ', Z(100)))), ['audio', 'audio/wav'], 'sniffMedia: WAVE → áudio');
+  eq(K(S(B('RIFF', le(1000), 'AVI LIST', Z(100)))), ['video', ''], 'sniffMedia: AVI → vídeo');
+  eq(K(S(B('fLaC', Z(100)))), ['audio', 'audio/flac'], 'sniffMedia: FLAC → áudio');
+  eq(K(S(B('\xFF\xF1\x50\x80\x02\x1F\xFC', Z(9), '\xFF\xF1\x50\x80\x02\x1F\xFC', Z(9)))), ['audio', 'audio/aac'], 'sniffMedia: AAC ADTS → áudio');
+  eq(S(B('\0\0\x01\xBA', Z(2000))), null, 'sniffMedia: MPEG-PS → desconhecido');
+  eq(S(B('%PDF-1.7', Z(200))), null, 'sniffMedia: PDF → desconhecido');
+  eq(S(Z(0)), null, 'sniffMedia: vazio → desconhecido');
+  eq(typeof CCL.sniffMore === 'function' && CCL.sniffMore(m4a) && CCL.sniffMore(qt) && !CCL.sniffMore(B(ebml('webm'))) && !CCL.sniffMore(mp3), true, 'sniffMore: só MP4/MOV (o moov pode estar mais à frente ou no fim) pedem mais bytes'); }
+
+// ── seletor da Drive: arrastar e grelha (§33.9) ──
+{ const F = n => typeof CCL[n] === 'function' ? CCL[n] : () => 'sem ' + n;
+  const DK = F('dragKeys'), GS = F('gridStep'), DC = F('driveChunks'), DM = F('driveMsg');
+  eq(DK(['a', 'b'], 'b'), ['a', 'b'], 'dragKeys: arrastar um dos escolhidos leva todos os escolhidos');
+  eq(DK(['a', 'b'], 'c'), ['c'], 'dragKeys: arrastar um que não está escolhido leva só esse');
+  eq(DK([], 'a'), ['a'], 'dragKeys: sem nada escolhido leva o arrastado');
+  eq(DK(new Set(['x', 'y']), 'y'), ['x', 'y'], 'dragKeys: aceita o Set da seleção (pela ordem em que se escolheu)');
+  // grelha de 4 colunas com 10 ficheiros: 0-3 / 4-7 / 8-9
+  eq(GS(5, 'ArrowRight', 4, 10), 6, 'gridStep: → anda um');
+  eq(GS(3, 'ArrowRight', 4, 10), 4, 'gridStep: → no fim da linha passa para o primeiro da linha seguinte');
+  eq(GS(9, 'ArrowRight', 4, 10), -1, 'gridStep: → no último fica (-1 = não mexe)');
+  eq(GS(0, 'ArrowLeft', 4, 10), -1, 'gridStep: ← no primeiro fica');
+  eq(GS(4, 'ArrowLeft', 4, 10), 3, 'gridStep: ← no início da linha volta ao fim da linha de cima');
+  eq(GS(5, 'ArrowDown', 4, 10), 9, 'gridStep: ↓ desce uma linha (mesma coluna)');
+  eq(GS(6, 'ArrowDown', 4, 10), 9, 'gridStep: ↓ para uma linha mais curta vai ao último');
+  eq(GS(8, 'ArrowDown', 4, 10), -1, 'gridStep: ↓ na última linha fica');
+  eq(GS(9, 'ArrowUp', 4, 10), 5, 'gridStep: ↑ sobe uma linha');
+  eq(GS(1, 'ArrowUp', 4, 10), -1, 'gridStep: ↑ na primeira linha fica');
+  eq([GS(6, 'Home', 4, 10), GS(2, 'End', 4, 10)], [0, 9], 'gridStep: Home vai ao primeiro, End ao último');
+  eq([GS(0, 'ArrowDown', 1, 3), GS(2, 'ArrowDown', 1, 3)], [1, -1], 'gridStep: com uma coluna (telemóvel) ↓ anda um');
+  eq([GS(0, 'ArrowDown', 0, 3), GS(0, 'Enter', 4, 10), GS(7, 'ArrowRight', 4, 5)], [1, -1, -1], 'gridStep: colunas inválidas contam como 1; outras teclas e índices fora não mexem');
+  // juntar mais de 30: vários pedidos, cada um num bloco de linhas por baixo do anterior (o servidor põe 4 por linha, 320 px)
+  const keys = Array.from({ length: 65 }, (_, i) => 'k' + i);
+  const ch = DC(keys, { x: 100, y: 200 }, 30);
+  eq(Array.isArray(ch) && ch.map(c => [c.keys.length, c.keys[0], c.x, c.y]), [[30, 'k0', 100, 200], [30, 'k30', 100, 2760], [5, 'k60', 100, 5320]], 'driveChunks: 65 chaves → 30 + 30 + 5, cada bloco 8 linhas abaixo');
+  eq(DC(['a'], { x: 0, y: 0 }, 30).length, 1, 'driveChunks: uma chave → um pedido');
+  eq(DC([], { x: 0, y: 0 }, 30), [], 'driveChunks: nada → nenhum pedido');
+  // teto de um arrasto/«Adicionar» (centenas de chaves de outra página eram N pedidos em série): só as primeiras max
+  const k150 = Array.from({ length: 150 }, (_, i) => 'k' + i), c150 = DC(k150, { x: 0, y: 0 }, 30, 120);
+  eq(Array.isArray(c150) && [c150.length, c150.reduce((s, c) => s + c.keys.length, 0), c150[3].keys[0], c150[3].keys[29]], [4, 120, 'k90', 'k119'], 'driveChunks: 150 chaves com teto de 120 → 4 pedidos de 30 (as primeiras 120)');
+  eq(DC(keys, { x: 100, y: 200 }, 30, 120).length, 3, 'driveChunks: abaixo do teto fica igual');
+  // a mensagem (igual à do servidor quando um pedido não chega)
+  eq(DM({ added: 1 }), '1 ficheiro da Drive no Topperboard.', 'driveMsg: um');
+  eq(DM({ added: 65 }), '65 ficheiros da Drive no Topperboard.', 'driveMsg: vários');
+  eq(DM({ added: 1, folders: 1 }), '1 ficheiro da Drive no Topperboard. As pastas não entram: abra a pasta e escolha os ficheiros.', 'driveMsg: com uma pasta largada');
+  eq(DM({ added: 0, folders: 2 }), 'As pastas não entram: abra a pasta e escolha os ficheiros.', 'driveMsg: só pastas');
+  eq(DM({ added: 2, skipped: 1 }), '2 ficheiros da Drive no Topperboard. 1 sem acesso ou já não existe.', 'driveMsg: um sem acesso');
+  eq(DM({ added: 0, skipped: 3 }), '0 ficheiros da Drive no Topperboard. 3 sem acesso ou já não existem.', 'driveMsg: nenhum entrou');
+  eq(DM({ added: 30, over: 1 }), '30 ficheiros da Drive no Topperboard. Entram até 30 de cada vez: os restantes ficaram de fora.', 'driveMsg: mais de 30 num só pedido');
+  eq(DM({ added: 120, cut: 30 }), '120 ficheiros da Drive no Topperboard. Entram até 120 ficheiros de cada vez: 30 ficaram de fora.', 'driveMsg: acima do teto diz quantos ficaram de fora');
+  eq(DM({ added: 119, skipped: 1, cut: 1 }), '119 ficheiros da Drive no Topperboard. 1 sem acesso ou já não existe. Entram até 120 ficheiros de cada vez: 1 ficou de fora.', 'driveMsg: teto com um de fora (singular)'); }
 
 console.log(fail ? `FALHOU ${fail} de ${ok + fail}` : `OK ${ok}`);
 process.exit(fail ? 1 : 0);

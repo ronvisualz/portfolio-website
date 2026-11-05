@@ -251,3 +251,49 @@ function migrate_cc_41(PDO $pdo): void {
     db_add_column($pdo, 'cc_assets', 'drive_gone', 'DATETIME NULL', 'TEXT NULL');
     db_add_column($pdo, 'cc_assets', 'drive_trash_id', 'INT UNSIGNED NULL', 'INTEGER NULL');
 }
+
+/**
+ * 42 · Toppernote (§33.14): áudio gravado como vídeo (o MP3 «WhatsApp Audio … .mpeg», dado pelo browser como
+ * video/mpeg, ficou um retângulo de vídeo sem imagem). Só as referências «vídeo» sem imagem (sem largura nem
+ * miniaturas) são candidatas. As que o nome ou o tipo MIME já dizem áudio mudam já (com os cartões); as outras vão
+ * para a fila (trabalho media_sniff), que lê o princípio do ficheiro no R2 — aqui nada lê o R2.
+ * Idempotente: uma referência que já teve o trabalho não volta à fila.
+ */
+function migrate_cc_42(PDO $pdo): void {
+    if (!db_has_table($pdo, 'cc_assets') || !db_has_table($pdo, 'cc_jobs')) return;
+    require_once __DIR__ . '/cc.php';
+    // só os que estão na fila ou já correram bem: um que falhou (p. ex. publicado com o inc/cc.php antigo, «Trabalho
+    // desconhecido.») volta à fila na próxima versão — o trabalho é idempotente
+    $done = array_flip(array_map('intval', $pdo->query("SELECT DISTINCT asset_id FROM cc_jobs WHERE kind = 'media_sniff' AND asset_id IS NOT NULL AND status IN ('queued', 'running', 'done')")->fetchAll(PDO::FETCH_COLUMN)));
+    $now = []; $queue = [];
+    foreach ($pdo->query("SELECT id, mime, file_name, file_key FROM cc_assets WHERE kind = 'video' AND (width IS NULL OR width = 0) AND thumbs IS NULL AND deleted_at IS NULL")->fetchAll() as $a) {
+        if (cc_kind_for((string)$a['mime'], (string)$a['file_name']) === 'audio' || str_starts_with((string)$a['mime'], 'audio/')) $now[] = $a;
+        elseif ((string)$a['file_key'] !== '' && !isset($done[(int)$a['id']])) $queue[] = (int)$a['id'];
+    }
+    foreach ($now as $a) {
+        $mime = (string)$a['mime'];
+        if (!str_starts_with($mime, 'audio/')) $mime = cc_audio_mime((string)$a['file_name']) ?: 'audio/mpeg';
+        $pdo->prepare("UPDATE cc_assets SET kind = 'audio', mime = ? WHERE id = ?")->execute([$mime, (int)$a['id']]);
+    }
+    if ($now) cc_media_audio_cards($pdo, array_map(fn($a) => (int)$a['id'], $now));
+    foreach ($queue as $id) cc_job_add($pdo, 'media_sniff', $id, null, null, null);
+    migrate_cc_42_rt_heal($pdo);
+}
+
+/**
+ * 42 · Toppernote (§33.10): os cartões repostos com «Anular» antes desta correção estão vivos na base, mas o tempo
+ * real esconde-os a todos (o marcador de apagado no documento é mais recente do que o cartão, e cada browser guarda
+ * uma cópia do documento). A base é quem sabe que cartões existem: os vivos passam a ter a hora de agora, e o
+ * primeiro browser que abrir o Topperboard limpa os marcadores antigos (o tempo real fica com o mais recente).
+ * Os apagados e quem mudou cada cartão ficam como estão. Nada lê o documento do tempo real nem o R2.
+ */
+function migrate_cc_42_rt_heal(PDO $pdo): void {
+    if (!db_has_table($pdo, 'cc_cards') || !db_has_table($pdo, 'settings')) return;
+    // uma só vez por base: os passos depois do 05 voltam a correr a cada SCHEMA_VERSION novo, e a cura não pode
+    // reescrever a hora de todos os cartões vivos em cada publicação
+    if ((string)$pdo->query("SELECT svalue FROM settings WHERE skey = 'cc_rt_heal_42'")->fetchColumn() !== '') return;
+    $now = date('Y-m-d H:i:s');
+    $pdo->prepare('UPDATE cc_cards SET updated_at = ? WHERE deleted_at IS NULL AND (updated_at IS NULL OR updated_at < ?)')->execute([$now, $now]);
+    $pdo->prepare(db_is_sqlite($pdo) ? 'INSERT OR REPLACE INTO settings (skey, svalue) VALUES (?, ?)'
+        : 'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)')->execute(['cc_rt_heal_42', $now]);
+}
