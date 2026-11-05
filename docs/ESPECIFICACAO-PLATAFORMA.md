@@ -4756,6 +4756,12 @@ Análise do código do main (4 revisões independentes: Leads/Pipeline/Negócios
 - Negócios v1 com várias frentes (parados no Kickoff com frentes ativas) passam a Em execução; frentes ainda no Kickoff → «Por começar»; funis combinados → uma frente por código; `prod_step` → sub-etapa mais próxima (revisto pelo admin); tabela etapa v1 → sub-etapa/etapa comum revista em «Rever migração», para negócios e regras. O avanço automático fica suspenso em cada frente migrada até à primeira ação humana. Pacotes com menos de 2 serviços e regras de crosselling com origem igual ao destino ficam inativos e vão a «Conflitos».
 - `contacto.php` aceita para sempre `vfx`, `marketing` e `both` além dos códigos novos e publica-se antes do `index.html`; os valores antigos das leads continuam visíveis até à conversão; o executor externo da frente e `budget_lines.contact_id` entram em `contact_merge`/`contact_refs`; correspondência explícita entre os serviços dos Contactos e os 7 serviços; Excel com as colunas novas no fim.
 
+**Decisões dos sócios a 5 nov (fecham a §34.11)**
+- **Comerciais:** veem todos os negócios no Pipeline, mas **só editam os seus** — separar no servidor o âmbito de leitura do de edição (security-review); configurar como exceção por pessoa.
+- **Leads:** uma lead pode ter **vários serviços** (códigos `vfx 3d md cmp ed adv cam` guardados como lista); a categoria calcula-se já na lead e no X-Ray; o formulário do site passa a escolha múltipla (aceitando para sempre os valores antigos).
+- **Euros:** os valores dos negócios veem-se também na lista da aba Negócios e na ficha, sem acesso ao Financeiro; margem, custos, recebido e o separador Financeiro continuam só com Financeiro.
+- **Avença mensal:** valor do negócio = mensalidade × meses contratados; cada mês pede a sua fatura; o negócio conclui no fim do período contratado ou quando a avença é cancelada; os Relatórios separam Campanhas pontual e avença.
+
 ## 35. Linha visual v2 (2 nov 2026)
 
 Referências analisadas (8 vídeos BuildIndex: Kanbo, Roster, Bastion, Orbit, Crew, Assembly, Dealflow, Pulse). Mantém a §11 e os tokens de `admin/assets/app.css` (claro e escuro com o mesmo cuidado); acrescenta estes padrões, a aplicar em todas as abas à medida que forem redesenhadas. Maquetes de referência: briefing «Linha visual v2».
