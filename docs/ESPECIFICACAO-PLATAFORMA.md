@@ -4579,8 +4579,33 @@ Arrastar no fundo continua a **mover o ecrã** (não muda). Para selecionar vár
 ### 33.13 Som só em «Apresentar» (31 out 2026)
 Verificado no main: «Apresentar» só aproxima a câmara a cada cartão; **vídeos e MP3 não tocam**; fora da apresentação o vídeo só faz pré-visualização **sem som** ao passar o cursor. Passa a ser:
 - **Em Apresentar:** ao chegar a um cartão de vídeo ou áudio, toca **com som** desde o início (o clique em «Apresentar» autoriza o som no browser); ao avançar/recuar pausa; Espaço pausa/retoma o media do cartão atual; controlo de volume e «sem som» na barra da apresentação; no fim do vídeo fica parado no último fotograma.
-<<<<<<< HEAD
-- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador.
+- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador (desde 5 nov também no ▶ do próprio cartão de vídeo — §33.14).
+
+### 33.14 Correções pedidas pela equipa (2 nov 2026)
+- **Apresentar:** ao passar o cursor por um vídeo em Apresentar ele não deve parar quando o cursor sai — **toca até
+  ao fim**. Os **MP3** ouvem-se em Apresentar.
+- **MP3 como áudio:** um MP3 aparece como ficheiro de áudio (forma de onda e leitor), não como um retângulo de vídeo
+  — também os que vêm com extensão `.mpeg` ou como `video/mpeg` (gravações do WhatsApp), nos envios novos, «Da Drive»
+  e nos já gravados.
+- **Barra de ferramentas do Topperboard:** **estática** (não desliza para o lado); «expansível» quer dizer poder
+  alargá-la com o nome das ferramentas, como a barra lateral do menu (seta na borda e tecla ]), lembrado por pessoa.
+  O painel de detalhes da direita fica como está.
+- **Conta-gotas:** «+ Escolher da imagem» abre a imagem em **ecrã inteiro** para acertar no píxel com precisão, com a
+  cor **em grande** (retângulo/quadrado com a amostra e o #HEX legível).
+- **Borracha:** apagar com a borracha e carregar em **Anular** repõe o que se apagou (como mover um cartão ou coluna).
+- **«Da Drive»:** o seletor mostra a **pré-visualização** dos ficheiros como a Drive, e os ficheiros **arrastam-se**
+  para o Topperboard — do seletor e da página da Drive noutro separador.
+- **Segurança (encontrado na investigação):** a miniatura, o nome e o original de um ficheiro da Faturação nunca chegam
+  a quem não tem o Financeiro, mesmo que alguém com o Financeiro o ponha num Topperboard ou o veja na Drive.
+- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):** em Apresentar, passar o cursor por um vídeo que não é o
+  diapositivo (p. ex. dentro de uma coluna, como no Topperboard real) começa-o **com som** e ele toca até ao fim (o
+  cursor sair não o pára); clicar no vídeo pausa/retoma; o ▶ de um MP3 dentro de uma coluna toca; mudar de diapositivo
+  ou sair pára tudo. Fora de Apresentar o cartão de vídeo tem um **▶** que toca com som no próprio cartão até ao fim
+  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo** (em
+  qualquer ordem). Um **vídeo com som de cada vez**: começar outro (no cartão, na apresentação, no detalhe ou no
+  visualizador) pausa o que tocava; o «Sem som» e o volume da barra de Apresentar valem também para os vídeos começados
+  pelo cursor.
+
 
 ## 34. Pipeline v2: 7 funis, categorias e execução em dois níveis (2 nov 2026)
 
@@ -4834,31 +4859,3 @@ O freelancer carrega a fatura ou o recibo verde no Topperspace (entra no Finance
 
 ### 36.10 Preservar a estrutura
 Acrescenta, não substitui: contactos, serviços dos contactos, orçamento, Drive, portal do cliente (`portal.php`, `cc_share`) e checklist de fecho mantêm-se; tabelas novas próprias (ex.: `tspace_access`, `tspace_assign`, `tspace_updates`); página nova própria (ex.: `admin/topperspace.php`). Nunca mostrar «§» na interface.
-=======
-- **Fora de Apresentar:** nunca toca som sozinho (pré-visualização ao passar o cursor continua **sem som**); só toca com som quando a pessoa carrega em ▶ no detalhe ou no visualizador (desde 5 nov também no ▶ do próprio cartão de vídeo — §33.14).
-
-### 33.14 Correções pedidas pela equipa (2 nov 2026)
-- **Apresentar:** ao passar o cursor por um vídeo em Apresentar ele não deve parar quando o cursor sai — **toca até
-  ao fim**. Os **MP3** ouvem-se em Apresentar.
-- **MP3 como áudio:** um MP3 aparece como ficheiro de áudio (forma de onda e leitor), não como um retângulo de vídeo
-  — também os que vêm com extensão `.mpeg` ou como `video/mpeg` (gravações do WhatsApp), nos envios novos, «Da Drive»
-  e nos já gravados.
-- **Barra de ferramentas do Topperboard:** **estática** (não desliza para o lado); «expansível» quer dizer poder
-  alargá-la com o nome das ferramentas, como a barra lateral do menu (seta na borda e tecla ]), lembrado por pessoa.
-  O painel de detalhes da direita fica como está.
-- **Conta-gotas:** «+ Escolher da imagem» abre a imagem em **ecrã inteiro** para acertar no píxel com precisão, com a
-  cor **em grande** (retângulo/quadrado com a amostra e o #HEX legível).
-- **Borracha:** apagar com a borracha e carregar em **Anular** repõe o que se apagou (como mover um cartão ou coluna).
-- **«Da Drive»:** o seletor mostra a **pré-visualização** dos ficheiros como a Drive, e os ficheiros **arrastam-se**
-  para o Topperboard — do seletor e da página da Drive noutro separador.
-- **Segurança (encontrado na investigação):** a miniatura, o nome e o original de um ficheiro da Faturação nunca chegam
-  a quem não tem o Financeiro, mesmo que alguém com o Financeiro o ponha num Topperboard ou o veja na Drive.
-- **Vídeo e MP3 (pedido a 5 nov, depois da publicação):** em Apresentar, passar o cursor por um vídeo que não é o
-  diapositivo (p. ex. dentro de uma coluna, como no Topperboard real) começa-o **com som** e ele toca até ao fim (o
-  cursor sair não o pára); clicar no vídeo pausa/retoma; o ▶ de um MP3 dentro de uma coluna toca; mudar de diapositivo
-  ou sair pára tudo. Fora de Apresentar o cartão de vídeo tem um **▶** que toca com som no próprio cartão até ao fim
-  (ou até ❚❚); a pré-visualização sem som ao passar o cursor continua; **vídeo e MP3 tocam ao mesmo tempo** (em
-  qualquer ordem). Um **vídeo com som de cada vez**: começar outro (no cartão, na apresentação, no detalhe ou no
-  visualizador) pausa o que tocava; o «Sem som» e o volume da barra de Apresentar valem também para os vídeos começados
-  pelo cursor.
->>>>>>> origin/main
