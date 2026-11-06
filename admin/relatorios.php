@@ -4,6 +4,7 @@ require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/metrics_view.php';
 require_once __DIR__ . '/inc/settings_def.php';   // setting_log (registo de alterações das metas)
+require_once __DIR__ . '/inc/pipe2.php';
 $user = require_login();
 require_perm('relatorios');
 
@@ -23,7 +24,7 @@ $tabs = REP_TABS;
 if (!$money) unset($tabs['financeiro']);
 $tab = isset($tabs[$_GET['tab'] ?? '']) ? (string)$_GET['tab'] : 'atencao';
 
-$funnels = $pdo->query('SELECT id, name FROM funnels ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
+$funnels = $pdo->query('SELECT id, name FROM funnels WHERE ' . pipe2_funnel_cond($pdo) . ' ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
 $people = mx_people($pdo);
 
 // ── período e filtros (mantêm-se entre separadores) ──

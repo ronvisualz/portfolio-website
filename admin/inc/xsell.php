@@ -18,6 +18,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/pipeline.php';
+require_once __DIR__ . '/pipe2.php';   // os filtros da v2, sem depender da versão do pipeline.php no servidor
 require_once __DIR__ . '/pipeline_flow.php';
 
 const XSELL_SYNC = ['sync' => 'Sincronizadas', 'independent' => 'Timelines diferentes'];
@@ -323,7 +324,7 @@ function xsell_line_move(PDO $pdo, array $deal, array $line, int $stageId, strin
     if ($deal['phase'] !== 'production') throw new RuntimeException('As frentes andam depois do Kickoff, enquanto o negócio está em produção.');
     if ($line['status'] === 'waiting' || $line['status'] === 'planned') throw new RuntimeException('A frente ' . $line['funnel_name'] . ' ainda não arrancou.');
     $to = stage_get($pdo, $stageId);
-    if (!$to || (int)$to['funnel_id'] !== (int)$line['funnel_id']) throw new RuntimeException('Etapa inválida.');
+    if (!$to || !pipe2_stage_live($to) || (int)$to['funnel_id'] !== (int)$line['funnel_id']) throw new RuntimeException('Etapa inválida.');
     if (in_array($to['kind'], ['xray', 'commercial'], true)) throw new RuntimeException('Uma frente em produção não volta à fase comercial.');
     if ((int)$line['stage_id'] === $stageId) return 'Sem alterações.';
     $sync = $deal['sync_mode'] !== 'independent';

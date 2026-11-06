@@ -125,7 +125,7 @@ $cid = cc_card_add($pdo, $BID, ['type' => 'note', 'x' => 0, 'y' => 600, 'content
 t_eq($card($cid)['type'], 'note', 'cc_card_add: sem referência o tipo fica');
 
 // ── 7. o que já estava gravado: migração 42 (sem ler o R2) + trabalho media_sniff (lê o R2) ──
-t_eq(SCHEMA_VERSION, 42, 'SCHEMA_VERSION 42');
+t_true(SCHEMA_VERSION >= 42, 'SCHEMA_VERSION 42 ou mais');
 $old = function (string $name, string $mime, string $key, ?string $thumbs = null) use ($pdo, $BID, $TAG) {
     [$a] = cc_asset_create($pdo, null, ['name' => $name, 'mime' => $mime, 'kind' => 'video', 'file_key' => 'r2:' . $key, 'fp' => sha1($TAG . $name), 'by' => 1, 'no_ai' => 1]);
     if ($thumbs !== null) $pdo->prepare('UPDATE cc_assets SET thumbs = ? WHERE id = ?')->execute([$thumbs, (int)$a['id']]);

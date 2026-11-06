@@ -10,6 +10,8 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';
+
 const STAGE_KINDS = [
     'xray'       => 'X-Ray',
     'commercial' => 'Comercial',
@@ -33,9 +35,9 @@ function funnel_get(PDO $pdo, int $id): ?array {
     return $st->fetch() ?: null;
 }
 
-/** As etapas de um funil pela ordem certa. */
+/** As etapas de um funil pela ordem certa (só as da v1: sem as sub-etapas nem as etapas retiradas). */
 function funnel_stages(PDO $pdo, int $funnelId): array {
-    $st = $pdo->prepare('SELECT * FROM funnel_stages WHERE funnel_id = ? ORDER BY position, id');
+    $st = $pdo->prepare('SELECT * FROM funnel_stages WHERE funnel_id = ? AND ' . pipe2_stage_cond($pdo) . ' ORDER BY position, id');
     $st->execute([$funnelId]);
     $rows = $st->fetchAll();
     usort($rows, fn($a, $b) => [STAGE_ZONE[$a['kind']], (int)$a['position'], (int)$a['id']]
@@ -77,7 +79,7 @@ function phase_for_kind(string $kind): string {
 function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): string {
     require_once __DIR__ . '/pipeline_flow.php';
     $to = stage_get($pdo, $stageId);
-    if (!$to || (int)$to['funnel_id'] !== (int)$deal['funnel_id']) throw new RuntimeException('Etapa inválida.');
+    if (!$to || !pipe2_stage_live($to) || (int)$to['funnel_id'] !== (int)$deal['funnel_id']) throw new RuntimeException('Etapa inválida.');
     if (!in_array($deal['phase'], ['pipeline', 'production', 'done'], true)) throw new RuntimeException('Este negócio não está ativo.');
     if ((int)$deal['stage_id'] === $stageId) return 'Sem alterações.';
     require_once __DIR__ . '/xsell.php';
@@ -168,7 +170,7 @@ function deal_change_funnel(PDO $pdo, array $deal, int $funnelId, int $stageId =
         $stageId = (int)funnel_fixed_stage($pdo, $funnelId, $cur['kind']);
     } else {
         $to = $stageId ? stage_get($pdo, $stageId) : null;
-        if (!$to || (int)$to['funnel_id'] !== $funnelId) throw new RuntimeException('Escolha a etapa de destino no funil novo.');
+        if (!$to || (int)$to['funnel_id'] !== $funnelId || !pipe2_stage_live($to)) throw new RuntimeException('Escolha a etapa de destino no funil novo.');
     }
     $to = stage_get($pdo, $stageId);
     $phase = $deal['phase'] === 'lost' ? 'lost' : phase_for_kind($to['kind']);

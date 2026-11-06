@@ -2564,6 +2564,35 @@ cada correção tem um teste que falhava antes dela.
   imagem») em Chrome/Opera e no iPad; arrastar do seletor no iPad e no Safari/Firefox (só provado no Chromium); no
   servidor, que `admin/inc/cache/drive_catalog.json` responde 403 (a bancada, com `php -S`, ignora o `.htaccess`).
 
+### 10.33 Pipeline v2 — fase 0: bandeira e esquema — §34.11 (6 nov 2026)
+
+- **Passo 43** (`inc/migrate_pipeline2.php`, no fim de `run_migrations`): GET_LOCK, DDL só com os helpers, semente numa
+  transação e uma só vez (`pipe2_seeded`). Bandeira `settings.pipeline_v2_at`: vazia = v1 (`pipe2_on`); não se grava.
+  Os leitores só filtram depois de a semente correr (`pipe2_schema_ready` lê `pipe2_seeded`, nunca o número da versão:
+  se o main ganhar outro passo 43, renumera-se este sem os leitores pedirem colunas que ainda não existem); cada
+  ficheiro que usa `pipe2_*` inclui o `inc/pipe2.php` ele próprio (a Hostinger recebe os ficheiros um a um).
+- **Esquema:** `funnels.service_code`/`v2_only`/`department_id`, `funnel_stages.level` (`deal`/`front`) e `retired_at`,
+  `role` `exec`/`delivery` (sem `kind` novo), avença e frentes em `deal_lines`/`deals`, `tasks.dedup_key` e 8 tabelas.
+- **Semente:** Motion Design, Composit e Edição inativos e `v2_only`; códigos `vfx 3d md cmp ed adv cam`; 6 sub-etapas
+  por serviço; categorias e modelos de dependências. Para a conversão: Em execução/Entrega nos 4 funis ativos, posições,
+  nomes, `xray_kind`, `LEAD_SERVICES_LIST`, `deal_stale_days`. **Filtros** (`level`, `retired_at`, `v2_only`): os
+  leitores da v1 escondem o que é só da v2 e as escritas recusam-no; por id e no histórico, não.
+- **Ordem ao publicar:** `inc/pipe2.php` → leitores e ecrãs juntos (`inc/deals.php`, `inc/pipeline.php`,
+  `inc/pipeline_flow.php`, `inc/xsell.php`, `funis.php`, `negocios.php`, `relatorios.php`) → `inc/migrate_pipeline2.php`
+  → `inc/migrate.php` por último: o `migrate.php` dispara a semente no pedido seguinte e os leitores já têm de filtrar.
+- **Reversão** (a migração não se desfaz em produção: nada se apaga). Com a base ainda na 42 repõe-se tudo. Depois do
+  passo 43 (`schema_version` 43 ou `pipe2_seeded` em `settings`) repõe-se o código anterior **menos** `inc/pipe2.php`
+  e os 7 leitores e ecrãs (`inc/deals.php`, `inc/pipeline.php`, `inc/pipeline_flow.php`, `inc/xsell.php`,
+  `funis.php`, `negocios.php`, `relatorios.php`), que ficam na versão da fase 0; um erro num deles corrige-se para a
+  frente. Os antigos não filtram: o Pipeline e `funis.php` mostravam as 6 sub-etapas, o fecho dos negócios
+  sincronizados exigia «Pronto» e os funis da v2 apareciam com «Ativar». O `inc/migrate.php` antigo (42) não migra nem
+  desfaz nada: a base fica na 43 (o `inc/migrate_pipeline2.php` pode sair) e a semente não volta a correr quando a 43
+  regressar. Desfazer também a base só repondo a cópia de antes do passo 43 junto com todo o código antigo (perde o
+  que se escreveu depois). Prova: `pipe2_rollback_test` (428480f menos os 8, numa cópia migrada, dá a fotografia da
+  42 e continua a recusar as escritas para uma sub-etapa; inteiro, não).
+- **Testes `pipe2_*`:** lib, core, schema, codes, model, filters, screens, includes, v1_unchanged (a v1 migrada = a
+  da 42) e rollback (o código revertido numa cópia migrada).
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das

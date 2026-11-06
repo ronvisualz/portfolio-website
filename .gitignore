@@ -30,3 +30,5 @@ admin/inc/fin_files/
 admin/inc/auth_config.php
 # A chave da plataforma que cifra os tokens guardados na base (criada sozinha no servidor).
 admin/inc/app_key.php
+# Linha de base dos testes do Pipeline v2 (dump e fotografia da bancada na 42): fica só na máquina.
+tests/.pipe2/

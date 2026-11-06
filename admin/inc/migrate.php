@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 42;
+const SCHEMA_VERSION = 43;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -352,6 +352,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 42 · Toppernote (§33.14): áudio gravado como vídeo (o MP3 .mpeg) passa a áudio; os casos que só o conteúdo
     //        diz vão para a fila (trabalho media_sniff, que lê o R2) ──
     migrate_cc_42($pdo);
+    // ── 43 · Pipeline v2, fase 0: bandeira, serviços, sub-etapas e esquema (só acrescenta) ──
+    require_once __DIR__ . '/migrate_pipeline2.php';
+    migrate_pipeline2_43($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

@@ -10,6 +10,8 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';
+
 /** A data de hoje em Lisboa (yyyy-mm-dd). */
 function today_lisbon(): string {
     return (new DateTimeImmutable('now', new DateTimeZone('Europe/Lisbon')))->format('Y-m-d');
@@ -108,9 +110,9 @@ function budget_follow_deal(PDO $pdo, int $dealId): void {
     budget_sync_state($pdo, budget_sheet_ensure($pdo, $d), $d);
 }
 
-/** A etapa fixa de um funil (xray, kickoff ou done). */
+/** A etapa fixa de um funil (xray, kickoff ou done), entre as da v1 (sem as etapas retiradas). */
 function funnel_fixed_stage(PDO $pdo, int $funnelId, string $kind): ?int {
-    $st = $pdo->prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? AND kind = ? ORDER BY position LIMIT 1');
+    $st = $pdo->prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? AND kind = ? AND ' . pipe2_stage_cond($pdo) . ' ORDER BY position LIMIT 1');
     $st->execute([$funnelId, $kind]);
     $id = $st->fetchColumn();
     return $id === false ? null : (int)$id;

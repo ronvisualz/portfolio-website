@@ -19,6 +19,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/pipeline.php';
+require_once __DIR__ . '/pipe2.php';   // os filtros da v2, sem depender da versão do pipeline.php no servidor
 require_once __DIR__ . '/tasks.php';
 
 const FLOW_TRIGGERS = [
@@ -339,6 +340,12 @@ function flow_on_event(PDO $pdo, int $dealId, string $event): int {
     return $n;
 }
 
+/** As regras ativas do relógio diário («todos os meses» e «chega a uma data») nas etapas da v1, com o funil. */
+function flow_tick_rules(PDO $pdo): array {
+    return $pdo->query("SELECT a.*, s.funnel_id FROM stage_automations a JOIN funnel_stages s ON s.id = a.stage_id
+                         WHERE a.is_active = 1 AND a.trig IN ('monthly','date') AND " . pipe2_stage_cond($pdo, 's'))->fetchAll();
+}
+
 /**
  * O relógio diário (cron): regras «todos os meses» (no dia escolhido, para os negócios nessa
  * etapa) e «chega a uma data» (no dia da data ± N, para os negócios nessa etapa). Devolve quantas criou.
@@ -350,8 +357,7 @@ function flow_tick(PDO $pdo, ?string $today = null): int {
     $day = (int)substr($today, 8, 2);
     $last = (int)(new DateTimeImmutable($today))->format('t');
     $n = 0;
-    $rules = $pdo->query("SELECT a.*, s.funnel_id FROM stage_automations a JOIN funnel_stages s ON s.id = a.stage_id
-                           WHERE a.is_active = 1 AND a.trig IN ('monthly','date')")->fetchAll();
+    $rules = flow_tick_rules($pdo);
     foreach ($rules as $r) {
         $st = $pdo->prepare("SELECT * FROM deals WHERE stage_id = ? AND phase IN ('pipeline','production','done')");
         $st->execute([(int)$r['stage_id']]);

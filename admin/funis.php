@@ -4,6 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/pipeline_flow.php';
 require __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/xsell.php';
+require_once __DIR__ . '/inc/pipe2.php';
 $user = require_login();
 require_perm('pipeline', PERM_MANAGE);
 
@@ -149,7 +150,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'create') {
         $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 120);
         if ($name === '') { flash('Dê um nome ao funil.', 'err'); redirect(funis_url()); }
-        $from = array_map('intval', (array)($_POST['from'] ?? []));
+        // os funis só da v2 tratam-se como inexistentes: não entram no nome, no X-Ray nem no modelo das automações
+        $from = array_values(array_filter(array_map('intval', (array)($_POST['from'] ?? [])), fn($id) => !pipe2_funnel_hidden($pdo, funnel_get($pdo, $id))));
         $fromNames = []; $kinds = []; $qs = [];
         foreach ($from as $id) if ($f = funnel_get($pdo, $id)) {
             $fromNames[] = $f['name'];
@@ -162,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('UPDATE funnels SET xray_kind = ?, xray_fields = ? WHERE id = ?')->execute([mb_substr(implode(',', array_unique($kinds)), 0, 60), implode("\n", $qs) ?: null, $id]);
         // A fase comercial e o fecho são iguais em todos os funis (§19.1, §19.6 A/B): as automações
         // dessas etapas vêm do primeiro funil base; as de produção vêm dos funis combinados (mesmo nome).
-        $model = $from ?: [(int)$pdo->query('SELECT id FROM funnels WHERE is_base = 1 ORDER BY position, id LIMIT 1')->fetchColumn()];
+        $model = $from ?: [(int)$pdo->query('SELECT id FROM funnels WHERE is_base = 1 AND ' . pipe2_funnel_cond($pdo) . ' ORDER BY position, id LIMIT 1')->fetchColumn()];
         foreach (flow_order($pdo, $id) as $ns) {
             foreach ($model as $mid) {
                 if (!$mid || !($ms = stage_match($pdo, $ns, (int)$mid))) continue;
@@ -179,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $f = funnel_get($pdo, $fid);
-    if (!$f) { flash('Funil não encontrado.', 'err'); redirect(funis_url()); }
+    if (!$f || pipe2_funnel_hidden($pdo, $f)) { flash('Funil não encontrado.', 'err'); redirect(funis_url()); }
     $back = funis_url(['f' => $fid]);
 
     try {
@@ -199,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 120);
                 $kind = (string)($_POST['kind'] ?? '');
                 if ($name === '' || !in_array($kind, ['commercial', 'production'], true)) throw new RuntimeException('Indique o nome e a fase da etapa.');
-                $st = $pdo->prepare('SELECT COALESCE(MAX(position), ?) FROM funnel_stages WHERE funnel_id = ? AND kind = ?');
+                $st = $pdo->prepare('SELECT COALESCE(MAX(position), ?) FROM funnel_stages WHERE funnel_id = ? AND kind = ? AND ' . pipe2_stage_cond($pdo));
                 $st->execute([$kind === 'commercial' ? 19 : 59, $fid, $kind]);
                 $pdo->prepare('INSERT INTO funnel_stages (funnel_id, name, kind, position) VALUES (?,?,?,?)')->execute([$fid, $name, $kind, (int)$st->fetchColumn() + 1]);
                 flash('Etapa adicionada.');
@@ -207,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $s = stage_get($pdo, (int)($_POST['stage_id'] ?? 0));
-        if (!$s || (int)$s['funnel_id'] !== $fid) throw new RuntimeException('Etapa não encontrada.');
+        if (!$s || (int)$s['funnel_id'] !== $fid || !pipe2_stage_live($s)) throw new RuntimeException('Etapa não encontrada.');
         $sback = $back . '#st-' . (int)$s['id'];
         $fixed = !in_array($s['kind'], ['commercial', 'production'], true) || $s['role'] !== '';
 
@@ -313,9 +315,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $all = $pdo->query('SELECT f.*, (SELECT COUNT(*) FROM deals d WHERE d.funnel_id = f.id AND d.phase IN (\'pipeline\',\'production\')) AS active_deals
-                      FROM funnels f ORDER BY f.is_active DESC, f.position, f.name')->fetchAll();
+                      FROM funnels f WHERE ' . pipe2_funnel_cond($pdo, 'f') . ' ORDER BY f.is_active DESC, f.position, f.name')->fetchAll();
 $fid = (int)($_GET['f'] ?? $_GET['edit'] ?? ($all[0]['id'] ?? 0));
 $ef = $fid ? funnel_get($pdo, $fid) : null;
+if (pipe2_funnel_hidden($pdo, $ef)) {   // funil só da v2 no endereço: como se não existisse
+    $fid = (int)($all[0]['id'] ?? 0);
+    $ef = $fid ? funnel_get($pdo, $fid) : null;
+}
 $users = $pdo->query("SELECT id, name FROM users WHERE is_active = 1 AND role <> 'superadmin' ORDER BY name")->fetchAll();
 $depts = $pdo->query('SELECT id, name FROM departments ORDER BY position, name')->fetchAll();
 

@@ -6,6 +6,7 @@ require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/pipeline.php';
 require_once __DIR__ . '/inc/finance.php';
 require_once __DIR__ . '/inc/deal_file.php';
+require_once __DIR__ . '/inc/pipe2.php';
 $user = require_login();
 require_page('negocios');
 
@@ -101,7 +102,7 @@ $rows = array_values(array_filter($all, static function ($d) use ($filters, $nee
 usort($rows, fn($a, $b) => $tab === 'concluidos' ? strcmp((string)$b['done_at'], (string)$a['done_at']) : strcmp((string)$b['code'], (string)$a['code']));
 $pg = paginate($rows, 'pn', 15);
 
-$funnels = $pdo->query('SELECT id, name FROM funnels ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
+$funnels = $pdo->query('SELECT id, name FROM funnels WHERE ' . pipe2_funnel_cond($pdo) . ' ORDER BY position, name')->fetchAll(PDO::FETCH_KEY_PAIR);
 $owners  = $pdo->query('SELECT id, name FROM users ORDER BY name')->fetchAll(PDO::FETCH_KEY_PAIR);
 
 // Indicadores do que está em produção.
