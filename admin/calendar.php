@@ -6,6 +6,7 @@ require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/team.php';
 require_once __DIR__ . '/inc/gcal.php';
 require_once __DIR__ . '/inc/task_invites.php';
+require_once __DIR__ . '/inc/pipe2.php';
 $user = require_login();
 require_page('tarefas');
 
@@ -58,12 +59,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($do === 'delete_task') {
                 // Uma tarefa obrigatória (gate, §19.1) só sai por um admin: senão abria a passagem da etapa.
                 if (!empty($old['is_gate']) && $old['status'] !== 'done' && !is_admin()) throw new RuntimeException('Esta tarefa é obrigatória para o negócio avançar: só um admin a pode eliminar.');
-                $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
-                if (db_has_table($pdo, 'task_log')) $pdo->prepare('DELETE FROM task_log WHERE task_id = ?')->execute([$id]);
+                // o apagamento humano fica em task_deletions (§34.11 T6; guardado, nunca impede o DELETE)
+                require_once __DIR__ . '/inc/pipe2_tasks.php';
+                pipe2_task_delete_human($pdo, $old, (int)$me['id']);
                 // o Google acompanha (§31.4): o Meet é cancelado (com aviso aos convidados) e sai dos calendários;
                 // os convites por email (Discord, presencial) recebem o cancelamento (§31.6)
                 try { gcal_task_sync($pdo, $id); } catch (Throwable $e) { error_log('[topper] gcal delete: ' . $e->getMessage()); }
                 $ci = tinv_sync($pdo, $id, (int)$me['id']);
+                // Pipeline v2 (§34.11 E4): apagar uma obrigatória reavalia a frente. Num negócio v1 não escreve nada.
+                try { require_once __DIR__ . '/inc/pipe2_engine.php'; pipe2_task_changed($pdo, $old, 'delete'); } catch (Throwable $e) { error_log('[topper] pipe2 delete_task: ' . $e->getMessage()); }
                 flash('Tarefa eliminada.' . ($ci['cancelled'] ? ' ' . $ci['cancelled'] . ($ci['cancelled'] === 1 ? ' convidado avisado' : ' convidados avisados') . ' do cancelamento.' : ''));
                 redirect($back);
             }

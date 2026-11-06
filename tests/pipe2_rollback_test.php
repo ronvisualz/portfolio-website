@@ -1,17 +1,25 @@
 <?php
 /**
- * Pipeline v2, fase 0 — reversão do código depois do passo 43 («a migração aplicada e revertida numa cópia da base»).
+ * Pipeline v2 — reversão do código depois dos passos 43 e 44 («a migração aplicada e revertida numa cópia da base»).
  *
- * Em produção a migração não se desfaz (nada se apaga): reverte-se o código. Depois do passo 43, a reversão segura
- * (10.33 e plano da fase 0) repõe o código de antes da fase 0 (428480f) MENOS 8 ficheiros, que ficam na versão da
- * fase 0: inc/pipe2.php e os leitores e ecrãs que filtram (inc/deals.php, inc/pipeline.php, inc/pipeline_flow.php,
- * inc/xsell.php, funis.php, negocios.php, relatorios.php). O inc/migrate.php antigo (42) não volta a migrar nem
- * desfaz nada, a base fica na 43, e os leitores novos continuam a esconder as sub-etapas e os funis só da v2.
+ * Em produção a migração não se desfaz (nada se apaga): reverte-se o código.
+ *
+ * Fase 0 (passo 43): a reversão segura (10.33 e plano da fase 0) repõe o código de antes da fase 0 (428480f) MENOS 8
+ * ficheiros, que ficam na versão da fase 0 (8c581ae): inc/pipe2.php e os leitores e ecrãs que filtram (inc/deals.php,
+ * inc/pipeline.php, inc/pipeline_flow.php, inc/xsell.php, funis.php, negocios.php, relatorios.php). Os 8 vêm do commit
+ * da fase 0 (git show), não da cópia de trabalho: os de agora já têm os ganchos da fase 1, que pedem ficheiros
+ * (inc/pipe2_*.php) que a árvore de 428480f não tem. O inc/migrate.php antigo (42) não volta a migrar nem desfaz nada,
+ * a base fica na versão de agora, e os leitores da fase 0 continuam a esconder as sub-etapas e os funis só da v2.
+ *
+ * Fase 1 (passo 44): a reversão repõe o código da fase 0 (8c581ae) inteiro; a base fica na 44 (o passo 44 não se desfaz
+ * e a fase 0 ignora as colunas e a tabela novas).
  *
  *   ::documented            a 10.33 e o plano da fase 0 dizem como se reverte e nomeiam os 8 ficheiros que ficam;
- *   ::code_rollback         base privada do dump da 42, migrada (43); o código de 428480f com os 8 da fase 0 por cima
- *                           não a migra nem a desfaz (--migrate: 43 → 43) e a fotografia PHP da v1 com ele (--php)
- *                           dá diff [] com a linha de base;
+ *   ::code_rollback         base privada do dump da 42, migrada pelo código de agora (SCHEMA_VERSION); o código de
+ *                           428480f com os 8 da fase 0 por cima não a migra nem a desfaz (--migrate: SCHEMA_VERSION →
+ *                           SCHEMA_VERSION) e a fotografia PHP da v1 com ele (--php) dá diff [] com a linha de base;
+ *   ::phase1_rollback       a árvore de 8c581ae inteira contra a mesma base: o migrate.php da fase 0 (43) não migra nem
+ *                           desfaz nada e a fotografia PHP da v1 dá diff [] com a linha de base;
  *   ::full_rollback_breaks  controlo: o código de 428480f inteiro contra a mesma base mostra as sub-etapas e os funis
  *                           só da v2 (diff ≠ []) — é por isso que os 8 ficam, e prova que o diff [] não é cego;
  *   ::rollback_injected_rows as 4 linhas do pipe2_v1_unchanged_test::injected_rows_hidden (etapas retiradas, regras
@@ -24,21 +32,25 @@
  * ::rollback_injected_rows). Os 3 ecrãs (funis.php, negocios.php, relatorios.php) só se veem por HTTP; ficam porque
  * são os mesmos ficheiros que o pipe2_screens_test e o pipe2_v1_unchanged_test::after_migration_http provam.
  *
- * As árvores revertidas montam-se numa pasta temporária (git archive de 428480f), com ligações simbólicas para os
- * ficheiros de configuração locais (fora do Git; não se copiam credenciais) e a base de testes atual em tests/.
- * Vale para a fase 0; cada fase seguinte acrescenta o seu caso de reversão.
+ * As árvores revertidas montam-se com tests/pipe2_tree.php (git archive numa pasta temporária, ligações simbólicas
+ * para os ficheiros de configuração locais — fora do Git; não se copiam credenciais — e a base de testes atual em
+ * tests/). Cada fase seguinte acrescenta o seu caso de reversão.
  *
  * Uso: php tests/pipe2_rollback_test.php
  */
 
 require_once __DIR__ . '/boot.php';
 require_once __DIR__ . '/pipe2_lib.php';
+require_once __DIR__ . '/pipe2_tree.php';
 pipe2_lock($pdo);
 
 /** O commit de antes da fase 0 (a base do trabalho). */
 const P2R_BEFORE = '428480f';
 
-/** Os ficheiros que, depois do passo 43, ficam sempre na versão da fase 0 (nunca se repõe a versão antiga). */
+/** O commit da fase 0 (o código para onde se reverte a fase 1, e a versão dos 8 ficheiros que ficam). */
+const P2R_PHASE0 = '8c581ae';
+
+/** Os ficheiros que, depois do passo 43, ficam sempre na versão da fase 0 (nunca se repõe a versão de 428480f). */
 const P2R_KEEP = [
     'admin/inc/pipe2.php',
     'admin/inc/deals.php',
@@ -54,27 +66,6 @@ const P2R_KEEP = [
 const P2R_TEST_FILES = ['tests/boot.php', 'tests/lib.php', 'tests/pipe2_lib.php', 'tests/pipe2_v1_snap.php'];
 
 $root = dirname(__DIR__);
-$GLOBALS['P2R_TREES'] = [];
-register_shutdown_function(static function (): void {
-    foreach ($GLOBALS['P2R_TREES'] as $dir) p2r_rmtree($dir);
-});
-// Árvores que ficaram de uma corrida interrompida (processo que já não existe).
-foreach (glob(rtrim(sys_get_temp_dir(), '/') . '/p2r_*_{keep,full}', GLOB_BRACE | GLOB_ONLYDIR) ?: [] as $old) {
-    if (preg_match('#/p2r_(\d+)_(?:keep|full)$#', $old, $m) && !file_exists('/proc/' . $m[1])) p2r_rmtree($old);
-}
-
-/** Apaga uma árvore temporária deste teste (só dentro de sys_get_temp_dir(), com o prefixo p2r_). */
-function p2r_rmtree(string $dir): void {
-    $tmp = rtrim(sys_get_temp_dir(), '/') . '/p2r_';
-    if (!str_starts_with($dir, $tmp) || !is_dir($dir) || is_link($dir)) return;
-    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
-    foreach ($it as $f) {
-        $p = $f->getPathname();
-        if (is_link($p) || !$f->isDir()) unlink($p);
-        else rmdir($p);
-    }
-    rmdir($dir);
-}
 
 /**
  * O texto de um item «- **Reversão…» dentro de $text, com tudo o que lhe pertence (as linhas mais indentadas do que
@@ -98,33 +89,11 @@ function p2r_doc_names(): array {
 }
 
 /**
- * Monta a árvore revertida: admin/ de 428480f; com $keep, os 8 ficheiros da fase 0 por cima; ligações para a
- * configuração local; e a base de testes atual em tests/.
+ * Uma árvore revertida (pipe2_tree): admin/ de $commit, os ficheiros de $overlay por cima (caminho => commit), a
+ * configuração local ligada, a base de testes atual em tests/, a sonda e as escritas forjadas.
  */
-function p2r_tree(string $root, bool $keep): string {
-    $dir = rtrim(sys_get_temp_dir(), '/') . '/p2r_' . getmypid() . '_' . ($keep ? 'keep' : 'full');
-    p2r_rmtree($dir);
-    if (!mkdir($dir, 0700, true)) throw new RuntimeException('Não foi possível criar ' . $dir);
-    $GLOBALS['P2R_TREES'][] = $dir;
-    [$code, $out] = pipe2_shell('git -C ' . escapeshellarg($root) . ' archive ' . escapeshellarg(P2R_BEFORE) . ' admin | tar -x -C ' . escapeshellarg($dir));
-    if ($code !== 0) throw new RuntimeException('git archive ' . P2R_BEFORE . ' falhou: ' . substr($out, 0, 500));
-    // A configuração local (ignorada pelo Git): ligações simbólicas, para não copiar credenciais.
-    [$code, $out] = pipe2_shell('git -C ' . escapeshellarg($root) . ' ls-files --others --ignored --exclude-standard --directory admin');
-    if ($code !== 0) throw new RuntimeException('git ls-files falhou: ' . substr($out, 0, 500));
-    foreach (preg_split('/\R/', trim($out)) as $rel) {
-        if (!preg_match('#^admin/[\w/]+\.php$#', $rel) || file_exists($dir . '/' . $rel)) continue;
-        if (!symlink($root . '/' . $rel, $dir . '/' . $rel)) throw new RuntimeException('Não foi possível ligar ' . $rel);
-        $GLOBALS['P2R_LINKS'][] = realpath($root . '/' . $rel);
-    }
-    if ($keep) {
-        foreach (P2R_KEEP as $rel) {
-            if (!copy($root . '/' . $rel, $dir . '/' . $rel)) throw new RuntimeException('Não foi possível copiar ' . $rel);
-        }
-    }
-    mkdir($dir . '/tests', 0700);
-    foreach (P2R_TEST_FILES as $rel) {
-        if (!copy($root . '/' . $rel, $dir . '/' . $rel)) throw new RuntimeException('Não foi possível copiar ' . $rel);
-    }
+function p2r_tree(string $commit, array $overlay, string $tag): string {
+    $dir = pipe2_tree($commit, $overlay, P2R_TEST_FILES, $tag);
     // A sonda: que SCHEMA_VERSION e que ficheiros carrega a plataforma desta árvore (os mesmos que a fotografia).
     file_put_contents($dir . '/tests/p2r_probe.php', "<?php\nrequire __DIR__ . '/boot.php';\nrequire_once __DIR__ . '/pipe2_lib.php';\n"
         . "if (is_file(__DIR__ . '/../admin/inc/pipe2.php')) require_once __DIR__ . '/../admin/inc/pipe2.php';\n"
@@ -173,32 +142,17 @@ PHP;
  * configuração ligada). Prova que a fotografia corre o código revertido e não o da cópia de trabalho.
  */
 function p2r_probe(string $dir): array {
-    $r = p2r_run($dir, 'tests/p2r_probe.php', []);
+    $r = pipe2_tree_php($dir, 'tests/p2r_probe.php', []);
     $j = $r['json'];
     if ($r['code'] !== 0 || !is_array($j)) return ['schema' => null, 'foreign' => ['(a sonda falhou: ' . substr(trim($r['err']), 0, 300) . ')']];
-    $links = $GLOBALS['P2R_LINKS'] ?? [];
+    $links = pipe2_tree_links($dir);
     $foreign = array_values(array_filter($j['files'], fn($f) => !str_starts_with($f, $dir . '/') && !in_array($f, $links, true)));
     return ['schema' => $j['schema'], 'foreign' => $foreign];
 }
 
-/** Corre php <$dir>/<$script> <args> a partir de $dir: ['code', 'err', 'json']. */
-function p2r_run(string $dir, string $script, array $args): array {
-    $outF = tempnam(sys_get_temp_dir(), 'p2ro');
-    $errF = tempnam(sys_get_temp_dir(), 'p2re');
-    $p = proc_open(array_merge([PHP_BINARY, $dir . '/' . $script], array_map('strval', $args)),
-        [0 => ['file', '/dev/null', 'r'], 1 => ['file', $outF, 'w'], 2 => ['file', $errF, 'w']], $pipes, $dir);
-    if (!is_resource($p)) throw new RuntimeException('Não foi possível lançar ' . $script . ' em ' . $dir);
-    $code = proc_close($p);
-    $out = (string)file_get_contents($outF);
-    $err = (string)file_get_contents($errF);
-    @unlink($outF);
-    @unlink($errF);
-    return ['code' => $code, 'err' => $err, 'json' => json_decode($out, true)];
-}
-
 /** A fotografia correu e devolveu JSON; senão mostra o erro e devolve null. */
 function p2r_snap_ok(string $what, string $dir, array $args): ?array {
-    $r = p2r_run($dir, 'tests/pipe2_v1_snap.php', $args);
+    $r = pipe2_tree_php($dir, 'tests/pipe2_v1_snap.php', $args);
     $ok = $r['code'] === 0 && is_array($r['json']);
     t_true($ok, "$what: pipe2_v1_snap.php " . implode(' ', $args) . ' sai com 0 e JSON (código ' . $r['code'] . ': ' . substr(trim($r['err']), 0, 600) . ')');
     return $ok ? $r['json'] : null;
@@ -226,9 +180,15 @@ $base = pipe2_base_json();
 $dump = pipe2_base_dump();
 $db = pipe2_tmpdb_create($dump);
 $mig = pipe2_sub('pipe2_v1_snap.php', ['--migrate', '--db=' . $db]);
-t_eq([$mig['json']['from'] ?? null, $mig['json']['to'] ?? null], [42, 43], '::code_rollback a base privada migra da 42 para a 43 com o código de agora');
+t_eq([$mig['json']['from'] ?? null, $mig['json']['to'] ?? null], [42, SCHEMA_VERSION], '::code_rollback a base privada migra da 42 para a SCHEMA_VERSION com o código de agora');
 
-$keep = p2r_tree($root, true);
+$keep = p2r_tree(P2R_BEFORE, array_fill_keys(P2R_KEEP, P2R_PHASE0), 'keep');
+$notPhase0 = [];
+foreach (P2R_KEEP as $rel) {
+    $want = (string)shell_exec('git -C ' . escapeshellarg($root) . ' show ' . escapeshellarg(P2R_PHASE0 . ':' . $rel) . ' 2>/dev/null');
+    if ($want === '' || (string)@file_get_contents($keep . '/' . $rel) !== $want) $notPhase0[] = $rel;
+}
+t_eq($notPhase0, [], '::code_rollback os 8 ficheiros que ficam vêm do commit da fase 0 (' . P2R_PHASE0 . '), não da cópia de trabalho');
 t_true(str_contains((string)file_get_contents($keep . '/admin/inc/migrate.php'), 'const SCHEMA_VERSION = 42;'),
     '::code_rollback a árvore revertida tem o inc/migrate.php de antes (SCHEMA_VERSION 42)');
 t_true(!file_exists($keep . '/admin/inc/migrate_pipeline2.php'), '::code_rollback a árvore revertida não tem o passo 43');
@@ -236,16 +196,35 @@ $probe = p2r_probe($keep);
 t_eq($probe['schema'], 42, '::code_rollback a plataforma da árvore revertida carrega o SCHEMA_VERSION 42');
 t_eq($probe['foreign'], [], '::code_rollback a árvore revertida só carrega ficheiros dela (e a configuração ligada)');
 $rb = p2r_snap_ok('::code_rollback', $keep, ['--migrate', '--db=' . $db]);
-t_eq([$rb['from'] ?? null, $rb['to'] ?? null], [43, 43], '::code_rollback o código revertido não migra nem desfaz nada: a base fica na 43');
+t_eq([$rb['from'] ?? null, $rb['to'] ?? null], [SCHEMA_VERSION, SCHEMA_VERSION], '::code_rollback o código revertido não migra nem desfaz nada: a base fica na SCHEMA_VERSION');
 $snap = p2r_snap_ok('::code_rollback', $keep, ['--php', '--db=' . $db]);
-t_eq($snap['meta']['schema_version'] ?? null, 43, '::code_rollback a fotografia é da base na 43');
+t_eq($snap['meta']['schema_version'] ?? null, SCHEMA_VERSION, '::code_rollback a fotografia é da base na SCHEMA_VERSION');
 $d = pipe2_diff($base['php'], $snap['php'] ?? null);
 t_true($d === [], '::code_rollback com o código revertido (menos os 8), a fotografia PHP da v1 é igual à da 42'
     . ($d === [] ? '' : ' — ' . count($d) . " diferença(s):\n  " . implode("\n  ", array_slice($d, 0, 25))));
 
+// ── ::phase1_rollback ───────────────────────────────────────
+// Reverter a fase 1 = repor o código da fase 0 (8c581ae) inteiro, com a base já na 44.
+
+$phase0 = p2r_tree(P2R_PHASE0, [], 'phase0');
+t_true(str_contains((string)file_get_contents($phase0 . '/admin/inc/migrate.php'), 'const SCHEMA_VERSION = 43;'),
+    '::phase1_rollback a árvore da fase 0 tem o inc/migrate.php da fase 0 (SCHEMA_VERSION 43)');
+t_true(is_file($phase0 . '/admin/inc/migrate_pipeline2.php') && !file_exists($phase0 . '/admin/inc/migrate_pipeline2_44.php')
+    && !glob($phase0 . '/admin/inc/pipe2_*.php'), '::phase1_rollback a árvore da fase 0 tem o passo 43, sem o 44 nem os módulos pipe2_* da fase 1');
+$probe = p2r_probe($phase0);
+t_eq([$probe['schema'], $probe['foreign']], [43, []], '::phase1_rollback a árvore da fase 0 carrega o SCHEMA_VERSION 43 e só ficheiros dela');
+$rb1 = p2r_snap_ok('::phase1_rollback', $phase0, ['--migrate', '--db=' . $db]);
+t_eq([$rb1['from'] ?? null, $rb1['to'] ?? null], [SCHEMA_VERSION, SCHEMA_VERSION], '::phase1_rollback o migrate.php da fase 0 não migra nem desfaz nada: a base fica na SCHEMA_VERSION');
+t_true(SCHEMA_VERSION > 43, '::phase1_rollback a base está depois da fase 0 (SCHEMA_VERSION > 43)');
+$snap1 = p2r_snap_ok('::phase1_rollback', $phase0, ['--php', '--db=' . $db]);
+t_eq($snap1['meta']['schema_version'] ?? null, SCHEMA_VERSION, '::phase1_rollback a fotografia é da base na SCHEMA_VERSION');
+$d = pipe2_diff($base['php'], $snap1['php'] ?? null);
+t_true($d === [], '::phase1_rollback com o código da fase 0 inteiro, a fotografia PHP da v1 é igual à da 42'
+    . ($d === [] ? '' : ' — ' . count($d) . " diferença(s):\n  " . implode("\n  ", array_slice($d, 0, 25))));
+
 // ── ::full_rollback_breaks (controlo) ───────────────────────
 
-$full = p2r_tree($root, false);
+$full = p2r_tree(P2R_BEFORE, [], 'full');
 $probe = p2r_probe($full);
 t_eq([$probe['schema'], $probe['foreign']], [42, []], '::full_rollback_breaks a árvore de 428480f inteira carrega o SCHEMA_VERSION 42 e só ficheiros dela');
 $bad = p2r_snap_ok('::full_rollback_breaks', $full, ['--php', '--db=' . $db]);
@@ -286,15 +265,15 @@ t_true($d === [], '::rollback_injected_rows com o código revertido, as etapas r
 
 $db2 = pipe2_tmpdb_create($dump);
 $mig2 = pipe2_sub('pipe2_v1_snap.php', ['--migrate', '--db=' . $db2]);
-t_eq($mig2['json']['to'] ?? null, 43, '::rollback_guards a 2.ª base privada migra para a 43');
+t_eq($mig2['json']['to'] ?? null, SCHEMA_VERSION, '::rollback_guards a 2.ª base privada migra para a SCHEMA_VERSION');
 $want = ['deal_move' => 'Etapa inválida.', 'deal_change_funnel' => 'Escolha a etapa de destino no funil novo.', 'xsell_line_move' => 'Etapa inválida.'];
-$g = p2r_run($keep, 'tests/p2r_guards.php', [$db2]);
+$g = pipe2_tree_php($keep, 'tests/p2r_guards.php', [$db2]);
 $gj = is_array($g['json']) ? $g['json'] : [];
 t_true($g['code'] === 0 && $gj !== [] && !in_array(0, $gj['ids'] ?? [0], true),
     '::rollback_guards a sonda das escritas corre com o código revertido (código ' . $g['code'] . ': ' . substr(trim($g['err']), 0, 600) . ')');
 t_eq(array_intersect_key($gj, $want), $want, '::rollback_guards com o código revertido, mover o negócio, mudar de funil e mover a frente para uma sub-etapa são recusados');
 t_eq($gj['after'] ?? null, $gj['before'] ?? false, '::rollback_guards com o código revertido, as escritas recusadas não mudam nada');
-$gf = p2r_run($full, 'tests/p2r_guards.php', [$db2]);
+$gf = pipe2_tree_php($full, 'tests/p2r_guards.php', [$db2]);
 $gfj = is_array($gf['json']) ? $gf['json'] : [];
 t_true($gf['code'] === 0 && array_intersect_key($gfj, $want) !== $want,
     '::rollback_guards (controlo) com o código de antes inteiro, alguma escrita para a sub-etapa passa (código ' . $gf['code'] . ': '

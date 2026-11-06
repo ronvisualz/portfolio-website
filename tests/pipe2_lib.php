@@ -8,10 +8,15 @@
  * - pipe2_diff, os papéis da bancada, negócios/frentes/tarefas/funis de teste (prefixo «P2T») e a limpeza.
  *
  * Limpeza (pipe2_cleanup, corre também no fim do processo):
- *   1. apaga por id o que os helpers registaram nessa ligação;
- *   2. apaga as sobras «P2T%» em tasks, deal_lines, stage_events, deal_rounds e deals;
+ *   1. apaga por id o que os helpers registaram nessa ligação (tarefas, frentes, negócios, regras, funis);
+ *   2. apaga as sobras «P2T%» em tasks e deals e, dos negócios apagados, o que deles depende sem FK: tasks,
+ *      deal_lines, stage_events, deal_rounds e, se a tabela existir, deal_line_steps, deal_line_deps, deal_line_execs,
+ *      task_deletions, pipe2_notices, cc_rv_rounds, cc_rv_items, cc_cards (dos cc_boards do negócio), cc_boards e
+ *      fin_docs (pipe2_delete_deals);
  *   3. apaga os funis «P2T · %» (prefixo exato; as etapas e as regras vão por CASCADE);
  *   4. em todos os passos, nunca apaga um funil com is_base = 1, com service_code <> '' nem com negócios.
+ *
+ * Não inclui nenhum admin/inc/pipe2_*.php (também corre nas árvores revertidas de tests/pipe2_tree.php).
  */
 
 if (!defined('TOPPER_ADMIN')) { fwrite(STDERR, "Inclua tests/boot.php antes de tests/pipe2_lib.php.\n"); exit(1); }
@@ -266,11 +271,13 @@ function pipe2_funnel(PDO $pdo, string $label, bool $active = false): int {
 
 /**
  * Um negócio de teste, por INSERT direto (sem automações, histórico nem eventos). code 'P2T' + 13 hex, nome «P2T · …».
- * Sem stage_id, fica na etapa fixa da fase (X-Ray; Kickoff em produção; Concluído).
+ * Sem stage_id, fica na etapa fixa da fase (X-Ray; Kickoff em produção; Concluído). origin_funnel_id,
+ * stage_entered_at e done_at, se vierem em $o, sobrepõem os por defeito.
  */
 function pipe2_deal(PDO $pdo, array $o = []): int {
     pipe2_opts($pdo, 'pipe2_deal', 'deals', $o,
-        ['name', 'phase', 'funnel_id', 'stage_id', 'owner_id', 'exec_owner_id', 'value_estimate', 'budget', 'delivery_date', 'prod_step', 'sync_mode'],
+        ['name', 'phase', 'funnel_id', 'stage_id', 'owner_id', 'exec_owner_id', 'value_estimate', 'budget', 'delivery_date', 'prod_step', 'sync_mode',
+         'last_touch', 'stage_entered_at', 'delivered_at', 'is_paid', 'origin_funnel_id', 'done_at', 'contact_id'],
         ['service_codes', 'category', 'category_at', 'billing']);
     $phase = (string)($o['phase'] ?? 'pipeline');
     $fid = isset($o['funnel_id']) ? (int)$o['funnel_id'] : null;
@@ -291,18 +298,19 @@ function pipe2_deal(PDO $pdo, array $o = []): int {
         'lost_at'          => $phase === 'lost' ? $now : null,
     ];
     unset($o['name'], $o['phase'], $o['funnel_id']);
-    $id = pipe2_insert($pdo, 'deals', $row + $o);
+    $id = pipe2_insert($pdo, 'deals', array_merge($row, $o));
     pipe2_reg($pdo, 'deals', $id);
     return $id;
 }
 
 /**
  * Uma frente (deal_lines) por INSERT direto. Sem is_main, é a principal se for do funil do negócio e ainda não houver
- * principal. Refresca a cache do crosselling.
+ * principal. started_at e stage_entered_at, se vierem em $o, sobrepõem os por defeito. Refresca a cache do crosselling.
  */
 function pipe2_front(PDO $pdo, int $dealId, int $funnelId, array $o = []): int {
     pipe2_opts($pdo, 'pipe2_front', 'deal_lines', $o,
-        ['is_main', 'position', 'stage_id', 'status', 'exec_owner_id', 'delivery_date', 'value', 'created_at'],
+        ['is_main', 'position', 'stage_id', 'status', 'exec_owner_id', 'delivery_date', 'value', 'created_at',
+         'started_at', 'done_at', 'stage_entered_at', 'start_mode', 'start_after_id'],
         ['billing', 'monthly_fee', 'fee_months', 'billing_end', 'cancelled_at', 'cycle_ym', 'merged_into_id', 'exec_mode', 'auto_advance']);
     $st = $pdo->prepare('SELECT COUNT(*) AS n, COALESCE(MAX(position), -1) AS pos, COALESCE(SUM(is_main), 0) AS mains FROM deal_lines WHERE deal_id = ?');
     $st->execute([$dealId]);
@@ -319,7 +327,7 @@ function pipe2_front(PDO $pdo, int $dealId, int $funnelId, array $o = []): int {
     ];
     if (!empty($o['stage_id'])) $row['stage_entered_at'] = $now;
     if (($o['status'] ?? '') === 'active') $row['started_at'] = $now;
-    $id = pipe2_insert($pdo, 'deal_lines', $row + $o);
+    $id = pipe2_insert($pdo, 'deal_lines', array_merge($row, $o));
     pipe2_reg($pdo, 'deal_lines', $id);
     $GLOBALS['XSELL_FRESH'] = true;
     return $id;
@@ -328,8 +336,9 @@ function pipe2_front(PDO $pdo, int $dealId, int $funnelId, array $o = []): int {
 /** Uma tarefa de teste «P2T · …» por INSERT direto (por fazer, salvo indicação). */
 function pipe2_task(PDO $pdo, int $dealId, array $o = []): int {
     pipe2_opts($pdo, 'pipe2_task', 'tasks', $o,
-        ['title', 'status', 'stage_id', 'line_id', 'auto_rule_id', 'is_gate', 'doc_kind', 'kind', 'assignee_id', 'due_date', 'done_at'],
-        ['dedup_key', 'cycle_ym']);
+        ['title', 'status', 'stage_id', 'line_id', 'auto_rule_id', 'is_gate', 'doc_kind', 'kind', 'assignee_id', 'due_date', 'done_at',
+         'created_at', 'repeat_rule', 'checklist', 'attachments', 'member_id', 'help_by'],
+        ['dedup_key', 'cycle_ym', 'gate_stage_id']);
     $status = (string)($o['status'] ?? 'todo');
     $row = [
         'title'   => pipe2_name((string)($o['title'] ?? 'tarefa')),
@@ -339,7 +348,7 @@ function pipe2_task(PDO $pdo, int $dealId, array $o = []): int {
         'done_at' => $o['done_at'] ?? ($status === 'done' ? date('Y-m-d H:i:s') : null),
     ];
     unset($o['title'], $o['status'], $o['kind'], $o['done_at']);
-    $id = pipe2_insert($pdo, 'tasks', $row + $o);
+    $id = pipe2_insert($pdo, 'tasks', array_merge($row, $o));
     pipe2_reg($pdo, 'tasks', $id);
     return $id;
 }
@@ -351,12 +360,23 @@ function pipe2_ids_sql(array $ids): string {
     return $ids ? implode(',', $ids) : '0';
 }
 
-/** Apaga negócios e o que deles depende sem FK (tarefas, frentes, eventos, rondas); o resto vai por CASCADE. */
+/** As tabelas com deal_id sem FK para deals, que pipe2_delete_deals limpa (as que não existirem saltam-se). */
+const PIPE2_DEAL_TABLES = ['tasks', 'deal_lines', 'stage_events', 'deal_rounds', 'deal_line_steps', 'deal_line_deps', 'deal_line_execs',
+                           'task_deletions', 'pipe2_notices', 'cc_rv_rounds', 'cc_rv_items', 'fin_docs'];
+
+/**
+ * Apaga negócios e o que deles depende sem FK (tarefas, frentes, eventos, rondas, passos, ligações, executores,
+ * apagamentos, avisos, Review, quadros com os cartões, documentos do Financeiro); o resto vai por CASCADE.
+ */
 function pipe2_delete_deals(PDO $pdo, array $ids): void {
     if (!$ids) return;
     $in = pipe2_ids_sql($ids);
-    foreach (['tasks', 'deal_lines', 'stage_events', 'deal_rounds'] as $t) {
+    foreach (PIPE2_DEAL_TABLES as $t) {
         if (db_has_table($pdo, $t)) $pdo->exec("DELETE FROM $t WHERE deal_id IN ($in)");
+    }
+    if (db_has_table($pdo, 'cc_boards')) {
+        if (db_has_table($pdo, 'cc_cards')) $pdo->exec("DELETE FROM cc_cards WHERE board_id IN (SELECT id FROM cc_boards WHERE deal_id IN ($in))");
+        $pdo->exec("DELETE FROM cc_boards WHERE deal_id IN ($in)");
     }
     $pdo->exec("DELETE FROM deals WHERE id IN ($in)");
 }
@@ -382,6 +402,7 @@ function pipe2_cleanup(PDO $pdo): void {
     // 1. o que os helpers registaram nesta ligação
     if (!empty($reg['tasks'])) $pdo->exec('DELETE FROM tasks WHERE id IN (' . pipe2_ids_sql($reg['tasks']) . ')');
     if (!empty($reg['deal_lines'])) $pdo->exec('DELETE FROM deal_lines WHERE id IN (' . pipe2_ids_sql($reg['deal_lines']) . ')');
+    if (!empty($reg['stage_automations'])) $pdo->exec('DELETE FROM stage_automations WHERE id IN (' . pipe2_ids_sql($reg['stage_automations']) . ')');
     pipe2_delete_deals($pdo, $reg['deals'] ?? []);
     if (!empty($reg['funnels'])) pipe2_delete_funnels($pdo, 'f.id IN (' . pipe2_ids_sql($reg['funnels']) . ')');
     // 2. as sobras «P2T%» (também as que não passaram pelos helpers)

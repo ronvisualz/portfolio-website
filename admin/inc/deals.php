@@ -76,6 +76,8 @@ function deal_assign_code(PDO $pdo, int $dealId, ?DateTimeInterface $when = null
 /** Uma linha no histórico do negócio (etapa, funil, conversão, perdido, reaberto…). */
 function deal_log(PDO $pdo, int $dealId, string $event, array $d = []): void {
     $u = current_user();
+    // 'system' => true: um movimento do sistema (Pipeline v2) fica sem utilizador, mesmo com sessão
+    $uid = !empty($d['system']) ? null : ($d['user_id'] ?? ($u['id'] ?? null));
     $pdo->prepare(
         'INSERT INTO deal_history (deal_id, event, from_funnel_id, from_stage_id, to_funnel_id, to_stage_id, note, user_id)
          VALUES (?,?,?,?,?,?,?,?)'
@@ -84,13 +86,13 @@ function deal_log(PDO $pdo, int $dealId, string $event, array $d = []): void {
         $d['from_funnel'] ?? null, $d['from_stage'] ?? null,
         $d['to_funnel'] ?? null,   $d['to_stage'] ?? null,
         mb_substr((string)($d['note'] ?? ''), 0, 255),
-        $d['user_id'] ?? ($u['id'] ?? null),
+        $uid,
     ]);
     if (in_array($event, ['convert', 'stage', 'lost', 'reopen', 'funnel'], true)) budget_follow_deal($pdo, $dealId);
     // o histórico de etapas estruturado e a primeira resposta (Relatórios, §29.11)
     if (in_array($event, ['create', 'convert', 'stage', 'funnel', 'reopen', 'lost', 'archive', 'reactivate', 'call_ok', 'call_miss', 'email'], true)) {
         require_once __DIR__ . '/metrics.php';
-        metrics_on_log($pdo, $dealId, $event, $d + ['user_id' => $d['user_id'] ?? ($u['id'] ?? null)]);
+        metrics_on_log($pdo, $dealId, $event, ['user_id' => $uid] + $d);
     }
 }
 

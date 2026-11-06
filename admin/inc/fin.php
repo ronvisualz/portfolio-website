@@ -657,7 +657,8 @@ function fin_deal_paid_check(PDO $pdo, int $dealId): void {
 
 /**
  * A fatura passou a «Emitida» (submetida na tarefa, lida da caixa ou lançada aqui): fica também na faturação
- * do negócio (deal_billing, que os gates leem) e a tarefa «Emitir fatura» conclui com esse PDF.
+ * do negócio (deal_billing, que os gates leem) e a tarefa «Emitir fatura» conclui com esse PDF. Um pedido feito pela
+ * tarefa (Pipeline v2: fin_docs.task_id) fecha só essa tarefa; sem tarefa, todas as de fatura abertas, como sempre.
  */
 function fin_doc_issued(PDO $pdo, int $id, ?int $by): void {
     $d = fin_doc($pdo, $id);
@@ -667,20 +668,30 @@ function fin_doc_issued(PDO $pdo, int $id, ?int $by): void {
         ->execute([(int)$d['deal_id'], $d['number'], $d['issue_date'] ?: today_lisbon(), $d['base'], $d['vat'], $d['total'], $d['pdf_key'], $d['pdf_name'], $by, fin_now()]);
     $pdo->prepare('UPDATE fin_docs SET billing_id = ? WHERE id = ?')->execute([(int)$pdo->lastInsertId(), $id]);
     require_once __DIR__ . '/pipeline_flow.php';
-    flow_complete_doc_tasks($pdo, (int)$d['deal_id'], 'invoice');
+    flow_complete_doc_tasks($pdo, (int)$d['deal_id'], 'invoice', !empty($d['task_id']) ? (int)$d['task_id'] : null);
 }
 
 /**
  * «Emitir fatura» no pipeline (billing_submit_invoice): um só lançamento. Se havia um pedido ao contabilista
- * à espera, é esse que passa a «Emitida»; senão nasce um novo.
+ * à espera, é esse que passa a «Emitida» — o da tarefa ($taskId, Pipeline v2: fin_docs.task_id), se houver; senão o
+ * mais antigo, como sempre —; senão nasce um novo. Numa base sem fin_docs.task_id, a consulta de sempre.
  */
-function fin_from_billing(PDO $pdo, array $deal, int $billingId, string $number, string $date, float $net, float $vat, float $total, string $key, string $fname, ?int $by): void {
+function fin_from_billing(PDO $pdo, array $deal, int $billingId, string $number, string $date, float $net, float $vat, float $total, string $key, string $fname, ?int $by, ?int $taskId = null): void {
     if (!fin_ready($pdo)) return;
-    $st = $pdo->prepare("SELECT id FROM fin_docs WHERE deal_id = ? AND direction = 'in' AND status = 'requested' AND deleted_at IS NULL ORDER BY id LIMIT 1");
-    $st->execute([(int)$deal['id']]);
+    $id = 0;
+    if ($taskId !== null && db_has_column($pdo, 'fin_docs', 'task_id')) {
+        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE deal_id = ? AND task_id = ? AND direction = 'in' AND status = 'requested' AND deleted_at IS NULL ORDER BY id LIMIT 1");
+        $st->execute([(int)$deal['id'], $taskId]);
+        $id = (int)$st->fetchColumn();
+    }
+    if (!$id) {
+        $st = $pdo->prepare("SELECT id FROM fin_docs WHERE deal_id = ? AND direction = 'in' AND status = 'requested' AND deleted_at IS NULL ORDER BY id LIMIT 1");
+        $st->execute([(int)$deal['id']]);
+        $id = (int)$st->fetchColumn();
+    }
     $vals = ['number' => $number, 'issue_date' => $date, 'base' => $net, 'vat' => $vat, 'total' => $total, 'pdf_key' => $key, 'pdf_name' => $fname, 'billing_id' => $billingId,
              'vat_rate' => $net > 0 ? round($vat / $net * 100, 2) : 0, 'status' => 'issued', 'ready_at' => fin_now()];
-    if ($id = (int)$st->fetchColumn()) {
+    if ($id) {
         fin_doc_update($pdo, $id, $vals);
         return;
     }

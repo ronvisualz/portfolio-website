@@ -21,6 +21,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/cc.php';
 require_once __DIR__ . '/files.php';
+require_once __DIR__ . '/pipe2.php';   // Pipeline v2: peças e rondas por frente (pipe2_cc.php, só num negócio v2)
 
 /** As etapas de aprovação de uma peça: chave => rótulo. */
 const CC_RV_STAGES = [
@@ -102,8 +103,13 @@ function cc_rv_vlabel(int $num): string {
     return 'v' . str_pad((string)$num, 3, '0', STR_PAD_LEFT);
 }
 
-/** A etapa do funil onde contam as rondas: a da frente (crosselling) ou a do negócio. */
+/**
+ * A etapa do funil onde contam as rondas: a da frente (crosselling) ou a do negócio. Num negócio da Pipeline v2, a
+ * sub-etapa Revisões do funil da frente (sem frente e com uma só frente viva: a dela).
+ */
 function cc_rv_stage_for(PDO $pdo, array $deal, ?int $lineId): ?int {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) { require_once __DIR__ . '/pipe2_cc.php'; return pipe2_cc_revisions_stage($pdo, $deal, $lineId); }
     if ($lineId && db_has_table($pdo, 'deal_lines')) {
         $st = $pdo->prepare('SELECT stage_id FROM deal_lines WHERE id = ? AND deal_id = ?');
         $st->execute([$lineId, (int)$deal['id']]);
@@ -118,6 +124,8 @@ function cc_rv_item_create(PDO $pdo, array $deal, string $title, string $stageKe
     if ($title === '') throw new RuntimeException('Dê um nome à peça.');
     if (!isset(CC_RV_STAGES[$stageKey])) $stageKey = 'outro';
     if (!in_array($kind, ['video', 'image', 'pdf', 'audio'], true)) $kind = 'video';
+    require_once __DIR__ . '/pipe2_cc.php';
+    pipe2_cc_item_line_check($pdo, $deal, $lineId);   // Pipeline v2: num negócio de várias frentes, a peça tem frente
     $pos = (int)$pdo->query('SELECT COALESCE(MAX(position), 0) + 1 FROM cc_rv_items WHERE deal_id = ' . (int)$deal['id'])->fetchColumn();
     $now = cc_rv_now();
     $pdo->prepare('INSERT INTO cc_rv_items (deal_id, line_id, title, stage_key, stage_id, kind, watermark, download, position, created_by, created_at, updated_at)
@@ -712,8 +720,13 @@ function cc_rv_open_round(PDO $pdo, int $itemId): ?array {
     return $st->fetch() ?: null;
 }
 
-/** «Ronda X de Y incluídas» na etapa da peça: [feitas, incluídas|null, aberta?, nome da etapa]. */
+/**
+ * «Ronda X de Y incluídas» na etapa da peça: [feitas, incluídas|null, aberta?, nome da etapa]. Num negócio da Pipeline
+ * v2, pela frente da peça e pelo ciclo atual dela, na sub-etapa Revisões.
+ */
 function cc_rv_round_info(PDO $pdo, array $item): array {
+    require_once __DIR__ . '/pipe2_cc.php';
+    if ($v2 = pipe2_cc_round_info($pdo, $item)) return $v2 + ['open' => cc_rv_open_round($pdo, (int)$item['id']) !== null];
     require_once __DIR__ . '/pipeline_flow.php';
     $stage = $item['stage_id'] ? stage_get($pdo, (int)$item['stage_id']) : null;
     $done = $stage ? rounds_count($pdo, (int)$item['deal_id'], (int)$stage['id']) : (int)$pdo->query('SELECT COUNT(*) FROM cc_rv_rounds WHERE submitted_at IS NOT NULL AND item_id = ' . (int)$item['id'])->fetchColumn();
@@ -740,8 +753,10 @@ function cc_rv_send(PDO $pdo, array $item, int $by): string {
         $pdo->prepare('UPDATE cc_rv_rounds SET version_id = ? WHERE id = ?')->execute([(int)$v['id'], (int)$open['id']]);
     } else {
         $num = (int)$pdo->query('SELECT COUNT(*) + 1 FROM cc_rv_rounds WHERE item_id = ' . (int)$item['id'])->fetchColumn();
-        $pdo->prepare('INSERT INTO cc_rv_rounds (item_id, deal_id, stage_id, num, version_id, opened_at, opened_by) VALUES (?,?,?,?,?,?,?)')
-            ->execute([(int)$item['id'], (int)$item['deal_id'], $stageId, $num, (int)$v['id'], $now, $by]);
+        require_once __DIR__ . '/pipe2_cc.php';
+        $lid = $deal ? (pipe2_cc_item_front($pdo, $deal, $item['line_id'] ? (int)$item['line_id'] : null)['id'] ?? null) : null;   // Pipeline v2: a frente da ronda (num v1, nenhuma)
+        $pdo->prepare('INSERT INTO cc_rv_rounds (item_id, deal_id, stage_id, num, version_id, opened_at, opened_by' . ($lid ? ', line_id' : '') . ') VALUES (?,?,?,?,?,?,?' . ($lid ? ',?' : '') . ')')
+            ->execute(array_merge([(int)$item['id'], (int)$item['deal_id'], $stageId, $num, (int)$v['id'], $now, $by], $lid ? [(int)$lid] : []));
     }
     if ((int)$item['watermark'] && cc_rv_kind_of((string)$v['mime'], (string)$v['file_name']) === 'video' && cc_rv_ffmpeg_known()) {
         $label = cc_rv_wm_label($pdo, $item);
@@ -765,7 +780,9 @@ function cc_rv_request_changes(PDO $pdo, array $item, int $by, string $note = ''
 /**
  * O envio consolidado do cliente («Enviar comentários»): os rascunhos deste browser passam a
  * comentários, a ronda fecha e conta nas rondas da etapa. Acima do incluído: aviso ao comercial
- * e uma tarefa «Pedido de alteração».
+ * e uma tarefa «Pedido de alteração». Num negócio da Pipeline v2, a ronda conta na frente da peça e
+ * no ciclo dela (pipe2_rounds_add) e, acima das incluídas, correm as regras «rondas ultrapassadas»
+ * da sub-etapa Revisões em vez da tarefa «Pedido de alteração».
  */
 function cc_rv_client_submit(PDO $pdo, array $share, array $item, array $a): string {
     $st = $pdo->prepare("SELECT id FROM cc_comments WHERE item_id = ? AND draft = 1 AND client_key = ? AND client_key <> '' AND deleted_at IS NULL");
@@ -774,21 +791,34 @@ function cc_rv_client_submit(PDO $pdo, array $share, array $item, array $a): str
     if (!$ids) throw new RuntimeException('Ainda não escreveu nenhum comentário.');
     $round = cc_rv_open_round($pdo, (int)$item['id']);
     $now = cc_rv_now();
+    $deal = files_deal_row($pdo, (int)$item['deal_id']);
+    // Pipeline v2: a ronda conta na frente da peça e no ciclo dela (num v1, $v2 falso e tudo como antes)
+    require_once __DIR__ . '/pipe2_cc.php';
+    $v2 = $deal && pipe2_deal_is_v2($pdo, $deal);
+    $front = $v2 ? pipe2_cc_item_front($pdo, $deal, $item['line_id'] ? (int)$item['line_id'] : null) : null;
     if (!$round) {
         // a equipa ainda não reabriu a ronda (ex.: comentários depois do envio): conta como uma nova
         $num = (int)$pdo->query('SELECT COUNT(*) + 1 FROM cc_rv_rounds WHERE item_id = ' . (int)$item['id'])->fetchColumn();
-        $pdo->prepare('INSERT INTO cc_rv_rounds (item_id, deal_id, stage_id, num, version_id, opened_at) VALUES (?,?,?,?,?,?)')
-            ->execute([(int)$item['id'], (int)$item['deal_id'], $item['stage_id'], $num, (int)$item['current_version_id'], $now]);
+        $pdo->prepare('INSERT INTO cc_rv_rounds (item_id, deal_id, stage_id, num, version_id, opened_at' . ($front ? ', line_id' : '') . ') VALUES (?,?,?,?,?,?' . ($front ? ',?' : '') . ')')
+            ->execute(array_merge([(int)$item['id'], (int)$item['deal_id'], $item['stage_id'], $num, (int)$item['current_version_id'], $now], $front ? [(int)$front['id']] : []));
         $round = cc_rv_open_round($pdo, (int)$item['id']);
     }
     $pdo->prepare('UPDATE cc_comments SET draft = 0, round_id = ?, created_at = ? WHERE id IN (' . implode(',', $ids) . ')')->execute([(int)$round['id'], $now]);
     $v = cc_rv_version($pdo, (int)$round['version_id']);
     $note = 'Review · ' . $item['title'] . ' ' . cc_rv_vlabel((int)($v['num'] ?? 0)) . ' · ' . count($ids) . (count($ids) === 1 ? ' comentário' : ' comentários') . ' de ' . $a['name'];
     require_once __DIR__ . '/pipeline_flow.php';
-    $deal = files_deal_row($pdo, (int)$item['deal_id']);
     $stage = $item['stage_id'] ? stage_get($pdo, (int)$item['stage_id']) : null;
     $over = false; $dealRound = null;
-    if ($deal && $stage) {
+    if ($v2) {
+        // na sub-etapa Revisões da frente; acima das incluídas correm as regras «rondas ultrapassadas» (sem
+        // cc_rv_change_order_task). Um erro aqui nunca perde o envio do cliente: fica a nota no histórico.
+        $res = null;
+        if ($front) {
+            try { $res = pipe2_rounds_add($pdo, $deal, $front, $note, 0, 'portal'); } catch (Throwable $e) { error_log('[topper] pipe2 cc_rv_client_submit (peça ' . (int)$item['id'] . '): ' . $e->getMessage()); }
+        }
+        if ($res) { $dealRound = $res['round_id']; $over = $res['over']; }
+        else deal_log($pdo, (int)$deal['id'], 'round', ['note' => $note, 'system' => true]);
+    } elseif ($deal && $stage) {
         rounds_add($pdo, $deal, $stage, $note, 0);
         // (rounds_add também escreve no histórico: o último id inserido já não é o da ronda)
         $st = $pdo->prepare('SELECT MAX(id) FROM deal_rounds WHERE deal_id = ? AND stage_id = ?');
@@ -802,12 +832,15 @@ function cc_rv_client_submit(PDO $pdo, array $share, array $item, array $a): str
     $pdo->prepare('UPDATE cc_rv_rounds SET submitted_at = ?, client_name = ?, client_email = ?, comments_n = ?, deal_round_id = ?, over_included = ? WHERE id = ?')
         ->execute([$now, mb_substr((string)$a['name'], 0, 160), mb_substr((string)$a['email'], 0, 190), count($ids), $dealRound, $over ? 1 : 0, (int)$round['id']]);
     $pdo->prepare("UPDATE cc_rv_items SET status = 'comments', updated_at = ? WHERE id = ?")->execute([$now, (int)$item['id']]);
-    if ($over && $deal) cc_rv_change_order_task($pdo, $deal, $item, (int)$round['num']);
+    if ($over && $deal && !$v2) cc_rv_change_order_task($pdo, $deal, $item, (int)$round['num']);
     cc_rv_touch($pdo, (int)$item['id']);
     return count($ids) === 1 ? 'Comentário enviado. Obrigado!' : count($ids) . ' comentários enviados. Obrigado!';
 }
 
-/** Acima do incluído: uma tarefa para o comercial — «Pedido de alteração» (§19.6 D). */
+/**
+ * Acima do incluído: uma tarefa para o comercial — «Pedido de alteração» (§19.6 D). Só num negócio v1: na Pipeline v2
+ * correm as regras «rondas ultrapassadas» da sub-etapa Revisões (pipe2_rounds_add).
+ */
 function cc_rv_change_order_task(PDO $pdo, array $deal, array $item, int $round): void {
     require_once __DIR__ . '/tasks.php';
     require_once __DIR__ . '/leads.php';   // member_for_user
@@ -836,7 +869,9 @@ function cc_rv_approval_tasks(PDO $pdo, array $item): array {
     }
     $pats = $map[cc_fold((string)$item['stage_key'])] ?? $map[cc_fold(CC_RV_STAGES[$item['stage_key']] ?? '')] ?? [];
     if (!$pats) return [];
-    $st = $pdo->prepare("SELECT * FROM tasks WHERE deal_id = ? AND kind = 'review' AND status <> 'done'" . ($item['line_id'] ? ' AND (line_id IS NULL OR line_id = ' . (int)$item['line_id'] . ')' : ''));
+    // a frente da peça: num negócio da Pipeline v2 de várias frentes, só as tarefas dela (pipe2_cc_approval_line_sql)
+    require_once __DIR__ . '/pipe2_cc.php';
+    $st = $pdo->prepare("SELECT * FROM tasks WHERE deal_id = ? AND kind = 'review' AND status <> 'done'" . pipe2_cc_approval_line_sql($pdo, $item));
     $st->execute([(int)$item['deal_id']]);
     $out = [];
     foreach ($st->fetchAll() as $t) {
@@ -1239,7 +1274,11 @@ function cc_rv_item_save(PDO $pdo, array $item, array $in, int $by): array {
         }
         $set['line_id'] = $line;
         $deal = files_deal_row($pdo, (int)$item['deal_id']);
-        if ($deal) $set['stage_id'] = cc_rv_stage_for($pdo, $deal, $line);
+        if ($deal) {
+            require_once __DIR__ . '/pipe2_cc.php';
+            pipe2_cc_item_line_check($pdo, $deal, $line);   // Pipeline v2: num negócio de várias frentes, a peça tem frente
+            $set['stage_id'] = cc_rv_stage_for($pdo, $deal, $line);
+        }
     }
     if (!$set) return $item;
     $set['updated_at'] = cc_rv_now();

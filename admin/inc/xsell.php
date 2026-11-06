@@ -64,9 +64,12 @@ function xsell_is_multi(PDO $pdo, array $deal): bool {
     return $cache[(int)$deal['id']];
 }
 
-/** Uma avença (Marketing Buddy): a frente continua ativa depois de o negócio concluir. */
+/**
+ * Uma avença (Marketing Buddy): a frente continua ativa depois de o negócio concluir. Na Pipeline v2 também a frente
+ * com deal_lines.billing = 'monthly' (só a v2 o grava).
+ */
 function xsell_is_recurring(array $line): bool {
-    return ($line['xray_kind'] ?? '') === 'buddy';
+    return ($line['xray_kind'] ?? '') === 'buddy' || ($line['billing'] ?? '') === 'monthly';
 }
 
 /** Os ids dos funis do negócio (o principal primeiro); num negócio simples, só o do negócio. */
@@ -151,8 +154,13 @@ function xsell_set_services(PDO $pdo, array $deal, array $funnelIds, ?int $by = 
          . ($del ? ($add ? ' ' : '') . 'Retirado' . (count($del) > 1 ? 's' : '') . ': ' . $names($del) . '.' : '');
 }
 
-/** A sincronização (obrigatória num negócio de crosselling) e o arranque/entrega de cada frente. */
+/**
+ * A sincronização (obrigatória num negócio de crosselling) e o arranque/entrega de cada frente. Num negócio da Pipeline
+ * v2 não há sincronização: as datas de entrega comuns ou por frente (pipe2_plan_save).
+ */
 function xsell_save_plan(PDO $pdo, array $deal, array $in, ?int $by = null): string {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) { require_once __DIR__ . '/pipe2_deps.php'; return pipe2_plan_save($pdo, $deal, $in, $by); }
     if (!xsell_is_multi($pdo, $deal)) throw new RuntimeException('Este negócio só tem um serviço.');
     $mode = (string)($in['sync_mode'] ?? '');
     if (!isset(XSELL_SYNC[$mode])) throw new RuntimeException('Escolha se as frentes seguem sincronizadas ou em timelines diferentes.');
@@ -197,8 +205,13 @@ function xsell_save_plan(PDO $pdo, array $deal, array $in, ?int $by = null): str
     return 'Plano das frentes guardado: ' . mb_strtolower(XSELL_SYNC[$mode]) . '.';
 }
 
-/** O requisito da proposta (§22.2): num negócio de crosselling, a sincronização está escolhida. */
+/**
+ * O requisito da proposta (§22.2): num negócio de crosselling, a sincronização está escolhida. Num negócio da Pipeline
+ * v2, em vez dela, o serviço em cada linha do orçamento (pipe2_requirements).
+ */
 function xsell_requirements(PDO $pdo, array $deal): array {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) return pipe2_requirements($pdo, $deal);
     if (!xsell_is_multi($pdo, $deal)) return [];
     return [['label' => 'Crosselling: frentes sincronizadas ou em timelines diferentes', 'ok' => isset(XSELL_SYNC[$deal['sync_mode'] ?? '']),
              'hint' => 'Escolha em «Serviços» (' . xsell_label($pdo, $deal) . ').']];
@@ -238,14 +251,23 @@ function xsell_shared_rules(PDO $pdo, array $deal, int $stageId, ?array $onlyFun
 
 // ── as frentes (depois do Kickoff) ──────────────────────────
 
-/** O negócio visto pela frente: o funil, a etapa, a entrega e a execução da frente. */
+/**
+ * O negócio visto pela frente: o funil, a etapa, a entrega e a execução da frente. Uma frente da Pipeline v2 (estado
+ * da v2 ou avença: a v1 nunca grava nenhum dos dois) fica marcada '_v2' e usa a entrega dela quando preenchida, sem
+ * depender da sincronização da v1.
+ */
 function xsell_vdeal(array $deal, array $line): array {
     $v = $deal;
     $v['funnel_id'] = (int)$line['funnel_id'];
     $v['stage_id'] = $line['stage_id'] !== null ? (int)$line['stage_id'] : null;
     $v['phase'] = $line['status'] === 'done' ? 'done' : 'production';
     if ($line['exec_owner_id']) $v['exec_owner_id'] = (int)$line['exec_owner_id'];
-    if (($deal['sync_mode'] ?? '') === 'independent' && $line['delivery_date']) $v['delivery_date'] = $line['delivery_date'];
+    if (isset(PIPE2_LINE_STATUS[(string)($line['status'] ?? '')]) || ($line['billing'] ?? '') === 'monthly') {
+        $v['_v2'] = true;
+        if (!empty($line['delivery_date'])) $v['delivery_date'] = $line['delivery_date'];
+    } elseif (($deal['sync_mode'] ?? '') === 'independent' && $line['delivery_date']) {
+        $v['delivery_date'] = $line['delivery_date'];
+    }
     $v['_line'] = (int)$line['id'];
     $v['_main'] = (int)$line['is_main'] === 1;
     $v['_service'] = (string)$line['funnel_name'];
@@ -319,8 +341,15 @@ function xsell_start_followers(PDO $pdo, array $deal, array $line): int {
 /**
  * Move uma frente para outra etapa do funil dela, com os gates desse funil. Concluído só nas
  * timelines diferentes (as sincronizadas concluem juntas com o negócio). Devolve a mensagem.
+ * Num negócio da Pipeline v2, o movimento humano de uma frente pelas sub-etapas (pipe2_front_move): fora do deal_move
+ * e sem mexer na etapa do negócio.
  */
 function xsell_line_move(PDO $pdo, array $deal, array $line, int $stageId, string $force = ''): string {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) {
+        require_once __DIR__ . '/pipe2_engine.php';
+        return pipe2_front_move($pdo, $deal, pipe2_front_get($pdo, (int)($line['id'] ?? 0)) ?? $line, $stageId, $force, current_user()['id'] ?? null);
+    }
     if ($deal['phase'] !== 'production') throw new RuntimeException('As frentes andam depois do Kickoff, enquanto o negócio está em produção.');
     if ($line['status'] === 'waiting' || $line['status'] === 'planned') throw new RuntimeException('A frente ' . $line['funnel_name'] . ' ainda não arrancou.');
     $to = stage_get($pdo, $stageId);
@@ -348,8 +377,13 @@ function xsell_line_move(PDO $pdo, array $deal, array $line, int $stageId, strin
     return $msg;
 }
 
-/** O que falta para concluir um negócio de crosselling (rótulos); [] = pode concluir. */
+/**
+ * O que falta para concluir um negócio de crosselling (rótulos); [] = pode concluir. Num negócio da Pipeline v2, o gate
+ * da Entrega e as frentes por concluir (pipe2_close_missing).
+ */
 function xsell_close_missing(PDO $pdo, array $deal): array {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) { require_once __DIR__ . '/pipe2_deal.php'; return pipe2_close_missing($pdo, $deal); }
     if (!xsell_is_multi($pdo, $deal)) return [];
     $sync = $deal['sync_mode'] !== 'independent';
     $miss = [];

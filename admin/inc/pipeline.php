@@ -75,19 +75,37 @@ function phase_for_kind(string $kind): string {
  * Move um negócio para outra etapa do mesmo funil. A fase acompanha a
  * etapa: chegar a Kickoff leva-o para Negócios, a Concluído para os
  * Concluídos. Devolve a mensagem para o utilizador.
+ *
+ * Pipeline v2 (só num negócio v2): sem o bloqueio das várias frentes; Em execução e Entrega mudam sozinhas
+ * ($opts['system'], o motor do negócio em inc/pipe2_deal.php), salvo Entrega → Concluído e um admin a forçar com
+ * motivo. $opts: 'system' (o movimento fica do «Sistema», sem utilizador) e 'note' (a nota do histórico).
  */
-function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): string {
+function deal_move(PDO $pdo, array $deal, int $stageId, string $force = '', array $opts = []): string {
     require_once __DIR__ . '/pipeline_flow.php';
     $to = stage_get($pdo, $stageId);
     if (!$to || !pipe2_stage_live($to) || (int)$to['funnel_id'] !== (int)$deal['funnel_id']) throw new RuntimeException('Etapa inválida.');
     if (!in_array($deal['phase'], ['pipeline', 'production', 'done'], true)) throw new RuntimeException('Este negócio não está ativo.');
     if ((int)$deal['stage_id'] === $stageId) return 'Sem alterações.';
     require_once __DIR__ . '/xsell.php';
-    if (xsell_is_multi($pdo, $deal) && $deal['phase'] === 'production' && $to['kind'] === 'production') {
+    require_once __DIR__ . '/pipe2_fronts.php';
+    $v2 = pipe2_deal_is_v2($pdo, $deal);
+    if (!$v2 && xsell_is_multi($pdo, $deal) && $deal['phase'] === 'production' && $to['kind'] === 'production') {
         throw new RuntimeException('Neste negócio de crosselling a produção anda por frente (cada serviço tem a sua etapa).');
+    }
+    $sysForced = '';
+    if ($v2 && empty($opts['system'])) {
+        // Em execução e Entrega são do sistema (pelas frentes): um humano só sai da Entrega para Concluído
+        $from = $deal['stage_id'] ? stage_get($pdo, (int)$deal['stage_id']) : null;
+        $auto = fn(?array $s): bool => $s !== null && in_array((string)($s['role'] ?? ''), ['exec', 'delivery'], true);
+        $close = $from !== null && ($from['role'] ?? '') === 'delivery' && $to['kind'] === 'done';
+        if (($auto($from) || $auto($to)) && !$close) {
+            if (trim($force) === '' || !is_admin()) throw new RuntimeException('Em execução e Entrega mudam sozinhas, pelas frentes; só um admin pode forçar, com motivo.');
+            $sysForced = mb_substr('Passagem forçada (' . ($from['name'] ?? '—') . ' → ' . $to['name'] . '): ' . trim($force), 0, 255);
+        }
     }
     // Os gates (§19.1): para a frente só com os requisitos cumpridos; forçar só admins, com motivo.
     $forced = flow_gate_check($pdo, $deal, $to, $force);
+    if ($forced === '') $forced = $sysForced;
 
     $phase = phase_for_kind($to['kind']);
     $pdo->beginTransaction();
@@ -103,6 +121,7 @@ function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): str
         deal_log($pdo, (int)$deal['id'], 'stage', [
             'from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
             'to_funnel'   => $deal['funnel_id'], 'to_stage'   => $stageId,
+            'note'        => (string)($opts['note'] ?? ''), 'system' => !empty($opts['system']),
         ]);
         if ($forced !== '') deal_log($pdo, (int)$deal['id'], 'gate_force', ['from_stage' => $deal['stage_id'], 'to_stage' => $stageId, 'note' => $forced]);
         $pdo->commit();
@@ -111,7 +130,7 @@ function deal_move(PDO $pdo, array $deal, int $stageId, string $force = ''): str
         throw $e;
     }
     // As automações da etapa nova (§19.7): as tarefas ficam ligadas ao negócio e à etapa.
-    flow_on_enter($pdo, (int)$deal['id'], $stageId);
+    flow_on_enter($pdo, (int)$deal['id'], $stageId, ['system' => !empty($opts['system'])]);
     // Um negócio que nasceu de uma oportunidade de crosselling (§22) ganhou-se no Kickoff.
     if ($phase === 'production' && $deal['phase'] === 'pipeline') xsell_opp_result($pdo, (int)$deal['id'], 'won');
     return match ($phase) {
@@ -163,6 +182,9 @@ function deal_reopen(PDO $pdo, array $deal): void {
  */
 function deal_change_funnel(PDO $pdo, array $deal, int $funnelId, int $stageId = 0): void {
     if ((int)$deal['funnel_id'] === $funnelId) throw new RuntimeException('O negócio já está nesse funil.');
+    // Pipeline v2: um negócio v2 em produção tem frentes, passos e ligações do funil dele (fica para a conversão)
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if ($deal['phase'] === 'production' && pipe2_deal_is_v2($pdo, $deal)) throw new RuntimeException('Neste negócio em execução, mudar de funil ainda não está disponível.');
     $f = funnel_get($pdo, $funnelId);
     if (!$f || !(int)$f['is_active']) throw new RuntimeException('Funil inválido.');
     $cur = stage_get($pdo, (int)$deal['stage_id']);
@@ -191,8 +213,14 @@ function deal_change_funnel(PDO $pdo, array $deal, int $funnelId, int $stageId =
     }
 }
 
-/** Cria um funil com as etapas fixas e, opcionalmente, as variáveis dadas [[name, kind], …]. */
-function funnel_create(PDO $pdo, string $name, array $variable = [], string $madeFrom = ''): int {
+/**
+ * Cria um funil com as etapas fixas e, opcionalmente, as variáveis dadas [[name, kind], …].
+ * Pipeline v2 ($v2: null = a bandeira pipeline_v2_at): as 6 etapas comuns (X-Ray, Proposta, Aguardar feedback,
+ * Kickoff, Em execução, Entrega e pagamento final) e Concluído, sem as variáveis de produção, sem sub-etapas e sem
+ * regras — sem as regras de fecho na Entrega, um negócio deste funil só se conclui à mão.
+ */
+function funnel_create(PDO $pdo, string $name, array $variable = [], string $madeFrom = '', ?bool $v2 = null): int {
+    $v2 ??= pipe2_on($pdo);
     $pos = (int)$pdo->query('SELECT COALESCE(MAX(position),0) FROM funnels')->fetchColumn() + 1;
     $pdo->prepare('INSERT INTO funnels (name, is_base, made_from, position, created_by) VALUES (?, 0, ?, ?, ?)')
         ->execute([$name, mb_substr($madeFrom, 0, 255), $pos, current_user()['id'] ?? null]);
@@ -207,9 +235,14 @@ function funnel_create(PDO $pdo, string $name, array $variable = [], string $mad
         $r->execute([$id, 'Proposta', 'commercial', 20, 'proposal']);
         $r->execute([$id, 'Aguardar feedback', 'commercial', 21, 'feedback']);
     }
+    $v2 = $v2 && $r;
+    if ($v2) {
+        $r->execute([$id, 'Em execução', 'production', 70, 'exec']);
+        $r->execute([$id, 'Entrega e pagamento final', 'production', 80, 'delivery']);
+    }
     $n = ['commercial' => $r ? 2 : 0, 'production' => 0];
     foreach ($variable as [$sname, $kind]) {
-        if (!isset($n[$kind])) continue;
+        if (!isset($n[$kind]) || ($v2 && $kind === 'production')) continue;
         if ($r && $kind === 'commercial' && in_array(mb_strtolower(trim($sname)), ['proposta', 'aguardar feedback'], true)) continue;
         $s->execute([$id, $sname, $kind, ($kind === 'commercial' ? 20 : 60) + $n[$kind]++]);
     }

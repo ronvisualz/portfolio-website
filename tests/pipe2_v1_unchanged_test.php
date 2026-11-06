@@ -1,16 +1,16 @@
 <?php
 /**
- * Pipeline v2, fase 0 — prova de que a v1 não muda (F1; M2 integrado).
+ * Pipeline v2, fases 0 e 1 — prova de que a v1 não muda (F1; M2 integrado; a regra de ouro da fase 1).
  *
  * Até ao «Aplicar» (fase 3) a plataforma funciona exatamente em modo v1. A prova compara a fotografia da v1
  * (tests/pipe2_v1_snap.php: leitores PHP e ecrãs) com a linha de base tirada na 42, antes de se subir o
  * SCHEMA_VERSION (tests/.pipe2/base42.json, fora do Git). Sem a linha de base o teste FALHA com a instrução; nunca
  * passa em silêncio. A linha de base não se mexe: uma diferença corrige-se no ficheiro que a causou.
  *
- *   ::invariants            na bancada topper: bandeira vazia, versão 43, funis só da v2 inativos, leitores filtrados,
+ *   ::invariants            na bancada topper: bandeira vazia, versão = SCHEMA_VERSION, funis só da v2 inativos, leitores filtrados,
  *                           nenhuma regra ativa escondida, LEAD_SERVICES_LIST e deal_stale_days iguais aos da 42;
- *   ::after_migration       base privada do dump da 42, migrada num subprocesso (--migrate) e fotografada noutro
- *                           (--php): diff [] com a linha de base;
+ *   ::after_migration       base privada do dump da 42, migrada num subprocesso (--migrate, até à SCHEMA_VERSION) e
+ *                           fotografada noutro (--php): diff [] com a linha de base;
  *   ::injected_rows_hidden  na mesma base, as 4 linhas da T4 (etapa de produção e X-Ray retirados, regra mensal numa
  *                           sub-etapa, regra por data na etapa retirada): diff [] outra vez; e o controlo — uma etapa
  *                           viva injetada aparece no diff (a fotografia vê as etapas, o diff [] não é cego);
@@ -66,7 +66,7 @@ function p2u_snap(string $what, array $args): ?array {
 settings($pdo, true);
 t_eq(pipe2_on($pdo), false, '::invariants pipe2_on é falso (a v2 não está ligada)');
 t_eq((int)p2u_col($pdo, "SELECT COUNT(*) FROM settings WHERE skey = 'pipeline_v2_at'"), 0, '::invariants a fase 0 não grava settings.pipeline_v2_at');
-t_eq((string)p2u_col($pdo, "SELECT svalue FROM settings WHERE skey = 'schema_version'"), '43', '::invariants schema_version é 43');
+t_eq((string)p2u_col($pdo, "SELECT svalue FROM settings WHERE skey = 'schema_version'"), (string)SCHEMA_VERSION, '::invariants schema_version é a SCHEMA_VERSION');
 
 $v2only = p2u_list($pdo, 'SELECT id FROM funnels WHERE v2_only = 1 ORDER BY id');
 t_eq($v2only, p2u_list($pdo, "SELECT id FROM funnels WHERE service_code IN ('md','cmp','ed') ORDER BY id"),
@@ -96,9 +96,9 @@ t_eq(setting($pdo, 'deal_stale_days'), $base['php']['settings']['deal_stale_days
 
 $db = pipe2_tmpdb_create($dump);
 $mig = p2u_snap('::after_migration', ['--migrate', '--db=' . $db]);
-t_eq([$mig['from'] ?? null, $mig['to'] ?? null], [42, 43], '::after_migration a base privada migra da 42 para a 43');
+t_eq([$mig['from'] ?? null, $mig['to'] ?? null], [42, SCHEMA_VERSION], '::after_migration a base privada migra da 42 para a SCHEMA_VERSION');
 $after = p2u_snap('::after_migration', ['--php', '--db=' . $db]);
-t_eq($after['meta']['schema_version'] ?? null, 43, '::after_migration a fotografia é da base já na 43');
+t_eq($after['meta']['schema_version'] ?? null, SCHEMA_VERSION, '::after_migration a fotografia é da base já na SCHEMA_VERSION');
 p2u_no_diff('::after_migration a fotografia PHP da v1 depois da migração é igual à da 42', $base['php'], $after['php'] ?? null);
 
 // ── ::injected_rows_hidden (M2 integrado) ──────────────────
@@ -106,7 +106,7 @@ p2u_no_diff('::after_migration a fotografia PHP da v1 depois da migração é ig
 
 $tp = pipe2_tmpdb_pdo($db);
 $vfx = (int)p2u_col($tp, "SELECT id FROM funnels WHERE xray_kind = 'vfx' AND is_base = 1 ORDER BY position, id LIMIT 1");
-$vfront = ($mig['to'] ?? null) === 43
+$vfront = ($mig['to'] ?? null) === SCHEMA_VERSION
     ? (int)p2u_col($tp, "SELECT id FROM funnel_stages WHERE funnel_id = ? AND level = 'front' ORDER BY position, id LIMIT 1", [$vfx]) : 0;
 t_true($vfx > 0 && $vfront > 0, '::injected_rows_hidden a base privada está migrada e tem o VFX e as sub-etapas dele');
 if ($vfx > 0 && $vfront > 0) {
@@ -134,6 +134,6 @@ pipe2_tmpdb_drop($db);
 // ── ::after_migration_http (F1), na bancada viva ───────────
 
 $live = p2u_snap('::after_migration_http', ['--http']);
-p2u_no_diff('::after_migration_http os ecrãs da v1 na bancada (43) são iguais aos da 42', $base['http'], $live['http'] ?? null);
+p2u_no_diff('::after_migration_http os ecrãs da v1 na bancada (' . SCHEMA_VERSION . ') são iguais aos da 42', $base['http'], $live['http'] ?? null);
 
 t_done();

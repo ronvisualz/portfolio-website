@@ -15,6 +15,8 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';
+
 const LEAD_TYPES_LIST  = ['Produtora', 'Agência de Marketing', 'Empresa Particular', 'Realizador', 'VFX company'];
 const LEAD_SERVICES_LIST = ['VFX / 3D', 'Marketing Buddy', 'Ambos'];
 const LEAD_PRIORITY    = ['alta' => 'Alta', 'media' => 'Média', 'baixa' => 'Baixa'];
@@ -677,6 +679,9 @@ function lead_convert(PDO $pdo, array $lead, int $funnelId, int $contactId): str
                               converted_at = ' . now_sql($pdo) . ', is_quarantined = 0, last_touch = ?
               WHERE id = ?'
         )->execute([mb_substr((string)$name, 0, 160), $funnelId, $funnelId, $xray, $contactId, today_lisbon(), $lead['id']]);
+        // Pipeline v2: num funil v2, as frentes 'planned' dos serviços da lead (num funil v1 não faz nada).
+        require_once __DIR__ . '/pipe2_leads.php';
+        pipe2_lead_convert_lines($pdo, $lead, $funnelId);
         $ins = (db_is_sqlite($pdo) ? 'INSERT OR IGNORE' : 'INSERT IGNORE') . ' INTO deal_contacts (deal_id, contact_id, role) VALUES (?, ?, ?)';
         $pdo->prepare($ins)->execute([$lead['id'], $contactId, '']);
         if ($lead['person_id'] && (int)$lead['person_id'] !== $contactId) $pdo->prepare($ins)->execute([$lead['id'], (int)$lead['person_id'], 'Contacto']);

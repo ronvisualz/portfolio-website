@@ -26,6 +26,7 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';
 require_once __DIR__ . '/contacts.php';   // serviços, preços, unidades, fornecedores ativos
 require_once __DIR__ . '/finance.php';    // IVA, valor limpo dos custos
 
@@ -464,6 +465,14 @@ function budget_accept(PDO $pdo, array $sheet, array $version, ?int $by = null):
     $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$price, $sheet['deal_id']]);
     budget_log($pdo, (int)$sheet['id'], 'b_accept', 'v' . $version['num'] . ' aceite' . (budget_counting_opt($version) === 'B' ? ' (Opção B)' : '') . ' · ' . number_format($price, 0, ',', ' ') . ' € s/ IVA', $by);
     deal_log($pdo, (int)$sheet['deal_id'], 'state', ['note' => 'Orçamento v' . $version['num'] . ' aceite', 'user_id' => $by]);
+    // Pipeline v2: num negócio v2 em produção, os valores das frentes acompanham o orçamento aceite (num v1, nada)
+    try {
+        require_once __DIR__ . '/pipe2_fronts.php';
+        $d = deal_get($pdo, (int)$sheet['deal_id']);
+        if ($d && $d['phase'] === 'production' && pipe2_deal_is_v2($pdo, $d)) pipe2_store_values($pdo, $d);
+    } catch (Throwable $e) {
+        error_log('[topper] pipe2 budget_accept: ' . $e->getMessage());
+    }
 }
 
 // ── linhas ──────────────────────────────────────────────────

@@ -245,6 +245,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $st = $pdo->prepare('SELECT COUNT(*) FROM deals WHERE stage_id = ?');
                 $st->execute([$s['id']]);
                 if ((int)$st->fetchColumn() > 0) throw new RuntimeException('Há negócios nesta etapa: mova-os primeiro.');
+                require_once __DIR__ . '/inc/pipe2_fronts.php';
+                if (($why = pipe2_stage_delete_block($pdo, (int)$s['id'])) !== '') throw new RuntimeException($why);
                 $pdo->prepare('DELETE FROM stage_automations WHERE stage_id = ?')->execute([$s['id']]);
                 $pdo->prepare('DELETE FROM funnel_stages WHERE id = ?')->execute([$s['id']]);
                 flash('Etapa eliminada.');

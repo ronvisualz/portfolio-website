@@ -13,7 +13,7 @@
  *   prop_validate / prop_contact         a resposta do cliente
  *   invoice       task number doc_date net vat total file
  *   payment       task doc_date [total] [file] [note]
- *   round         [note]                 mais uma ronda de revisão na etapa
+ *   round         [line] [note]          mais uma ronda de revisão na etapa (Pipeline v2: na Revisões da frente)
  *   task_add      kind title date assignee
  *   task_done     task
  *   services      funnels[] [package]    crosselling: os serviços adicionais, ou um pacote (fase comercial)
@@ -26,6 +26,7 @@ require_once __DIR__ . '/inc/pipeline_view.php';
 require_once __DIR__ . '/inc/leads.php';
 require_once __DIR__ . '/inc/undo.php';
 require_once __DIR__ . '/inc/xsell.php';
+require_once __DIR__ . '/inc/pipe2.php';   // a Pipeline v2: reatribuição por frente ('people') e rondas por frente ('round')
 $user = require_login();
 
 // ── descarregar um documento de faturação ───────────────────
@@ -134,11 +135,13 @@ try {
                 deal_log($pdo, (int)$deal['id'], 'dates', ['note' => 'Entrega: ' . ($set['delivery_date'] ? date('d/m/Y', strtotime($set['delivery_date'])) : '—') . ' · rodagem: ' . ($set['shoot_date'] ? date('d/m/Y', strtotime($set['shoot_date'])) : '—')]);
                 $n = flow_dates_changed($pdo, (int)$deal['id']);
             }
-            // As tarefas automáticas abertas de um responsável que mudou passam para o novo.
+            // As tarefas automáticas abertas de um responsável que mudou passam para o novo (num negócio da Pipeline
+            // v2 só as do negócio: as das frentes seguem o responsável de cada frente).
+            require_once __DIR__ . '/inc/pipe2_tasks.php';
             foreach (['owner_id' => ['commercial', 'both', 'owner'], 'exec_owner_id' => ['execution']] as $col => $roles) {
                 if (!array_key_exists($col, $set)) continue;
                 $mid = $set[$col] ? member_for_user($pdo, $set[$col]) : null;
-                $pdo->prepare("UPDATE tasks SET member_id = ? WHERE deal_id = ? AND status <> 'done' AND auto_rule_id IN (SELECT id FROM stage_automations WHERE assign_to IN ('" . implode("','", $roles) . "'))")
+                $pdo->prepare("UPDATE tasks SET member_id = ? WHERE deal_id = ? AND status <> 'done' AND auto_rule_id IN (SELECT id FROM stage_automations WHERE assign_to IN ('" . implode("','", $roles) . "'))" . pipe2_reassign_scope_sql($pdo, $deal))
                     ->execute([$mid, $deal['id']]);
             }
             flash('Guardado.' . ($datesChanged && !empty($n) ? ' Os prazos de ' . $n . ' tarefa' . ($n === 1 ? '' : 's') . ' acompanharam as datas.' : ''));
@@ -181,6 +184,18 @@ try {
 
         case 'round':
             $must(flow_can_edit($pdo, $deal));
+            // Pipeline v2: a ronda conta na frente (a indicada, ou a única) e no ciclo dela, na sub-etapa Revisões;
+            // uma frente com rondas do portal no ciclo não aceita rondas à mão (D28)
+            require_once __DIR__ . '/inc/pipe2_fronts.php';
+            if (pipe2_deal_is_v2($pdo, $deal)) {
+                require_once __DIR__ . '/inc/pipe2_cc.php';
+                $lid = (int)($_POST['line'] ?? 0);
+                $line = pipe2_cc_item_front($pdo, $deal, $lid > 0 ? $lid : null);
+                if (!$line) throw new RuntimeException($lid > 0 || !pipe2_fronts($pdo, (int)$deal['id']) ? PIPE2_CC_NO_FRONT : PIPE2_CC_PICK_ROUND);
+                pipe2_round_manual_check($pdo, $deal, $line);
+                flash(pipe2_rounds_add($pdo, $deal, $line, (string)($_POST['note'] ?? ''), $me, 'manual')['msg']);
+                break;
+            }
             $s = $deal['stage_id'] ? stage_get($pdo, (int)$deal['stage_id']) : null;
             if (($lid = (int)($_POST['line'] ?? 0)) > 0) {   // a ronda de uma frente (§22), na etapa dela
                 $line = xsell_line_get($pdo, $lid);

@@ -117,6 +117,16 @@ em `tests/*_test.php` (`tests/lib.php`: `t_true`, `t_eq`, `t_done`, `tests_http`
    é o esperado: exatamente 1 movimento Em execução → Entrega e as regras `all_ready` e de fecho criadas uma vez.
    Testes: tarefa 11, `pipe2_engine_test::concurrent_fronts_ready`; tarefa 13, `pipe2_tick_test::cron_and_request`
    (5 rondas cada, com negócios novos, para não depender de uma só corrida).
+7. **Dois `deal_move` para o Kickoff ao mesmo tempo** (duplo clique, duas pessoas, ou a validação da aceitação e um
+   arrastar) → os dois fazem o UPDATE e os dois correm `flow_on_enter` (o `deal_move` da v1 não é condicional e não
+   muda nesta fase). A correção está em `pipe2_on_deal_enter`, que corre inteiro dentro de `pipe2_lock_deal`, e em
+   `pipe2_kickoff`, que **depois do lock** abre a sua transação, faz `SELECT id FROM deals WHERE id = ? FOR UPDATE`,
+   relê o negócio e as frentes e só cria o que falta, com commit antes de soltar o lock: as frentes, as 6 linhas de
+   passos por frente, as ligações e as tarefas `enter` do Kickoff nascem uma vez e o UNIQUE `deal_id, funnel_id` de
+   `deal_lines` nunca rebenta. O mesmo vale para `pipe2_step_row($create = true)`, que toma ele próprio o lock
+   (reentrante). Testes: tarefa 11, `pipe2_engine_test::kickoff_race` (5 rondas, negócios novos) e
+   `::kickoff_reread_after_lock`; tarefa 10, `pipe2_autoadvance_test::concurrent_last_mandatory` (uma linha de passos
+   por frente, sub-etapa e ciclo).
 
 ---
 
@@ -136,6 +146,8 @@ são exatamente os de `md`/`cmp`/`ed`, sem negócios), mais os `::v1_noop` e a t
 `pipe2_on($pdo)`. Com `true` cria as 7 etapas de negócio (X-Ray 10, Proposta 20 `proposal`, Aguardar feedback 21
 `feedback`, Kickoff 50, Em execução 70 `production`/`exec`, Entrega e pagamento final 80 `production`/`delivery`,
 Concluído 90), ignora as etapas variáveis de produção e não cria sub-etapas (um funil sem `service_code` não as tem).
+Também não cria regras: sem as regras de fecho na Entrega, um negócio desse funil nunca conclui sozinho (D16) — só um
+humano o conclui, até alguém lhe pôr a aprovação final e o pagamento final como obrigatórias.
 
 **D3 — Passo 44** (`migrate_pipeline2_44`): tabela `pipe2_notices` (avisos guardados uma vez por chave e a ação
 «notificar»), `stage_automations.action VARCHAR(8) NOT NULL DEFAULT 'task'` (`task` | `notify`),
@@ -229,13 +241,18 @@ conta desativada (`pipe2_user_ok`).
 espaços seguidos reduzidos a um, sem espaços nas pontas. Antes de criar: (1) a regra já criou tarefa para este negócio,
 frente e ciclo (`auto_rule_id`, `line_id`, `cycle_ym`, qualquer estado) → não cria; (2) existe uma tarefa com a mesma
 chave (aberta ou feita) → não cria e, se a regra é obrigatória e a existente não, a existente passa a `is_gate = 1`;
-(3) só nas de negócio: há uma tarefa **aberta** de uma frente do negócio com o mesmo título normalizado e ciclo → não
-cria e, se a regra é obrigatória, essa tarefa fica com `gate_stage_id` = etapa do negócio (conta para o gate dela).
-A deduplicação v1 (`deal_id + auto_rule_id`) fica intacta nos negócios v1.
+(3) só nas de negócio: há tarefas de frentes do negócio, **abertas ou feitas**, com o mesmo título normalizado e o
+mesmo ciclo (`cycle_ym` da tarefa da frente = ciclo da tarefa de negócio; uma frente avença, de ciclo `AAAA-MM`, não
+deduplica uma tarefa de negócio de ciclo `''`) → não cria e, se a regra é obrigatória, **todas** essas tarefas ficam com
+`gate_stage_id` = etapa do negócio e contam para o gate dela: a feita conta logo como cumprida, uma aberta como por
+fazer (se duas frentes têm a tarefa, o gate só fica cumprido com as duas feitas). Assim uma reentrada na Entrega,
+depois de a tarefa da frente ter sido feita, não cria um duplicado. É a leitura da §34.11 T2 («a deduplicação considera
+tarefas abertas **e concluídas** do mesmo ciclo»), que prevalece sobre a §34.9 («a mesma tarefa aberta noutra
+frente»). A deduplicação v1 (`deal_id + auto_rule_id`) fica intacta nos negócios v1.
 
 **D13 — «Anular» em cascata.** Os movimentos de um pedido (automáticos e os de frente feitos à mão) ficam em
-`pipe2_moves()`, com tudo o que criaram (tarefas, histórico, `stage_events`, linhas e mudanças de `deal_line_steps`,
-`met_at` das ligações, avisos). `undo_push` junta-os aos dados (`p2_moves`) e devolve `''` (sem «Anular») quando algum
+`pipe2_moves()`, com tudo o que criaram ou mudaram (tarefas, histórico, `stage_events`, linhas e mudanças de
+`deal_line_steps`, `met_at` das ligações, avisos, as instâncias de séries fechadas pelo sistema, D18). `undo_push` junta-os aos dados (`p2_moves`) e devolve `''` (sem «Anular») quando algum
 não se desfaz (o Concluído automático). `undo_apply` verifica tudo primeiro e desfaz tudo ou nada (transação).
 
 **D14 — «Desfazer» e arrastar para trás.** A frente volta uma sub-etapa e a sub-etapa de destino fica suspensa
@@ -260,9 +277,16 @@ cancelar (`cancelled_at`): a frente passa a Pronto final (`ready`).
 **D16 — Fecho.** Em execução → Entrega quando todas as frentes vivas estão concluídas (pontual: `ready`; avença:
 terminada e `ready`). Na Entrega, se uma frente voltar atrás, o negócio volta a Em execução (sistema). Entrega →
 Concluído (sistema, por `deal_move`) quando o gate da Entrega está cumprido (obrigatórias da Entrega, também as de
-`gate_stage_id`) e as frentes concluídas. O Concluído automático marca `delivered_at` = `done_at` da tarefa feita cujo
-título normalizado começa por «enviar entregáveis finais» (senão agora), com `deal_log 'delivered'` de «Sistema»; a
-checklist da §15.5 não bloqueia. `billing_validate_payment` marca `is_paid` também quando a tarefa de pagamento é da
+`gate_stage_id`), as frentes concluídas **e** o gate tem as duas obrigatórias da §34.9 (`pipe2_close_auto_missing`
+vazio): uma com `doc_kind 'payment'` (o pagamento final) e uma cujo título normalizado começa por «aprovação final» (a
+aprovação final), contadas entre as do negócio na Entrega e as de `gate_stage_id` = Entrega. É a mesma guarda do
+Kickoff (D6: «≥ 1 obrigatória») e das sub-etapas (E3), mais forte porque a §34.9 só conclui «com as duas». Sem elas (um
+funil sem regras de fecho, como os de `funnel_create` com `$v2 = true`, D2, ou com essas regras desligadas) o sistema
+nunca conclui: `pipe2_deal_reevaluate` devolve `'no_mandatory'` e deixa a nota «Pronto para concluir: conclui-se à mão
+(a Entrega não tem como obrigatória: Aprovação final, Pagamento final).» (só os itens em falta); só um humano conclui,
+pelo `deal_move` de sempre, que passa o gate (`pipe2_close_missing` vazio). O Concluído automático marca `delivered_at` = `done_at` da tarefa feita (do
+negócio na Entrega ou com `gate_stage_id` = Entrega) cujo título normalizado começa por «enviar entregáveis finais»
+(senão agora), com `deal_log 'delivered'` de «Sistema»; a checklist da §15.5 não bloqueia. `billing_validate_payment` marca `is_paid` também quando a tarefa de pagamento é da
 Entrega (`role 'delivery'`) de um negócio v2. As regras de fecho só existem nos funis dos testes nesta fase (a conversão
 põe-nas nos reais).
 
@@ -280,8 +304,23 @@ nova nasce com `is_gate 0`, por isso a série conta uma só vez para o gate da s
 original) e nunca bloqueia a frente para sempre. Em `task_done`, o gancho v2 (`pipe2_task_changed`, tarefa 10) corre
 **antes** de `task_repeat_next`: se fechar a obrigatória completa o gate e a frente avança, `pipe2_repeat_extra` já vê
 a frente fora da sub-etapa e não nasce a seguinte (a série fecha). Se a frente já saiu dessa sub-etapa (ou mudou de
-ciclo), não nasce a seguinte; uma instância aberta que já exista fica. Nas tarefas v1 nada muda (o gancho é no-op num
-negócio v1 e não escreve nada, por isso a ordem não muda o resultado; `::v1_noop` prova-o).
+ciclo), não nasce a seguinte (`pipe2_repeat_extra` → `null`).
+**As repetições fecham ao sair da sub-etapa (§34.11 T4).** Quando a frente **conclui** uma sub-etapa S — avanço
+automático, movimento humano para a frente (também forçado), passagem a À espera (`depwait`: A concluiu X, D8), Pronto
+final de uma avença (cancelada ou no fim do período, vinda de qualquer sub-etapa) — `pipe2_front_enter` fecha, na mesma
+transação do movimento, as instâncias abertas das séries dessa frente, S e ciclo (`line_id` = frente, `stage_id` = S,
+`cycle_ym` = ciclo, `repeat_rule <> ''`, `status <> 'done'`); com um ciclo novo (`$o['cycle']`, o recomeço da avença)
+fecha as de todas as sub-etapas da frente com o ciclo antigo. Fechar = UPDATE direto (`status 'done'`, `done_at` e `updated_at` = agora) e
+um `INSERT` direto em `task_log` (`event 'done'`, `user_id` NULL — o `task_log()` grava a sessão —, nota «Fechada
+pelo sistema: a frente saiu da sub-etapa»), sem `deal_log 'task_done'`, sem `task_repeat_next` e sem reavaliar (não
+passa por `task_done` nem por `pipe2_task_changed`). Os ids e o estado de antes ficam em `pipe2_moves` (`'closed'`) e o
+«Anular» reabre-as (D13). O medidor de ruído (fase 4) distingue-as pelo `task_log` (`user_id` NULL e esta nota).
+**Para trás não fecha** («Desfazer», arrastar para trás: a sub-etapa não ficou concluída e a frente volta a ela, D14):
+a instância aberta fica; feita com a frente noutra sub-etapa, não gera a seguinte; feita depois de a frente voltar a S,
+a série continua; fecha quando a frente concluir S. (Decisão desta fase, para o utilizador confirmar: a alternativa é
+fechar também para trás, e então a série não recomeça numa reentrada, porque a regra não volta a criar a tarefa, D12.)
+Nas tarefas v1 nada muda (o gancho é no-op num negócio v1 e não escreve nada, por isso a ordem não muda o resultado;
+`::v1_noop` prova-o).
 
 **D19 — Apagamentos (T6).** Todo o apagamento humano (`calendar.php`) fica em `task_deletions` antes do DELETE, também
 o das tarefas v1 (ninguém o lê na v1; serve o medidor de ruído depois da conversão). O registo só se tenta com
@@ -363,21 +402,21 @@ condicionais (fase 3), `start_mode 'after'` → dependência (conversão, fase 3
 | # | Tarefa | Teste |
 |---|---|---|
 | M3 | 3, 10 | `pipe2_fronts_test::single_service_has_front`, `::main_not_special` |
-| M4 | 3, 11, 13 | `pipe2_fronts_test::kickoff_idempotent`, `::budget_service_required`; `pipe2_engine_test::kickoff_creates_fronts`, `::proposal_gate_v2` |
+| M4 | 3, 11, 13 | `pipe2_fronts_test::kickoff_idempotent`, `::budget_service_required`; `pipe2_engine_test::kickoff_creates_fronts`, `::kickoff_race`, `::kickoff_reread_after_lock`, `::proposal_gate_v2` |
 | M6 | 3 | `pipe2_model_test::funnel_create_six`, `::del_stage_guards`; `pipe2_stage_guard_test::*` |
 | M7 | 12 | `pipe2_billing_test::recurring_reads_column` |
 | E1 | 11, 13 | `pipe2_engine_test::multi_front_deal_moves`, `::front_move_bypasses_deal_move` |
-| E2 | 11, 13 | `pipe2_engine_test::done_gate`, `::close_missing_hook` |
+| E2 | 11, 13 | `pipe2_engine_test::done_gate`, `::done_needs_mandatory`, `::close_missing_hook` |
 | E3 | 10, 11, 13 | `pipe2_autoadvance_test::no_mandatory_no_advance`, `::one_step_per_request`, `::concurrent_last_mandatory` (as condicionais deixam de ser `is_gate` na fase 3); `pipe2_engine_test::concurrent_fronts_ready`, `::stale_move_refused`; `pipe2_tick_test::cron_and_request` |
 | E4 | 10, 11, 13 | `pipe2_autoadvance_test::reevaluate_hooks`, `::system_actor`, `::never_cancels_completion`; `pipe2_engine_test::blocked_gate_message`; `pipe2_tick_test::reevaluate_cron`, `::cron_and_request` |
-| E5 | 15 | `pipe2_undo_test::undo_cascades`, `::undo_kickoff_removes_fronts`, `::not_offered_after_auto_done` |
+| E5 | 15 | `pipe2_undo_test::undo_cascades`, `::undo_reopens_closed_series`, `::undo_kickoff_removes_fronts`, `::not_offered_after_auto_done` |
 | E6 | 11 | `pipe2_engine_test::auto_done_delivered_at` |
 | E7 | 5, 10, 13 | `pipe2_deps_test::partial_combination_links`, `::contraction_multi_hop`, `::waits_before_y`, `::tasks_born_on_release`, `::no_replan_while_waiting`; `pipe2_engine_test::proposal_gate_v2`, `::xsell_tick_ignores_v2`; `pipe2_dates_test::save_plan_v2` |
 | E8 | 5, 13 | `pipe2_dates_test::*` |
 | T1 | 11, 12 | `pipe2_close_test::once_per_deal`, `::other_funnel_mandatory_blocks_done`, `::is_paid_on_delivery_rule` |
-| T2 | 9, 12 | `pipe2_dedup_test::deal_deal`, `::deal_front`, `::front_front`, `::skipped_counts_for_gate`, `::other_funnel_rule_on_deal_stage`, `::cycle`; `pipe2_monthly_test::cycle_opens_once` |
+| T2 | 9, 12 | `pipe2_dedup_test::deal_deal`, `::deal_front` (abertas e feitas do mesmo ciclo), `::delivery_reentry`, `::front_front`, `::skipped_counts_for_gate`, `::other_funnel_rule_on_deal_stage`, `::cycle`; `pipe2_monthly_test::cycle_opens_once` |
 | T3 | 12, 6 | `pipe2_invoice_test::closes_own_task`, `::request_src`, `::state_without_nif`, `::v1_at_42`; `pipe2_perm_test::can_bill` |
-| T4 | 9, 10 | `pipe2_repeat_test::copies_and_closes`, `::mandatory_series_closes_on_advance`, `::series_counts_once` |
+| T4 | 9, 10, 15 | `pipe2_repeat_test::copies_and_closes`, `::mandatory_series_closes_on_advance`, `::series_counts_once`, `::closes_on_leave`, `::back_move_keeps_open`; `pipe2_undo_test::undo_reopens_closed_series` |
 | T5 | 4, 9, 11 | `pipe2_notify_test::once_per_step`; `pipe2_reassign_test::by_line`, `::team_reassign_exec`, `::v1_at_42`; `pipe2_engine_test::no_gate_alert` |
 | T6 | 9, 10 | `pipe2_noise_test::deletion_logged`, `::insert_fails_delete_runs`, `::v1_at_42`; `pipe2_autoadvance_test::reevaluate_hooks` (apagar na Agenda) |
 | C1 | 16 | `pipe2_cc_test::fronts_before_board` |
@@ -429,7 +468,8 @@ condicionais (fase 3), `start_mode 'after'` → dependência (conversão, fase 3
 Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/inc/pipeline_flow.php` (9 → 11 → 12 → 13);
 `admin/inc/xsell.php` (12 → 13); `admin/inc/tasks.php` (9 → 10); `admin/deal_flow.php` (9 → 16);
 `admin/inc/pipe2_engine.php` (10 → 11); testes partilhados: `pipe2_fronts_test` (3 → 10), `pipe2_deps_test` (5 → 10),
-`pipe2_repeat_test` (9 → 10), `pipe2_race.php` (só a 10; a 11 e a 13 usam-no sem o mudar),
+`pipe2_repeat_test` (9 → 10), `pipe2_race.php` (só a 10; a 11 e a 13 usam-no sem o mudar), `pipe2_probe.php` e
+`pipe2_v2_lib.php` (só a 1; a 4, a 6 e a 11 usam o probe e a 10 o `p2v_go_wait` sem os mudar),
 `pipe2_dates_test` (5 → 13), `pipe2_engine_test` (11 → 13), `pipe2_close_test` (11 → 12), `pipe2_monthly_test`
 (12 → 13), `pipe2_undo_test` (10 → 15).
 
@@ -481,16 +521,24 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   function p2v_closing_rules(PDO $pdo, int $deliveryStageId): array;  // as 4 de PIPE_RULES_DELIVERY + «Validar pagamento final · {ID}» (G, pay) na Entrega, por migrate_pipeline_rule; ids
   function p2v_as(?int $uid, ?PDO $pdo = null): void;           // $_SESSION['user'] = linha de users (null: sem sessão)
   function p2v_probe(string $db, int $uid, array $calls): array; // tests/pipe2_probe.php num subprocesso; resultados pela ordem
-  function p2v_race(array $runs): array;                         // lança [[script, args], …] com --go=<ficheiro>; espera os «.ready.<pid>», cria o ficheiro, junta as saídas
+  function p2v_race(array $runs): array;                         // lança [[script, args], …] com --go=<F> (F único no sys_get_temp_dir()); espera um «F.ready.*» por corrida ainda viva (uma que já saiu deixa de contar) até 15 s; cria F (também no fim do prazo, para ninguém ficar à espera); proc_close de todas; [['code','out','err','json','timeout' => bool], …] pela ordem; apaga F e os .ready
+  function p2v_go_wait(array $argv): void;                       // para os scripts das corridas: com --go=F, escreve «F.ready.<getmypid()>» e espera (≤ 10 s, passos de 10 ms) que F exista; sem F a tempo → stderr «sem sinal de partida» e exit(2); sem --go não faz nada
   function p2v_sig(PDO $pdo, array $tables, string $where = '1=1'): array;  // tabela => [COUNT(*), SUM(CRC32(CONCAT_WS('|', todas as colunas)))]
   function p2v_rows(PDO $pdo, string $sql, array $a = []): array;
   function p2v_col(PDO $pdo, string $sql, array $a = []);
   ```
-  `tests/pipe2_probe.php --db=<privada> --uid=<n|0> --calls=<ficheiro.json>`: liga à base, `pipe2_use`, sessão do
-  utilizador (0 = sem sessão), faz `require_once` de todos os `admin/inc/pipe2_*.php` que existam, e para cada
-  `{"fn": "...", "args": [...]}` com `fn` em `/^(record_reach|flow_can_edit|flow_can_bill|flow_is_commercial|can|notifications|pipe2_[a-z0-9_]+)$/`
+  `tests/pipe2_probe.php --db=<privada> --uid=<n|0> --calls=<ficheiro.json> [--go=F]`: liga à base, `pipe2_use`,
+  sessão do utilizador (0 = sem sessão), faz `require_once` de `admin/inc/alerts.php`, `pipeline_view.php`, `reach.php`
+  e de todos os `admin/inc/pipe2_*.php` que existam, chama `p2v_go_wait($argv)` (por isso serve de script de eco no
+  `p2v_race`; `--calls` vazio ou com `[]` → `{"results": []}`), e para cada `{"fn": "...", "args": [...]}` com `fn` em
+  `/^(can|is_admin|current_user|record_reach|reach_sql|flow_can_edit|flow_can_bill|flow_is_commercial|my_alerts|notifications|pipe2_[a-z0-9_]+)$/`
   substitui `{"deal": id}`, `{"line": id}` e `{"task": id}` pela linha (`deal_get`, `pipe2_lib`/SQL de `deal_lines` com
-  `funnel_name`, `task_by_id`) e imprime `{"results": [...]}` (ou `{"error": "..."}`, código 1).
+  `funnel_name`, `task_by_id`), põe a ligação à frente dos args quando o 1.º parâmetro da função é `PDO` (Reflection:
+  `my_alerts`, `notifications`, `record_reach`, `flow_can_edit`, …) e imprime `{"results": [...]}` (ou
+  `{"error": "..."}`, código 1). **Esta lista cobre todas as chamadas por probe deste plano** (tarefa 4: `notifications`
+  e `my_alerts` em `::preferences`/`::v1_noop`; tarefa 6: `can`, `record_reach`, `flow_can_edit`, `pipe2_*`; tarefa 11:
+  `my_alerts` em `::no_gate_alert`): nenhuma outra tarefa muda `pipe2_probe.php`; uma função de leitura que falte
+  chama-se no próprio processo do teste, com `p2v_as`.
 
   `tests/pipe2_tree.php`: `pipe2_tree(string $commit, array $overlay = [], array $testFiles = [], string $tag = 'tree'): string`
   (`git archive $commit admin` numa pasta `p2t_<pid>_<tag>` do `sys_get_temp_dir()`, ligações simbólicas para a
@@ -533,8 +581,12 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     `service_code ''`, `v2_only 1`, `is_base 0`, e a limpeza apaga-o.
   - `p2v_probe($db, 1, [['fn'=>'can','args'=>['financeiro', 1]]])` → `[true]`; com uid 3 → `[false]`; com uid 0 e
     `['fn'=>'can','args'=>['pipeline',1]]` → `[false]`.
-  - `p2v_race` com duas corridas de um script de eco (`tests/pipe2_probe.php` com `--calls` vazio) devolve duas saídas
-    com código 0.
+  - `p2v_probe($db, 99, [['fn'=>'my_alerts','args'=>[]]])` → um array com a chave `'deal'` (o probe pôs o PDO à
+    frente); `['fn'=>'exec','args'=>['ls']]` → `{"error": …}` e código 1 (fora da lista).
+  - `p2v_race` com duas corridas de um script de eco (`tests/pipe2_probe.php` com `--calls` de `[]`) devolve duas saídas
+    com código 0, `timeout false`, e os dois `.ready` foram escritos antes de F (o `mtime` de F ≥ o dos dois); uma
+    corrida que sai antes de escrever o `.ready` (`--db=p2_inexistente`) não prende o `p2v_race`: volta em < 16 s com o
+    código ≠ 0 dessa corrida e a outra com 0; no fim não fica nenhum `F*` no `sys_get_temp_dir()`.
   - `pipe2_cleanup` numa base privada apaga também as linhas de `deal_line_steps`, `deal_line_deps`, `deal_line_execs`,
     `task_deletions`, `pipe2_notices` dos negócios P2T (inserir uma de cada e confirmar 0 depois).
 - [ ] **Step 3: Correr e ver falhar.** `php tests/pipe2_schema44_test.php; php tests/pipe2_v2_lib_test.php`. Esperado:
@@ -649,7 +701,11 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   function pipe2_requirements(PDO $pdo, array $deal): array;     // M4 (o substituto v2 de xsell_requirements)
   function pipe2_stage_delete_block(PDO $pdo, int $stageId): string; // D21; '' = pode apagar
   ```
-  `pipe2_kickoff_fronts` (dentro de `pipe2_lock`-free mas idempotente por SELECT antes de INSERT): garante a principal;
+  `pipe2_kickoff_fronts` não toma lock nem abre transação: é uma peça de `pipe2_kickoff` (tarefa 11), que a chama
+  **dentro** de `pipe2_lock_deal`, numa transação com a linha do negócio bloqueada (`FOR UPDATE`) e depois de reler o
+  negócio e as frentes (Review Focus 7); o SELECT antes de INSERT só é idempotente aí (`deal_line_steps` não tem UNIQUE
+  e `deal_lines` tem o UNIQUE `deal_id, funnel_id`, que rebentaria numa corrida). Nenhum outro código de produção a
+  chama (o teste chama-a em sequência). Garante a principal;
   cada frente `planned` viva → `queued` (`stage_id` NULL); responsável vazio → (principal: `deals.exec_owner_id`) →
   `pipe2_service_head`; cria as linhas de `deal_line_steps` em falta (uma por sub-etapa, ciclo `''`, `plan_days` da
   sub-etapa); `XSELL_FRESH = true`. `pipe2_store_values`: 1 frente viva → valor = `pipe2_deal_value`; 2+ →
@@ -730,7 +786,8 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     `users.prefs = '{"notif":{"deal":{"app":0}}}'` para o 99 → não traz.
   - `::v1_noop`: numa base sem avisos, `pipe2_notices_for` dá `[]`; numa fresca na 43 (sem a tabela) dá `[]` sem
     exceção; o probe `notifications` do uid 1 numa base privada sem avisos não tem nenhuma chave `p2n:` e tem as mesmas
-    chaves que `my_alerts` sem o grupo dos avisos (o gancho não acrescenta nem tira nada).
+    chaves que o probe `my_alerts` do uid 1 (ambas na lista do probe da tarefa 1) sem o grupo dos avisos (o gancho não
+    acrescenta nem tira nada).
 - [ ] **Step 2: Correr e ver falhar.** `php tests/pipe2_notify_test.php` → erro fatal.
 - [ ] **Step 3: Implementar.** A verificação da tabela usa `db_has_table` guardado num `static` só quando `true`.
 - [ ] **Step 4: Correr e ver passar.** `php tests/pipe2_notify_test.php; php tests/pipe2_includes_test.php; php tests/pipe2_v1_unchanged_test.php; php -l admin/inc/alerts.php admin/inc/pipe2_notify.php`.
@@ -748,7 +805,7 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   ```php
   function pipe2_models_for(PDO $pdo, string $category): array;   // [[from_code, from_name, to_code, to_name], …] por position; is_active = 1; código pelo service_code do funil da sub-etapa
   function pipe2_model_links(array $links, array $codes): array;  // puro (D8): contração dos ausentes, sem poda, sem repetidos, pela ordem de D8; $links = [[from_code, from_name, to_code, to_name], …] pela posição
-  function pipe2_deps_instantiate(PDO $pdo, array $deal, ?int $by = null): int;   // pela deals.category (senão calculada); resolve cada código pela frente viva desse serviço e o nome pela sub-etapa do funil dela; idempotente; nunca recria removidas; source 'model'
+  function pipe2_deps_instantiate(PDO $pdo, array $deal, ?int $by = null): int;   // pela deals.category (senão calculada); resolve cada código pela frente viva desse serviço e o nome pela sub-etapa do funil dela; idempotente por SELECT antes de INSERT (deal_line_deps não tem UNIQUE: só é seguro dentro do lock e da transação de pipe2_kickoff, tarefa 11, que é quem a chama); nunca recria removidas; source 'model'
   function pipe2_deps_into(PDO $pdo, int $lineId, int $stageId, bool $unmetOnly = true): array;  // ligações vivas (removed_at NULL) para (frente, sub-etapa)
   function pipe2_deps_mark_met(PDO $pdo, int $dealId, int $fromLineId, int $fromStageId): array;  // ['met' => [ids], 'released' => [[line_id, stage_id], …]] (só os destinos sem mais nenhuma por cumprir)
   function pipe2_dep_add(PDO $pdo, array $deal, int $fromLineId, int $fromStageId, int $toLineId, int $toStageId, ?int $by = null): int;  // source 'manual'; recusa frentes de outro negócio, a mesma frente, sub-etapas de outro funil e ciclos («Esta ligação criava um ciclo.»); deal_log 'p2_dep'
@@ -1013,9 +1070,20 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   - `::deal_deal`: as Entregas dos funis vfx e 3d têm a regra «Aprovação final do cliente por escrito» (3d com
     `is_gate 0`, vfx com `is_gate 1`) → `pipe2_run_rules(Entrega do negócio, 'enter')` cria 1 tarefa, `is_gate 1`,
     `stage_id` = Entrega do negócio, `line_id` NULL; correr outra vez → 0.
-  - `::deal_front`: uma tarefa **aberta** da frente 3d «Aprovação final do cliente por escrito» → a regra do negócio não
-    cria nada e essa tarefa fica com `gate_stage_id` = Entrega; com a da frente **feita** → cria a do negócio.
-  - `::skipped_counts_for_gate`: `pipe2_deal_gate(Entrega)` lista a tarefa da frente com `ok false`; feita → `ok true`.
+  - `::deal_front` (D12 ponto 3, §34.11 T2: abertas **e** feitas do mesmo ciclo; um negócio novo em cada caso): uma
+    tarefa **aberta** da frente 3d «Aprovação final do cliente por escrito» (`cycle_ym ''`) → a regra obrigatória do
+    negócio na Entrega não cria nada e essa tarefa fica com `gate_stage_id` = Entrega do negócio; com a da frente
+    **feita** → também não cria e a feita fica com `gate_stage_id` = Entrega; com o título só igual depois de
+    normalizar («  aprovação FINAL do cliente  por escrito ») → o mesmo; com a da frente noutro ciclo (`cycle_ym
+    '2026-11'`) → cria a do negócio (`line_id` NULL) e a da frente fica sem `gate_stage_id`; com as duas frentes a
+    terem-na (vfx feita, 3d aberta) → não cria e **as duas** ficam com `gate_stage_id`; uma regra **não** obrigatória
+    com a da frente feita → não cria e não muda `gate_stage_id`.
+  - `::delivery_reentry`: com a da frente feita e o negócio a entrar na Entrega, a voltar a Em execução e a entrar
+    outra vez (`pipe2_run_rules(Entrega, 'enter')` duas vezes, com a frente a sair de Pronto e a voltar entre elas) →
+    nenhuma tarefa de negócio com esse título (`COUNT` = 0) e um só `gate_stage_id` posto.
+  - `::skipped_counts_for_gate`: `pipe2_deal_gate(Entrega)` lista a tarefa aberta da frente com `ok false`; feita →
+    `ok true`; a feita do caso «feita» de `::deal_front` aparece logo com `ok true`; no caso das duas frentes, dois
+    itens, e o gate só fica cumprido quando a aberta (3d) é feita.
   - `::other_funnel_rule_on_deal_stage` (D10): uma regra obrigatória («P2T · só no 3D», `is_gate 1`) **só** na Entrega
     do funil 3d (não principal; a Entrega do funil vfx não tem nenhuma com esse título) → `pipe2_run_rules(Entrega do
     negócio, 'enter')` cria 1 tarefa com `stage_id` = Entrega do **negócio** (a do funil vfx, `deals.stage_id`), nunca a
@@ -1090,12 +1158,12 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   const PIPE2_AUTO_NOTE = 'Avanço automático';
   function pipe2_request_reset(): void;                 // zera pipe2_once, pipe2_moves e pipe2_note
   function pipe2_once(string $key): bool;               // true só da 1.ª vez por pedido
-  function pipe2_moves(?array $add = null): array;      // registo do pedido (D13); entrada 'front': ['kind'=>'front','deal','line','from'=>[stage_id,status,stage_entered_at,done_at,cycle_ym],'to'=>[stage_id,status],'steps'=>[[id, [coluna => antes]], …],'steps_new'=>[ids],'tasks'=>[ids],'history'=>[ids],'events'=>[ids],'deps'=>[[id, met_at antes], …],'notices'=>[ids],'undoable'=>true]
+  function pipe2_moves(?array $add = null): array;      // registo do pedido (D13); entrada 'front': ['kind'=>'front','deal','line','from'=>[stage_id,status,stage_entered_at,done_at,cycle_ym],'to'=>[stage_id,status],'steps'=>[[id, [coluna => antes]], …],'steps_new'=>[ids],'tasks'=>[ids],'closed'=>[[id, status antes, done_at antes, task_log id], …],'history'=>[ids],'events'=>[ids],'deps'=>[[id, met_at antes], …],'notices'=>[ids],'undoable'=>true]
   function pipe2_note(?string $add = null): array;      // mensagens para quem chamou
-  function pipe2_lock_deal(PDO $pdo, int $dealId): void;    // GET_LOCK('topper_p2d_' . md5(DATABASE()) . '_' . id, 10), reentrante; falha → RuntimeException('Outro pedido está a mexer neste negócio; tente outra vez.')
-  function pipe2_unlock_deal(PDO $pdo, int $dealId): void;
+  function pipe2_lock_deal(PDO $pdo, int $dealId): void;    // GET_LOCK('topper_p2d_' . md5(DATABASE()) . '_' . id, 10), reentrante (contador por negócio no processo: só o 1.º faz GET_LOCK); falha → RuntimeException('Outro pedido está a mexer neste negócio; tente outra vez.')
+  function pipe2_unlock_deal(PDO $pdo, int $dealId): void;  // desce o contador; só o nível de fora faz RELEASE_LOCK. Regra: quem abre uma transação dentro do lock faz commit (ou rollback) antes de o soltar, para o pedido seguinte ler o que ficou gravado
   function pipe2_auto_on(PDO $pdo, array $line, array $stage): bool;   // D5
-  function pipe2_step_row(PDO $pdo, array $line, int $stageId, bool $create = true): ?array;  // (frente, sub-etapa, ciclo da frente)
+  function pipe2_step_row(PDO $pdo, array $line, int $stageId, bool $create = true): ?array;  // (frente, sub-etapa, ciclo da frente); com $create toma pipe2_lock_deal (reentrante: nada muda se quem chamou já o tem) e faz o SELECT e o INSERT dentro dele — deal_line_steps não tem UNIQUE
   function pipe2_next_stage(PDO $pdo, array $line): ?array;    // a sub-etapa viva seguinte pela posição; sem etapa → a 1.ª; de Pronto → null
   function pipe2_prev_stage(PDO $pdo, array $line): ?array;
   function pipe2_front_enter(PDO $pdo, array $deal, array $line, array $to, array $o = []): string;  // 'entered' | 'waiting' | 'lost'
@@ -1111,13 +1179,17 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   function pipe2_task_set_gate(PDO $pdo, int $taskId, bool $on, ?int $by = null): void;
   ```
   `pipe2_front_enter` — `$o`: `by` (?int; null = Sistema), `why` (`auto`|`manual`|`start`|`dep`|`undo`|`cycle`|`force`|`cancel`),
-  `note`, `status` (sobrepõe), `cycle` (ciclo novo), `rules` (true), `record` (true). Pela ordem: (1) com ligações por
+  `note`, `status` (sobrepõe), `cycle` (ciclo novo), `rules` (true), `record` (true). Corre dentro de `pipe2_lock_deal`
+  (reentrante; toma-o se quem chamou não o tem) e relê a frente depois do lock. Pela ordem: (1) com ligações por
   cumprir para `$to` e `why` ∉ {`force`,`undo`,`cycle`,`cancel`}: UPDATE condicional para `depwait` (a etapa fica),
-  `done_at` na linha de passos atual, `deal_log 'p2_wait'` («<Serviço>: à espera de <A> («<X>»)», system),
-  `mx_event 'p2_wait'` → `'waiting'`; (2) senão, numa transação própria se não houver uma aberta: UPDATE condicional
+  `done_at` na linha de passos atual, fecho das séries da sub-etapa concluída (D18), `deal_log 'p2_wait'` («<Serviço>:
+  à espera de <A> («<X>»)», system), `mx_event 'p2_wait'` → `'waiting'`; (2) senão, numa transação própria se não houver
+  uma aberta: UPDATE condicional
   (estado novo: o de `$o['status']`, senão `ready`/`ongoing` em `role 'ready'` conforme avença não terminada, senão
   `ongoing` numa avença, senão `running`; `stage_entered_at`, `started_at = COALESCE(started_at, agora)`, `done_at` só
   num Pronto final), passos (para a frente: `done_at` na atual; na nova `started_at = COALESCE(…)` e `done_at NULL`),
+  para a frente (e no Pronto final, e com ciclo novo) o fecho das séries de D18 — UPDATE direto das tarefas e INSERT
+  direto em `task_log` com `user_id` NULL, ids em `'closed'`; para trás (`why 'undo'` ou destino antes da atual) não fecha —,
   `deal_log 'p2_front'` (`from_stage`, `to_stage`, `to_funnel`, nota «<Serviço>: <de> → <para>» + « · Avanço
   automático» quando `by` é null + a `note`, `'system' => by === null`, `'user_id' => by`), `mx_event 'p2_front'`
   (`line`, `funnel`, `from`, `to`, `user` = by, `reason` = why), `deals.last_touch = hoje`; `rowCount() = 0` → rollback e
@@ -1136,7 +1208,11 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   seguinte («avançar uma sub-etapa de cada vez»), com o gate completo e sem ligações por cumprir, senão `GateBlocked`
   com a lista; `$force` só com `is_admin()` (senão «Só os admins podem forçar a passagem.»), nota «Passagem forçada:
   <motivo> · faltava: …» e as ligações por cumprir ficam `met_at`; mensagem «<Serviço>: passou a «<etapa>».». No fim de
-  cada ação humana e de cada avanço: `pipe2_after_front_change`. `pipe2_front_start`: frente `queued` (ou `depwait` sem
+  cada ação humana e de cada avanço: `pipe2_after_front_change`. Todas as funções públicas deste ficheiro que escrevem
+  num negócio (`pipe2_front_start`, `pipe2_front_move`, `pipe2_front_undo`, `pipe2_front_set_auto`, `pipe2_step_units`,
+  `pipe2_task_set_gate`, `pipe2_front_release`, `pipe2_front_enter`, `pipe2_step_row` com `$create`) tomam
+  `pipe2_lock_deal` (reentrante) e relêem o negócio e a frente depois dele; o `$deal`/`$line` de quem chamou só dá os
+  ids e o estado esperado. `pipe2_front_start`: frente `queued` (ou `depwait` sem
   etapa); negócio no Kickoff ou em Em execução; gate do Kickoff (`pipe2_deal_gate`) cumprido senão `GateBlocked`;
   `pipe2_plan_front($line, hoje)`; avença: `billing_end` e `cycle_ym` pelo `pipe2_billing_period` (se ainda vazios);
   entra na 1.ª sub-etapa (`why 'start'`). `pipe2_front_undo`: «A frente já está na primeira sub-etapa.» na 1.ª; volta à
@@ -1145,11 +1221,14 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   reavalia quando não desliga. `pipe2_step_units`: grava, `deal_log 'p2_units'`, reavalia (sem tirar a suspensão).
   `pipe2_task_set_gate`: UPDATE `is_gate`, `task_log` («Obrigatória: sim/não»), `pipe2_task_changed($t, 'gate')`.
 
-  `tests/pipe2_race.php --db=X --uid=N --go=F [--do=task_done --task=ID | --do=tick --today=AAAA-MM-DD]`: liga à base
-  privada, sessão do uid (0 = sem sessão), escreve `F.ready.<pid>`, espera (≤ 10 s) que `F` exista e faz a ação:
-  `task_done` (por defeito) ou `pipe2_tick($pdo, $today)` (`require_once` de `admin/inc/pipe2_tick.php`; se o ficheiro
-  ainda não existir, `{"error":"pipe2_tick.php em falta"}` e código 1 — a tarefa 13 usa-o sem mudar o script); imprime
-  `{"ok":true}`. Só esta tarefa escreve o ficheiro; as tarefas 11 e 13 usam-no.
+  `tests/pipe2_race.php --db=X --uid=N --go=F [--do=task_done --task=ID | --do=tick --today=AAAA-MM-DD | --do=deal_move --deal=ID --stage=ID [--force=motivo]]`:
+  liga à base privada, sessão do uid (0 = sem sessão), **lê o que a ação precisa antes do sinal** (a tarefa; no
+  `deal_move`, o negócio por `deal_get`, como dois pedidos que carregaram a página antes de o outro mover), chama
+  `p2v_go_wait($argv)` (tarefa 1: escreve `F.ready.<pid>` e espera ≤ 10 s por `F`) e faz a ação: `task_done` (por
+  defeito), `pipe2_tick($pdo, $today)` (`require_once` de `admin/inc/pipe2_tick.php`; se o ficheiro ainda não existir,
+  `{"error":"pipe2_tick.php em falta"}` e código 1 — a tarefa 13 usa-o sem mudar o script) ou
+  `deal_move($pdo, $dealLido, $stage, $force)` (função da v1; a tarefa 11 usa-o no `::kickoff_race`); imprime
+  `{"ok":true}` (no `deal_move`, `{"ok":true,"msg":…}`). Só esta tarefa escreve o ficheiro; as tarefas 11 e 13 usam-no.
 
 - [ ] **Step 1: Escrever `tests/pipe2_autoadvance_test.php`** (TDD obrigatório; frente vfx `running` na S1 com 2
   obrigatórias e passos com `p2v_steps`; S2 com uma regra `f_enter` obrigatória; `pipe2_request_reset()` entre
@@ -1164,7 +1243,9 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     no mesmo pedido → fica (`'once'`); depois de `pipe2_request_reset()` → S3.
   - `::concurrent_last_mandatory` (Review Focus do plano geral): duas obrigatórias por fechar em S1, `p2v_race` com dois
     `pipe2_race.php` (uma tarefa cada) → as duas `done`, exatamente 1 `p2_front` S1→S2, a frente em S2 (não S3), as
-    tarefas `f_enter` de S2 criadas uma vez. 5 rondas, cada uma com um negócio novo; todas têm de passar.
+    tarefas `f_enter` de S2 criadas uma vez, e exatamente 1 linha de `deal_line_steps` por (frente, sub-etapa, ciclo)
+    (`SELECT line_id, stage_id, cycle_ym, COUNT(*) … GROUP BY … HAVING COUNT(*) > 1` vazio). 5 rondas, cada uma com um
+    negócio novo; todas têm de passar.
   - `::conditional_update`: dois `pipe2_front_enter` com a mesma frente lida antes → o 2.º devolve `'lost'` e não
     regista nada.
   - `::switches`: `funnels.auto_advance 0` → `'off'`; `funnel_stages.auto_advance 0` → `'off'`; frente 0 → `'off'`;
@@ -1208,7 +1289,19 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   (avanço automático) e **não nasce nenhuma instância nova** em S1 (`COUNT` das tarefas da série = 1, `task_done`
   devolve `null`); `::series_counts_once` — S1 com a semanal obrigatória e outra obrigatória por fazer: fechar a semanal
   → nasce a seguinte com `is_gate 0`; fechar a outra → a frente avança (a instância aberta da série não bloqueia o gate)
-  e essa instância fica aberta em S1; fechá-la depois → `null` (a frente já saiu).
+  e essa instância **fecha pelo sistema** no mesmo movimento (§34.11 T4, D18): `status 'done'`, `done_at` preenchido,
+  uma linha `task_log 'done'` com `user_id` NULL e a nota «Fechada pelo sistema: a frente saiu da sub-etapa», nenhum
+  `deal_history 'task_done'` dela e nenhuma instância nova (`COUNT` das abertas da série = 0); o id está em
+  `pipe2_moves()[…]['closed']`. `::closes_on_leave` — uma série aberta em S1 fecha também quando: a frente é movida à mão
+  para S2 (`pipe2_front_move`, sessão 99) e quando passa por força de admin; a frente fica `depwait` no fim de S1 (uma
+  ligação por cumprir para S2); com ciclo novo (avença em Pronto, `pipe2_front_enter` da 1.ª sub-etapa com
+  `why 'cycle'` e `cycle '2026-12'`, como o fará o relógio da tarefa 12) fecham as abertas do ciclo antigo em todas as
+  sub-etapas da frente e as do ciclo novo não; uma série de **outra** frente na mesma sub-etapa e uma tarefa sem
+  `repeat_rule` ficam abertas. `::back_move_keeps_open` — S2 com uma obrigatória por fazer e uma série semanal
+  (`is_gate 0`) com duas instâncias abertas, A e B (`p2v_task`); `pipe2_front_undo` para S1 → A e B continuam abertas;
+  `task_done(A)` com a frente em S1 → `null` (nenhuma nova); a frente volta a S2 (`pipe2_front_move` humano, gate de S1
+  completo) e `task_done(B)` → nasce a seguinte, C (a série continua); fechar a obrigatória de S2 → a frente avança e C
+  fecha pelo sistema.
 - [ ] **Step 4: Correr e ver falhar.** `php tests/pipe2_autoadvance_test.php; php tests/pipe2_undo_test.php; php tests/pipe2_deps_test.php; php tests/pipe2_fronts_test.php; php tests/pipe2_repeat_test.php`.
 - [ ] **Step 5: Implementar** `pipe2_engine.php`, `pipe2_race.php` e os ganchos.
 - [ ] **Step 6: Correr e ver passar** os cinco + `php tests/pipe2_dedup_test.php; php tests/pipe2_noise_test.php; php tests/pipe2_v1_unchanged_test.php; php tests/pipe2_includes_test.php`
@@ -1239,14 +1332,15 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
 - Consumes: tarefas 2, 3, 5, 9, 10.
 - Produces:
   ```php
-  function pipe2_on_deal_enter(PDO $pdo, array $deal, array $stage, ?int $by): int;  // Kickoff → pipe2_kickoff; depois pipe2_run_rules('enter'); Concluído → xsell_after_delivery com os funis das frentes vivas; devolve tarefas criadas
-  function pipe2_kickoff(PDO $pdo, array $deal, ?int $by = null): array;     // idempotente: pipe2_kickoff_fronts, pipe2_category_store, pipe2_deps_instantiate, pipe2_store_values; ['created','queued','deps','category']; não entra em pipe2_moves (o «Anular» do Kickoff usa o snapshot, D29)
+  function pipe2_on_deal_enter(PDO $pdo, array $deal, array $stage, ?int $by): int;  // tudo dentro de pipe2_lock_deal (reentrante), relendo o negócio depois do lock: Kickoff → pipe2_kickoff; depois pipe2_run_rules('enter'); Concluído → xsell_after_delivery com os funis das frentes vivas; devolve tarefas criadas
+  function pipe2_kickoff(PDO $pdo, array $deal, ?int $by = null): array;     // idempotente também em concorrência (Review Focus 7): pipe2_lock_deal; transação própria (ou a de quem chamou, se houver) com SELECT id FROM deals WHERE id = ? FOR UPDATE (sem FOR UPDATE em SQLite, como deal_assign_code); relê o negócio (deal_get) e as frentes (pipe2_fronts) — o $deal recebido só dá o id; negócio já fora do Kickoff ou da fase production → tudo vazio; senão pipe2_kickoff_fronts, pipe2_category_store, pipe2_deps_instantiate, pipe2_store_values (nenhuma destas abre transação própria: abriria «already an active transaction»); commit da própria antes de soltar o lock (finally; rollback e relança em erro, apanhado pelo gancho); ['created','queued','deps','category']; não entra em pipe2_moves (o «Anular» do Kickoff usa o snapshot, D29)
   function pipe2_front_concluded(array $line, string $today): bool;          // D16
   function pipe2_fronts_missing(PDO $pdo, array $deal, string $today): array; // «<Serviço> (<sub-etapa>)», «<Serviço> (à espera de <A>)», «<Serviço> (por começar)», «<Serviço> (avença até dd/mm/aaaa)»
   function pipe2_close_missing(PDO $pdo, array $deal): array;               // E2: pipe2_deal_gate(Entrega) por cumprir + pipe2_fronts_missing
+  function pipe2_close_auto_missing(PDO $pdo, array $deal): array;          // D16: o que falta para o Concluído poder ser do sistema — ['Aprovação final'] se nenhuma obrigatória do gate da Entrega (do negócio na Entrega ou com gate_stage_id = Entrega) tem o título normalizado a começar por «aprovação final», ['Pagamento final'] se nenhuma tem doc_kind 'payment'; [] = pode concluir sozinho (feitas ou não: isso é o pipe2_close_missing)
   function pipe2_gate_missing(PDO $pdo, array $deal, array $from, array $to): array;  // ramo v2 de flow_gate_check: para trás []; uma etapa de cada vez (etapas vivas de negócio do funil); Kickoff → Em execução: gate do Kickoff; Em execução → Entrega: frentes; Entrega → Concluído: pipe2_close_missing; as outras: pipe2_deal_gate da origem
   function pipe2_deal_system_move(PDO $pdo, array $deal, array $to, string $note, int $expectStageId): string;  // 'moved'|'deferred'|'blocked'|'stale'; dentro do lock do negócio (quem chama já o tem): relê deals.stage_id e, se já não é $expectStageId (outro pedido moveu), devolve 'stale' sem mexer; senão deal_move com ['system'=>true,'note'=>…]; regista ['kind'=>'deal', …, 'undoable' => $to['kind'] !== 'done']
-  function pipe2_deal_reevaluate(PDO $pdo, int $dealId, string $why = ''): string;  // 'started'|'to_exec'|'to_delivery'|'back_exec'|'done'|'blocked'|'deferred'|'idle' (D6, D16)
+  function pipe2_deal_reevaluate(PDO $pdo, int $dealId, string $why = ''): string;  // 'started'|'to_exec'|'to_delivery'|'back_exec'|'done'|'blocked'|'no_mandatory'|'deferred'|'idle' (D6, D16)
   function pipe2_conclude_delivered(PDO $pdo, array $deal): void;           // E6
   ```
   `pipe2_deal_reevaluate` (com `pipe2_lock_deal` e `pipe2_once('deal:'.id)` para os movimentos). **Concorrência**
@@ -1260,10 +1354,18 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   `running`), «Em execução» (nota «Uma frente começou»). **Em execução** — todas concluídas → `pipe2_run_rules('all_ready')`
   e «Entrega e pagamento final» (nota «Todas as frentes prontas»); senão, com ≥ 1 concluída,
   `pipe2_note('Pronto para a Entrega — falta: ' . implode(', ', pipe2_fronts_missing(...)))`. **Entrega** — uma frente
-  não concluída → volta a «Em execução» (nota «Voltou a Em execução: <serviço> saiu de Pronto»); senão
-  `pipe2_close_missing` vazio → «Concluído» (nota «Concluído automático: aprovação final e pagamento final validados»)
-  e `pipe2_conclude_delivered`; senão, se `$why = 'done'`, `pipe2_note('Pronto para concluir — falta: …')`. Com uma
-  transação aberta → `'deferred'` (Review Focus 1).
+  não concluída → volta a «Em execução» (nota «Voltou a Em execução: <serviço> saiu de Pronto»); senão, com
+  `pipe2_close_missing` vazio: se `pipe2_close_auto_missing` também está vazio → «Concluído» (nota «Concluído
+  automático: aprovação final e pagamento final validados») e `pipe2_conclude_delivered`; se não está (D16: a Entrega não
+  tem como obrigatórias a aprovação final e o pagamento final — por exemplo um funil sem regras de fecho) → não move,
+  devolve `'no_mandatory'` e, se `$why ≠ 'cron'`, `pipe2_note('Pronto para concluir: conclui-se à mão (a Entrega não tem
+  como obrigatória: ' . implode(', ', …) . ').')`; com `pipe2_close_missing` por cumprir → `'blocked'` e, se
+  `$why = 'done'`, `pipe2_note('Pronto para concluir — falta: …')`. Com uma transação aberta → `'deferred'` (Review
+  Focus 1). **`flow_on_enter` do Kickoff** (Review Focus 7): `pipe2_on_deal_enter` toma `pipe2_lock_deal` antes de
+  tudo e `pipe2_kickoff` faz o resto (transação, `FOR UPDATE`, releitura, commit antes de soltar), por isso dois
+  `deal_move` para o Kickoff ao mesmo tempo criam as frentes, os passos, as ligações e as tarefas `enter` uma vez; o
+  `deal_history 'stage'` pode ficar duas vezes nesse caso — é o `deal_move` da v1, que não muda nesta fase, e o teste não
+  o conta.
 - [ ] **Step 1: Escrever `tests/pipe2_engine_test.php`** (negócios `p2v_deal`, regras de fecho `p2v_closing_rules` nas
   Entregas dos funis de teste):
   - `::kickoff_creates_fronts`: `deal_move` de Aguardar feedback (com o gate cumprido ou forçado por admin) para o
@@ -1271,6 +1373,18 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     (`3D:Lighting e render → Edição:Picture lock`, `VFX:Finais e QC → Edição:Picture lock`, D8), `deals.category 'postprod'`
     com `category_at`, valores das frentes, e as regras `enter` do Kickoff criadas uma vez.
   - `::kickoff_idempotent`: `flow_on_enter` do Kickoff duas vezes → as mesmas contagens.
+  - `::kickoff_reread_after_lock` (determinístico, Review Focus 7): ler o negócio no Kickoff com as frentes `planned`
+    (`$velho`), chamar `pipe2_kickoff($tp, $velho)` e outra vez com o mesmo `$velho` (que ainda diz `planned`) → a 2.ª
+    devolve `created`, `queued` e `deps` vazios, sem exceção (nenhum «Duplicate entry» do UNIQUE `deal_id, funnel_id`),
+    e as contagens de `deal_lines`, `deal_line_steps` e `deal_line_deps` do negócio não mudam; com o negócio já em Em
+    execução (UPDATE direto) e um `$velho` do Kickoff → não faz nada.
+  - `::kickoff_race` (Review Focus 7, M4): negócio `vfx,3d,ed` em Aguardar feedback com as frentes `planned` e uma regra
+    `enter` obrigatória no Kickoff; `p2v_race` com dois `pipe2_race.php --do=deal_move --deal=<id> --stage=<Kickoff>
+    --force=teste --uid=1` (cada um leu o negócio antes do sinal) → os dois com código 0, sem «Warning» nem «Duplicate
+    entry» em `err`; exatamente 3 `deal_lines` (1 `is_main`), todas `queued`; 6 linhas de `deal_line_steps` por frente
+    (ciclo `''`), sem repetidos por (frente, sub-etapa, ciclo); 2 `deal_line_deps` (as de `::kickoff_creates_fronts`);
+    1 tarefa da regra do Kickoff (`COUNT` por `auto_rule_id`); 1 `deal_history 'p2_category'`. O número de
+    `deal_history 'stage'` não se verifica (v1). 5 rondas, cada uma com um negócio novo; todas têm de passar.
   - `::kickoff_gate_starts_fronts`: fechar a obrigatória do Kickoff → as 3 frentes entram na 1.ª sub-etapa (nenhuma
     ligação do modelo chega a uma 1.ª sub-etapa), negócio em «Em execução», `deal_history 'stage'` com `user_id` NULL e
     nota «Uma frente começou»; com uma ligação manual para a 1.ª sub-etapa de Ed, Ed fica `depwait` com `stage_id` NULL;
@@ -1286,6 +1400,15 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     `pipe2_note()` contém exatamente «Pronto para a Entrega — falta: 3D (Animação)».
   - `::done_gate`: na Entrega, `deal_move` humano para Concluído com obrigatórias por fazer → `GateBlocked` com os
     títulos; uma avença por terminar mantém o negócio em Em execução (`pipe2_fronts_missing` com «(avença até …)»).
+  - `::done_needs_mandatory` (D16): negócio v2 vfx+3d num funil de teste **sem** regras na Entrega (nem
+    `p2v_closing_rules`), as duas frentes Prontas e o negócio na Entrega → `pipe2_deal_reevaluate($id, 'done')` devolve
+    `'no_mandatory'`, o negócio fica na Entrega (nenhum `deal_history 'stage'` novo, `delivered_at` NULL) e
+    `pipe2_note()` contém exatamente «Pronto para concluir: conclui-se à mão (a Entrega não tem como obrigatória:
+    Aprovação final, Pagamento final).»; com só as 4 regras de `PIPE_RULES_DELIVERY` (sem «Validar pagamento final»),
+    todas feitas → `'no_mandatory'` e a nota só com «Pagamento final»; com uma regra de pagamento mas sem a de aprovação →
+    só «Aprovação final»; o tick (`$why 'cron'`) também não move e não deixa nota; um `deal_move` humano (sessão 99) para
+    Concluído passa (gate cumprido) e marca o negócio `done`. (Os funis de `p2v_funnel` nascem sem regras, como os de
+    `funnel_create` com `$v2 = true`, D2.)
   - `::auto_done_delivered_at`: fechar «Aprovação final…», «Enviar entregáveis finais…» (feita às 10:00), «Documento de
     direitos…», «Emitir fatura final» (por `flow_complete_doc_tasks`) e «Validar pagamento final» → Concluído
     automático, `delivered_at` = `done_at` de «Enviar entregáveis finais…», `deal_history 'delivered'` com `user_id`
@@ -1363,7 +1486,9 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   function pipe2_invoice_request(PDO $pdo, array $deal, array $task, array $in, ?int $by = null): array;  // fin_request_invoice + UPDATE fin_docs.task_id; ['id' => int, 'code' => 'FAT-…'] (nunca o NIF)
   function pipe2_invoice_state(PDO $pdo, int $taskId): ?array;   // ['status' => código FIN_ST, 'label' => FIN_ST[...], 'code' => req_code]; sem NIF nem valores
   ```
-  `pipe2_billing_tick`: por cada frente v2 avença viva (negócios em produção), por esta ordem e com as duas condições
+  `pipe2_billing_tick`: por cada frente v2 avença viva (negócios em produção), com `pipe2_lock_deal` do negócio e
+  **relendo o negócio e a frente depois do lock** (try/catch por negócio, como o `pipe2_tick`; as linhas de passos do
+  ciclo novo nascem por `pipe2_step_row`, que também toma o lock), por esta ordem e com as duas condições
   de D15 **separadas**: (1) terminada (`pipe2_billing_ended`) e não Pronta final → Pronto final (`why 'cancel'` se
   cancelada, senão `'cycle'`, nota «Avença terminou») e passa à frente seguinte; (2) **fatura**: para cada regra
   `fee_day` ativa da Em execução do funil da frente com `pipe2_billing_invoice_due($line, $today, trig_n ?: 1)` →
@@ -1523,7 +1648,7 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   function pipe2_undo_offer(array $moves): bool;              // false se algum não se desfaz (D13)
   function pipe2_undo_snapshot(PDO $pdo, array $deal): array; // só v2: ['lines' => [[id, status, stage_id, exec_owner_id, value]], 'steps_max', 'deps_max', 'category', 'category_at']; v1 → []
   function pipe2_undo_check(PDO $pdo, array $moves): void;    // cada frente/negócio continua no 'to' do seu movimento (do último para o primeiro); senão RuntimeException('O registo mudou entretanto; não foi anulado.')
-  function pipe2_undo_moves(PDO $pdo, array $moves): void;    // do último para o primeiro: repõe frente/negócio, linhas de passos, met_at; apaga as tarefas criadas ainda por fazer, o histórico, os stage_events, os passos novos e os avisos
+  function pipe2_undo_moves(PDO $pdo, array $moves): void;    // do último para o primeiro: repõe frente/negócio, linhas de passos, met_at; reabre as instâncias de séries fechadas pelo sistema ('closed': estado e done_at de antes) e apaga as linhas de task_log desse fecho; apaga as tarefas criadas ainda por fazer, o histórico, os stage_events, os passos novos e os avisos
   function pipe2_undo_kickoff(PDO $pdo, array $snap): void;   // D29
   ```
   Ganchos em `undo.php`: `undo_push` — `require_once pipe2_engine.php` e `pipe2_undo.php`; com `pipe2_moves()` não vazio,
@@ -1539,6 +1664,10 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
     tarefa volta a `todo`, a frente a S1 (estado e `stage_entered_at` de antes), a tarefa de S2 apagada, os
     `deal_history`/`stage_events` do movimento apagados, as linhas de passos como estavam; a mensagem «Tarefa reposta.».
   - `::cascade_with_release`: o movimento de A libertou B → o «Anular» repõe B em `depwait` e o `met_at` a NULL.
+  - `::undo_reopens_closed_series` (D18): S1 com uma série aberta e a última obrigatória por fechar; `task_done` da
+    obrigatória → a frente em S2 e a série fechada pelo sistema; `undo_run` → a frente em S1, a instância da série outra
+    vez aberta (estado e `done_at` de antes) e sem a linha de `task_log` do fecho; o `task_log` da obrigatória fica como
+    o «Anular» da v1 o deixa.
   - `::undo_kickoff_removes_fronts`: `deal_move` para o Kickoff de um negócio só com a principal por criar e um serviço
     `planned` → `undo_apply('deal_stage', …)` apaga a principal criada, o serviço volta a `planned`, 0 linhas de passos
     e de ligações, `category` e `category_at` como estavam; com um cartão num quadro da frente → «Já há trabalho no
@@ -1630,7 +1759,8 @@ Ficheiros existentes partilhados: `admin/inc/pipeline.php` (3 → 11); `admin/in
   superpowers:systematic-debugging: o caminho exato do diff diz o gancho; corrigir na tarefa dona do ficheiro.
 - [ ] **Step 4: Escrever a §10.34** (10 a 14 linhas, estilo da 10.33): os 15 módulos e o que cada um faz numa frase;
   como se reconhece um negócio v2 (D1); o passo 44; os ganchos por ficheiro; «Sistema»; o que fica para a fase 2 (D30);
-  a ordem de publicação e a reversão (Global Constraints); a decisão D21 por confirmar; os testes `pipe2_*` novos. Sem
+  a ordem de publicação e a reversão (Global Constraints); as decisões por confirmar (D21; D18: as séries não fecham
+  num movimento para trás); os testes `pipe2_*` novos. Sem
   «§» em texto de interface (a especificação pode citar secções).
 - [ ] **Step 5: Bateria inteira.** `for t in tests/pipe2_*_test.php; do php "$t" > /tmp/p2_$$.txt 2>&1 || { echo "FALHOU $t"; tail -5 /tmp/p2_$$.txt; }; done`
   e `bash /tmp/claude-0/-home-user-portfolio-website/07a7b6fb-2708-535b-b71f-5de7fa1226a8/scratchpad/suite33.sh`

@@ -329,7 +329,7 @@ function budget_proposal_block(array $v, bool $editable, string $opt = 'A', ?PDO
 /** As condições de pagamento por defeito para esta versão (Definições: 50/50; 40/40/20 acima do limite; Marketing Buddy mensal). */
 function flow_payment_default_view(PDO $pdo, array $v, array $deal): string {
     require_once __DIR__ . '/pipeline_flow.php';
-    return flow_payment_default($pdo, max((float)$v['price'], (float)($v['price_b'] ?? 0)), $deal['funnel_id'] ? (int)$deal['funnel_id'] : null);
+    return flow_payment_default($pdo, max((float)$v['price'], (float)($v['price_b'] ?? 0)), $deal['funnel_id'] ? (int)$deal['funnel_id'] : null, $deal);
 }
 
 /** Os separadores Opção A / Opção B, com o preço de cada uma. */

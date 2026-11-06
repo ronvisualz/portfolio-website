@@ -15,6 +15,8 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';   // as repetições das tarefas de frente da Pipeline v2 (task_repeat_next)
+
 const TASK_STATUS = [
     'todo'   => 'A fazer',
     'doing'  => 'Em curso',
@@ -359,6 +361,9 @@ function task_done(PDO $pdo, int $id): ?int {
             relation_touch($pdo, (int)$t['contact_id'], null, ($t['kind'] ?? '') === 'relation' ? 'Follow-up feito' : task_kind_info($t['kind'])[0] . ' feita');
         }
     }
+    // Pipeline v2 (§34.11 E4, T4): a frente reavalia-se antes da repetição (se avançar, a série fecha). Num negócio v1
+    // o gancho não escreve nada; nunca anula a tarefa feita.
+    try { require_once __DIR__ . '/pipe2_engine.php'; pipe2_task_changed($pdo, $t, 'done'); } catch (Throwable $e) { error_log('[topper] pipe2 task_done: ' . $e->getMessage()); }
     return task_repeat_next($pdo, $t);
 }
 
@@ -366,6 +371,11 @@ function task_done(PDO $pdo, int $id): ?int {
 function task_repeat_next(PDO $pdo, array $t): ?int {
     $step = ['daily' => '+1 day', 'weekly' => '+1 week', 'monthly' => '+1 month'][$t['repeat_rule'] ?? ''] ?? null;
     if (!$step) return null;
+    // Pipeline v2 (§34.11 T4): numa tarefa de frente a seguinte copia a frente, a sub-etapa, a regra, o documento e o
+    // ciclo (sem a obrigatória); com a frente fora da sub-etapa, a série fecha. Numa tarefa v1, [] (tudo como antes).
+    require_once __DIR__ . '/pipe2_tasks.php';
+    $extra = pipe2_repeat_extra($pdo, $t);
+    if ($extra === null) return null;
     $base = $t['due_date'] ?: date('Y-m-d');
     $next = (new DateTimeImmutable($base))->modify($step)->format('Y-m-d');
     $member = $t['member_id'] !== null ? (int)$t['member_id'] : null;
@@ -375,7 +385,12 @@ function task_repeat_next(PDO $pdo, array $t): ?int {
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'todo\',?,?,?,?)')
         ->execute([$t['title'], $t['description'], $member, $t['job_name'], $t['deal_id'], $t['contact_id'] ?? null, $next, $t['due_time'], $t['duration_min'],
                    $t['kind'] ?: 'task', $t['repeat_rule'], $t['priority'], task_next_position($pdo, $member), $now, $now, $t['created_by']]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    if ($extra) {
+        $pdo->prepare('UPDATE tasks SET line_id = ?, stage_id = ?, auto_rule_id = ?, doc_kind = ?, cycle_ym = ?, is_gate = ? WHERE id = ?')
+            ->execute([$extra['line_id'], $extra['stage_id'], $extra['auto_rule_id'], $extra['doc_kind'], $extra['cycle_ym'], $extra['is_gate'], $id]);
+    }
+    return $id;
 }
 
 /** Reabre uma feita na pilha $member (null = Por atribuir), no fim. */
@@ -401,7 +416,8 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
         $oldMember = $row['member_id'] !== null ? (int)$row['member_id'] : null;
 
         // Tirada da coluna «Feito» para uma pilha: volta a «A fazer», no fim.
-        if ($row['status'] === 'done') {
+        $reopened = $row['status'] === 'done';
+        if ($reopened) {
             $pdo->prepare("UPDATE tasks SET status = 'todo', done_at = NULL, member_id = ?, position = ?, updated_at = ? WHERE id = ?")
                 ->execute([$member, task_next_position($pdo, $member), task_now(), $id]);
             $oldMember = $member;
@@ -432,11 +448,15 @@ function task_move(PDO $pdo, int $id, ?int $member, array $order = []): array {
         foreach ($final as $i => $o) $up->execute([$i + 1, $o]);
 
         $pdo->commit();
-        return $final;
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+    // Pipeline v2 (§34.11 E4): reabrir uma obrigatória reavalia a frente (nunca a recua). Num negócio v1 não escreve nada.
+    if ($reopened) {
+        try { require_once __DIR__ . '/pipe2_engine.php'; pipe2_task_changed($pdo, task_by_id($pdo, $id) ?? ['id' => $id], 'reopen'); } catch (Throwable $e) { error_log('[topper] pipe2 task_move: ' . $e->getMessage()); }
+    }
+    return $final;
 }
 
 /** «12 out» para os cartões; vazio sem prazo. */

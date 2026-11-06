@@ -15,6 +15,7 @@ if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/leads.php';          // now_php, lisbon_fmt, member_for_user, lead_setting
 require_once __DIR__ . '/interactions.php';   // timeline_html, HISTORY_TYPES
+require_once __DIR__ . '/pipe2.php';           // a reatribuição da Pipeline v2 (team_reassign)
 
 const TEAM_WORK_DEFAULT = [1 => ['09:00', '18:00'], 2 => ['09:00', '18:00'], 3 => ['09:00', '18:00'], 4 => ['09:00', '18:00'], 5 => ['09:00', '18:00']];
 const TEAM_DAYS = [1 => 'seg', 2 => 'ter', 3 => 'qua', 4 => 'qui', 5 => 'sex', 6 => 'sáb', 7 => 'dom'];
@@ -511,6 +512,8 @@ function team_reassign(PDO $pdo, array $from, array $to): array {
     if (db_has_table($pdo, 'mkt_pieces')) $pdo->prepare("UPDATE mkt_pieces SET owner_id = ? WHERE owner_id = ? AND (stage IS NULL OR stage <> 'publicado')")->execute([$t, $f]);
     $pdo->prepare('UPDATE users SET reports_to = ? WHERE reports_to = ?')->execute([$t, $f]);
     $pdo->prepare('UPDATE departments SET head_user_id = NULL WHERE head_user_id = ?')->execute([$f]);
+    // Pipeline v2: a execução dos negócios e das frentes v2 abertos (nunca impede a reatribuição da v1)
+    try { require_once __DIR__ . '/pipe2_tasks.php'; pipe2_team_reassign($pdo, $f, $t); } catch (Throwable $e) { error_log('[topper] pipe2 team_reassign: ' . $e->getMessage()); }
     return $before;
 }
 

@@ -2593,6 +2593,38 @@ cada correção tem um teste que falhava antes dela.
 - **Testes `pipe2_*`:** lib, core, schema, codes, model, filters, screens, includes, v1_unchanged (a v1 migrada = a
   da 42) e rollback (o código revertido numa cópia migrada).
 
+### 10.34 Pipeline v2 — fase 1: frentes, motor de avanço e regras — §34.11 (6 nov 2026)
+
+- **Só nos negócios v2** (D1): `pipe2_deal_is_v2` = passo 43 corrido (`pipe2_schema_ready`) e o funil com etapas vivas
+  de `role` `exec` **e** `delivery` (sem `service_code` nem bandeira). Até ao «Aplicar» só cumprem Motion Design,
+  Composit e Edição (inativos, sem negócios) e os funis dos testes. Sem ecrãs nem ações POST novos.
+- **15 módulos `inc/pipe2_*.php`:** `category` (Pós-produção → CGI → sem; gravada no Kickoff), `fronts` (predicado,
+  frentes, chefe do serviço, valores), `notify` (avisos, um por chave), `deps` (modelos e ligações diretas, plano em
+  dias úteis, replaneamento, datas), `access` (leitura e ações por frente), `risk` (os 4 motivos), `metrics` (por
+  serviço e frente; margem só com Financeiro), `tasks` (regras de dois níveis, deduplicação, gates, repetições,
+  apagamentos, reatribuição), `engine` (avanço só com obrigatórias, um passo por pedido, interruptores, «Desfazer»),
+  `deal` (Kickoff, Em execução → Entrega → Concluído, «Pronto para a Entrega — falta: …»), `billing` (avença,
+  pagamento final, pedido de fatura), `tick` (relógio), `leads` (serviços em códigos), `undo` («Anular» em cascata e
+  do Kickoff), `cc` (Review e rondas por frente).
+- **Passo 44** (`inc/migrate_pipeline2_44.php`, o lock do 43): `pipe2_notices`, `stage_automations.action`/`trig_n`,
+  `tasks.gate_stage_id`. **Ganchos** de uma ou duas linhas (o `require_once` do módulo dentro da função), no-op na v1:
+  `inc/pipeline.php`, `inc/pipeline_flow.php`, `inc/tasks.php`, `inc/xsell.php`, `inc/undo.php`, `inc/deals.php`,
+  `inc/metrics.php`, `inc/fin.php`, `inc/team.php`, `inc/cc_review.php`, `inc/alerts.php`, `inc/leads.php`,
+  `inc/budget.php`, `inc/budget_view.php`, `calendar.php`, `deal_flow.php`, `funis.php`. **«Sistema»:** os movimentos
+  automáticos gravam `user_id` NULL mesmo com sessão e o motor nunca chama `can()`. Na v1 só mudam, de propósito, o
+  registo dos apagamentos da Agenda (`task_deletions`, guardado) e a guarda de `del_stage`.
+- **Por confirmar com o utilizador:** D21 (`del_stage` recusa qualquer etapa com frentes ou tarefas, também na v1) e
+  D18 (as repetições fecham quando a frente conclui a sub-etapa; **para trás não fecham** — a alternativa é fechar).
+- **Fase 2** (D30): interface, rótulos dos `p2_*`, «Pedir fatura», execução Interna/Externa, Topperspace, métricas e
+  «Em risco» nos ecrãs, `deal_stale_days` 5. **Ordem ao publicar** (fase 0 já migrada: 43 e `pipe2_seeded`):
+  `inc/pipe2.php` → os 15 módulos → os ficheiros com ganchos → `inc/migrate_pipeline2_44.php` → `inc/migrate.php`.
+- **Reversão:** repor a fase 0 (8c581ae) inteira; a base fica na 44 (o `inc/migrate.php` da fase 0 não migra nem
+  desfaz) e não há negócios v2 antes do «Aplicar». Prova: `pipe2_rollback_test::phase1_rollback`.
+- **Testes `pipe2_*` novos:** schema44, v2_lib, category, fronts, notify, deps, perm, risk, metrics, totals, dedup,
+  repeat, noise, reassign, autoadvance, engine, close, billing, monthly, invoice, tick, dates, lead_services, undo, cc,
+  review, stage_guard e v1_hooks (um cenário v1 inteiro dá o mesmo com o código de agora e com o da fase 0); includes
+  verifica o `require_once` do módulo de cada função chamada.
+
 ### 10.23 Dashboard Executivo — §30 (24 out 2026)
 
 **Base de dados — passo 34** (`inc/migrate_exec.php`): `fin_assets` (ativos: valor, data, taxa, motorização das

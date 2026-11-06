@@ -13,7 +13,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 /** A versão que este código espera encontrar. */
-const SCHEMA_VERSION = 43;
+const SCHEMA_VERSION = 44;
 
 /** MySQL em produção; SQLite só na bancada de testes local. */
 function db_is_sqlite(PDO $pdo): bool {
@@ -355,6 +355,9 @@ function run_migrations(PDO $pdo, int $from = 0): void {
     // ── 43 · Pipeline v2, fase 0: bandeira, serviços, sub-etapas e esquema (só acrescenta) ──
     require_once __DIR__ . '/migrate_pipeline2.php';
     migrate_pipeline2_43($pdo);
+    // ── 44 · Pipeline v2, fase 1: avisos, ação e N das regras, gate partilhado (só acrescenta) ──
+    require_once __DIR__ . '/migrate_pipeline2_44.php';
+    migrate_pipeline2_44($pdo);
 
     if (db_is_sqlite($pdo)) {
         $pdo->prepare("INSERT OR REPLACE INTO settings (skey, svalue) VALUES ('schema_version', ?)")

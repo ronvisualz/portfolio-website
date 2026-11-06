@@ -263,6 +263,9 @@ function flow_created(?array $add = null, bool $reset = false): array {
  * uma vez por mês). Devolve o id ou null (já existia).
  */
 function flow_task_from_rule(PDO $pdo, array $r, array $deal, ?array $stage, string $from, ?int $by = null): ?int {
+    // Pipeline v2: num negócio v2 a deduplicação é a de dois níveis (negócio, frente, ciclo); num v1, a de sempre.
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (!empty($deal['_v2']) || pipe2_deal_is_v2($pdo, $deal)) { require_once __DIR__ . '/pipe2_tasks.php'; return pipe2_task_from_rule($pdo, $r, $deal + ['_v2' => true], $stage, $from, $by); }
     require_once __DIR__ . '/tasks.php';
     require_once __DIR__ . '/leads.php';
     // Nas mensais, uma por mês (o prazo é o dia do mês em que foi criada).
@@ -293,27 +296,42 @@ function flow_task_from_rule(PDO $pdo, array $r, array $deal, ?array $stage, str
     return $id;
 }
 
-/** O negócio entrou numa etapa: regista a hora e corre as regras «entra na etapa». Devolve quantas tarefas criou. */
-function flow_on_enter(PDO $pdo, int $dealId, int $stageId): int {
+/**
+ * O negócio entrou numa etapa: regista a hora e corre as regras «entra na etapa». Devolve quantas tarefas criou.
+ * Pipeline v2 (só num negócio v2): as regras das etapas comuns e o Kickoff das frentes são do motor do negócio
+ * (pipe2_on_deal_enter); $o['system'] = movimento do sistema (as tarefas ficam sem autor). Um erro do motor fica no
+ * error_log e nunca desfaz o movimento.
+ */
+function flow_on_enter(PDO $pdo, int $dealId, int $stageId, array $o = []): int {
     $pdo->prepare('UPDATE deals SET stage_entered_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $dealId]);
     $deal = deal_get($pdo, $dealId);
     $stage = stage_get($pdo, $stageId);
     if (!$deal || !$stage) return 0;
     $n = 0;
-    foreach (flow_rules($pdo, $stageId, true) as $r) {
-        if ($r['trig'] !== 'enter') continue;
-        if (flow_task_from_rule($pdo, $r, $deal, $stage, today_lisbon(), current_user()['id'] ?? null)) $n++;
-    }
-    if ($n) deal_log($pdo, $dealId, 'auto', ['note' => $n === 1 ? '1 tarefa automática criada (' . $stage['name'] . ')' : $n . ' tarefas automáticas criadas (' . $stage['name'] . ')']);
-    // Crosselling (§22): as etapas comerciais juntam as automações dos serviços adicionais; no
-    // Kickoff abrem-se as frentes; no fecho as frentes sincronizadas concluem com o negócio.
-    require_once __DIR__ . '/xsell.php';
-    if (xsell_is_multi($pdo, $deal)) {
-        if (in_array($stage['kind'], ['xray', 'commercial'], true)) $n += xsell_shared_rules($pdo, $deal, $stageId);
-        if ($stage['kind'] === 'kickoff') xsell_kickoff($pdo, $deal);
-        if ($stage['kind'] === 'done') xsell_close($pdo, $deal);
-    } elseif ($stage['kind'] === 'done') {
-        xsell_after_delivery($pdo, $deal, [(int)$deal['funnel_id']]);
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($pdo, $deal)) {
+        try {
+            require_once __DIR__ . '/pipe2_deal.php';
+            $n = pipe2_on_deal_enter($pdo, $deal, $stage, !empty($o['system']) ? null : (current_user()['id'] ?? null));
+        } catch (Throwable $e) {
+            error_log('[topper] pipe2 flow_on_enter (negócio ' . $dealId . '): ' . $e->getMessage());
+        }
+    } else {
+        foreach (flow_rules($pdo, $stageId, true) as $r) {
+            if ($r['trig'] !== 'enter') continue;
+            if (flow_task_from_rule($pdo, $r, $deal, $stage, today_lisbon(), current_user()['id'] ?? null)) $n++;
+        }
+        if ($n) deal_log($pdo, $dealId, 'auto', ['note' => $n === 1 ? '1 tarefa automática criada (' . $stage['name'] . ')' : $n . ' tarefas automáticas criadas (' . $stage['name'] . ')']);
+        // Crosselling (§22): as etapas comerciais juntam as automações dos serviços adicionais; no
+        // Kickoff abrem-se as frentes; no fecho as frentes sincronizadas concluem com o negócio.
+        require_once __DIR__ . '/xsell.php';
+        if (xsell_is_multi($pdo, $deal)) {
+            if (in_array($stage['kind'], ['xray', 'commercial'], true)) $n += xsell_shared_rules($pdo, $deal, $stageId);
+            if ($stage['kind'] === 'kickoff') xsell_kickoff($pdo, $deal);
+            if ($stage['kind'] === 'done') xsell_close($pdo, $deal);
+        } elseif ($stage['kind'] === 'done') {
+            xsell_after_delivery($pdo, $deal, [(int)$deal['funnel_id']]);
+        }
     }
     // Depois da entrega o cliente entra nas Relações com o comercial como dono (§19.10).
     if ($stage['kind'] === 'done') flow_relation_after_delivery($pdo, $deal);
@@ -354,6 +372,9 @@ function flow_tick(PDO $pdo, ?string $today = null): int {
     $today ??= today_lisbon();
     require_once __DIR__ . '/xsell.php';
     xsell_tick($pdo, $today);   // as frentes que arrancam numa data
+    // Pipeline v2: o relógio dos negócios v2 (avença, replaneamento, frentes paradas, regras de data das sub-etapas,
+    // reavaliação). Sem negócios v2 não escreve nada; um erro nunca impede o relógio da v1.
+    try { require_once __DIR__ . '/pipe2_tick.php'; pipe2_tick($pdo, $today); } catch (Throwable $e) { error_log('[topper] pipe2_tick: ' . $e->getMessage()); }
     $day = (int)substr($today, 8, 2);
     $last = (int)(new DateTimeImmutable($today))->format('t');
     $n = 0;
@@ -463,6 +484,12 @@ function deal_gate_missing(PDO $pdo, array $deal, array $stage): array {
 function flow_gate_check(PDO $pdo, array $deal, array $to, string $force = ''): string {
     $from = $deal['stage_id'] ? stage_get($pdo, (int)$deal['stage_id']) : null;
     if (!$from || (int)$from['funnel_id'] !== (int)$to['funnel_id']) return '';
+    // Pipeline v2 (só num negócio v2): o gate das etapas comuns, das frentes e do fecho (pipe2_gate_missing).
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (empty($deal['_line']) && pipe2_deal_is_v2($pdo, $deal)) {
+        require_once __DIR__ . '/pipe2_deal.php';
+        return flow_gate_result(pipe2_gate_missing($pdo, $deal, $from, $to), $from, $to, $force);
+    }
     $order = flow_order($pdo, (int)$deal['funnel_id']);
     $i = flow_index($order, (int)$from['id']);
     $j = flow_index($order, (int)$to['id']);
@@ -475,6 +502,11 @@ function flow_gate_check(PDO $pdo, array $deal, array $to, string $force = ''): 
         $missing = deal_gate_missing($pdo, $deal, $from);
         if ($j > $i + 1) $missing[] = 'avançar uma etapa de cada vez (salta ' . implode(', ', array_map(fn($s) => '«' . $s['name'] . '»', array_slice($order, $i + 1, $j - $i - 1))) . ')';
     }
+    return flow_gate_result($missing, $from, $to, $force);
+}
+
+/** O que falta para sair de $from: '' sem nada; senão GateBlocked, ou — com motivo e só admins — a nota da passagem forçada. */
+function flow_gate_result(array $missing, array $from, array $to, string $force): string {
     if (!$missing) return '';
     $force = trim($force);
     if ($force === '') throw new GateBlocked($missing, (string)$from['name']);
@@ -588,8 +620,12 @@ function flow_task_needs_doc(array $t): string {
 
 // ── proposta e resposta do cliente (§19.3, §19.4) ───────────
 
-/** Condições de pagamento por defeito (Definições), pelo valor e pelo funil. */
-function flow_payment_default(PDO $pdo, float $price, ?int $funnelId): string {
+/**
+ * Condições de pagamento por defeito (Definições), pelo valor e pelo funil. Com o negócio: uma avença da Pipeline v2
+ * (deals.billing 'monthly', que só a v2 grava) tem as condições da avença.
+ */
+function flow_payment_default(PDO $pdo, float $price, ?int $funnelId, ?array $deal = null): string {
+    if ($deal !== null && ($deal['billing'] ?? '') === 'monthly') return (string)setting($pdo, 'pay_terms_buddy', '');
     $kind = $funnelId ? (string)$pdo->query('SELECT xray_kind FROM funnels WHERE id = ' . (int)$funnelId)->fetchColumn() : '';
     if ($kind === 'buddy') return (string)setting($pdo, 'pay_terms_buddy', '');
     return $price > (float)setting($pdo, 'pay_terms_threshold', 10000) ? (string)setting($pdo, 'pay_terms_large', '') : (string)setting($pdo, 'pay_terms_default', '');
@@ -906,7 +942,7 @@ function billing_submit_invoice(PDO $pdo, array $deal, ?array $task, array $in, 
     // o mesmo PDF é o lançamento «A receber» do Financeiro (§28.3): um só (o pedido ao contabilista, se havia)
     if (db_has_table($pdo, 'fin_docs')) {
         require_once __DIR__ . '/fin.php';
-        fin_from_billing($pdo, $deal, (int)$pdo->lastInsertId(), $number, $date, $net, $vat, $total, $key, $fname, $by);
+        fin_from_billing($pdo, $deal, (int)$pdo->lastInsertId(), $number, $date, $net, $vat, $total, $key, $fname, $by, $task ? (int)$task['id'] : null);
     }
     if ($task) flow_complete_doc_tasks($pdo, (int)$deal['id'], 'invoice', (int)$task['id']);
     deal_log($pdo, (int)$deal['id'], 'billing', ['note' => 'Fatura ' . $number . ' submetida · ' . number_format($total, 2, ',', ' ') . ' € c/ IVA', 'user_id' => $by]);
@@ -924,8 +960,15 @@ function billing_validate_payment(PDO $pdo, array $deal, ?array $task, array $in
                    VALUES (?,?,\'payment\',\'\',?,0,0,?,?,?,?,?,?)')
         ->execute([$deal['id'], $task ? (int)$task['id'] : null, $date, $amount, $key, $fname, mb_substr(trim((string)($in['note'] ?? '')), 0, 255), $by, date('Y-m-d H:i:s')]);
     if ($task) flow_complete_doc_tasks($pdo, (int)$deal['id'], 'payment', (int)$task['id']);
-    // O pagamento final (pedido em Concluído) marca o negócio como pago.
+    // O pagamento final (pedido em Concluído) marca o negócio como pago; na Pipeline v2, o da Entrega (só num negócio v2).
     $final = $task && $task['stage_id'] && ($s = stage_get($pdo, (int)$task['stage_id'])) && $s['kind'] === 'done';
+    if (!$final && $task) {
+        require_once __DIR__ . '/pipe2_fronts.php';
+        if (pipe2_deal_is_v2($pdo, $deal)) {
+            require_once __DIR__ . '/pipe2_billing.php';
+            $final = pipe2_payment_is_final($pdo, $deal, $task);
+        }
+    }
     if ($final) $pdo->prepare('UPDATE deals SET is_paid = 1 WHERE id = ?')->execute([$deal['id']]);
     deal_log($pdo, (int)$deal['id'], 'billing', ['note' => 'Pagamento recebido a ' . date('d/m/Y', strtotime($date)) . ($amount > 0 ? ' · ' . number_format($amount, 2, ',', ' ') . ' €' : '') . ($final ? ' · negócio pago' : ''), 'user_id' => $by]);
     flow_on_event($pdo, (int)$deal['id'], 'paid');

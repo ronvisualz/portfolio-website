@@ -455,8 +455,8 @@ foreach ($SEEDT as $t) t_eq(p2s_sig($A, $t), $sig1[$t], "::idempotent sem pipe2_
 t_true(p2s_setting($A, 'pipe2_seeded') !== null, '::idempotent sem pipe2_seeded: a bandeira volta a ser gravada');
 $r = pipe2_sub('pipe2_v1_snap.php', ['--migrate', '--db=' . $dbA]);
 t_eq($r['code'], 0, '::idempotent run_migrations na base A (subprocesso) sai com 0' . ($r['code'] ? ' — ' . trim($r['err']) : ''));
-t_eq($r['json'], ['from' => 42, 'to' => 43], '::idempotent run_migrations da 42 para a 43');
-t_eq(p2s_setting($A, 'schema_version'), '43', '::idempotent schema_version = 43');
+t_eq($r['json'], ['from' => 42, 'to' => SCHEMA_VERSION], '::idempotent run_migrations da 42 para a SCHEMA_VERSION');
+t_eq(p2s_setting($A, 'schema_version'), (string)SCHEMA_VERSION, '::idempotent schema_version = SCHEMA_VERSION');
 foreach ($SEEDT as $t) t_eq(p2s_sig($A, $t), $sig1[$t], "::idempotent depois do run_migrations: $t igual");
 t_eq((int)p2s_val($A, 'SELECT COUNT(*) FROM stage_automations'), $dumpRules, '::idempotent depois do run_migrations: nenhuma regra nova');
 pipe2_tmpdb_drop($dbA);

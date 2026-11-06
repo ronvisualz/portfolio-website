@@ -11,6 +11,7 @@
 
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
+require_once __DIR__ . '/pipe2.php';
 require_once __DIR__ . '/reach.php';
 require_once __DIR__ . '/inline.php';
 
@@ -19,6 +20,13 @@ const UNDO_TTL = 90;
 
 /** Guarda o necessário para desfazer e devolve o código do «Anular». */
 function undo_push(string $kind, array $data): string {
+    // Pipeline v2 (D13): os movimentos que a ação provocou no mesmo pedido desfazem-se com ela; com um que não se
+    // desfaz (o Concluído automático), não há «Anular». Sem o motor carregado neste pedido não houve movimentos.
+    if (function_exists('pipe2_moves') && ($moves = pipe2_moves())) {
+        require_once __DIR__ . '/pipe2_undo.php';
+        if (!pipe2_undo_offer($moves)) return '';
+        $data['p2_moves'] = $moves;
+    }
     $now = time();
     $list = array_filter($_SESSION['undo'] ?? [], fn($u) => $u['exp'] > $now);
     $token = bin2hex(random_bytes(12));
@@ -31,8 +39,15 @@ function undo_push(string $kind, array $data): string {
 function undo_deal_snapshot(array $d): array {
     require_once __DIR__ . '/xsell.php';
     $lines = xsell_snapshot($GLOBALS['pdo'], (int)$d['id']);   // as frentes de crosselling (§22)
-    return ['id' => (int)$d['id'], 'stage_id' => $d['stage_id'], 'phase' => $d['phase'], 'done_at' => $d['done_at'],
-            'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']] + ($lines ? ['lines' => $lines] : []);
+    $snap = ['id' => (int)$d['id'], 'stage_id' => $d['stage_id'], 'phase' => $d['phase'], 'done_at' => $d['done_at'],
+             'year' => $d['year'], 'month' => $d['month'], 'last_touch' => $d['last_touch']] + ($lines ? ['lines' => $lines] : []);
+    // Pipeline v2 (D29): as frentes, os passos, as ligações e a categoria de antes, para anular o Kickoff (num v1, nada)
+    require_once __DIR__ . '/pipe2_fronts.php';
+    if (pipe2_deal_is_v2($GLOBALS['pdo'], $d)) {
+        require_once __DIR__ . '/pipe2_undo.php';
+        if ($p2 = pipe2_undo_snapshot($GLOBALS['pdo'], $d)) $snap['p2'] = $p2;
+    }
+    return $snap;
 }
 
 /** Desfaz. Devolve a mensagem; RuntimeException quando já não dá. */
@@ -47,17 +62,30 @@ function undo_run(PDO $pdo, string $token): string {
 
 /** Desfaz uma ação já validada (quem, prazo). Também usado pelas ações compostas. */
 function undo_apply(PDO $pdo, string $kind, array $d): string {
+    // Pipeline v2 (D13, D29): com os movimentos do mesmo pedido (p2_moves) ou o retrato das frentes do Kickoff (p2),
+    // tudo ou nada — no lock do negócio e numa transação, depois de verificar que nada mudou entretanto.
+    if (!empty($d['p2_moves']) || ($kind === 'deal_stage' && !empty($d['p2']))) {
+        require_once __DIR__ . '/pipe2_undo.php';
+        return pipe2_undo_apply($pdo, (array)($d['p2_moves'] ?? []), fn() => undo_apply_kind($pdo, $kind, $d), $kind === 'deal_stage' ? [(int)($d['id'] ?? 0)] : []);
+    }
+    return undo_apply_kind($pdo, $kind, $d);
+}
+
+/** O «Anular» de cada tipo de ação. */
+function undo_apply_kind(PDO $pdo, string $kind, array $d): string {
     $changed = 'O registo mudou entretanto; não foi anulado.';
 
     switch ($kind) {
         case 'multi':
-            // Várias alterações de uma vez (ex.: «Gravar» na ficha da lead): desfaz todas ou nenhuma.
-            $pdo->beginTransaction();
+            // Várias alterações de uma vez (ex.: «Gravar» na ficha da lead): desfaz todas ou nenhuma (numa
+            // transação; a de quem chamou, se já houver uma — o «Anular» em cascata da Pipeline v2).
+            $own = !$pdo->inTransaction();
+            if ($own) $pdo->beginTransaction();
             try {
                 foreach ($d['subs'] as [$k, $data]) undo_apply($pdo, $k, $data);
-                $pdo->commit();
+                if ($own) $pdo->commit();
             } catch (Throwable $e) {
-                $pdo->rollBack();
+                if ($own) $pdo->rollBack();
                 throw $e;
             }
             return $d['msg'] ?? 'Alterações repostas.';
@@ -70,6 +98,11 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
                 throw new RuntimeException('Sem permissão.');
             }
             if ((int)$deal['stage_id'] !== (int)$d['to_stage']) throw new RuntimeException($changed);
+            // Pipeline v2 (D29): anular o Kickoff tira as frentes que ele criou (recusa, antes de mexer, se já há trabalho nelas)
+            if (!empty($d['p2'])) {
+                require_once __DIR__ . '/pipe2_undo.php';
+                pipe2_undo_kickoff($pdo, (array)$d['p2']);
+            }
             $pdo->prepare('UPDATE deals SET stage_id = ?, phase = ?, done_at = ?, year = ?, month = ?, last_touch = ? WHERE id = ?')
                 ->execute([$d['stage_id'], $d['phase'], $d['done_at'], $d['year'], $d['month'], $d['last_touch'], $d['id']]);
             deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $deal['funnel_id'], 'from_stage' => $deal['stage_id'],
@@ -77,9 +110,9 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             // As tarefas automáticas que a entrada na etapa criou (§19.7) saem, se ainda ninguém lhes mexeu.
             $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
             if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
-            // Crosselling (§22): as frentes voltam como estavam (antes do Kickoff ou do fecho).
+            // Crosselling (§22): as frentes voltam como estavam (antes do Kickoff ou do fecho). Na v2, pipe2_undo_kickoff.
             require_once __DIR__ . '/xsell.php';
-            if (!empty($d['lines'])) xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
+            if (!empty($d['lines']) && empty($d['p2'])) xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
             return 'Etapa reposta.';
 
         case 'row_restore':   // um pacote ou uma regra de crosselling apagados (§22)
@@ -95,9 +128,13 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             require_once __DIR__ . '/xsell.php';
             $line = xsell_line_get($pdo, (int)$d['line']);
             if (!$line || (int)$line['stage_id'] !== (int)$d['to_stage']) throw new RuntimeException($changed);
-            xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
-            deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $line['funnel_id'], 'from_stage' => $line['stage_id'], 'to_funnel' => $line['funnel_id'],
-                                                     'to_stage' => array_column((array)$d['lines'], 'stage_id', 'id')[(int)$line['id']] ?? null, 'note' => 'Anulado']);
+            // Pipeline v2: a frente volta pela cascata (p2_moves), que deixa o «Anulado» num p2_front
+            require_once __DIR__ . '/pipe2_fronts.php';
+            if (!pipe2_deal_is_v2($pdo, $deal)) {
+                xsell_reopen($pdo, (int)$d['id'], (array)$d['lines']);
+                deal_log($pdo, (int)$d['id'], 'stage', ['from_funnel' => $line['funnel_id'], 'from_stage' => $line['stage_id'], 'to_funnel' => $line['funnel_id'],
+                                                         'to_stage' => array_column((array)$d['lines'], 'stage_id', 'id')[(int)$line['id']] ?? null, 'note' => 'Anulado']);
+            }
             $ids = array_values(array_filter(array_map('intval', (array)($d['auto_tasks'] ?? []))));
             if ($ids) $pdo->exec("DELETE FROM tasks WHERE status = 'todo' AND id IN (" . implode(',', $ids) . ')');
             return $line['funnel_name'] . ': etapa reposta.';
@@ -204,6 +241,9 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             if (array_key_exists('help_by', $d) && db_has_column($pdo, 'tasks', 'help_by')) $pdo->prepare('UPDATE tasks SET help_by = ? WHERE id = ?')->execute([$d['help_by'], $d['id']]);
             // A repetição criada ao concluir sai também (se ainda ninguém lhe mexeu).
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
+            // Pipeline v2 (E4): a tarefa reposta reavalia a frente e o negócio (num negócio v1 não escreve nada)
+            try { require_once __DIR__ . '/pipe2_engine.php'; pipe2_task_changed($pdo, task_by_id($pdo, (int)$d['id']) ?? $t, $d['status'] === 'done' ? 'done' : 'reopen'); }
+            catch (Throwable $e) { error_log('[topper] pipe2 undo task: ' . $e->getMessage()); }
             return 'Tarefa reposta.';
 
         case 'setting':
@@ -299,6 +339,9 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('UPDATE tasks SET status = ?, done_at = NULL, member_id = ?, position = ?, updated_at = ? WHERE id = ?')
                 ->execute([$d['status'], $d['member_id'], $d['position'], date('Y-m-d H:i:s'), $t['id']]);
             if (!empty($d['spawned'])) $pdo->prepare("DELETE FROM tasks WHERE id = ? AND status = 'todo'")->execute([(int)$d['spawned']]);
+            // Pipeline v2 (E4): a tarefa reposta reavalia a frente e o negócio (num negócio v1 não escreve nada)
+            try { require_once __DIR__ . '/pipe2_engine.php'; pipe2_task_changed($pdo, ['status' => $d['status']] + $t, $d['status'] === 'done' ? 'done' : 'reopen'); }
+            catch (Throwable $e) { error_log('[topper] pipe2 undo contact_task: ' . $e->getMessage()); }
             if (!empty($d['rel'])) undo_apply($pdo, 'relation_row', $d['rel']);
             return 'Tarefa reposta.';
 
@@ -413,6 +456,14 @@ function undo_apply(PDO $pdo, string $kind, array $d): string {
             $pdo->prepare('UPDATE deals SET value_estimate = ? WHERE id = ?')->execute([$d['value'], $d['deal']]);
             budget_recalc($pdo, (int)$d['version']);
             budget_log($pdo, (int)$sheet['id'], 'b_accept', 'Aceitação anulada');
+            // Pipeline v2: num negócio v2 em produção, os valores das frentes voltam a acompanhar o orçamento (num v1, nada)
+            try {
+                require_once __DIR__ . '/pipe2_fronts.php';
+                $deal = record_get($pdo, (int)$d['deal']);
+                if ($deal && $deal['phase'] === 'production' && pipe2_deal_is_v2($pdo, $deal)) pipe2_store_values($pdo, $deal);
+            } catch (Throwable $e) {
+                error_log('[topper] pipe2 undo budget_accept: ' . $e->getMessage());
+            }
             return 'Aceitação anulada.';
 
         case 'budget_tpl':

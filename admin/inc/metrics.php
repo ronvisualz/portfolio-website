@@ -78,8 +78,10 @@ function mx_event(PDO $pdo, int $dealId, string $step, array $o = []): void {
 function metrics_on_log(PDO $pdo, int $dealId, string $event, array $d): void {
     try {
         if (!metrics_ready($pdo)) return;
-        $uid = $d['user_id'] ?? (current_user()['id'] ?? null);
-        $o = ['user' => $uid, 'from' => $d['from_stage'] ?? null, 'to' => $d['to_stage'] ?? null, 'funnel' => $d['to_funnel'] ?? ($d['from_funnel'] ?? null)];
+        // 'system' => true (Pipeline v2): um movimento do sistema fica sem utilizador, mesmo com sessão; 'line': a frente
+        $uid = !empty($d['system']) ? null : ($d['user_id'] ?? (current_user()['id'] ?? null));
+        $o = ['user' => $uid, 'from' => $d['from_stage'] ?? null, 'to' => $d['to_stage'] ?? null, 'funnel' => $d['to_funnel'] ?? ($d['from_funnel'] ?? null),
+              'line' => $d['line'] ?? null];
         switch ($event) {
             case 'create':
                 mx_event($pdo, $dealId, 'lead', $o);

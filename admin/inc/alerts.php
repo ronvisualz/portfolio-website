@@ -17,6 +17,7 @@
 if (!defined('TOPPER_ADMIN')) { http_response_code(403); exit; }
 
 require_once __DIR__ . '/leads.php';
+require_once __DIR__ . '/pipe2.php';
 
 /** Os limites dos alertas (dias). */
 function alert_limits(PDO $pdo): array {
@@ -243,6 +244,17 @@ function my_alerts(PDO $pdo): array {
                               'title' => ($gate ? 'Gate de produção passado · ' : (str_contains((string)$h['note'], 'acima do incluído') ? 'Pedido de alteração · ' : 'Rondas incluídas esgotadas · ')) . $h['code'],
                               'sub' => $gate ? $h['from_name'] . ' → ' . $h['to_name'] . ' · ' . $h['name'] : $h['note'],
                               'url' => can('negocios') ? '/admin/negocio.php?id=' . (int)$h['deal_id'] : '/admin/pipeline.php?deal=' . (int)$h['deal_id']];
+        }
+    }
+
+    // Pipeline v2: os avisos guardados para esta pessoa (inc/pipe2_notify.php), para quem vê o Pipeline ou os
+    // Negócios. Sem a tabela (antes do passo 44) não acrescentam nada; um erro nunca tira os outros alertas.
+    if (can('pipeline') || can('negocios')) {
+        try {
+            require_once __DIR__ . '/pipe2_notify.php';
+            $out['deal'] = array_merge($out['deal'], pipe2_notices_for($pdo, $uid));
+        } catch (Throwable $e) {
+            error_log('[topper] pipe2 avisos: ' . $e->getMessage());
         }
     }
 
